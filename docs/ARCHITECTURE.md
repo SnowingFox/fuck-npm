@@ -95,7 +95,7 @@ fnpm-registry     fnpm-store      fnpm-workspace
 | fnpm-scripts | types, config, workspace, lockfile | tokio (process) |
 | fnpm-core | all of the above | tokio, rayon, crossbeam-channel |
 | fnpm-napi | core, types | napi, napi-derive, mimalloc |
-| fnpm-cli | core, types, config | mimalloc, libmimalloc-sys, rustix, tokio (signal), serde_json; build script: serde_json (reads `cli-spec.json`) |
+| fnpm-cli | core, types, config | mimalloc, libmimalloc-sys, rustix, libc (`_exit`), tokio (signal), serde_json; build script: serde_json (reads `cli-spec.json`) |
 
 `fnpm-napi` and `fnpm-cli` are siblings: neither depends on the other, and neither contains
 package-manager logic. Both call `fnpm-core`.
@@ -1534,10 +1534,15 @@ for it:
   before Rust's runtime allocates: with overcommit it commits the 1 GiB arena with
   `MADV_HUGEPAGE`, and the first allocation faults in a zeroed 2 MiB page.
   `MIMALLOC_ARENA_EAGER_COMMIT` still overrides.
+- The process ends with `_exit` after flushing stdout (`fnpm_cli::exit`): the only `atexit`
+  handler is mimalloc's `mi_process_done`, which force-collects every heap
+  (`madvise(MADV_DONTNEED)` over all touched pages) just before the kernel unmaps them anyway.
+- `fnpm-lock` calls `main_lock`, which never references the core: ~0.5 MB instead of ~11 MB.
 
 Measured on the Linux baseline machine (`hyperfine -N`, small fixture, local mirror):
-`fnpm --version` 1.8 ms (bun 1.7 ms, a Rust hello world 1.0-1.1 ms); no-op install 2.4 ms (bun
-6.6 ms). Exec to node adds nothing measurable over running node directly.
+`fnpm --version` 1.5 ms (bun 1.7-1.8 ms, a Rust hello world 1.0-1.1 ms), `fnpm-lock --version`
+1.3 ms; no-op install 2.0 ms (bun 6.6 ms). Exec to node adds nothing measurable over running node
+directly.
 
 ## napi JS API and the event schema
 
