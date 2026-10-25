@@ -1,0 +1,462 @@
+//! Fetch + extract, overlapping resolution and linking.
+//!
+//! The resolver streams `Resolved::Package` as soon as a resolution is final; [`Fetcher::ensure`]
+//! starts the download (or store lookup) for it right away on the tokio runtime. The linker's
+//! [`fnpm_linker::PackageSource::wait`] blocks a link thread on the package's [`Slot`] until the
+//! import finished, so linking starts while downloads are still in flight.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use fnpm_registry::RegistryClient;
+use fnpm_store::{ImportOptions, PackageEntry, PackageKey, Store};
+use fnpm_types::{Event, EventSink, Integrity, LockGraph, Package, PackageId, Resolution};
+use futures_util::StreamExt;
+use parking_lot::{Condvar, Mutex};
+
+/// A package that is in the store.
+#[derive(Debug, Clone)]
+pub(crate) struct Fetched {
+    /// Its store entry.
+    pub entry: PackageEntry,
+    /// Its key (the integrity is computed for packages the lockfile had none for).
+    pub key: PackageKey,
+}
+
+type Outcome = Result<Fetched, String>;
+
+/// One package's fetch: filled once, waited on by link threads (blocking) and the pipeline
+/// (async).
+#[derive(Default)]
+pub(crate) struct Slot {
+    result: Mutex<Option<Outcome>>,
+    cv: Condvar,
+    notify: tokio::sync::Notify,
+}
+
+impl Slot {
+    fn set(&self, outcome: Outcome) {
+        *self.result.lock() = Some(outcome);
+        self.cv.notify_all();
+        self.notify.notify_waiters();
+    }
+
+    /// Blocks the calling (non-runtime) thread until the fetch finished.
+    pub fn wait_blocking(&self) -> Outcome {
+        let mut guard = self.result.lock();
+        loop {
+            if let Some(r) = guard.as_ref() {
+                return r.clone();
+            }
+            self.cv.wait(&mut guard);
+        }
+    }
+
+    /// Waits on the runtime until the fetch finished.
+    pub async fn wait(&self) -> Outcome {
+        loop {
+            let notified = self.notify.notified();
+            if let Some(r) = self.result.lock().as_ref() {
+                return r.clone();
+            }
+            notified.await;
+        }
+    }
+}
+
+/// Download counters for progress events and the summary.
+#[derive(Default)]
+struct Counters {
+    total: AtomicU32,
+    done: AtomicU32,
+    bytes: AtomicU64,
+}
+
+struct Inner {
+    store: Store,
+    client: RegistryClient,
+    root_dir: PathBuf,
+    cache_dir: PathBuf,
+    verify: bool,
+    handle: tokio::runtime::Handle,
+    events: Arc<dyn EventSink>,
+    slots: Mutex<HashMap<String, Arc<Slot>>>,
+    counters: Counters,
+}
+
+/// Starts and tracks the imports of one install. Cheap to clone.
+#[derive(Clone)]
+pub(crate) struct Fetcher {
+    inner: Arc<Inner>,
+}
+
+/// Whether a resolution has content the store holds (registry, git, tarballs, folders).
+pub(crate) fn needs_content(resolution: &Resolution) -> bool {
+    resolution.is_storable() || matches!(resolution, Resolution::Folder { .. })
+}
+
+impl Fetcher {
+    /// A fetcher importing into `store`; downloads run on the current runtime.
+    pub fn new(
+        store: Store,
+        client: RegistryClient,
+        root_dir: PathBuf,
+        cache_dir: PathBuf,
+        verify: bool,
+        events: Arc<dyn EventSink>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                store,
+                client,
+                root_dir,
+                cache_dir,
+                verify,
+                handle: tokio::runtime::Handle::current(),
+                events,
+                slots: Mutex::new(HashMap::new()),
+                counters: Counters::default(),
+            }),
+        }
+    }
+
+    /// The store.
+    pub fn store(&self) -> &Store {
+        &self.inner.store
+    }
+
+    /// The slot of `name@resolution`, starting its fetch if this is the first request.
+    pub fn ensure(&self, name: &str, version: &str, resolution: &Resolution) -> Arc<Slot> {
+        let key = format!("{name}@{resolution}");
+        let mut slots = self.inner.slots.lock();
+        if let Some(s) = slots.get(&key) {
+            return s.clone();
+        }
+        let slot = Arc::new(Slot::default());
+        slots.insert(key, slot.clone());
+        drop(slots);
+        self.inner.counters.total.fetch_add(1, Ordering::Relaxed);
+        let (inner, s) = (self.inner.clone(), slot.clone());
+        let (name, version, resolution) = (name.to_owned(), version.to_owned(), resolution.clone());
+        self.inner.handle.spawn(async move {
+            let outcome = fetch_one(&inner, &name, &version, &resolution).await;
+            let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
+            if inner.events.enabled() {
+                inner.events.emit(Event::Download {
+                    done,
+                    total: inner.counters.total.load(Ordering::Relaxed),
+                    bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
+                    name: Some(name.clone()),
+                });
+            }
+            s.set(outcome);
+        });
+        slot
+    }
+
+    /// [`Fetcher::ensure`] for a graph package.
+    pub fn ensure_package(&self, p: &Package) -> Arc<Slot> {
+        self.ensure(&p.name, &p.version, &p.resolution)
+    }
+
+    /// The `pkgs/` directory names of the installed packages (patched variants included), for
+    /// the store's project record.
+    pub async fn store_dir_names(&self, graph: &LockGraph, installed: &[bool]) -> Vec<String> {
+        let mut names = Vec::new();
+        for (i, p) in graph.packages.iter().enumerate() {
+            if !installed.get(i).copied().unwrap_or(false) || !needs_content(&p.resolution) {
+                continue;
+            }
+            let Ok(f) = self.ensure_package(p).wait().await else {
+                continue;
+            };
+            names.push(f.key.dir_name());
+            let key = format!("{}@{}", p.name, p.version);
+            if let Some(hash) = graph
+                .patched_dependencies
+                .get(&key)
+                .and_then(|d| d.hash.as_deref())
+            {
+                names.push(f.key.patched_dir_name(patch_hash_u64(hash)));
+            }
+        }
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The link source over `graph`.
+    pub fn source<'g>(&'g self, graph: &'g LockGraph) -> GraphSource<'g> {
+        GraphSource {
+            fetcher: self,
+            graph,
+            patched: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+fn to_io(e: fnpm_registry::Error) -> std::io::Error {
+    std::io::Error::other(e.to_string())
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resolution) -> Outcome {
+    match res {
+        Resolution::Npm {
+            tarball_url,
+            integrity,
+            ..
+        } => {
+            let url = tarball_url
+                .clone()
+                .unwrap_or_else(|| inner.client.default_tarball_url(name, version));
+            remote(inner, name, version, &url, *integrity).await
+        }
+        Resolution::RemoteTarball { url, integrity } => {
+            remote(inner, name, version, url, *integrity).await
+        }
+        Resolution::Github {
+            owner,
+            repo,
+            resolved_commit,
+            integrity,
+            ..
+        } => {
+            let url = inner
+                .client
+                .github_tarball_url(owner, repo, resolved_commit);
+            remote(inner, name, version, &url, *integrity).await
+        }
+        Resolution::LocalTarball { path, integrity } => {
+            let file = inner.root_dir.join(path);
+            if let Some(hit) = cached(inner, name, version, *integrity) {
+                return Ok(hit);
+            }
+            let bytes = tokio::fs::read(&file)
+                .await
+                .map_err(|e| format!("{}: {e}", file.display()))?;
+            let (store, n, v, integrity) = (
+                inner.store.clone(),
+                name.to_owned(),
+                version.to_owned(),
+                *integrity,
+            );
+            let skip_verify = !inner.verify;
+            blocking(move || match integrity {
+                Some(integrity) => {
+                    let key = PackageKey {
+                        name: n,
+                        version: v,
+                        integrity,
+                    };
+                    store
+                        .import_tarball_bytes(&key, &bytes, ImportOptions { skip_verify })
+                        .map(|entry| Fetched { entry, key })
+                        .map_err(|e| e.to_string())
+                }
+                None => store
+                    .import_tarball_bytes_unpinned(&n, &v, &bytes)
+                    .map(|(key, entry)| Fetched { entry, key })
+                    .map_err(|e| e.to_string()),
+            })
+            .await
+        }
+        Resolution::Git {
+            url,
+            resolved_commit,
+            integrity,
+            ..
+        } => {
+            if let Some(hit) = cached(inner, name, version, *integrity) {
+                return Ok(hit);
+            }
+            git(inner, name, version, url, resolved_commit).await
+        }
+        Resolution::Folder { path } => {
+            let dir = inner.root_dir.join(path);
+            let (store, n, v) = (inner.store.clone(), name.to_owned(), version.to_owned());
+            blocking(move || import_folder(&store, &n, &v, &dir)).await
+        }
+        other => Err(format!("{name}@{other} has no content to fetch")),
+    }
+}
+
+fn cached(
+    inner: &Inner,
+    name: &str,
+    version: &str,
+    integrity: Option<Integrity>,
+) -> Option<Fetched> {
+    let key = PackageKey {
+        name: name.to_owned(),
+        version: version.to_owned(),
+        integrity: integrity?,
+    };
+    let entry = inner.store.get(&key).ok().flatten()?;
+    Some(Fetched { entry, key })
+}
+
+async fn remote(
+    inner: &Arc<Inner>,
+    name: &str,
+    version: &str,
+    url: &str,
+    integrity: Option<Integrity>,
+) -> Outcome {
+    if let Some(hit) = cached(inner, name, version, integrity) {
+        return Ok(hit);
+    }
+    let body = inner
+        .client
+        .tarball(url, integrity.as_ref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let counter = inner.clone();
+    let stream = body.stream.map(move |chunk| {
+        if let Ok(b) = &chunk {
+            counter
+                .counters
+                .bytes
+                .fetch_add(b.len() as u64, Ordering::Relaxed);
+        }
+        chunk.map_err(to_io)
+    });
+    match integrity {
+        Some(integrity) => {
+            let key = PackageKey {
+                name: name.to_owned(),
+                version: version.to_owned(),
+                integrity,
+            };
+            let entry = inner
+                .store
+                .import_tarball(
+                    &key,
+                    stream,
+                    ImportOptions {
+                        skip_verify: !inner.verify,
+                    },
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(Fetched { entry, key })
+        }
+        None => {
+            let (key, entry) = inner
+                .store
+                .import_tarball_unpinned(name, version, stream)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(Fetched { entry, key })
+        }
+    }
+}
+
+async fn git(inner: &Arc<Inner>, name: &str, version: &str, url: &str, sha: &str) -> Outcome {
+    static CHECKOUTS: AtomicU64 = AtomicU64::new(0);
+    let n = CHECKOUTS.fetch_add(1, Ordering::Relaxed);
+    let dest = inner
+        .cache_dir
+        .join("tmp")
+        .join(format!("core-git-{sha}-{}-{n}", std::process::id()));
+    let _ = tokio::fs::remove_dir_all(&dest).await;
+    fnpm_registry::git::checkout(&inner.cache_dir, url, sha, None, &dest)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (store, nm, v, d) = (
+        inner.store.clone(),
+        name.to_owned(),
+        version.to_owned(),
+        dest.clone(),
+    );
+    let out = blocking(move || import_folder(&store, &nm, &v, &d)).await;
+    let _ = tokio::fs::remove_dir_all(&dest).await;
+    out
+}
+
+fn import_folder(store: &Store, name: &str, version: &str, dir: &Path) -> Outcome {
+    let integrity = Store::pack_integrity(dir).map_err(|e| e.to_string())?;
+    let key = PackageKey {
+        name: name.to_owned(),
+        version: version.to_owned(),
+        integrity,
+    };
+    if let Ok(Some(entry)) = store.get(&key) {
+        return Ok(Fetched { entry, key });
+    }
+    store
+        .import_directory(&key, dir)
+        .map(|entry| Fetched { entry, key })
+        .map_err(|e| e.to_string())
+}
+
+/// The patch hash a store key uses, from the lockfile's hex string.
+pub(crate) fn patch_hash_u64(hash: &str) -> u64 {
+    u64::from_str_radix(hash, 16).unwrap_or_else(|_| xxhash_rust::xxh3::xxh3_64(hash.as_bytes()))
+}
+
+/// [`fnpm_linker::PackageSource`] over a resolved graph: maps ids to slots (starting any fetch
+/// that has not started), waits, and applies `patchedDependencies`.
+pub(crate) struct GraphSource<'g> {
+    fetcher: &'g Fetcher,
+    graph: &'g LockGraph,
+    patched: Mutex<HashMap<PackageId, Result<PackageEntry, String>>>,
+}
+
+impl GraphSource<'_> {
+    fn patch(&self, pkg: &Package, base: Fetched) -> Result<PackageEntry, String> {
+        let key = format!("{}@{}", pkg.name, pkg.version);
+        let Some(patch) = self.graph.patched_dependencies.get(&key) else {
+            return Ok(base.entry);
+        };
+        let store = self.fetcher.store();
+        let path = self.fetcher.inner.root_dir.join(&patch.path);
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let hash = patch.hash.as_deref().map_or_else(
+            || xxhash_rust::xxh3::xxh3_64(text.as_bytes()),
+            patch_hash_u64,
+        );
+        if let Ok(Some(entry)) = store.get_patched(&base.key, hash) {
+            return Ok(entry);
+        }
+        let patched = store
+            .import_patched(&base.key, &base.entry, &text, hash)
+            .map_err(|e| e.to_string())?;
+        for w in patched.warnings {
+            self.fetcher.inner.events.emit(Event::warn(w, None));
+        }
+        Ok(patched.entry)
+    }
+}
+
+impl fnpm_linker::PackageSource for GraphSource<'_> {
+    fn wait(&self, id: PackageId) -> Result<PackageEntry, String> {
+        let pkg = self
+            .graph
+            .get(id)
+            .ok_or_else(|| format!("unknown package id {}", id.0))?;
+        if !needs_content(&pkg.resolution) {
+            return Err(format!("{} is not stored", pkg.key()));
+        }
+        let base = self.fetcher.ensure_package(pkg).wait_blocking()?;
+        if self.graph.patched_dependencies.is_empty() {
+            return Ok(base.entry);
+        }
+        if let Some(done) = self.patched.lock().get(&id) {
+            return done.clone();
+        }
+        let out = self.patch(pkg, base);
+        self.patched.lock().insert(id, out.clone());
+        out
+    }
+}

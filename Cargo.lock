@@ -553,7 +553,9 @@ dependencies = [
 name = "fnpm-core"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "crossbeam-channel",
+ "flate2",
  "fnpm-config",
  "fnpm-linker",
  "fnpm-lockfile",
