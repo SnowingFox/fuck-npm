@@ -36,18 +36,23 @@ pub(crate) fn publish<T>(
             Err(e) => e,
         };
         attempts += 1;
-        if let Some(theirs) = is_complete(dest) {
+        // Pin the directory before inspecting it: another recovery may replace the path
+        // after the check. Cleanup must only empty the directory we actually inspected.
+        let incomplete = open_incomplete(dest);
+        if incomplete.is_ok()
+            && let Some(theirs) = is_complete(dest)
+        {
             return Ok(Published::Theirs(theirs));
         }
         if attempts == MAX_ATTEMPTS {
             return Err(emptying_err.unwrap_or(err));
         }
-        match std::fs::symlink_metadata(dest) {
-            Ok(m) if m.is_dir() => {
-                emptying_err = std::fs::remove_dir_all(dest).err();
-            }
-            Ok(_) => {
-                let _ = std::fs::remove_file(dest);
+        match incomplete {
+            Ok(dir) => {
+                emptying_err = empty_incomplete(&dir, dest).err();
+                drop(dir);
+                // A replacement published meanwhile is nonempty and cannot be removed.
+                let _ = std::fs::remove_dir(dest);
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 // Nothing there: the parent may be missing.
@@ -55,9 +60,82 @@ pub(crate) fn publish<T>(
                     std::fs::create_dir_all(parent)?;
                 }
             }
-            Err(e) => emptying_err = Some(e),
+            Err(e) => {
+                // unlink never removes a directory, including a concurrently published one.
+                if std::fs::remove_file(dest).is_err() {
+                    emptying_err = Some(e);
+                }
+            }
         }
     }
+}
+
+// Unix cleanup stays relative to the directory opened before is_complete, like bun's
+// cache_publish::StagedEntry. A pathname-based remove_dir_all can erase a winning import.
+#[cfg(unix)]
+fn open_incomplete(path: &Path) -> io::Result<std::os::fd::OwnedFd> {
+    use rustix::fs::{Mode, OFlags};
+    rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .map_err(io::Error::from)
+}
+
+#[cfg(unix)]
+fn empty_incomplete(dir: &std::os::fd::OwnedFd, _path: &Path) -> io::Result<()> {
+    use rustix::fs::{AtFlags, Mode, OFlags};
+    let mut entries = rustix::fs::Dir::read_from(dir)?;
+    while let Some(entry) = entries.read() {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_bytes() == b"." || name.to_bytes() == b".." {
+            continue;
+        }
+        match rustix::fs::openat(
+            dir,
+            name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        ) {
+            Ok(child) => {
+                empty_incomplete(&child, Path::new(""))?;
+                match rustix::fs::unlinkat(dir, name, AtFlags::REMOVEDIR) {
+                    Ok(()) | Err(rustix::io::Errno::NOENT) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(_) => match rustix::fs::unlinkat(dir, name, AtFlags::empty()) {
+                Ok(()) | Err(rustix::io::Errno::NOENT) => {}
+                Err(e) => return Err(e.into()),
+            },
+        }
+    }
+    Ok(())
+}
+
+// On Windows, denying FILE_SHARE_DELETE pins the pathname while it is inspected and emptied.
+#[cfg(windows)]
+fn open_incomplete(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x1 | 0x2) // FILE_SHARE_READ | FILE_SHARE_WRITE
+        .custom_flags(0x02000000 | 0x00200000) // BACKUP_SEMANTICS | OPEN_REPARSE_POINT
+        .open(path)?;
+    if !file.metadata()?.is_dir() || file.metadata()?.file_type().is_symlink() {
+        return Err(io::Error::from(io::ErrorKind::NotADirectory));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn empty_incomplete(_dir: &std::fs::File, path: &Path) -> io::Result<()> {
+    for entry in std::fs::read_dir(path)? {
+        crate::sys::remove_tree(&entry?.path())?;
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -148,5 +226,53 @@ mod tests {
             publish(&ours, &dest2, 0, complete).unwrap(),
             Published::Ours
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_never_deletes_a_concurrently_published_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("a");
+        std::fs::create_dir(&dest).unwrap();
+        std::fs::write(dest.join("partial"), "incomplete").unwrap();
+        let ours = dir.path().join("ours");
+        std::fs::create_dir(&ours).unwrap();
+        std::fs::write(ours.join("done"), "ours").unwrap();
+        let moved = dir.path().join("old-incomplete");
+        let once = std::sync::atomic::AtomicBool::new(false);
+        let result = publish(&ours, &dest, 0, |d| {
+            let found = complete(d);
+            if !once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                // Model a second recovery/import between our completeness check and cleanup.
+                std::fs::rename(d, &moved).unwrap();
+                std::fs::create_dir(d).unwrap();
+                std::fs::write(d.join("done"), "theirs").unwrap();
+            }
+            found
+        })
+        .unwrap();
+        assert!(matches!(result, Published::Theirs(ref value) if value == "theirs"));
+        assert_eq!(complete(&dest).as_deref(), Some("theirs"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_unlinks_a_symlink_without_using_or_emptying_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("done"), "outside").unwrap();
+        let dest = dir.path().join("a");
+        std::os::unix::fs::symlink(&outside, &dest).unwrap();
+        let ours = dir.path().join("ours");
+        std::fs::create_dir(&ours).unwrap();
+        std::fs::write(ours.join("done"), "ours").unwrap();
+        assert!(matches!(
+            publish(&ours, &dest, 0, complete).unwrap(),
+            Published::Ours
+        ));
+        assert_eq!(complete(&dest).as_deref(), Some("ours"));
+        assert_eq!(complete(&outside).as_deref(), Some("outside"));
+        assert!(!dest.symlink_metadata().unwrap().file_type().is_symlink());
     }
 }
