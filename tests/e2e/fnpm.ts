@@ -21,7 +21,8 @@
 // mirror. Checkouts and logs live in $FNPM_E2E_DIR (see README.md). Results:
 // tests/e2e/results/<date>.{md,json} (--out <stem> to change).
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -52,7 +53,7 @@ const { values: args } = parseArgs({
   },
 });
 
-const FNPM = resolve(process.env.FNPM_BIN || join(REPO_ROOT, "target", "release", "fnpm"));
+let FNPM = resolve(process.env.FNPM_BIN || join(REPO_ROOT, "target", "release", "fnpm"));
 const BUN_VERSION = args["no-bun"] ? "" : sh("bun --version", REPO_ROOT, process.env, 30).stdout.trim();
 const INSTALL_TIMEOUT_SEC = 1800;
 
@@ -136,6 +137,8 @@ function env(entry: CorpusEntry, mirror: string, store: string): NodeJS.ProcessE
     FNPM_REGISTRY: mirror,
     FNPM_STORE_DIR: join(store, "store"),
     FNPM_CACHE_DIR: join(store, "cache"),
+    // The run uses a private copy of the native binary; retain the repository's JS fallback.
+    FNPM_JS_ENTRY: process.env.FNPM_JS_ENTRY ?? join(REPO_ROOT, "packages", "fuck-npm", "dist", "fnpm.js"),
     // Verify commands that go through the project's own PM (or npx) stay on the mirror.
     npm_config_registry: mirror,
     YARN_REGISTRY: mirror,
@@ -462,6 +465,13 @@ export function report(results: Result[], fnpmVersion: string, commit: string, d
 
 async function main(): Promise<void> {
   if (!existsSync(FNPM)) throw new Error(`${FNPM} not found (cargo build --release -p fnpm-cli, or set FNPM_BIN)`);
+  // A concurrent cargo build must not replace the executable between corpus projects.
+  const binaryDir = mkdtempSync(join(tmpdir(), "fnpm-e2e-bin-"));
+  const pinnedBinary = join(binaryDir, "fnpm");
+  copyFileSync(FNPM, pinnedBinary);
+  FNPM = pinnedBinary;
+  const binarySha256 = createHash("sha256").update(readFileSync(FNPM)).digest("hex");
+  try {
   const only = args.only?.split(",").map((s) => s.trim());
   const skip = new Set(args.skip?.split(",").map((s) => s.trim()) ?? []);
   const corpus = loadCorpus().filter((e) => (!only || only.includes(e.name)) && !skip.has(e.name));
@@ -509,12 +519,15 @@ async function main(): Promise<void> {
         vsBun: x.diff.vsBun && { ...x.diff.vsBun, missing: trimList(x.diff.vsBun.missing), extra: trimList(x.diff.vsBun.extra) },
       },
     }));
-    writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, date, results: compact }, (_key, value) => typeof value === "string" ? scrub(value) : value, 1) + "\n");
+    writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, binarySha256, date, results: compact }, (_key, value) => typeof value === "string" ? scrub(value) : value, 1) + "\n");
     writeFileSync(`${stem}.md`, scrub(report(results, version, commit, date)) + "\n");
   }
   rmSync(join(workRoot(), "_fnpm"), { recursive: true, force: true });
   log(`summary: ${results.map((r) => `${r.name}=${r.status}`).join(" ")}`);
   if (results.some((r) => r.status === "FAIL")) process.exitCode = 1;
+  } finally {
+    rmSync(binaryDir, { recursive: true, force: true });
+  }
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
