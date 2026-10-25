@@ -154,6 +154,26 @@ fn checked_in_lockfiles_round_trip() {
     );
 }
 
+#[test]
+fn fnpm_dialect_reads_back_to_the_same_bytes() {
+    for dir in ["files", "snapshots"] {
+        for path in fixtures(dir) {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let src = substitute(&std::fs::read_to_string(&path).unwrap());
+            let Ok((g, _)) =
+                crate::text_parse(src.as_bytes(), "bun.lock", &ParseOptions::default())
+            else {
+                continue;
+            };
+            let once = super::write::write(&g, Dialect::Fnpm).text;
+            let (back, _) =
+                crate::text_parse(once.as_bytes(), "fnpm.lock", &ParseOptions::default()).unwrap();
+            let twice = super::write::write(&back, Dialect::Fnpm).text;
+            assert!(once == twice, "{name}: {}", first_diff(&once, &twice));
+        }
+    }
+}
+
 /// A resolver builds its graph in its own order. The written lockfile must not depend on it:
 /// shuffle the arena (root stays first) and every edge list, then write again.
 fn shuffled(g: &fnpm_types::LockGraph, seed: u64) -> fnpm_types::LockGraph {

@@ -981,6 +981,16 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
     for p in &mut graph.packages {
         sort_edges(p);
     }
+    if version == LockfileVersion::V0 {
+        // A v0 lockfile creates its workspace packages from `packages` rows. bun's reader then
+        // never binds their dependencies (its member list stays empty); bind them like v1's.
+        members = graph
+            .workspaces
+            .iter()
+            .filter(|(p, _)| !p.is_empty())
+            .map(|(_, id)| id.0)
+            .collect();
+    }
     bind(
         graph,
         &pkg_map,

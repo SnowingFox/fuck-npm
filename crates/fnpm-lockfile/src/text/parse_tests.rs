@@ -331,3 +331,39 @@ fn a_workspace_listed_twice_is_one_workspace() {
     assert_eq!(w, ["11:5: Duplicate key \"packages/a\" in object literal"]);
     assert_eq!(g.workspaces.len(), 2);
 }
+
+#[test]
+fn lockfile_version_0_lists_workspace_dependencies_under_packages() {
+    let src = r#"{
+  "lockfileVersion": 0,
+  "workspaces": {
+    "": { "name": "root", "dependencies": { "pkg1": "workspace:*" } },
+    "packages/pkg1": { "name": "pkg1", "version": "1.0.0", "dependencies": { "a": "1.0.0" } },
+  },
+  "packages": {
+    "a": ["a@1.0.0", "", {}, ""],
+    "pkg1": ["pkg1@workspace:packages/pkg1", { "dependencies": { "a": "1.0.0" } }],
+  }
+}"#;
+    let (g, _) = parse(src).unwrap();
+    g.validate().unwrap();
+    let ws = &g.packages[g.workspaces["packages/pkg1"].index()];
+    assert_eq!(
+        ws.dependency("a")
+            .unwrap()
+            .target
+            .map(|t| g.packages[t.index()].version.as_str()),
+        Some("1.0.0")
+    );
+    let text = super::write::write(&g, super::Dialect::Bun).text;
+    // v0 is floored to v1, whose workspace packages are only listed by path.
+    assert!(
+        text.starts_with("{\n  \"lockfileVersion\": 1,\n  \"configVersion\": 0,\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("    \"pkg1\": [\"pkg1@workspace:packages/pkg1\"],\n"),
+        "{text}"
+    );
+    assert!(text.contains("    \"packages/pkg1\": {\n      \"name\": \"pkg1\",\n      \"dependencies\": {\n        \"a\": \"1.0.0\",\n      },\n    },\n"), "{text}");
+}
