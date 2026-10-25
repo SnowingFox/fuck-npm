@@ -35,12 +35,19 @@ function isMusl() {
   } catch {
     // No ldd (minimal images); fall back to the runtime's own report.
   }
+  const report = process.report;
+  if (typeof report?.getReport !== 'function') return false;
+  // Skip the network section: resolving interface names can stall on a misconfigured host.
+  const excludeNetwork = report.excludeNetwork;
   try {
-    const report = typeof process.report?.getReport === 'function' ? process.report.getReport() : null;
-    const header = report && (typeof report === 'string' ? JSON.parse(report).header : report.header);
+    report.excludeNetwork = true;
+    const full = report.getReport();
+    const header = typeof full === 'string' ? JSON.parse(full).header : full.header;
     return !(header && header.glibcVersionRuntime);
   } catch {
     return false;
+  } finally {
+    report.excludeNetwork = excludeNetwork;
   }
 }
 

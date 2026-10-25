@@ -1449,7 +1449,9 @@ debug build with the cargo feature `testing`, which adds `__testDeliver` and
 `__testRejectNow`: they drive the delivery, ack and rejection plumbing on a private runtime,
 independent of what the core does, and `__testEmit`, which emits events through the same
 `run` path and batching sink as `install`. `.github/workflows/napi.yml` builds all eight targets
-(glibc with `--use-napi-cross`, musl with cargo-zigbuild), runs `cargo test`, clippy and
+(glibc with `--use-napi-cross`, linked against glibc 2.17; musl with cargo-zigbuild and
+`-mevex512` for libdeflate's AVX-512 code under zig; on musl mimalloc uses local-dynamic TLS,
+since an initial-exec TLS model crashes Node while it dlopens the addon), runs `cargo test`, clippy and
 the vitest suite on Linux x64/arm64, macOS arm64 and Windows x64, and loads every release
 build on its own platform (musl ones in Alpine) to run `tests/smoke.cjs`: a `USAGE`
 rejection, an empty-project install with events, and the no-op fast path.
