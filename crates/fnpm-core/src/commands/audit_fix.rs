@@ -155,16 +155,13 @@ struct Plan {
     manifests: HashMap<String, Arc<PackageManifest>>,
 }
 
+/// The dependent as bun names it: the package.json of an importer, `name@version` otherwise.
 fn label(graph: &LockGraph, id: PackageId) -> String {
     let p = &graph.packages[id.index()];
-    if id == PackageId::ROOT || matches!(p.resolution, Resolution::Workspace { .. }) {
-        if p.name.is_empty() {
-            "package.json".into()
-        } else {
-            p.name.clone()
-        }
-    } else {
-        format!("{}@{}", p.name, p.version)
+    match &p.resolution {
+        Resolution::Root => "package.json".into(),
+        Resolution::Workspace { path } => format!("{path}/package.json"),
+        _ => format!("{}@{}", p.name, p.version),
     }
 }
 
@@ -772,6 +769,15 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
         format!("fnpm audit fix v{}", cli_version(cx)),
         String::new(),
     ];
+    if advisories.is_empty() && !json_out {
+        let n = plan.checked;
+        lines.push(format!(
+            "No vulnerabilities found (checked {n} package{}) [{:.2}ms]",
+            if n == 1 { "" } else { "s" },
+            start.elapsed().as_secs_f64() * 1000.0
+        ));
+        return Ok(super::ok(json!({}), lines));
+    }
     if !json_out {
         lines.extend(sections(&plan));
     }

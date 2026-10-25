@@ -48,6 +48,9 @@ beforeAll(async () => {
     },
   });
   await verdaccio.start();
+  // Every test writes a bunfig.toml that names its registry, as in bun's harness, where no registry comes from the
+  // environment. The registry in fnpmEnv would win over bunfig.toml.
+  delete fnpmEnv.FNPM_REGISTRY;
 });
 
 afterAll(() => {
