@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      '@company/private-pkg':
+        specifier: ^1.0.0
+        version: 1.0.5(registry=https://npm.company.com/)
+      lodash:
+        specifier: ^4.17.21
+        version: 4.17.21
+
+packages:
+  '@company/private-pkg@1.0.5':
+    resolution: {integrity: sha512-private==, registry: https://npm.company.com/, tarball: https://npm.company.com/@company/private-pkg/-/private-pkg-1.0.5.tgz}
+
+  lodash@4.17.21:
+    resolution: {integrity: sha512-lodash==}
+
+snapshots:
+  '@company/private-pkg@1.0.5(registry=https://npm.company.com/)': {}
+  lodash@4.17.21: {}

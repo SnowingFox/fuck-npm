@@ -1,0 +1,1 @@
+{"name":"circular-test","workspaces":["packages/*"],"dependencies":{"@workspace/pkg1":"workspace:*"}}

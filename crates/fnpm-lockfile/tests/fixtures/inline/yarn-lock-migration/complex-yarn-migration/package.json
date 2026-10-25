@@ -1,0 +1,18 @@
+{
+  "name": "complex-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.2",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "optionalDependencies": {
+    "fsevents": "^2.3.2"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  }
+}

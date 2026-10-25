@@ -1,0 +1,1 @@
+{"name":"@workspace/pkg3","version":"1.0.0","main":"index.js","dependencies":{"@workspace/pkg1":"workspace:*"}}

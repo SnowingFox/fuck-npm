@@ -1,0 +1,1 @@
+{"name":"duplicates-test","dependencies":{"package-a":"^1.0.0","package-b":"^1.0.0","my-lodash":"npm:lodash@^4.17.20","lodash":"^4.17.21"}}

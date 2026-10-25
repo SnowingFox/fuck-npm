@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      express:
+        specifier: ^4.18.2
+        version: 4.18.2
+      axios:
+        specifier: ^1.6.0
+        version: 1.6.7
+
+packages:
+  express@4.18.2:
+    resolution: {integrity: sha512-5/PsL6iGPdfQ/lKM1UuielYgv3BUoJfz1aUwU9vHZ+J7gyvwdQXFEBIEIaxeGf0GIcreATNyBExtalisDbuMqQ==}
+    engines: {node: '>= 0.10.0'}
+
+  axios@1.6.7:
+    resolution: {integrity: sha512-/hDJGff6/c7u0hDkvkGxR/oy6CbCs8ziCsC7SqmhjfozqiJGc8Z11wrv9z9lYfY4K8l+H9TpjcMDX0xOZmx+RA==}
+
+snapshots:
+  express@4.18.2: {}
+  axios@1.6.7: {}

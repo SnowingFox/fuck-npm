@@ -1,0 +1,84 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+  .:
+    dependencies:
+      '@angular/animations':
+        specifier: ^17.0.0
+        version: 17.0.8(@angular/core@17.0.8)
+      '@angular/common':
+        specifier: ^17.0.0
+        version: 17.0.8(@angular/core@17.0.8)(rxjs@7.8.1)
+      '@angular/core':
+        specifier: ^17.0.0
+        version: 17.0.8(rxjs@7.8.1)(zone.js@0.14.2)
+    optionalDependencies:
+      rxjs:
+        specifier: ^6.5.3 || ^7.4.0
+        version: 7.8.1
+      tslib:
+        specifier: ^2.3.0
+        version: 2.6.2
+      zone.js:
+        specifier: ~0.14.0
+        version: 0.14.2
+
+packages:
+  '@angular/animations@17.0.8':
+    resolution: {integrity: sha512-angular-animations==}
+    engines: {node: ^18.13.0 || >=20.9.0}
+    peerDependencies:
+      '@angular/core': 17.0.8
+
+  '@angular/common@17.0.8':
+    resolution: {integrity: sha512-angular-common==}
+    engines: {node: ^18.13.0 || >=20.9.0}
+    peerDependencies:
+      '@angular/core': 17.0.8
+      rxjs: ^6.5.3 || ^7.4.0
+
+  '@angular/core@17.0.8':
+    resolution: {integrity: sha512-angular-core==}
+    engines: {node: ^18.13.0 || >=20.9.0}
+    peerDependencies:
+      rxjs: ^6.5.3 || ^7.4.0
+      zone.js: ~0.14.0
+
+  rxjs@7.8.1:
+    resolution: {integrity: sha512-rxjs==}
+
+  tslib@2.6.2:
+    resolution: {integrity: sha512-tslib==}
+
+  zone.js@0.14.2:
+    resolution: {integrity: sha512-zone==}
+
+snapshots:
+  '@angular/animations@17.0.8(@angular/core@17.0.8)':
+    dependencies:
+      '@angular/core': 17.0.8(rxjs@7.8.1)(zone.js@0.14.2)
+      tslib: 2.6.2
+
+  '@angular/common@17.0.8(@angular/core@17.0.8)(rxjs@7.8.1)':
+    dependencies:
+      '@angular/core': 17.0.8(rxjs@7.8.1)(zone.js@0.14.2)
+      rxjs: 7.8.1
+      tslib: 2.6.2
+
+  '@angular/core@17.0.8(rxjs@7.8.1)(zone.js@0.14.2)':
+    dependencies:
+      rxjs: 7.8.1
+      tslib: 2.6.2
+      zone.js: 0.14.2
+
+  rxjs@7.8.1:
+    dependencies:
+      tslib: 2.6.2
+
+  tslib@2.6.2: {}
+
+  zone.js@0.14.2: {}

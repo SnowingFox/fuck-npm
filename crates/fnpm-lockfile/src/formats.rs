@@ -4,6 +4,7 @@
 pub mod bun_binary;
 pub mod bun_text;
 pub mod fnpm;
+pub mod foreign;
 pub mod npm;
 pub mod pnpm;
 pub mod yarn_berry;

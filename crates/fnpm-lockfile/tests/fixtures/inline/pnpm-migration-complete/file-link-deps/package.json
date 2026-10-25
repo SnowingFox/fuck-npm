@@ -1,0 +1,1 @@
+{"name":"file-links-test","dependencies":{"local-pkg":"file:./local-pkg","config":"file:./shared/config"}}
