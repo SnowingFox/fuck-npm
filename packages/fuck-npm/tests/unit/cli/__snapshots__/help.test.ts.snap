@@ -1,0 +1,84 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderTree > matches the registered command surface 1`] = `
+"┌  fnpm
+│
+│  ├── help                 Show help for a command
+│  ├── install              Install all dependencies of the current project
+│  ├── ci                   Install exactly what fnpm.lock says (install --frozen-lockfile)
+│  ├── add                  Add dependencies to package.json and install them
+│  ├── remove               Remove dependencies from package.json
+│  ├── update               Update dependencies to the newest versions their ranges allow
+│  ├── outdated             Show dependencies with newer versions available
+│  ├── why                  Explain why a package is installed
+│  ├── ls                   List the installed dependency tree
+│  ├── info                 Show registry metadata for a package
+│  ├── link                 Register this package for linking, or link a registered package
+│  ├── unlink               Unregister this package, or remove a linked package
+│  ├── patch                Prepare a package for patching
+│  ├── patch-commit         Save the changes made to a patched package
+│  ├── prune                Remove packages from node_modules that nothing needs
+│  ├── dedupe               Collapse duplicate versions in the lockfile
+│  ├── audit                Check installed packages for known vulnerabilities
+│  ├── pack                 Create a tarball of the current package
+│  ├── publish              Publish a package to the registry
+│  ├── run                  Run a package.json script or a node_modules/.bin binary
+│  ├── exec                 Run a shell command with node_modules/.bin on PATH
+│  ├── x                    Run a package binary, installing it into the cache if needed
+│  ├── create               Scaffold a project from a create-<template> package
+│  ├── init                 Create a package.json in the current directory
+│  ├── pm                   Package manager utilities
+│  │   ├── bin              Print the bin directory (-g for the global one)
+│  │   ├── ls               List the installed dependency tree
+│  │   ├── why              Explain why a package is installed
+│  │   ├── hash             Print the hash of the current lockfile
+│  │   ├── hash-string      Print the string the lockfile hash is computed from
+│  │   ├── hash-print       Print the hash stored in the current lockfile
+│  │   ├── cache            Inspect and clean the package cache
+│  │   │   ├── path         Print the cache directory
+│  │   │   ├── rm           Delete the whole cache
+│  │   │   ├── prune        Remove cache entries older than --max-age days
+│  │   │   ├── pack         Write cache entries to an archive
+│  │   │   └── unpack       Restore cache entries from an archive
+│  │   ├── migrate          Write fnpm.lock from another package manager's lockfile
+│  │   ├── untrusted        List dependencies whose lifecycle scripts were blocked
+│  │   ├── trust            Run and allow the scripts of untrusted dependencies
+│  │   ├── default-trusted  Print the built-in list of trusted dependencies
+│  │   ├── version          Bump the package version (patch, minor, major, ...)
+│  │   ├── pkg              Read and edit package.json
+│  │   │   ├── get          Print properties of package.json
+│  │   │   ├── set          Set properties of package.json
+│  │   │   ├── delete       Delete properties of package.json
+│  │   │   └── fix          Normalize package.json and fix common errors
+│  │   ├── whoami           Print the user name the registry knows you as
+│  │   ├── licenses         List the licenses of installed packages
+│  │   ├── view             Show registry metadata for a package
+│  │   ├── pack             Create a tarball of the current package
+│  │   ├── diff             Compare two versions of a package, file by file
+│  │   ├── scan             Run the configured security scanner over the lockfile
+│  │   └── fetch            Download every lockfile package into the cache without installing
+│  ├── store                Manage the content-addressable package store
+│  │   ├── path             Print the store directory
+│  │   ├── status           Check store files against their recorded integrity
+│  │   └── prune            Remove store entries no project references
+│  ├── doctor               Diagnose the environment, config, registry access and store
+│  └── completions          Print a shell completion script (bash, zsh or fish)
+└
+"
+`;
+
+exports[`renderTree > matches the registered command surface 2`] = `
+"┌  fnpm-lock
+│
+│  ├── help                 Show help for a command
+│  ├── migrate              Convert another tool's lockfile into fnpm.lock
+│  ├── export               Write fnpm.lock out as another tool's lockfile
+│  ├── verify               Check integrity hashes and that the lockfile matches package.json
+│  ├── diff                 Show what changed between two lockfiles (or a lockfile and a git ref)
+│  ├── why                  Explain why a package is in the lockfile
+│  ├── print                Print the lockfile in a human-readable form
+│  ├── dedupe               Collapse duplicate versions in the lockfile
+│  └── audit                Check lockfile packages for known vulnerabilities
+└
+"
+`;

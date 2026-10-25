@@ -1,0 +1,190 @@
+import cac from "cac";
+import { errorCode, formatError, SilentError } from "../errors.ts";
+import { loadHandler } from "../commands/index.ts";
+import { createColors } from "picocolors";
+import { colorEnabled, createOutput, resolveMode } from "../output/output.ts";
+import type { CliRuntime } from "../runtime/types.ts";
+import { parseFlags } from "./parse-flags.ts";
+import { planInvocation, rejectUnknownFlags, type Invocation } from "./plan.ts";
+import { setCurrentArgv } from "./raw-flags.ts";
+import { registerGlobalFlags, registerNode } from "./register.ts";
+import { flagSpecsFor } from "./registry.ts";
+import type { CommandLeaf, CommandNode, Registry } from "./registry-types.ts";
+import { getCliVersion } from "./version.ts";
+
+/**
+ * Dispatch one argv through the registry and cac.
+ *
+ * Order of business: `--version`, `--tree`, help (all answered from the
+ * registry, with the help renderer loaded lazily), then unknown commands,
+ * unknown flags, flag parsing and required positionals, and only then the
+ * handler. Nothing before the handler loads the native core.
+ */
+export async function runParsedCli(
+  registry: Registry,
+  argv: string[],
+  runtime: CliRuntime,
+): Promise<number> {
+  setCurrentArgv(argv);
+  let plan: Invocation | undefined;
+  try {
+    if (argv.slice(2).length === 0) {
+      return await writeHelp(registry, runtime);
+    }
+
+    plan = planInvocation(argv, registry);
+
+    if (plan.wantsVersion && plan.node.kind === "group") {
+      runtime.stdout.write(`${getCliVersion()}\n`);
+      return 0;
+    }
+    if (plan.wantsTree) {
+      const { renderTree } = await import("./help.ts");
+      runtime.stdout.write(renderTree(registry, { colors: stdoutColors(runtime) }));
+      return 0;
+    }
+    if (plan.wantsHelp) {
+      return await writeHelp(registry, runtime, plan.matched.join(" "));
+    }
+    if (plan.wantsVersion) {
+      runtime.stdout.write(`${getCliVersion()}\n`);
+      return 0;
+    }
+
+    if (plan.matched.length === 0) {
+      const typed = plan.own.find((token) => !token.startsWith("-"));
+      if (typed === undefined) {
+        // Only global flags (`fnpm --json`): there is nothing to run.
+        return await writeHelp(registry, runtime);
+      }
+      throw new SilentError(`Unknown command: ${typed}`, { code: "UNKNOWN_COMMAND" });
+    }
+
+    let node: CommandNode = plan.node;
+    let path = plan.matched;
+    if (node.kind === "group") {
+      if (plan.unknownSegment !== undefined) {
+        throw new SilentError(
+          `Unknown command: ${[registry.bin, ...path, plan.unknownSegment].join(" ")}`,
+          { code: "UNKNOWN_COMMAND" },
+        );
+      }
+      const group = node;
+      const fallback: CommandNode | undefined =
+        group.defaultChild === undefined
+          ? undefined
+          : group.children.find((child) => child.name === group.defaultChild);
+      if (fallback === undefined || fallback.kind !== "leaf") {
+        // A bare group prints its own help, like `bun pm`.
+        return await writeHelp(registry, runtime, path.join(" "));
+      }
+      node = fallback;
+      path = [...path, fallback.name];
+      plan = { ...plan, node, matched: path };
+    }
+    const leaf = node as CommandLeaf;
+
+    rejectUnknownFlags(plan, registry);
+    const parsed = parseFlags(plan.own, flagSpecsFor(leaf, registry));
+    const positionals =
+      leaf.passthrough === undefined ? [...parsed.positionals, ...plan.forwarded] : parsed.positionals;
+    const passthrough = leaf.passthrough === undefined ? [] : plan.forwarded;
+    requirePositionals(registry, leaf, path, positionals);
+
+    const output = createOutput(runtime, resolveMode(runtime, plan.wantsJson));
+    const handler = await loadHandler(registry.bin, path);
+
+    // cac still owns command matching and the action call; values come from
+    // parseFlags because mri coerces numeric-looking strings.
+    const cli = cac(registry.bin);
+    registerGlobalFlags(cli, registry);
+    const top = registry.root.children.find((child) => child.name === path[0]) ?? leaf;
+    registerNode(cli, top, () =>
+      handler({ registry, runtime, node: leaf, path, values: parsed.values, positionals, passthrough, output }),
+    );
+    cli.parse(plan.cacArgv, { run: false });
+    return await resolveCliResult(cli.runMatchedCommand());
+  } catch (error) {
+    return reportError(registry, runtime, argv, plan, error);
+  }
+}
+
+function requirePositionals(
+  registry: Registry,
+  leaf: CommandLeaf,
+  path: string[],
+  positionals: string[],
+): void {
+  const required = (leaf.positionals ?? []).filter((positional) => positional.required);
+  if (positionals.length >= required.length) {
+    return;
+  }
+  const missing = required[positionals.length];
+  if (missing === undefined) {
+    return;
+  }
+  throw new SilentError(
+    `\`${[registry.bin, ...path].join(" ")}\` needs <${missing.name}>: ${missing.description}.`,
+    { code: "MISSING_ARGUMENT" },
+  );
+}
+
+async function writeHelp(registry: Registry, runtime: CliRuntime, path?: string): Promise<number> {
+  const { renderHelp } = await import("./help.ts");
+  runtime.stdout.write(renderHelp(registry, path, { colors: stdoutColors(runtime) }));
+  return 0;
+}
+
+const stdoutColors = (runtime: CliRuntime) =>
+  createColors(colorEnabled(runtime, runtime.stdoutIsTTY));
+
+export async function resolveCliResult(result: unknown): Promise<number> {
+  if (isPromiseLike(result)) {
+    return (await result) as number;
+  }
+  return typeof result === "number" ? result : 0;
+}
+
+/**
+ * Every failure path honours `--json`: `{ok: false, error: {code, message}}`
+ * on stdout, so the case a script most needs to handle is one it can read.
+ */
+function reportError(
+  registry: Registry,
+  runtime: CliRuntime,
+  argv: string[],
+  plan: Invocation | undefined,
+  error: unknown,
+): number {
+  const message = formatError(error);
+  const wantsJson =
+    plan?.wantsJson ?? (argv.slice(2, argv.includes("--") ? argv.indexOf("--") : undefined).includes("--json"));
+  if (wantsJson) {
+    runtime.stdout.write(`${JSON.stringify({ ok: false, error: { code: errorCode(error), message } })}\n`);
+    return 1;
+  }
+  runtime.stderr.write(`error: ${message}\n`);
+  if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {
+    const path = plan?.matched ?? [];
+    runtime.stderr.write(
+      path.length === 0
+        ? `Run '${registry.bin} --help' for usage.\n`
+        : `Run '${[registry.bin, ...path].join(" ")} --help' for detailed usage.\n`,
+    );
+  } else if (!(error instanceof SilentError) && (!(error instanceof Error) || error.name !== "CoreError")) {
+    // An unexpected exception is a bug; keep the stack for the report.
+    if (error instanceof Error && error.stack) {
+      runtime.stderr.write(`${error.stack}\n`);
+    }
+  }
+  return 1;
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "then" in value &&
+    typeof (value as Promise<unknown>).then === "function"
+  );
+}

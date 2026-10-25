@@ -2,6 +2,11 @@
   "name": "fuck-npm-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=20.19.0" }
+  "workspaces": [
+    "packages/*",
+    "tests"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  }
 }

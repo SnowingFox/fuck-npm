@@ -1,0 +1,37 @@
+{
+  "name": "@fuck-npm/binding",
+  "version": "0.0.1",
+  "description": "Native (napi-rs) core for fnpm. Loads the prebuilt .node for this platform.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "napi": {
+    "binaryName": "fnpm",
+    "packageName": "@fuck-npm/binding",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-unknown-linux-musl",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build:native": "napi build --platform --release --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts",
+    "build:native:debug": "napi build --platform --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts",
+    "artifacts": "napi artifacts",
+    "prepublishOnly": "napi prepublish -t npm"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.9"
+  }
+}

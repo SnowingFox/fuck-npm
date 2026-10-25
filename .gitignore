@@ -6,3 +6,4 @@ bench/.tmp/
 .DS_Store
 *.log
 .env*
+._*

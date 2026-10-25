@@ -1,0 +1,38 @@
+{
+  "name": "fuck-npm",
+  "version": "0.0.1",
+  "description": "fnpm: a fast, disk-saving package manager with a Rust core.",
+  "type": "module",
+  "bin": {
+    "fnpm": "./dist/fnpm.js",
+    "fnpm-lock": "./dist/fnpm-lock.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node ./src/bin/fnpm.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "bench:startup": "hyperfine --warmup 10 -N 'node dist/fnpm.js --version' 'node dist/fnpm.js --help' 'node dist/fnpm-lock.js --version'",
+    "prepublishOnly": "npm run build && npm run test && npm run type-check"
+  },
+  "dependencies": {
+    "@fuck-npm/binding": "0.0.1"
+  },
+  "devDependencies": {
+    "@clack/prompts": "1.7.0",
+    "@types/node": "25.9.5",
+    "cac": "7.0.0",
+    "picocolors": "1.1.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}
