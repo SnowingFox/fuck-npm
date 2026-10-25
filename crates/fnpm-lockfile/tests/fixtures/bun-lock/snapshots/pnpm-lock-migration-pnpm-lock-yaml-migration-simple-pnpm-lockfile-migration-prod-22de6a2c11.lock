@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "simple-pnpm-test",
+      "dependencies": {
+        "is-number": "^2.0.0",
+        "left-pad": "^1.0.0",
+      },
+    },
+  },
+  "packages": {
+    "is-number": ["is-number@2.0.0", "", {}, "sha512-BUFNwemjM+kyrOa4KeXh4B3ay3Sh7HnmxWp+uRrGMJXuzc8vp/MsCyPX08NxfZvWWy0pOTj6tkJ3kgTqUUkN3w=="],
+
+    "left-pad": ["left-pad@1.0.0", "", {}, "sha512-+4x+fPUv96e+piHW2kG7BY7sTzd1MfANrsWt1zvG+91BjS+/aOvQSzqrsL9kYgPnwBqN/COQOCKxc9f2jPPwOw=="],
+  }
+}

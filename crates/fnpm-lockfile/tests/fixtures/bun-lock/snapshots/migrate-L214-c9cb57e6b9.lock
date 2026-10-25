@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "test-pkg",
+      "dependencies": {
+        "test-pkg": ".",
+      },
+    },
+  },
+  "packages": {
+    "test-pkg": ["test-pkg@root:", {}],
+  }
+}

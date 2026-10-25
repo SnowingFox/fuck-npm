@@ -1,0 +1,28 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "duplicates-test",
+      "dependencies": {
+        "lodash": "^4.17.21",
+        "my-lodash": "npm:lodash@^4.17.20",
+        "package-a": "^1.0.0",
+        "package-b": "^1.0.0",
+      },
+    },
+  },
+  "packages": {
+    "lodash": ["lodash@4.17.21", "", {}, "sha512-lodash21AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "my-lodash": ["lodash@4.17.20", "", {}, "sha512-lodash20AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "package-a": ["package-a@1.0.0", "", { "dependencies": { "shared-dep": "2.0.0" } }, "sha512-packageAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "package-b": ["package-b@1.0.0", "", { "dependencies": { "shared-dep": "3.0.0" } }, "sha512-packageBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "shared-dep": ["shared-dep@2.0.0", "", {}, ""],
+
+    "package-b/shared-dep": ["shared-dep@3.0.0", "", {}, ""],
+  }
+}

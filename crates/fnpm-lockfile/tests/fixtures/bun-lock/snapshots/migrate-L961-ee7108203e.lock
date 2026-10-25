@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "arbitrary-tarball-url-test",
+      "dependencies": {
+        "baz": "<tarball>",
+      },
+    },
+  },
+  "packages": {
+    "baz": ["baz@<tarball>", {}, "sha512-NDeQ0yQgI9RPCbmajKIrJnQStwKUz04Ve/WkZimSqijwqgE8RhAxqpzdXC/ica+GZFwLkeoZHtukOuOG2b4ENg=="],
+  }
+}

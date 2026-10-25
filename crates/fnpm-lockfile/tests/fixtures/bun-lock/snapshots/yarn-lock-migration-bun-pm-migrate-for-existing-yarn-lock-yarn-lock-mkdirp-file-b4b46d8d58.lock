@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "mkdirp": "file:mkdirp",
+      },
+    },
+  },
+  "packages": {
+    "mkdirp": ["mkdirp@file:mkdirp", {}],
+  }
+}

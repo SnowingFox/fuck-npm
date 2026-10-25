@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "lock",
+      "dependencies": {
+        "jquery": "3.7.1",
+      },
+    },
+  },
+  "packages": {
+    "jquery": ["jquery@<repo>#<sha>", {}, "<sha>"],
+  }
+}

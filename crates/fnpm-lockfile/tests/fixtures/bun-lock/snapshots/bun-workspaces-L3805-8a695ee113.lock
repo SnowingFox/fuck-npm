@@ -1,0 +1,28 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "foo",
+    },
+    "packages/pkg1": {
+      "name": "pkg1",
+      "version": "1.0.0",
+      "devDependencies": {
+        "no-deps": "workspace:*",
+      },
+      "peerDependencies": {
+        "no-deps": "2.0.0",
+      },
+    },
+    "packages/pkg2": {
+      "name": "no-deps",
+      "version": "1.0.0",
+    },
+  },
+  "packages": {
+    "no-deps": ["no-deps@workspace:packages/pkg2"],
+
+    "pkg1": ["pkg1@workspace:packages/pkg1"],
+  }
+}

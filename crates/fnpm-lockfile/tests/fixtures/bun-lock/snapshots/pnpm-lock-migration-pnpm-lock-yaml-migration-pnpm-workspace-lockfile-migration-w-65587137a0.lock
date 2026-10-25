@@ -1,0 +1,49 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "monorepo-root",
+    },
+    "apps/web": {
+      "name": "@repo/web",
+      "version": "1.0.0",
+      "dependencies": {
+        "@repo/ui": "workspace:*",
+        "@repo/utils": "workspace:*",
+        "next": "^14.0.0",
+      },
+    },
+    "packages/ui": {
+      "name": "@repo/ui",
+      "version": "1.0.0",
+      "dependencies": {
+        "react": "^18.2.0",
+      },
+    },
+    "packages/utils": {
+      "name": "@repo/utils",
+      "version": "1.0.0",
+      "dependencies": {
+        "lodash": "^4.17.21",
+      },
+    },
+  },
+  "packages": {
+    "@repo/ui": ["@repo/ui@workspace:packages/ui"],
+
+    "@repo/utils": ["@repo/utils@workspace:packages/utils"],
+
+    "@repo/web": ["@repo/web@workspace:apps/web"],
+
+    "js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
+
+    "lodash": ["lodash@4.17.21", "", {}, "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="],
+
+    "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "4.0.0" }, "bin": { "loose-envify": "cli.js" } }, ""],
+
+    "next": ["next@14.0.4", "", { "dependencies": { "react": "18.2.0" }, "bin": { "next": "dist/bin/next" } }, "sha512-qbwypnM7327SadwFtxXnQdGiKpkuhaRLE2uq62/nRul9cj9KhQ5LhHmlziTNqUidZotw/Q1I9OjirBROdUJNgA=="],
+
+    "react": ["react@18.2.0", "", { "dependencies": { "loose-envify": "1.4.0" } }, "sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ=="],
+  }
+}

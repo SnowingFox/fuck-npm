@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "app",
+      "dependencies": {
+        "needs-gated": "1.0.0",
+      },
+    },
+  },
+  "packages": {
+    "needs-gated": ["needs-gated@1.0.0", "<registry>/needs-gated/-/needs-gated-1.0.0.tgz", { "peerDependencies": { "gated": "^2.0.0" } }, ""],
+  }
+}
