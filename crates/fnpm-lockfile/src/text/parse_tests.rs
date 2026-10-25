@@ -416,3 +416,27 @@ fn a_peer_provided_by_the_root_stays_bound_to_the_root() {
         assert_eq!(edge.target, Some(PackageId::ROOT));
     }
 }
+
+#[test]
+fn an_aliased_peer_with_the_roots_name_binds_to_its_real_package() {
+    let src = r#"{
+      "lockfileVersion": 1,
+      "workspaces": {
+        "": {"name": "host", "dependencies": {"plugin": "1.0.0"}}
+      },
+      "packages": {
+        "host": ["host@root:", {}],
+        "plugin": ["plugin@1.0.0", "", {"peerDependencies": {"host": "npm:other@^1"}}, ""],
+        "plugin/host": ["other@1.0.0", "", {}, ""]
+      }
+    }"#;
+    let (graph, _) = parse(src).unwrap();
+    let plugin = graph.by_name("plugin").next().unwrap();
+    let target = graph.packages[plugin.index()]
+        .dependency("host")
+        .unwrap()
+        .target
+        .unwrap();
+    assert_eq!(graph.packages[target.index()].name, "other");
+    assert_ne!(target, PackageId::ROOT);
+}

@@ -1086,8 +1086,9 @@ fn bind_flat(
         member_named(flat, name)
     };
     let root_peer = |flat: &Flat<'_>, d: u32| {
-        flat.version_based_peer(d)?;
-        (pkg_map.get(flat.deps[d as usize].name) == Some(&0)).then_some(0)
+        let name = flat.version_based_peer(d)?;
+        (name == flat.pkg_name_id[0] && pkg_map.get(flat.deps[d as usize].name) == Some(&0))
+            .then_some(0)
     };
     let own_peer = |flat: &Flat<'_>, d: u32| {
         root_peer(flat, d)
