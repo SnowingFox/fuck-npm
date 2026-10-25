@@ -4,11 +4,14 @@
   "description": "fnpm: a fast, disk-saving package manager with a Rust core.",
   "type": "module",
   "bin": {
-    "fnpm": "./dist/fnpm.js",
-    "fnpm-lock": "./dist/fnpm-lock.js"
+    "fnpm": "./bin/fnpm",
+    "fnpm-lock": "./bin/fnpm-lock"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin",
+    "lib",
+    "scripts/postinstall.js"
   ],
   "engines": {
     "node": ">=20.19.0"
@@ -17,6 +20,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "build:spec": "node --experimental-strip-types --no-warnings scripts/build-spec.ts",
+    "postinstall": "node scripts/postinstall.js",
     "start": "node ./src/bin/fnpm.ts",
     "test": "vitest run",
     "test:watch": "vitest",

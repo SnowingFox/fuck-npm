@@ -255,7 +255,9 @@ pub fn parse_flags(tokens: &[String], leaf: &LeafDef) -> Result<Parsed, CliError
                             position += 1;
                         }
                         _ => {
-                            return Err(CliError::missing(format!("`-{letter}` requires a value.")));
+                            return Err(CliError::missing(format!(
+                                "`-{letter}` requires a value."
+                            )));
                         }
                     }
                 }
