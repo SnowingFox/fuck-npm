@@ -10,6 +10,7 @@ repository = "https://github.com/SnowingFox/fuck-npm"
 rust-version = "1.90"
 
 [workspace.dependencies]
+fnpm-types = { path = "crates/fnpm-types" }
 fnpm-semver = { path = "crates/fnpm-semver" }
 fnpm-config = { path = "crates/fnpm-config" }
 fnpm-registry = { path = "crates/fnpm-registry" }
