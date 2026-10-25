@@ -5,203 +5,57 @@
 //! x-ranges, hyphen ranges, `||`, `^`/`~` desugaring and the prerelease rule (a prerelease only
 //! satisfies a comparator set that has a prerelease on the same `major.minor.patch`).
 //! See `docs/ARCHITECTURE.md#fnpm-semver`.
+//!
+//! Parsing scans the input without allocating; only prerelease identifiers, build metadata
+//! and the comparator vectors of a [`Range`] are allocated. [`Range::satisfies`] and
+//! [`Version`] comparisons never allocate.
 
-use std::cmp::Ordering;
-use std::fmt;
+mod intersect;
+mod pick;
+mod range;
+mod scan;
+mod serde_impl;
+mod version;
 
+pub use pick::{best_version, max_satisfying, max_satisfying_sorted, pick_best};
+pub use range::{Comparator, Op, ParseInfo, Range, SatisfyOptions};
+pub use version::{ChangedVersion, Identifier, PinnedVersion, ReleaseType, Version};
+
+/// Errors from parsing versions and ranges.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
+    /// The text is not a version (or an increment argument is invalid).
     #[error("invalid version {0:?}")]
     InvalidVersion(String),
+    /// The text is not a range npm accepts ([`Range::parse_strict`]).
     #[error("invalid range {0:?}")]
     InvalidRange(String),
 }
 
+/// `Result` with this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// A prerelease identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Identifier {
-    Numeric(u64),
-    AlphaNumeric(Box<str>),
-}
-
-/// A full semver version. Ordering is semver precedence; build metadata is ignored by
-/// `cmp` but kept for display.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Version {
-    pub major: u64,
-    pub minor: u64,
-    pub patch: u64,
-    pub pre: Vec<Identifier>,
-    pub build: Box<str>,
-}
-
-impl Version {
-    pub fn new(major: u64, minor: u64, patch: u64) -> Self {
-        Self { major, minor, patch, pre: Vec::new(), build: Box::default() }
-    }
-
-    /// Strict-ish npm parse: optional leading `v`/`=` and whitespace, three parts required.
-    pub fn parse(_s: &str) -> Result<Self> {
-        todo!("port bun Version::parse + parse_exact")
-    }
-
-    /// npm `loose` mode: also `1.0.0rc.1`, `1.2.3beta`.
-    pub fn parse_loose(_s: &str) -> Result<Self> {
-        todo!()
-    }
-
-    pub fn is_prerelease(&self) -> bool {
-        !self.pre.is_empty()
-    }
-
-    /// `pm version` / `npm version` increments.
-    pub fn inc(&self, _release: ReleaseType, _preid: Option<&str>) -> Self {
-        todo!("port node-semver inc")
-    }
-}
-
-impl Ord for Version {
-    fn cmp(&self, _other: &Self) -> Ordering {
-        todo!("semver precedence")
-    }
-}
-
-impl PartialOrd for Version {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl fmt::Display for Version {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
-    }
-}
-
-impl std::str::FromStr for Version {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        Self::parse(s)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReleaseType {
-    Major,
-    Minor,
-    Patch,
-    Premajor,
-    Preminor,
-    Prepatch,
-    Prerelease,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Op {
-    Eq,
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Comparator {
-    pub op: Op,
-    pub version: Version,
-}
-
-impl Comparator {
-    pub fn matches(&self, _v: &Version) -> bool {
-        todo!()
-    }
-}
-
-/// A range: `||`-separated comparator sets, each an AND of comparators. `*` / `""` is the
-/// single empty set.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Range {
-    pub sets: Vec<Vec<Comparator>>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SatisfyOptions {
-    /// npm `includePrerelease`.
-    pub include_prerelease: bool,
-}
-
-impl Range {
-    /// Parses any npm range: `^1.2`, `~1`, `1.x`, `>=1 <2`, `1 - 2`, `1 || 2`, `*`, `""`,
-    /// `latest` is not a range (dist tags are handled by the caller).
-    pub fn parse(_s: &str) -> Result<Self> {
-        todo!("port bun SemverQuery::parse")
-    }
-
-    pub fn any() -> Self {
-        Self { sets: vec![Vec::new()] }
-    }
-
-    pub fn is_any(&self) -> bool {
-        self.sets.iter().any(Vec::is_empty)
-    }
-
-    /// `Some` when the range is one exact version (`1.2.3`, `=1.2.3`): the resolver's fast path.
-    pub fn as_exact(&self) -> Option<&Version> {
-        match self.sets.as_slice() {
-            [set] => match set.as_slice() {
-                [Comparator { op: Op::Eq, version }] => Some(version),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    pub fn satisfies(&self, v: &Version) -> bool {
-        self.satisfies_with(v, SatisfyOptions::default())
-    }
-
-    pub fn satisfies_with(&self, _v: &Version, _opts: SatisfyOptions) -> bool {
-        todo!()
-    }
-
-    /// node-semver `intersects` (bun `intersects.rs`), used by override and peer matching.
-    pub fn intersects(&self, _other: &Range) -> bool {
-        todo!()
-    }
-
-    /// The lowest version that can satisfy the range (`minVersion`).
-    pub fn min_version(&self) -> Option<Version> {
-        todo!()
-    }
-}
-
-impl fmt::Display for Range {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!("normalized form")
-    }
-}
-
-impl std::str::FromStr for Range {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        Self::parse(s)
-    }
-}
-
-/// The highest version in `versions` that satisfies `range`.
-pub fn max_satisfying<'a, I>(versions: I, range: &Range, opts: SatisfyOptions) -> Option<&'a Version>
-where
-    I: IntoIterator<Item = &'a Version>,
-{
-    versions.into_iter().filter(|v| range.satisfies_with(v, opts)).max()
-}
-
-/// Shorthand: parse both and test. Invalid input is `false`.
+/// `Bun.semver.satisfies(version, range)`: parse both and test. A version that is not exactly
+/// one version (see [`Version::parse_loose`]) or non-ASCII input is `false`; a range of only
+/// unknown words (`latest`) matches every release, as in bun.
 pub fn satisfies(version: &str, range: &str) -> bool {
+    if !version.is_ascii() || !range.is_ascii() {
+        return false;
+    }
     match (Version::parse_loose(version), Range::parse(range)) {
         (Ok(v), Ok(r)) => r.satisfies(&v),
         _ => false,
     }
+}
+
+/// `Bun.semver.order(a, b)`: compares two versions by precedence, ignoring build metadata.
+///
+/// Like bun, a partial version or wildcard is accepted and its missing parts are `u64::MAX`
+/// (`1.x` sorts after every `1.y.z`), text after the version is ignored, and non-ASCII input
+/// compares equal. Fails when either side is not a version (`^1.0.0`, `2x`, `1.0.<above u64>`).
+pub fn order(a: &str, b: &str) -> Result<std::cmp::Ordering> {
+    if !a.is_ascii() || !b.is_ascii() {
+        return Ok(std::cmp::Ordering::Equal);
+    }
+    Ok(Version::scan_max(a)?.cmp_precedence(&Version::scan_max(b)?))
 }

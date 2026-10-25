@@ -572,7 +572,9 @@ name = "fnpm-semver"
 version = "0.1.0"
 dependencies = [
  "fnpm-types",
+ "mimalloc",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
