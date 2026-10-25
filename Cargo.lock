@@ -424,6 +424,7 @@ dependencies = [
  "base64",
  "fnpm-semver",
  "fnpm-types",
+ "percent-encoding",
  "serde",
  "serde_json",
  "tempfile",
