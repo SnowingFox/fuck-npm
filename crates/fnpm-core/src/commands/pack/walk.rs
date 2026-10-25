@@ -93,38 +93,101 @@ pub(crate) fn kind_of(meta: &std::fs::Metadata) -> Kind {
 }
 
 /// Lists `dir`. A failure is fatal: a tarball without the files that were not read would be
-/// wrong.
+/// wrong. A directory removed after it was opened has no entries.
 pub(crate) fn read_dir(out: &Out, dir: &Path, subpath: &[u8]) -> FResult<Vec<Entry>> {
     let shown = if subpath.is_empty() {
         ".".to_owned()
     } else {
         show(subpath)
     };
-    let fail = |e: std::io::Error| {
-        out.named(
+    list_dir(dir).map_err(|e| match e {
+        ListError::Open(e) => out.named(
             &super::out::errno_name(&e),
+            &format!("failed to open directory \"{shown}\" for packing"),
+        ),
+        ListError::Read(e, syscall) => out.sys(
+            &e,
+            syscall,
             &format!("failed to read directory \"{shown}\" for packing"),
-        )
-    };
-    let iter = match std::fs::read_dir(dir) {
-        Ok(iter) => iter,
-        Err(e) => {
-            return Err(out.named(
-                &super::out::errno_name(&e),
-                &format!("failed to open directory \"{shown}\" for packing"),
-            ));
+        ),
+    })
+}
+
+pub(crate) enum ListError {
+    Open(std::io::Error),
+    Read(std::io::Error, &'static str),
+}
+
+/// The entries of `dir` with their kinds (`lstat` where the file system does not report one).
+#[cfg(target_os = "linux")]
+pub(crate) fn list_dir(dir: &Path) -> Result<Vec<Entry>, ListError> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+        .open(dir)
+        .map_err(ListError::Open)?;
+    let fd = file.as_raw_fd();
+    let mut buf = vec![0u8; 8192];
+    let mut entries = Vec::new();
+    loop {
+        // SAFETY: `buf` is valid for `buf.len()` bytes and `fd` is an open directory.
+        let n = unsafe { libc::syscall(libc::SYS_getdents64, fd, buf.as_mut_ptr(), buf.len()) };
+        if n < 0 {
+            let e = std::io::Error::last_os_error();
+            match e.raw_os_error() {
+                Some(libc::EINTR) => continue,
+                Some(libc::ENOENT) => break,
+                _ => return Err(ListError::Read(e, "getdents64")),
+            }
         }
-    };
+        if n == 0 {
+            break;
+        }
+        let mut off = 0usize;
+        while off < n as usize {
+            let rec = &buf[off..];
+            let reclen = u16::from_ne_bytes([rec[16], rec[17]]) as usize;
+            let d_type = rec[18];
+            let name_bytes = &rec[19..reclen];
+            let name_len = name_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(name_bytes.len());
+            let name = name_bytes[..name_len].to_vec();
+            off += reclen;
+            if name == b"." || name == b".." {
+                continue;
+            }
+            let kind = match d_type {
+                libc::DT_REG => Kind::File,
+                libc::DT_DIR => Kind::Dir,
+                libc::DT_UNKNOWN => match std::fs::symlink_metadata(dir.join(bytes_path(&name))) {
+                    Ok(meta) => kind_of(&meta),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(e) => return Err(ListError::Read(e, "lstat")),
+                },
+                _ => Kind::Other,
+            };
+            entries.push(Entry { name, kind });
+        }
+    }
+    Ok(entries)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn list_dir(dir: &Path) -> Result<Vec<Entry>, ListError> {
+    let iter = std::fs::read_dir(dir).map_err(ListError::Open)?;
     let mut entries = Vec::new();
     for entry in iter {
-        let entry = entry.map_err(fail)?;
+        let entry = entry.map_err(|e| ListError::Read(e, "readdir"))?;
         let kind = match entry.file_type() {
             Ok(t) if t.is_file() => Kind::File,
             Ok(t) if t.is_dir() => Kind::Dir,
             Ok(_) => Kind::Other,
-            // Removed since it was listed.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(fail(e)),
+            Err(e) => return Err(ListError::Read(e, "lstat")),
         };
         entries.push(Entry {
             name: os_bytes(&entry.file_name()),
@@ -589,13 +652,13 @@ pub(crate) fn get_package_bins(json: &Json) -> Vec<BinInfo> {
     bins
 }
 
-/// What `bin_path` is below `root`, without following symlinks; `Other` if it is missing or
+/// What `bin_path` is below `root`, without following symlinks; `None` if it is missing or
 /// a parent component is not a real directory.
 pub(crate) fn bin_kind_without_following_symlinks(
     out: &Out,
     root: &Path,
     bin_path: &[u8],
-) -> FResult<Kind> {
+) -> FResult<Option<Kind>> {
     let mut bin_path = bin_path;
     while bin_path.last() == Some(&b'/') {
         bin_path = &bin_path[..bin_path.len() - 1];
@@ -620,13 +683,13 @@ pub(crate) fn bin_kind_without_following_symlinks(
         };
         let kind = kind_of(&meta);
         if end == bin_path.len() {
-            return Ok(kind);
+            return Ok(Some(kind));
         }
         if kind != Kind::Dir {
             break;
         }
     }
-    Ok(Kind::Other)
+    Ok(None)
 }
 
 /// Nothing exists at the path (`ELOOP` comes from a cycle of symlinks).
@@ -712,10 +775,12 @@ impl Walker<'_> {
             while ignores.last().is_some_and(|last| last.depth >= dir.depth) {
                 ignores.pop();
             }
+            // Opened before its ignore file is read, as bun opens it.
+            let entries = read_dir(self.out, &dir.abs, &dir.subpath)?;
             if let Some(patterns) = read_ignore_file(self.out, &dir.abs, dir.depth)? {
                 ignores.push(patterns);
             }
-            for entry in read_dir(self.out, &dir.abs, &dir.subpath)? {
+            for entry in entries {
                 if entry.kind == Kind::Other {
                     continue;
                 }
@@ -857,10 +922,10 @@ impl Walker<'_> {
         for bin in &bins {
             let kind = bin_kind_without_following_symlinks(self.out, root, &bin.path)?;
             match bin.ty {
-                BinType::File if kind == Kind::File => {
+                BinType::File if kind == Some(Kind::File) => {
                     queue.insert(bin.path.clone());
                 }
-                BinType::Dir if kind == Kind::Dir => {
+                BinType::Dir if kind == Some(Kind::Dir) => {
                     self.project_tree(
                         &mut queue,
                         &[],

@@ -69,6 +69,7 @@ impl Out {
 
     /// bun `Output::err_generic`: `error: <message>`.
     pub fn error(&self, message: &str) -> Fatal {
+        let message = escape_control(message);
         Fatal(format!(
             "{}{} {message}",
             self.paint_err("31", "error"),
@@ -78,6 +79,7 @@ impl Out {
 
     /// bun `Output::err` with an error name: `<NAME>: <message>`.
     pub fn named(&self, name: &str, message: &str) -> Fatal {
+        let message = escape_control(message);
         Fatal(format!(
             "{}{} {message}",
             self.paint_err("31", name),
@@ -88,6 +90,7 @@ impl Out {
     /// bun `Output::err` with a system error: `ENOENT: No such file or directory: <message>
     /// (open)`.
     pub fn sys(&self, err: &std::io::Error, syscall: &str, message: &str) -> Fatal {
+        let message = escape_control(message);
         let (name, label) = errno_text(err);
         let mut text = format!(
             "{}{} ",

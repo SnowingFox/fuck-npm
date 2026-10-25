@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "f
 import { exists, rm, symlink } from "../compat/fs-promises.ts";
 import {
   fnpmExe,
+  nodeExe,
   fnpmEnv as env,
   isLinux,
   isWindows,
@@ -1927,7 +1928,7 @@ test.concurrent("prepublishOnly modifying version publishes correct version (#17
     {
       name: "publish-version-update",
       version: "1.0.0",
-      scripts: { prepublishOnly: `${fnpmExe()} update-version.js` },
+      scripts: { prepublishOnly: `${nodeExe()} update-version.js` },
       dependencies: { "publish-version-update": "9.9.9" },
     },
     {
@@ -1939,7 +1940,7 @@ test.concurrent("prepublishOnly modifying version publishes correct version (#17
   );
 
   const { out, err, exitCode } = await publish(env, String(dir));
-  expect(err).toBe(`$ ${fnpmExe()} update-version.js\n`);
+  expect(err).toBe(`$ ${nodeExe()} update-version.js\n`);
   // the package.json size depends on the path in the prepublishOnly script, so no snapshot here
   expect(packedFiles(out)).toEqual(["package.json", "update-version.js"]);
   expect(out).toContain(`\n + publish-version-update@9.9.9\n`);
@@ -2021,7 +2022,7 @@ describe.concurrent("`private` that is not a boolean", () => {
       "package.json": JSON.stringify({
         name: "private-pkg",
         version: "1.0.0",
-        scripts: { prepublishOnly: `${fnpmExe()} set-private.js` },
+        scripts: { prepublishOnly: `${nodeExe()} set-private.js` },
       }),
       "set-private.js": `const fs = require("fs");
         fs.writeFileSync("package.json", JSON.stringify({ ...JSON.parse(fs.readFileSync("package.json", "utf8")), private: "true" }));`,
@@ -2029,7 +2030,7 @@ describe.concurrent("`private` that is not a boolean", () => {
     });
 
     const { err, exitCode } = await publish(env, String(dir));
-    expect(err).toBe(`$ ${fnpmExe()} set-private.js\nerror: attempted to publish a private package\n`);
+    expect(err).toBe(`$ ${nodeExe()} set-private.js\nerror: attempted to publish a private package\n`);
     expect(mock.requests).toEqual([]);
     expect(exitCode).toBe(1);
   });
@@ -2142,7 +2143,7 @@ describe.concurrent("package.json version", () => {
     using dir = versionPackage(
       mock,
       version,
-      { scripts: { prepublishOnly: `${fnpmExe()} set-version.js` } },
+      { scripts: { prepublishOnly: `${nodeExe()} set-version.js` } },
       {
         "set-version.js": `const fs = require("fs");
           fs.writeFileSync("package.json", JSON.stringify({ ...JSON.parse(fs.readFileSync("package.json", "utf8")), version: ${JSON.stringify(rewritten)} }));`,
@@ -2150,7 +2151,7 @@ describe.concurrent("package.json version", () => {
     );
 
     const { err, exitCode } = await publish(env, String(dir));
-    expect(err).toBe(`$ ${fnpmExe()} set-version.js\n${error}`);
+    expect(err).toBe(`$ ${nodeExe()} set-version.js\n${error}`);
     expect(mock.requests.map(({ manifest }) => Object.keys(manifest.versions))).toEqual(error ? [] : [[rewritten]]);
     expect(exitCode).toBe(error ? 1 : 0);
   });
@@ -2590,7 +2591,7 @@ describe("publishConfig registry", () => {
         "package.json": JSON.stringify({
           name: "scripted-pkg",
           version: "1.0.0",
-          scripts: { [script]: `${fnpmExe()} write.js` },
+          scripts: { [script]: `${nodeExe()} write.js` },
           files: ["index.js"],
           ...fields,
         }),
@@ -2653,7 +2654,7 @@ describe("publishConfig registry", () => {
       );
 
       const { err, exitCode } = await publish(env, String(dir));
-      expect(err).toBe(`$ ${fnpmExe()} write.js\n${error}`);
+      expect(err).toBe(`$ ${nodeExe()} write.js\n${error}`);
       expect(configured.requests).toEqual([]);
       expect(exitCode).toBe(1);
     });

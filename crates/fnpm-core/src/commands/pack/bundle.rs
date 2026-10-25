@@ -261,6 +261,15 @@ impl AddCx<'_> {
         let out = self.walker.out;
         let subpath = bundle.packages[index].subpath.clone();
         let real_path = bundle.packages[index].real_path.clone();
+        if let Err(e) = std::fs::File::open(&real_path) {
+            return Err(out.named(
+                &super::out::errno_name(&e),
+                &format!(
+                    "failed to open directory \"{}\" for packing",
+                    real_path.display()
+                ),
+            ));
+        }
         let source = match std::fs::read(real_path.join("package.json")) {
             Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
             Err(e) if walk::is_absent(&e) || is_eisdir(&e) => None,
@@ -364,7 +373,7 @@ impl AddCx<'_> {
             }
             None => {
                 match walk::bin_kind_without_following_symlinks(out, real_path, b"package.json")? {
-                    Kind::Other => {
+                    None => {
                         let mut queue = PackQueue::new();
                         let depth = subpath.iter().filter(|&&b| b == b'/').count() + 2;
                         self.walker.project_tree(
@@ -383,7 +392,8 @@ impl AddCx<'_> {
                         bundle.files.extend(files);
                         return Ok(());
                     }
-                    kind => {
+                    Some(kind) => {
+                        // A package.json that does not parse is packed as it is.
                         if kind == Kind::File {
                             add_file(b"package.json", None);
                         }

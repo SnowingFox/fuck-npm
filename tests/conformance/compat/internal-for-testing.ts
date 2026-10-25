@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * `bun:internal-for-testing` for the conformance suite. Helpers with an obvious meaning outside bun (reading a
  * tarball, semver intersection, os/cpu matching) are implemented; bun's binary-lockfile and manifest parsers
@@ -19,8 +20,12 @@ function stub(name: string): any {
 }
 
 /** Entries of a .tgz in archive order, in the shape bun's pack tests read. */
+/** bun's `readTarball`: the entries, and the size, sha1 hex and sha512 base64 of the file as it is. */
 export function readTarball(path: string) {
-  let data = fs.readFileSync(path);
+  const file = fs.readFileSync(path);
+  const shasum = createHash("sha1").update(file).digest("hex");
+  const integrity = createHash("sha512").update(file).digest("base64");
+  let data = file;
   if (data[0] === 0x1f && data[1] === 0x8b) data = zlib.gunzipSync(data);
   const entries = readTar(data).map(entry => ({
     pathname: entry.path,
@@ -29,7 +34,7 @@ export function readTarball(path: string) {
     size: entry.data.byteLength,
     contents: entry.data.toString("utf8"),
   }));
-  return { entries, size: data.byteLength };
+  return { entries, size: file.byteLength, shasum, integrity };
 }
 
 export function semverIntersects(a: string, b: string): boolean {

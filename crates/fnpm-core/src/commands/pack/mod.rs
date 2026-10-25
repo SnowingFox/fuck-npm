@@ -516,16 +516,26 @@ pub(crate) async fn pack(
         None
     };
 
-    if let Err(e) = std::fs::read_dir(&package_dir) {
-        return Err(out
-            .named(
-                &out::errno_name(&e),
-                &format!("failed to open root directory: {}", package_dir.display()),
-            )
-            .into());
-    }
+    // bun's resolver lists the package root once before the walk; the README scan of a publish
+    // reads that listing.
+    let root_entries = match walk::list_dir(&package_dir) {
+        Ok(entries) => entries,
+        Err(walk::ListError::Open(e)) => {
+            return Err(out
+                .named(
+                    &out::errno_name(&e),
+                    &format!("failed to open root directory: {}", package_dir.display()),
+                )
+                .into());
+        }
+        Err(walk::ListError::Read(e, syscall)) => {
+            return Err(out
+                .sys(&e, syscall, "failed to read directory \".\" for packing")
+                .into());
+        }
+    };
     let readme = if for_publish {
-        find_readme(&package_dir)
+        find_readme(&package_dir, &root_entries)
     } else {
         None
     };
@@ -839,13 +849,11 @@ pub(crate) fn is_readme_filename(name: &str) -> bool {
         && (name.len() == 6 || name.as_bytes()[6] == b'.')
 }
 
-fn find_readme(dir: &Path) -> Option<(String, String)> {
-    for entry in std::fs::read_dir(dir).ok()? {
-        let Ok(entry) = entry else { continue };
-        let Ok(t) = entry.file_type() else { continue };
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if t.is_file() && is_readme_filename(&name) {
-            let contents = std::fs::read(entry.path()).ok()?;
+fn find_readme(dir: &Path, entries: &[walk::Entry]) -> Option<(String, String)> {
+    for entry in entries {
+        let name = String::from_utf8_lossy(&entry.name).into_owned();
+        if entry.kind == walk::Kind::File && is_readme_filename(&name) {
+            let contents = std::fs::read(dir.join(walk::bytes_path(&entry.name))).ok()?;
             return Some((name, String::from_utf8_lossy(&contents).into_owned()));
         }
     }

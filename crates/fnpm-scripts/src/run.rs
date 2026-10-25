@@ -310,6 +310,7 @@ async fn spawn_foreground(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .kill_on_drop(true);
+    crate::runner::keep_stdio(&mut cmd);
     let no_orphans = [
         "FNPM_FEATURE_FLAG_NO_ORPHANS",
         "BUN_FEATURE_FLAG_NO_ORPHANS",
