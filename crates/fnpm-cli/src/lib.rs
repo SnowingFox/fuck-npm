@@ -143,7 +143,18 @@ fn run_route(
                 Outcome::Node => None,
             }
         }
+        Route::Exec { .. } => None,
     }
+}
+
+/// Whether the program was started as `fnpmx` (a link to the `fnpm` executable), or as
+/// `bunx` for scripts written for bun.
+fn started_as_fnpmx() -> bool {
+    std::env::args_os().next().is_some_and(|argv0| {
+        std::path::Path::new(&argv0)
+            .file_stem()
+            .is_some_and(|stem| stem == "fnpmx" || stem == "bunx")
+    })
 }
 
 /// The whole program: route, run natively or exec node. Returns the exit status.
@@ -156,9 +167,19 @@ pub fn main(bin: Bin) -> i32 {
         return main_lock();
     }
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if started_as_fnpmx() {
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        return exec::run_x(args, false);
+    }
     let route = route_args(bin, &args);
     if let Route::Version = route {
         return print_version();
+    }
+    if let Route::Exec { create, args } = route {
+        return exec::run_x(args, create);
     }
     let terminal = || {
         let mut terminal = Terminal::from_process();
@@ -178,7 +199,9 @@ pub fn main_lock() -> i32 {
     match route_args(Bin::FnpmLock, &args) {
         Route::Version => print_version(),
         // There are no native `fnpm-lock` commands; anything else is Node's.
-        Route::Node | Route::Native(_) => exec::run_node(&FNPM_LOCK, &args, &Env::from_process()),
+        Route::Node | Route::Native(_) | Route::Exec { .. } => {
+            exec::run_node(&FNPM_LOCK, &args, &Env::from_process())
+        }
     }
 }
 

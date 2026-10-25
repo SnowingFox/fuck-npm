@@ -228,6 +228,7 @@ pub(crate) fn plan(
                                 .clone()
                                 .unwrap_or_else(|| positional.resolve_literal())
                         }
+                        _ if positional.literal.is_empty() => String::new(),
                         _ => positional.resolve_literal(),
                     };
                     planned.adds.push(Add {

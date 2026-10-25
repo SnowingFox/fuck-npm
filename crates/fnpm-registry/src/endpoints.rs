@@ -315,6 +315,16 @@ impl Inner {
     /// `{api}/repos/{owner}/{repo}/tarball/{sha}`; an empty repo (a `https://github.com/...` URL
     /// that names none) leaves out its slash, like bun.
     pub fn github_tarball_url(&self, owner: &str, repo: &str, sha: &str) -> String {
+        let prefix = format!("{owner}-{repo}-");
+        let sha = if sha
+            .get(..prefix.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+        {
+            &sha[prefix.len()..]
+        } else {
+            sha
+        };
+        let sha = percent_encoding::utf8_percent_encode(sha, PATH_SEGMENT);
         let sep = if repo.is_empty() { "" } else { "/" };
         format!("{}/repos/{owner}/{repo}{sep}tarball/{sha}", self.github_api)
     }

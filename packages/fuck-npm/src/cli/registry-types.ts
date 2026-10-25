@@ -65,6 +65,11 @@ export type CommandLeaf = CommandCommon & {
    */
   passthrough?: true | number;
   /**
+   * Hand every token after the command (and the global flags typed before it) to the core
+   * unparsed: `fnpm x` and `fnpm create` parse their own arguments like bunx does.
+   */
+  rawArgs?: true;
+  /**
    * npm/yarn/pnpm flag translation (bun's FOREIGN_FLAGS). `"update"` applies
    * the table minus the aliases that would select update groups.
    */

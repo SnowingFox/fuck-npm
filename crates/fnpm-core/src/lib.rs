@@ -4,6 +4,7 @@
 
 #![warn(missing_docs)]
 
+pub mod analyze;
 pub mod commands;
 pub mod events;
 pub mod fast_path;
@@ -11,7 +12,9 @@ mod fetch;
 pub(crate) mod install;
 pub mod options;
 pub mod project;
+pub(crate) mod security;
 pub mod spec;
+pub mod x;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -81,6 +84,10 @@ pub enum Error {
     /// `node_modules` (bun's tree builder refuses it before anything is installed).
     #[error("invalid dependency name \"{0}\"")]
     UnsafeName(String),
+    /// The command failed and already said why on stderr/stdout (a fatal security advisory, a
+    /// security scanner error). The CLIs print nothing more and exit 1.
+    #[error("")]
+    Reported,
     /// A command that belongs to a later parity phase (see `docs/ROADMAP.md`).
     #[error("`fnpm {command}` is not implemented in the native core yet")]
     NotImplemented {
@@ -101,7 +108,7 @@ pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
 
 impl Error {
     /// `FROZEN_LOCKFILE`, `NO_MATCHING_VERSION`, `NOT_FOUND`, `INTEGRITY`, `NETWORK`,
-    /// `SCRIPT_FAILED`, `INVALID_PACKAGE_JSON`, `USAGE`, `NOT_IMPLEMENTED`, `CORE_ERROR`
+    /// `SCRIPT_FAILED`, `INVALID_PACKAGE_JSON`, `USAGE`, `NOT_IMPLEMENTED`, `REPORTED`, `CORE_ERROR`
     /// (fallback).
     pub fn code(&self) -> &'static str {
         use fnpm_resolver::Error as Rv;
@@ -124,6 +131,7 @@ impl Error {
             Self::Config(fnpm_config::Error::InvalidValue { .. }) => "USAGE",
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
+            Self::Reported => "REPORTED",
             Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }

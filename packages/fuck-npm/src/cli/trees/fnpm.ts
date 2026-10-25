@@ -329,6 +329,7 @@ const X: CommandLeaf = {
   ],
   flags: F.X,
   passthrough: 1,
+  rawArgs: true,
   notes: ["Flags for the package go after its name."],
 };
 
@@ -345,6 +346,7 @@ const CREATE: CommandLeaf = {
   ],
   flags: F.X,
   passthrough: 1,
+  rawArgs: true,
 };
 
 const INIT: CommandLeaf = {

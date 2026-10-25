@@ -78,8 +78,12 @@ function fail(error) {
   process.exitCode = 1;
 }
 
-/** Entry point of both bin shims. */
+/** Entry point of the bin shims. `fnpmx` is `fnpm x`. */
 function main(bin) {
+  if (bin === 'fnpmx') {
+    process.argv.splice(2, 0, 'x');
+    bin = 'fnpm';
+  }
   const exe = findNativeExecutable(bin);
   if (exe) {
     runNative(bin, exe);

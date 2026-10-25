@@ -543,7 +543,8 @@ class ShellPromise implements PromiseLike<ShellOutput> {
   }
 
   cwd(dir: string) {
-    this.#state.cwd = dir;
+    // `tempDir()` returns a String object; node wants a primitive.
+    this.#state.cwd = dir === undefined ? dir : String(dir);
     return this;
   }
   env(env: Env) {
@@ -630,7 +631,7 @@ function shellTag(strings: TemplateStringsArray, ...values: unknown[]): ShellPro
 
 export const $ = Object.assign(shellTag, {
   cwd(dir?: string) {
-    shellDefaults.cwd = dir;
+    shellDefaults.cwd = dir === undefined ? dir : String(dir);
     return $;
   },
   env(env?: Env) {
@@ -1125,8 +1126,10 @@ export class Glob {
         const full = join(dir, entry.name);
         const rel = relative(cwd, full).split(sep).join("/");
         const hidden = rel.split("/").some(part => part.startsWith("."));
-        const isDir = entry.isDirectory();
-        if (isDir) stack.push(full);
+        const isDir = entry.isDirectory()
+          || (entry.isSymbolicLink() && (() => { try { return fs.statSync(full).isDirectory(); } catch { return false; } })());
+        // Directory links do not count as files; do not follow them into cycles.
+        if (entry.isDirectory()) stack.push(full);
         if (hidden && !opts.dot) continue;
         if (onlyFiles && isDir) continue;
         // path.matchesGlob never matches a dot segment with a wildcard; with `dot`, match it as a plain name.

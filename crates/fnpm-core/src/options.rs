@@ -36,6 +36,8 @@ pub struct PmOptions {
     pub cache_dir: Option<PathBuf>,
     /// `--no-cache`: ignore the manifest cache.
     pub no_cache: bool,
+    /// Keep stdout reserved for the JSON result.
+    pub json: bool,
     /// `--silent` / `--quiet` / `--verbose`.
     pub log_level: LogLevel,
     /// `false` with `--no-progress`.
@@ -103,6 +105,7 @@ impl Default for PmOptions {
             force: false,
             cache_dir: None,
             no_cache: false,
+            json: false,
             log_level: LogLevel::Default,
             progress: true,
             summary: true,
@@ -242,6 +245,57 @@ pub struct InstallOptions {
     pub update_groups: UpdateGroups,
     /// `update --depth 0`.
     pub depth: Option<u32>,
+    /// Set by `fnpm x` for the install into one of its cached trees; never sent by a CLI.
+    #[serde(skip)]
+    pub dlx: Option<DlxMode>,
+    /// Applied to the lockfile's graph before resolving (`fnpm audit fix` swaps vulnerable
+    /// packages); the lockfile is always saved. Never sent by a CLI.
+    #[serde(skip)]
+    pub patch: Option<GraphPatch>,
+    /// Interactive picker choices, staged until the install succeeds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interactive_choices: Option<serde_json::Value>,
+    /// Dependency pin edits used for resolution and saved only after a successful scan.
+    #[serde(skip)]
+    pub manifest_updates: std::collections::BTreeMap<String, Vec<(String, String)>>,
+}
+
+/// An edit of the previous graph, see [`InstallOptions::patch`].
+#[derive(Clone)]
+pub struct GraphPatch(pub std::sync::Arc<dyn Fn(&mut fnpm_types::LockGraph) + Send + Sync>);
+
+impl std::fmt::Debug for GraphPatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GraphPatch")
+    }
+}
+
+impl PartialEq for GraphPatch {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for GraphPatch {}
+
+/// How `fnpm x` installs into its tree (bun `BUN_INTERNAL_BUNX_INSTALL`).
+///
+/// The tree is the project root (nothing above it is a workspace root), every download
+/// finishes before anything is linked (so a failed refresh leaves the old tree as it was),
+/// and right before linking the tree's package.json becomes [`DlxMode::UNFINISHED`], which
+/// the install replaces once everything is linked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DlxMode {
+    /// Refresh the full dependency closure while retaining locked content integrities.
+    pub refresh: bool,
+    /// Relink every package (bun passes `--force` to the `bun add` it spawns), which repairs a
+    /// tree whose install was killed.
+    pub relink: bool,
+}
+
+impl DlxMode {
+    /// The package.json of a tree whose install did not finish.
+    pub const UNFINISHED: &'static [u8] = b"{}\n";
 }
 
 /// `CoreRequest`: the payload of [`crate::invoke`].

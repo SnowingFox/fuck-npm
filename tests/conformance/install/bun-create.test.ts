@@ -51,6 +51,18 @@ describe("should not crash", async () => {
   }
 });
 
+it.each([["--cwd", "app"], ["--cwd=app"]])("resolves a local template and destination after %j", async (...prefix) => {
+  using dir = tempDir("create-cwd", { "app/bun-create/tpl/marker.txt": "template" });
+  const { err, exitCode } = await create(String(dir), [...prefix, "tpl", "dest", "--no-git", "--no-install"], {
+    BUN_CREATE_DIR: undefined,
+    FNPM_CREATE_DIR: undefined,
+  });
+  expect(err).not.toContain("error:");
+  expect(exitCode).toBe(0);
+  expect(await Bun.file(join(String(dir), "app/dest/marker.txt")).text()).toBe("template");
+  expect(await Bun.file(join(String(dir), "dest/marker.txt")).exists()).toBe(false);
+});
+
 it.concurrent.each([
   ["@quick-start/some-template", "@quick-start%2fcreate-some-template"],
   ["@second-quick-start", "@second-quick-start%2fcreate"],
@@ -945,7 +957,7 @@ describe.concurrent("GitHub template", () => {
     );
 
     expect(err).not.toContain("error:");
-    expect(out).toContain("\n# To get started, run:\n\n  bun dev\n\n");
+    expect(out).toContain("\n# To get started, run:\n\n  fnpm run dev\n\n");
     expect(exitCode).toBe(0);
   });
 
@@ -1279,7 +1291,7 @@ describe.concurrent("bun-create tasks", () => {
     const dest = join(root, "dest");
     const written = await tree(dest);
     for (const file of Object.keys(written)) {
-      if (file in files || /^(node_modules|\.git)\/|^(package\.json|bun\.lock)$/.test(file)) delete written[file];
+      if (file in files || /^(node_modules|\.git)\/|^(package\.json|fnpm\.lock)$/.test(file)) delete written[file];
       else written[file] = written[file].trim();
     }
     const commits = args.includes("--no-git") ? "" : (await git(dest, "log", "--format=%s")).out;
@@ -1387,7 +1399,7 @@ describe.concurrent("bun-create tasks", () => {
       "bun-create": { postinstall: "setup" },
     });
 
-    expect(err).toContain("$ bun run setup\n");
+    expect(err).toContain("$ fnpm run setup\n");
     expect(written).toEqual({ SETUP: "setup-ran" });
     expect(exitCode).toBe(0);
   });

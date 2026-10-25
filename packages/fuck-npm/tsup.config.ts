@@ -17,6 +17,7 @@ export default defineConfig({
   entry: {
     fnpm: "./src/bin/fnpm.ts",
     "fnpm-lock": "./src/bin/fnpm-lock.ts",
+    fnpmx: "./src/bin/fnpmx.ts",
   },
   outDir: "dist",
   target: "node20",

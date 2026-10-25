@@ -30,7 +30,7 @@ beforeAll(async () => {
       "package.json": pkgJson,
       "bunfig.toml": `[install]\ncache.disable = true\nregistry = "${registryUrl}/"`,
     });
-    const result = await Bun.$`${fnpmExe()} install`.cwd(dir).env(fnpmEnv).quiet().nothrow();
+    const result = await Bun.$`${fnpmExe()} install`.cwd(dir).env({ ...fnpmEnv, FNPM_REGISTRY: registryUrl }).quiet().nothrow();
     if (result.exitCode !== 0) {
       throw new Error(`fixture install failed:\n${result.stderr.toString()}`);
     }
@@ -56,13 +56,35 @@ async function runScan(dir: string) {
     cwd: String(dir),
     stdout: "pipe",
     stderr: "pipe",
-    env: fnpmEnv,
+    env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
   });
   const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
   return [stdout, stderr, exitCode] as const;
 }
 
 describe.concurrent("fnpm pm scan", () => {
+  test("--json stays valid when the scanner writes to stdout", async () => {
+    await using dir = tempDir("scan-json-stdout", {
+      "package.json": leftPadPkg,
+      "fnpm.lock": leftPadLock,
+      "bunfig.toml": scannerBunfig,
+      "scanner.js": `export const scanner = {
+        version: "1",
+        scan() { console.log("scanner progress"); return []; }
+      };`,
+    });
+    await using proc = Bun.spawn({
+      cmd: [fnpmExe(), "pm", "scan", "--json"],
+      cwd: String(dir),
+      env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, advisories: [] });
+    expect(stderr).toContain("scanner progress");
+  });
   describe("configuration", () => {
     test("shows error when no security scanner configured", async () => {
       await using dir = tempDir("scan-no-config", {

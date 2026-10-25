@@ -52,15 +52,16 @@ describe("passthrough leaves", () => {
     expect(request?.passthrough).toEqual(["--port", "3000"]);
   });
 
-  test("x forwards the binary's flags verbatim, digits intact", async () => {
+  test("x hands its arguments to the core unparsed, digits intact", async () => {
     const bed = testBed();
 
     await bed.run(["x", "-p", "@scope/tool", "tool", "--version", "007"]);
 
+    // The core parses them like bunx: flags before the package are fnpm's, the rest the bin's.
     const request = bed.core.requests[0];
-    expect(request?.options.package).toBe("@scope/tool");
-    expect(request?.positionals).toEqual(["tool"]);
-    expect(request?.passthrough).toEqual(["--version", "007"]);
+    expect(request?.command).toEqual(["x"]);
+    expect(request?.positionals).toEqual([]);
+    expect(request?.passthrough).toEqual(["-p", "@scope/tool", "tool", "--version", "007"]);
   });
 
   test("dlx is x", async () => {

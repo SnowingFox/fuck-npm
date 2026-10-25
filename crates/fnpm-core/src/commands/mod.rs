@@ -8,6 +8,8 @@
 //! Every command returns [`CoreResult`]: `data` is the `--json` payload and `lines` the
 //! pre-rendered human output (plain ASCII tables unless the request sets `options.color`).
 
+mod audit_fix;
+mod diff;
 mod files;
 mod info;
 mod inspect;
@@ -17,8 +19,11 @@ mod outdated;
 pub(crate) mod pack;
 pub(crate) mod patch;
 mod publish;
+mod scan;
 mod scripts;
 mod table;
+mod update_interactive;
+pub(crate) use update_interactive::edits as interactive_edits;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -193,6 +198,29 @@ pub(crate) fn exit(code: i32, data: Value, lines: Vec<String>) -> CoreResult {
     }
 }
 
+/// `fnpm x` / `fnpm create` for the TS CLI: the arguments come raw (in `passthrough`), and the
+/// bin runs as a child of this process with inherited stdio.
+async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
+    let mut args = cx.req.positionals.clone();
+    args.extend(cx.req.passthrough.iter().cloned());
+    let req = crate::x::Request {
+        args,
+        cwd: cx.req.cwd.clone(),
+        create,
+        version: cx
+            .string("cliVersion")
+            .unwrap_or_else(|| crate::version().to_owned()),
+    };
+    let code = tokio::task::spawn_blocking(move || crate::x::run(&req))
+        .await
+        .map_err(|e| Error::usage(format!("fnpm x failed: {e}")))?;
+    Ok(exit(
+        code,
+        serde_json::json!({ "exitCode": code }),
+        Vec::new(),
+    ))
+}
+
 fn not_implemented(path: &[&str]) -> Error {
     Error::NotImplemented {
         command: path.join(" "),
@@ -250,7 +278,13 @@ pub async fn dispatch(
         ["publish"] => publish::run(&cx).await,
         ["patch"] => patch::run(&cx, false).await,
         ["patch-commit"] => patch::run(&cx, true).await,
-        ["x" | "dlx"] | ["create"] | ["pm", "diff" | "scan"] => Err(not_implemented(&path)),
+        ["pm", "diff"] => diff::run(&cx).await,
+        ["pm", "scan"] => tokio::task::spawn_blocking(move || scan::scan(&cx))
+            .await
+            .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))?,
+        // Internal: the package.json edits of `fnpm update -i` (the TS CLI draws the picker).
+        ["x" | "dlx"] => x_command(&cx, false).await,
+        ["create"] => x_command(&cx, true).await,
         _ => Err(Error::UnknownCommand(command)),
     }
 }

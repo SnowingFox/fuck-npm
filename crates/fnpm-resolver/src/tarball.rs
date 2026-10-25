@@ -18,7 +18,26 @@ const MAX_SCANNED: u64 = 1 << 30;
 /// Returns the text of the tarball's top-level `package.json` (the first path component, usually
 /// `package/`, is stripped like npm does). Pax `path` records and GNU long names are honoured.
 pub(crate) fn package_json_from_tgz(tgz: &[u8]) -> Result<String, String> {
-    scan(flate2::read::GzDecoder::new(tgz), true)
+    scan(flate2::read::GzDecoder::new(tgz), true).map(|(json, _)| json)
+}
+
+/// GitHub records the archive root (`owner-repo-sha7`) as its resolved tag.
+/// Validate the repository and commit before using an archive-controlled path in a lockfile.
+pub(crate) fn github_tag_from_tgz(tgz: &[u8], owner: &str, repo: &str) -> Result<String, String> {
+    let (_, root) = scan(flate2::read::GzDecoder::new(tgz), true)?;
+    let prefix = format!("{owner}-{repo}-");
+    let valid = root
+        .get(..prefix.len())
+        .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+        && root.get(prefix.len()..).is_some_and(|commit| {
+            (7..=40).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+        && fnpm_registry::git::is_safe_resolved_tag(&root);
+    if valid {
+        Ok(root)
+    } else {
+        Err("invalid GitHub archive root".into())
+    }
 }
 
 fn octal(field: &[u8]) -> Option<u64> {
@@ -64,7 +83,7 @@ fn strip_first_component(path: &str) -> &str {
 
 #[cfg(test)]
 pub(crate) fn package_json_from_tar(tar: &[u8]) -> Result<String, String> {
-    scan(tar, false)
+    scan(tar, false).map(|(json, _)| json)
 }
 
 /// Maps a read error: running out of data is a truncated archive, anything else comes from
@@ -119,7 +138,7 @@ fn padding(size: u64) -> u64 {
     size.div_ceil(512) * 512 - size
 }
 
-fn scan<R: Read>(mut r: R, gzip: bool) -> Result<String, String> {
+fn scan<R: Read>(mut r: R, gzip: bool) -> Result<(String, String), String> {
     let mut header = [0u8; 512];
     let mut next_name: Option<String> = None;
     let mut scanned: u64 = 0;
@@ -162,7 +181,15 @@ fn scan<R: Read>(mut r: R, gzip: bool) -> Result<String, String> {
                         return Err("package.json is too large".into());
                     }
                     let data = read_data(&mut r, size, gzip)?;
+                    let root = name
+                        .strip_prefix("./")
+                        .unwrap_or(&name)
+                        .split('/')
+                        .next()
+                        .unwrap_or("")
+                        .to_owned();
                     return String::from_utf8(data)
+                        .map(|json| (json, root))
                         .map_err(|_| "package.json is not UTF-8".to_owned());
                 }
                 skip(&mut r, size, gzip)?;
@@ -203,6 +230,26 @@ mod tests {
         let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         e.write_all(data).unwrap();
         e.finish().unwrap()
+    }
+
+    #[test]
+    fn github_archive_roots_are_repository_bound_and_safe() {
+        for root in ["owner-repo-abc1234", "OWNER-repo-0123456789abcdef"] {
+            let bytes = gzip(&entry(&format!("{root}/package.json"), b"{}", b'0'));
+            assert_eq!(github_tag_from_tgz(&bytes, "owner", "repo").unwrap(), root);
+        }
+        for root in [
+            "other-repo-abc1234",
+            "owner-repo-main",
+            "owner-repo-abc",
+            "../owner-repo-abc1234",
+        ] {
+            let bytes = gzip(&entry(&format!("{root}/package.json"), b"{}", b'0'));
+            assert!(
+                github_tag_from_tgz(&bytes, "owner", "repo").is_err(),
+                "{root}"
+            );
+        }
     }
 
     #[test]

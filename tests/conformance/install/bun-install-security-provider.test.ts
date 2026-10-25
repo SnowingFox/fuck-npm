@@ -1255,7 +1255,7 @@ describe("every command that installs runs the scanner", () => {
     ["install baz@0.0.3", "baz"],
     ["update bar", "bar baz"],
   ])("bun %s", (command, named) => {
-    it.concurrent.each(["node_modules", "bun.lockb"])(
+    it.concurrent.each(["node_modules", "fnpm.lock"])(
       "sends every package without %s",
       async missing => {
         const result = await run(command.split(" "), (_, dir) => rmSync(join(dir, missing), { recursive: true }));
@@ -1272,7 +1272,7 @@ describe("every command that installs runs the scanner", () => {
           const entry = (name: string, version: string, rest = {}) => ({
             [`node_modules/${name}`]: { version, resolved: `${registry}${name}-${version}.tgz`, ...rest },
           });
-          rmSync(join(dir, "bun.lockb"));
+          rmSync(join(dir, "fnpm.lock"));
           await Bun.write(
             join(dir, "package-lock.json"),
             JSON.stringify({

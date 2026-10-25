@@ -124,7 +124,9 @@ impl<'a> MigrateOptions<'a> {
     /// [`MigrateOptions::new`] with `YARN_*` variables and `HOME` from the process.
     pub fn from_process(files: &'a dyn ProjectFiles) -> Self {
         let mut options = Self::new(files);
-        options.env = std::env::vars()
+        // `vars()` panics on a variable that is not UTF-8 (a HOME with a Latin-1 name).
+        options.env = std::env::vars_os()
+            .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
             .filter(|(k, _)| k.starts_with("YARN_"))
             .collect();
         options.home = std::env::var_os("HOME")

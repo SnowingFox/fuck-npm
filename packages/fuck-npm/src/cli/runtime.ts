@@ -117,7 +117,9 @@ export async function runParsedCli(
     const positionals =
       leaf.passthrough === undefined ? [...parsed.positionals, ...plan.forwarded] : parsed.positionals;
     const passthrough = leaf.passthrough === undefined ? [] : plan.forwarded;
-    requirePositionals(registry, leaf, path, positionals);
+    if (leaf.rawArgs !== true) {
+      requirePositionals(registry, leaf, path, positionals);
+    }
 
     const output = createOutput(runtime, resolveMode(runtime, plan.wantsJson));
     const handler = await loadHandler(registry.bin, path);
@@ -189,6 +191,10 @@ function reportError(
     plan?.wantsJson ?? (argv.slice(2, argv.includes("--") ? argv.indexOf("--") : undefined).includes("--json"));
   if (wantsJson) {
     runtime.stdout.write(`${JSON.stringify({ ok: false, error: { code: errorCode(error), message } })}\n`);
+    return 1;
+  }
+  if (errorCode(error) === "REPORTED") {
+    // The core already printed why.
     return 1;
   }
   runtime.stderr.write(`error: ${message}\n`);

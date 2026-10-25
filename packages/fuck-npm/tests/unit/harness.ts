@@ -31,6 +31,8 @@ export type TestBedOptions = {
   core?: FakeCoreScript | null;
   prompts?: Partial<PromptPort>;
   columns?: number;
+  /** What the `update -i` picker reads, as one chunk. */
+  keys?: string;
 };
 
 /**
@@ -81,6 +83,13 @@ export function testBed(options: TestBedOptions = {}) {
       return core;
     },
     prompts: async () => prompts,
+    ...(options.keys !== undefined
+      ? {
+          keys: async function* () {
+            yield options.keys as string;
+          },
+        }
+      : {}),
   };
 
   return {

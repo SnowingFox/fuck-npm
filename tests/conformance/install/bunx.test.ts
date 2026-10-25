@@ -60,6 +60,9 @@ function setup() {
       BUN_TMPDIR: current_tmpdir,
       TMPDIR: current_tmpdir,
       FNPM_CACHE_DIR: install_cache_dir,
+      // The tests point `npm_config_registry` at a registry of their own.
+      FNPM_REGISTRY: undefined,
+      BUN_INSTALL_CACHE_DIR: undefined,
     } as Record<string, string>,
   };
 }
@@ -192,12 +195,12 @@ async function localRegistry(...packages: FixturePackage[]) {
  * A world of its own for one test. `cwd`, `tmp` ($TMPDIR) and `home` ($HOME) are
  * siblings, as /tmp and a home directory are: nothing in `tmp` is above what bunx
  * keeps below `home`. No variable names the install cache, so it is
- * `home/.bun/install/cache`, as for a real user.
+ * `home/.fnpm/cache`, as for a real user.
  */
 function sandbox(registry?: { url: string; requests: string[] }, files: DirectoryTree = {}) {
   const dir = tempDir("bunx", { cwd: {}, tmp: {}, home: {}, ...files });
   const [cwd, tmp, home] = ["cwd", "tmp", "home"].map(name => join(String(dir), name));
-  const cache = join(home, ".fnpm", "install", "cache");
+  const cache = join(home, ".fnpm", "cache");
   const env: Record<string, string | undefined> = {
     ...fnpmEnv,
     TMPDIR: tmp,
@@ -207,6 +210,9 @@ function sandbox(registry?: { url: string; requests: string[] }, files: Director
     HOME: home,
     USERPROFILE: home,
     FNPM_CACHE_DIR: undefined,
+    // `npm_config_registry` below names the registry, as in bun's harness.
+    FNPM_REGISTRY: undefined,
+    BUN_INSTALL_CACHE_DIR: undefined,
     BUN_INSTALL: undefined,
     XDG_CACHE_HOME: undefined,
     XDG_CONFIG_HOME: undefined,
@@ -220,13 +226,13 @@ function sandbox(registry?: { url: string; requests: string[] }, files: Director
     home,
     cache,
     env,
-    /** `.bunx-<uid>` in the install cache: what holds every tree on POSIX. */
-    root: join(cache, `.bunx-${process.getuid?.()}`),
+    /** `.fnpmx-<uid>` in the install cache: what holds every tree on POSIX. */
+    root: join(cache, `.fnpmx-${process.getuid?.()}`),
     /** The directory bunx installs `spec` (`<package>@<version>`) into. */
     tree(spec: string) {
       if (!isWindows) return join(this.root, spec);
       // Found by its name, so that the test does not depend on how the uid is derived.
-      const found = readdirSync(tmp).filter(name => name.startsWith("bunx-") && name.endsWith(`-${spec}`));
+      const found = readdirSync(tmp).filter(name => name.startsWith("fnpmx-") && name.endsWith(`-${spec}`));
       expect(found).toHaveLength(1);
       return join(tmp, found[0]);
     },
@@ -733,7 +739,7 @@ it.concurrent('should set "npm_config_user_agent" to bun', async () => {
   const [err, out, exited] = await Promise.all([subprocess.stderr.text(), subprocess.stdout.text(), subprocess.exited]);
 
   expect(err).not.toContain("error:");
-  expect(out.trim()).toContain(`bun/${Bun.version}`);
+  expect(out.trim()).toContain(`fnpm/${Bun.version}`);
   expect(exited).toBe(0);
 });
 
@@ -1663,13 +1669,13 @@ it.concurrent.skipIf(!isWindows)("completions: writes bunx.cmd (not bunx.exe) wh
 // `require`, the dynamic loader and the tsconfig lookup walk from an installed
 // file toward `/` and take what they find, so the tree must not sit below a
 // directory where other users can create files, which the temp directory is.
-// `.bunx-<uid>` is the trust boundary: a directory of this user with mode 0700.
+// `.fnpmx-<uid>` is the trust boundary: a directory of this user with mode 0700.
 // Windows keeps %TEMP%\bunx-<uid>-<package>@<version>: %TEMP% is per user.
 describe.skipIf(isWindows)("cache directory", () => {
   const uid = process.getuid?.() ?? 0;
   const ran = "tool 1.1.0 with dep 1.0.0\n";
   const bunxEntries = (dir: string) =>
-    readdirSync(dir, { recursive: true, encoding: "utf8" }).filter(name => name.includes("bunx"));
+    readdirSync(dir, { recursive: true, encoding: "utf8" }).filter(name => name.includes("fnpmx"));
 
   it.concurrent("is a private directory in the install cache", async () => {
     using registry = await localRegistry(...toolWithDep());
@@ -1715,7 +1721,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     writeFileSync(join(box.home, file), contents(configured));
 
     expect(await box.run(["tool"])).toMatchObject({ stdout: ran, exitCode: 0 });
-    expect(readdirSync(join(configured, `.bunx-${uid}`)).sort()).toEqual(["tool@latest", "tool@latest.lock"]);
+    expect(readdirSync(join(configured, `.fnpmx-${uid}`)).sort()).toEqual(["tool@latest", "tool@latest.lock"]);
     expect([bunxEntries(box.home), bunxEntries(box.tmp), readdirSync(box.cwd)]).toEqual([[], [], ["bunfig.toml"]]);
 
     expect(await box.run(["tool"])).toMatchObject({ stdout: ran, stderr: "", exitCode: 0, requests: [] });
@@ -1742,7 +1748,7 @@ describe.skipIf(isWindows)("cache directory", () => {
   it.concurrent.each([
     ["tmp", "{ malformed"],
     ["home", "{ malformed"],
-    ["home", JSON.stringify({ name: "home", workspaces: [".bun/install/cache/.bunx-*/*"] })],
+    ["home", JSON.stringify({ name: "home", workspaces: [".fnpm/cache/.fnpmx-*/*"] })],
   ])("a package.json in %s is nothing to the install: %s", async (where, packageJson) => {
     using registry = await localRegistry(...toolWithDep());
     using box = sandbox(registry, { [where]: { "package.json": packageJson } });
@@ -1805,7 +1811,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     using registry = await localRegistry(...toolWithDep());
     using box = sandbox(registry);
     const env = { ...box.env, HOME: undefined, USERPROFILE: undefined };
-    const root = join(box.tmp, `.bunx-${uid}`);
+    const root = join(box.tmp, `.fnpmx-${uid}`);
 
     const first = await box.run(["tool"], { env });
     expect(first.stderr).toContain("warn: no usable private cache directory, installing into shared temp directory");
@@ -1833,7 +1839,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     const first = await box.run(["tool"], unprivileged);
     expect(first.stderr).toContain("warn: no usable private cache directory, installing into shared temp directory");
     expect(first).toMatchObject({ stdout: ran, exitCode: 0 });
-    expect(bunxEntries(box.tmp)).toContain(`.bunx-${unprivileged.uid ?? uid}`);
+    expect(bunxEntries(box.tmp)).toContain(`.fnpmx-${unprivileged.uid ?? uid}`);
 
     // The second run finds what the first run installed.
     expect(await box.run(["tool"], unprivileged)).toMatchObject({
@@ -1860,7 +1866,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     };
 
     expect(await box.run(["tool"], { env })).toMatchObject({ stdout: ran, exitCode: 0 });
-    age(join(box.tmp, `.bunx-${uid}`, "tool@latest"));
+    age(join(box.tmp, `.fnpmx-${uid}`, "tool@latest"));
     registry.down.set("/tool", 503);
     expect(await box.run(["tool"], { env })).toMatchObject({ stdout: ran, exitCode: 0, requests: ["/tool"] });
   });
@@ -1868,15 +1874,15 @@ describe.skipIf(isWindows)("cache directory", () => {
   it.concurrent("refuses to install when no root can be made private", async () => {
     using registry = await localRegistry(...toolWithDep());
     // Any user can put this into a shared temp directory.
-    using box = sandbox(registry, { tmp: { [`.bunx-${uid}`]: {} } });
-    chmodSync(join(box.tmp, `.bunx-${uid}`), 0o777);
+    using box = sandbox(registry, { tmp: { [`.fnpmx-${uid}`]: {} } });
+    chmodSync(join(box.tmp, `.fnpmx-${uid}`), 0o777);
 
     const result = await box.run(["tool"], { env: { ...box.env, HOME: undefined, USERPROFILE: undefined } });
     expect(result.stderr).toContain(
       "error: failed to create private cache directory. Set FNPM_CACHE_DIR to a directory you own.",
     );
     expect(result).toMatchObject({ stdout: "", exitCode: 1, requests: [] });
-    expect(readdirSync(join(box.tmp, `.bunx-${uid}`))).toEqual([]);
+    expect(readdirSync(join(box.tmp, `.fnpmx-${uid}`))).toEqual([]);
   });
 
   it.concurrent("a version with .. in it can't escape the root", async () => {
@@ -1897,7 +1903,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     using box = sandbox(undefined, {
       cwd: { "package.json": "{}" },
       home: {
-        [`.bun/install/cache/.bunx-${uid}`]: {
+        [`.fnpm/cache/.fnpmx-${uid}`]: {
           "tool@latest": tree,
           "tool@latest.lock": "",
           "tool@latest+min-age=864000": tree,
@@ -1907,18 +1913,18 @@ describe.skipIf(isWindows)("cache directory", () => {
         },
       },
       tmp: {
-        [`.bunx-${uid}`]: { "tool@latest+min-age=5": tree, "tool@latest+min-age=5.lock": "" },
+        [`.fnpmx-${uid}`]: { "tool@latest+min-age=5": tree, "tool@latest+min-age=5.lock": "" },
         // This is what older versions wrote.
-        [`bunx-${uid}-tool@latest`]: tree,
-        [`bunx-${uid + 1}-theirs@latest`]: tree,
+        [`fnpmx-${uid}-tool@latest`]: tree,
+        [`fnpmx-${uid + 1}-theirs@latest`]: tree,
       },
     });
 
     const result = await box.run(["cache", "rm"], { bunx: [fnpmExe(), "pm"] });
-    expect(result.stdout).toContain("Cleared 6 cached 'bunx' packages");
+    expect(result.stdout).toContain("Cleared 6 cached 'fnpmx' packages");
     expect(result.exitCode).toBe(0);
     expect(existsSync(box.root)).toBe(false);
-    expect(readdirSync(box.tmp)).toEqual([`bunx-${uid + 1}-theirs@latest`]);
+    expect(readdirSync(box.tmp)).toEqual([`fnpmx-${uid + 1}-theirs@latest`]);
   });
 });
 
@@ -2194,7 +2200,7 @@ describe("a cached tree", () => {
           bin: { tool: "cli.js" },
           scripts: { postinstall: "node postinstall.js" },
           files: {
-            "cli.js": `#!/usr/bin/env node\nconsole.log("the script saw", require("../../../submodule/bun/test/cli/install/saw.json"));\n`,
+            "cli.js": `#!/usr/bin/env node\nconsole.log("the script saw", require("./saw.json"));\n`,
             "postinstall.js": `
 const saw = Object.keys(process.env).filter(key => key.startsWith("BUN_INTERNAL_BUNX_"));
 require("fs").writeFileSync("saw.json", JSON.stringify(saw));
@@ -3113,7 +3119,7 @@ describe("flags", () => {
 
     const expected = {
       stdout: "",
-      stderr: `error: bunx has no ${flags[0]} flag. Flags for the package go after its name.\n`,
+      stderr: `error: fnpmx has no ${flags[0]} flag. Flags for the package go after its name.\n`,
       exitCode: 1,
       requests: [],
     };
@@ -3135,7 +3141,7 @@ describe("flags", () => {
 
     expect(await box.run([...flags.split(" "), "local-tool", ...flags.split(" ")])).toEqual(expected);
     if (isWindows) return;
-    symlinkSync(fnpmExe(), join(box.dir, isDebug ? "bun-debug" : "bun"));
+    symlinkSync(fnpmExe(), join(box.dir, "fnpm"));
     const env = { ...box.env, PATH: box.dir + delimiter + box.env.PATH };
     expect(await box.run(["run", "--silent", "tool"], { env, bunx: [fnpmExe()] })).toEqual(expected);
   });
@@ -3258,7 +3264,7 @@ describe("flags", () => {
   it.concurrent.each(["--help", "-h"])("%s prints the flags", async flag => {
     using box = sandbox();
     const { stdout, stderr, exitCode } = await box.run([flag]);
-    expect(stderr).toContain("Usage: bunx [flags] <package><@version>");
+    expect(stderr).toContain("Usage: fnpmx [flags] <package><@version>");
     for (const name of ["--cwd", "--env-file", "--minimum-release-age", "--trust"]) expect(stderr).toContain(name);
     // `--trust` is not scoped to the package that is named.
     expect(stderr).toContain("Run the lifecycle scripts of the package and of ALL of its dependencies");
@@ -3574,7 +3580,7 @@ describe("paths that do not fit in the path buffer", () => {
     const name = "deep-cache-fixture";
     const pkg = `@${Buffer.alloc(100, "s").toString()}/${name}`;
     const bin = "deep-cache-bin";
-    const treeInCache = `.bunx-${process.getuid!()}/${pkg}@latest`;
+    const treeInCache = `.fnpmx-${process.getuid!()}/${pkg}@latest`;
 
     const cacheLength = maxPathBytes + overBy - `/${treeInCache}/node_modules/${pkg}/package.json`.length;
     let cache = box.home;
@@ -3590,7 +3596,7 @@ describe("paths that do not fit in the path buffer", () => {
     expect(`${tree}/node_modules/.bin/${name}`.length).toBeLessThan(maxPathBytes);
 
     mkdirSync(join(tree, "node_modules", ".bin"), { recursive: true });
-    chmodSync(join(cache, `.bunx-${process.getuid!()}`), 0o700);
+    chmodSync(join(cache, `.fnpmx-${process.getuid!()}`), 0o700);
     writeFileSync(join(tree, "package.json"), JSON.stringify({ dependencies: { [pkg]: "^1.0.0" } }));
     // The bin is always there: whether bunx finds out about it depends on whether the path fits.
     writeFileSync(join(tree, "node_modules", ".bin", bin), "#!/bin/sh\necho ran the bin\n");

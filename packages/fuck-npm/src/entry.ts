@@ -13,7 +13,7 @@ import { getCliVersion } from "./cli/version.ts";
  * version guard can only explain a bad runtime if this file loads.
  */
 
-export type BinName = "fnpm" | "fnpm-lock";
+export type BinName = "fnpm" | "fnpm-lock" | "fnpmx";
 
 /** Oldest Node we support; `engines.node` in package.json must agree. */
 export const MIN_NODE_VERSION = "20.19.0";
@@ -77,6 +77,11 @@ export async function main(
     return 1;
   }
 
+  if (bin === "fnpmx") {
+    // `fnpmx <args>` is `fnpm x <args>`, `--version` included (bunx answers it itself).
+    const { runCli } = await import("./cli/app.ts");
+    return runCli("fnpm", [argv[0] ?? "node", argv[1] ?? "fnpmx", "x", ...argv.slice(2)]);
+  }
   const args = argv.slice(2);
   if (args.length === 1 && (args[0] === "--version" || args[0] === "-v")) {
     process.stdout.write(`${getCliVersion()}\n`);

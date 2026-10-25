@@ -17,6 +17,14 @@ pub enum Route {
     Version,
     /// Run a native command.
     Native(Invocation),
+    /// `fnpm x` / `dlx` / `create`: the arguments after the command, raw (flags typed before it
+    /// included), for `fnpm_core::x`.
+    Exec {
+        /// `fnpm create`.
+        create: bool,
+        /// Everything but the command word.
+        args: Vec<String>,
+    },
 }
 
 /// A native command after the command path is resolved and foreign flags are translated.
@@ -87,6 +95,20 @@ pub fn route(bin: &'static BinDef, args: &[String]) -> Route {
             }
             index += 1;
             continue;
+        }
+        if bin.name == "fnpm" && matches!(token, "x" | "dlx" | "create") {
+            // bunx parses its own arguments: flags before the package, anything after it is
+            // the package's.
+            let mut raw = rest;
+            raw.extend(head[index + 1..].iter().cloned());
+            if dash.is_some() {
+                raw.push("--".to_owned());
+                raw.extend(tail.iter().cloned());
+            }
+            return Route::Exec {
+                create: token == "create",
+                args: raw,
+            };
         }
         if (bin.root_alias)(token) {
             return Route::Node;

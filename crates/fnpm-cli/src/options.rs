@@ -325,6 +325,7 @@ pub fn pm_options(values: &Parsed, start: &Path) -> Result<PmOptions, CliError> 
         force: values.bool("force"),
         cache_dir: values.string("cacheDir").map(PathBuf::from),
         no_cache: values.bool("noCache"),
+        json: values.bool("json"),
         log_level: log_level_of(values),
         progress: !values.bool("noProgress"),
         summary: !values.bool("noSummary"),
@@ -466,6 +467,10 @@ pub fn install_options(
         recursive: values.bool("recursive") && !global,
         update_groups,
         depth,
+        dlx: None,
+        patch: None,
+        manifest_updates: Default::default(),
+        interactive_choices: None,
     })
 }
 
