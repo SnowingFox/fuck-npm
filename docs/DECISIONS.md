@@ -115,6 +115,22 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   unambiguous namespace of its own.
 - **Cost:** a larger precedence table to document and test (`config-precedence.test.ts`).
 
+## 8. Benchmark against a local registry mirror
+
+2026-10-25.
+
+- **Decision:** every tool is timed with hyperfine against the same pre-warmed local verdaccio
+  mirror (`bench/mirror.ts`), with isolated per-tool state and the registry forced by flag and
+  env. Disk is measured as physical bytes (statfs delta and an `lstat` walk that counts
+  hardlinks once).
+- **Why:** numbers against the public registry measure the network more than the package
+  manager and vary run to run. A local mirror makes runs comparable and lets the gate
+  (`bench/gate.ts`) fail on small regressions.
+- **Cost:** verdaccio is itself slow at serving large packuments (0.2 to 2 s each), so `cold`
+  scenarios are dominated by it and understate the differences between tools. A static,
+  pre-serialised registry (`BENCH_REGISTRY`) is the planned fix for cold numbers. The page cache
+  isn't dropped between runs, so "cold" means a cold package-manager cache, not a cold disk.
+
 ## 9. Store without a global blob directory (layout v2)
 
 2026-10-26. Supersedes 5.
@@ -132,25 +148,13 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   every file was hashed with BLAKE3. Cross-package sharing saved 3.7 MiB of 492 MiB on medium
   (0.75 %); sharing inside a package saved 5.2 MiB, and v2 keeps that. The blob directory
   itself cost 4.2 MiB of directory blocks for 257 shard dirs. bun's cache is per package as
-  well, so v2 is never larger than bun's on the same tree. Per install the linker still does
-  one `linkat` (or clone) per file from `pkgs/`.
+  well; the combined size still depends on directory, index and metadata-cache overhead and
+  must be measured for each fixture. Per install the linker still does one `linkat` (or clone)
+  per file from `pkgs/`.
 - **Cost:** two versions of a package with mostly unchanged files store them twice (pnpm
   shares those). On the fixtures that is under 1 % of the store; a monorepo with many
-  versions of one large package would see more. `store prune` now frees a package's files
-  with its `pkgs/` entry (files still hard linked into some `node_modules` stay there).
-
-## 8. Benchmark against a local registry mirror
-
-2026-10-25.
-
-- **Decision:** every tool is timed with hyperfine against the same pre-warmed local verdaccio
-  mirror (`bench/mirror.ts`), with isolated per-tool state and the registry forced by flag and
-  env. Disk is measured as physical bytes (statfs delta and an `lstat` walk that counts
-  hardlinks once).
-- **Why:** numbers against the public registry measure the network more than the package
-  manager and vary run to run. A local mirror makes runs comparable and lets the gate
-  (`bench/gate.ts`) fail on small regressions.
-- **Cost:** verdaccio is itself slow at serving large packuments (0.2 to 2 s each), so `cold`
-  scenarios are dominated by it and understate the differences between tools. A static,
-  pre-serialised registry (`BENCH_REGISTRY`) is the planned fix for cold numbers. The page cache
-  isn't dropped between runs, so "cold" means a cold package-manager cache, not a cold disk.
+  versions of one large package would see more. Files above 8 MiB stream directly to disk
+  and currently remain separate from other large streamed copies. `store prune` frees a
+  package's files with its `pkgs/` entry (files still hard linked into some `node_modules`
+  stay there). Recovery of an incomplete entry pins it before checking and deleting children,
+  so cleanup cannot recursively delete another importer's completed replacement.

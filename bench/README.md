@@ -100,7 +100,8 @@ The registry is forced on every tool with both the CLI flag and env (`npm_config
 `BUN_CONFIG_REGISTRY`, `YARN_REGISTRY`, `FNPM_REGISTRY`).
 
 hyperfine runs with `--shell=none` and its working directory set to the project, so no shell
-startup is included in the timings. While fnpm runs through `node`, its numbers include Node
+startup is included in the timings. Native fnpm timings include the Rust launcher
+startup. If the native executable is missing, the fallback through `node` includes Node
 startup (about 47 ms on the baseline machine).
 
 ## Registry mirror

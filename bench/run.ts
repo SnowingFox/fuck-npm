@@ -43,12 +43,16 @@ function fixtureNames(): string[] {
     .sort();
 }
 
-function hashDir(dir: string, h = createHash("sha256")): string {
-  for (const name of readdirSync(dir).sort()) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) hashDir(p, h);
-    else h.update(relative(FIXTURES_DIR, p)).update(readFileSync(p));
-  }
+function hashDir(dir: string): string {
+  const h = createHash("sha256");
+  const visit = (current: string): void => {
+    for (const name of readdirSync(current).sort()) {
+      const p = join(current, name);
+      if (statSync(p).isDirectory()) visit(p);
+      else h.update(relative(FIXTURES_DIR, p)).update(readFileSync(p));
+    }
+  };
+  visit(dir);
   return h.digest("hex");
 }
 

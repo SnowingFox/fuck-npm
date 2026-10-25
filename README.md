@@ -105,7 +105,7 @@ disk measurement are in [bench/README.md](bench/README.md).
                       v                                v
                   fnpm-core  <----------------  fnpm.node (crates/fnpm-napi)
                       |
-  config  workspace  registry (HTTP/2)  store (CAS)  resolver  lockfile  linker  scripts
+  config  workspace  registry (HTTP/2)  store (v2)  resolver  lockfile  linker  scripts
 ```
 
 - **Native launcher.** Node's startup alone (`node -e 0`, about 47 ms) is slower than bun's whole
@@ -121,9 +121,10 @@ disk measurement are in [bench/README.md](bench/README.md).
   soon as it is resolved and linked as soon as it is in the store. Tarballs stream through
   gunzip, untar and hashing in one pass.
 - **Beyond bun.** A no-op fast path (`node_modules/.fnpm/.state/state`: exit after a few `stat` calls
-  when nothing changed), the per-file CAS, the file index (no `readdir` while linking), HTTP/2
-  multiplexing to the registry, a lockfile that holds everything an install needs (zero manifest
-  fetches on a frozen install), the global virtual store on by default, and the native launcher.
+  when nothing changed), within-package file sharing, the file index (no `readdir` while
+  linking), HTTP/2 multiplexing to the registry, a lockfile that holds everything an install
+  needs (zero manifest fetches on a frozen install), the global virtual store on by default,
+  and the native launcher.
 
 The full design, including every crate's API, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -150,7 +151,7 @@ crates/
   fnpm-semver       npm-compatible versions and ranges
   fnpm-config       .npmrc, bunfig.toml, fnpm.toml, env, CLI precedence
   fnpm-registry     HTTP/2 client, manifest cache, auth
-  fnpm-store        CAS, streaming extraction, file index, prune
+  fnpm-store        package store, streaming extraction, file index, prune
   fnpm-workspace    discovery, --filter, topological order, package.json edits
   fnpm-resolver     dependency graph, peers, overrides, catalogs
   fnpm-lockfile     fnpm.lock, migration from and export to npm/yarn/pnpm/bun

@@ -377,7 +377,7 @@ the parsed graph keyed by xxh3-64 of these bytes; it is never committed and is s
 4. **Resolve** (streaming). `Resolver::resolve` with the previous graph; unchanged entries are
    reused without manifest fetches. Frozen mode errors on any difference.
 5. **Fetch + extract** (overlap with 4). For each `Resolved::Package` not in the store:
-   `RegistryClient::tarball` -> `Store::import_tarball` (gunzip, untar, hash, CAS, index).
+   `RegistryClient::tarball` -> `Store::import_tarball` (gunzip, untar, hash, staging, index).
    Manifests always take priority over tarballs in the request queue.
 6. **Link** (overlap with 5). `Linker::plan`, then `Linker::link` with a `PackageSource` that
    waits on the in-flight imports.
@@ -842,16 +842,23 @@ pub mod fsops {
 
 **Import algorithm.** (1) Stream bytes through the integrity hasher and a zlib-rs inflater
 into `TarParser` in one pass (bun `TarballStream.rs`, `extract_tarball.rs`); tarballs whose
-`Content-Length` is under 2 MiB are buffered and inflated in one shot with libdeflate.
+compressed bodies end before 2 MiB are buffered and inflated in one shot with libdeflate
+when the gzip trailer claims less than 64 MiB of output.
 (2) Each file is written once into `tmp/<random>/package/` (`O_EXCL`), directories first.
 A file with the same mode, size and xxh3-128 as an earlier file of the package is compared
-byte for byte with it and, when equal, hard linked to it instead. Buffered packages fan the
-writes out to rayon above 256 KiB; streamed ones hand finished files to rayon in batches of
-256 KiB / 32 files while the inflater runs on, and hash each compressed chunk beside the
-inflate. A later tar entry for a path already seen is written after the batches before it, so
-the last entry wins. Files above 8 MiB are streamed to disk while they arrive. (3) Verify the
-integrity, write `index.bin`, then `rename` the staging dir into `pkgs/<dir>`;
-`EEXIST`/`ENOTEMPTY` means another process won, so discard ours (bun `cache_publish.rs`). A
+byte for byte with it and, when equal, hard linked to it instead. Streamed writes reserve a
+per-content slot before writing, so concurrent batches share the completed first write.
+Buffered packages fan the writes out to rayon above 256 KiB; streamed ones hand finished
+files to rayon in batches of 256 KiB / 32 files while the inflater runs on, and hash each
+compressed chunk beside the inflate. A later tar entry for a path already seen is written after the batches before it, so
+the last entry wins. Files above 8 MiB are streamed to disk while they arrive; completed
+streamed large files are registered as dedupe candidates, but two large streamed files are
+currently written separately. (3) Verify the integrity, write `index.bin`, then `rename` the
+staging dir into `pkgs/<dir>`;
+`EEXIST`/`ENOTEMPTY` with a valid index means another process won, so discard ours (bun
+`cache_publish.rs`). An incomplete destination is pinned before inspection and emptied through
+that handle on Unix; Windows denies delete sharing while cleaning it. A concurrent replacement
+is never recursively removed by pathname, and a symlink destination is unlinked. A
 mismatch deletes the staging dir and returns `Error::Integrity` unless `skip_verify`.
 Nothing outside the staging dir is written per file, so a crash leaves only a staging dir
 (removed by prune) or a `pkgs/` dir without a valid `index.bin` (treated as absent, replaced
@@ -873,7 +880,7 @@ Windows `CreateHardLinkW` -> `CopyFileW`. `StickyBackend` degrades process-wide 
 relative on Unix and junctions on Windows.
 
 **Threading.** `import_tarball` awaits network chunks on tokio and does decompression,
-hashing and writes on rayon (or one `spawn_blocking` per package for the one-shot path).
+hashing and writes on rayon, including the one-shot path.
 `Store` is `Clone + Send + Sync`; concurrent imports of the same key are safe.
 
 **Bun sources.** `install/TarballStream.rs`, `install/extract_tarball.rs`,
@@ -886,8 +893,8 @@ hashing and writes on rayon (or one `spawn_blocking` per package for the one-sho
 
 **Perf.** Extraction of a 1 MB tarball with 100 files < 8 ms on one core (zlib-rs inflate
 ~1 GB/s, xxh3 > 10 GB/s per core). A store hit (`get`) is one `stat` plus an index read (< 50 µs).
-Disk: identical files of one package are stored once; `fnpm store status` reports physical
-bytes.
+Disk: within-package sharing reduces duplicate file storage (with the streamed-large-file
+limit above); `fnpm store status` reports physical bytes.
 ## fnpm-workspace
 
 **Responsibility.** The package.json model (typed view + format-preserving editor), finding
@@ -1074,6 +1081,9 @@ pub fn load(dir: &Path, ws: &Workspace) -> Result<Option<Loaded>>;
 pub fn parse(format: Format, bytes: &[u8], ws: &Workspace) -> Result<LockGraph>;
 pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>>;
 pub fn save(dir: &Path, graph: &LockGraph) -> Result<u64>;
+pub struct PreparedSave { /* serialised text, content hash and encoded sidecar */ }
+pub fn prepare_save(graph: &LockGraph) -> Result<PreparedSave>;
+pub fn save_prepared(dir: &Path, prepared: &PreparedSave) -> Result<u64>;
 pub fn out_of_sync(graph: &LockGraph, ws: &Workspace) -> Vec<String>;
 pub struct LockDiff { pub added: Vec<String>, pub removed: Vec<String>, pub changed: Vec<(String, String, String)> }
 pub fn diff(a: &LockGraph, b: &LockGraph) -> LockDiff;
@@ -1442,6 +1452,23 @@ not written after `--filter`, `--no-save` with changes, or a failure.
 lives in `<cache>/lockfile-sidecars/<xxh3>.bin` (same format and hash check), so an install
 after `rm -rf node_modules` skips the text parse and links the copy back.
 
+**Incremental add/remove.** A previous package is fetched lazily when `node_modules` exists:
+if its placement needs repair, the linker asks the source for its contents. For a hoisted,
+unfiltered install without patches, a matching state version, fnpm version, configuration,
+previous lockfile hash and node_modules directory identities also allow the previous hoisted
+tree to be compared with the new one. Placements with the same workspace, path, name and
+package key skip package.json parsing only when the package directory and its package.json
+completion marker still exist; losing a nested dependency subtree still requires cleanup.
+This uses the same directory-identity premise as the no-op path. It does not detect arbitrary
+edits inside unchanged package directories. Link worker count scales with newly
+introduced packages, with at least one worker. The resolver still processes the graph.
+
+When all integrities are known and `--trust` cannot mutate the graph, `prepare_save` runs on a
+blocking task alongside linking. It serialises and reparses the text to build a sidecar with
+the same semantics as a later text load. `save_prepared` publishes those bytes after a
+successful link; filled integrities or optional-package failures discard the prepared value
+and use the regular save path. Reparsing is overlapped, not removed.
+
 **Summary.** `InstallSummary` (fnpm-types) is filled as bun prints it: `added` / `updated` /
 `removed` from the direct dependencies of the root and workspaces before and after,
 `requested` for add/update targets with their bins (and `skipped` for platform mismatches),
@@ -1487,13 +1514,48 @@ hyperfine means, bun 1.4.4 run in the same invocation (`*`: an earlier single-ru
 
 In-process (`tests/perf.rs`, 150 packages, release): no-op 0.13 ms, `fast_path::check`
 0.006 ms. The small warm link went from ~19 ms to ~14 ms with largest-first scheduling (lodash's
-~1,000 files in one directory bound it) and `linkat` on open directory descriptors. Where the
-remaining time goes: the binary starts in 2.8 ms vs bun's 1.5 ms (fnpm-cli); `add` re-runs the
-resolver engine (~3-4 ms), verifies every installed package, and `fnpm_lockfile::save`
-re-parses the written lockfile for the sidecar (~2 ms on medium); the largest tarball (35 MB
-`@next/swc-linux-x64-gnu`) is inflated on one thread, with its file writes and SHA-512 on
-other threads. The no-op target is met without starting
-the runtime.
+~1,000 files in one directory bound it) and `linkat` on open directory descriptors. The
+remaining time in that baseline went into startup, a full resolver pass for `add`, installed
+package verification and lockfile-sidecar reparsing. The v2 incremental path above skips
+verification for trusted unchanged placements and overlaps sidecar preparation with linking;
+it still runs the resolver and reparses the lockfile text. Large tarballs are inflated on one
+thread, with file writes and SHA-512 on other threads. Raising the one-shot limit to 256 MiB
+and buffering all bodies did not improve medium cold-lockfile in a five-run interleaved
+experiment, so the 64 MiB one-shot cap and streaming default remain. The no-op target is met
+without starting the runtime. Current native-launcher measurements are in `bench/results`;
+the historical example-binary table above is not a result for the v2 implementation.
+
+On the shared Linux devbox, v2 small cold-lockfile made 2,673 `linkat` calls with no failures
+(v1: 7,673 calls, 2,609 failures). Five-run measurements compare fnpm and bun with the same
+resolved package versions. Combined node_modules plus store/cache physical usage was
+16.66 vs 17.06 MiB for small, 502.65 vs 506.52 MiB for medium, 422.96 vs 446.40 MiB for
+large, and 411.06 vs 425.54 MiB for monorepo. Extra store/cache alone was still larger than
+bun's; monorepo's global isolated layout puts most package bytes there. The speed gate failed
+10 of 22 comparisons. Raw five-run data is in
+`bench/results/2026-10-25-linux-x64-store-v2.json`. Host load was high and timing variance
+was substantial; cold-lockfile, tiny adds and large warm installs still have slower cases.
+These measurements do not establish the full speed objective.
+Filesystem-wide used-space deltas include other agents' writes; the inode-deduplicated tree
+walk is the useful combined-size comparison on this host.
+
+An independent review rerun (`bench/results/2026-10-25-linux-x64-perf-review.json`, five
+runs, native release at `accc85e`) also failed 10 of 22 speed comparisons. Means in ms
+(fnpm / bun):
+
+| Fixture | Cold | Cold-lockfile | Warm | Noop | Add | CI |
+|---|---:|---:|---:|---:|---:|---:|
+| Small | 733 / 686 | 169 / 134 | 27.4 / 26.9 | 2.95 / 8.59 | 11.8 / 9.7 | 27.8 / 25.1 |
+| Medium | 13,913 / 14,291 | 1,210 / 1,172 | 79.0 / 130.3 | 3.15 / 10.94 | 17.9 / 16.0 | 74.5 / 142.5 |
+| Large | — | 1,566 / 1,545 | 221.8 / 289.2 | 3.21 / 67.57 | — | 194.5 / 232.3 |
+| Monorepo | 17,924 / 21,278 | 1,534 / 1,111 | 177.6 / 298.7 | 5.18 / 28.67 | 94.5 / 39.0 | 154.9 / 279.7 |
+
+Combined physical sizes were 16.66 / 17.05 MiB (small), 502.64 / 506.57 MiB (medium),
+423.02 / 446.44 MiB (large), and 411.12 / 425.58 MiB (monorepo). The extra store/cache
+was larger for fnpm in every fixture. This run includes the fixes for parallel streamed
+sharing, executable-mode replacement and missing scoped/nested placements. The subsequent
+concurrent incomplete-entry recovery fix was tested separately; it changes recovery after a
+failed publish rename. Shared-host variance remains visible in the raw samples.
+
 
 ## fnpm-napi
 
