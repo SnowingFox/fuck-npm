@@ -11,6 +11,8 @@ on:
     paths:
       - "crates/**"
       - "packages/fuck-npm-binding/**"
+      - "packages/fuck-npm/src/core/**"
+      - "packages/fuck-npm/tests/unit/core/native.test.ts"
       - "Cargo.toml"
       - "Cargo.lock"
       - "package-lock.json"
@@ -114,6 +116,9 @@ jobs:
       # Debug build with the `testing` exports the vitest suite drives.
       - run: npm run build:native:test -w @fuck-npm/binding
       - run: npm test -w @fuck-npm/binding
+      # The CLI's Core over this build: its options deserialize in Rust, events, error codes.
+      - run: npx vitest run tests/unit/core/native.test.ts
+        working-directory: packages/fuck-npm
 
   # Loads each release artifact on its own platform and makes real calls into the core
   # (tests/smoke.cjs). GitHub has no musl runner, so musl builds run in Alpine.
