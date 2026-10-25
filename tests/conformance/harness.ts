@@ -4,8 +4,8 @@
  * aliases too.
  *
  * Every fnpm spawned with `fnpmEnv` gets its own FNPM_STORE_DIR and FNPM_CACHE_DIR under a temp directory of this
- * worker, so tests never touch the user's store, and FNPM_REGISTRY points at the shared fixture registry that
- * globalSetup starts (a file that starts its own registry repoints it).
+ * worker, so tests never touch the user's store. A worker-local user npmrc supplies the fixture registry
+ * that globalSetup starts (a file that starts its own registry repoints it).
  */
 import fs from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -128,8 +128,6 @@ function buildEnv(): Record<string, string | undefined> {
     AGENT: "false",
     FNPM_STORE_DIR: join(workerRoot, "store"),
     FNPM_CACHE_DIR: join(workerRoot, "cache"),
-    // bun's env for the same purpose, in case fnpm reads it for compatibility.
-    BUN_INSTALL_CACHE_DIR: join(workerRoot, "cache"),
     // retry backoff of 1ms, like BUN_CONFIG_HTTP_RETRY_BACKOFF in bun's harness
     FNPM_CONFIG_HTTP_RETRY_BACKOFF: "1",
     FNPM_DISABLE_SLOW_FILESYSTEM_WARNING: "1",
@@ -145,6 +143,9 @@ function buildEnv(): Record<string, string | undefined> {
   // (an FNPM_REGISTRY variable would win over both).
   env.NPM_CONFIG_USERCONFIG = defaultRegistryNpmrc;
   delete env.FNPM_REGISTRY;
+  // The porter renames BUN_INSTALL_CACHE_DIR to FNPM_CACHE_DIR. Tests remove that variable
+  // to exercise their configured cache; a second legacy override would silently defeat it.
+  delete env.BUN_INSTALL_CACHE_DIR;
   delete env.NODE_ENV;
   delete env.NODE_OPTIONS;
   delete env.VITEST;
@@ -162,7 +163,6 @@ export function installEnv(dir: string, env: Record<string, string | undefined> 
     ...env,
     FNPM_CACHE_DIR: join(dir, ".fnpm-cache"),
     FNPM_STORE_DIR: join(dir, ".fnpm-store"),
-    BUN_INSTALL_CACHE_DIR: join(dir, ".fnpm-cache"),
   };
 }
 

@@ -7,6 +7,7 @@
  *
  * A run of some files keeps the rows of the others. Files run one after the other (each file may still run its
  * tests concurrently), with a time limit per file (FNPM_STATUS_TIMEOUT seconds, 900 by default).
+ * Set FNPM_STATUS_REPORT_DIR to keep JSON failure reports for debugging.
  */
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -66,6 +67,7 @@ function run(file: string): Row {
   try {
     return runFile(file);
   } finally {
+    for (const path of snapshots().keys()) if (!kept.has(path)) fs.rmSync(path);
     for (const [path, text] of kept) if (!fs.existsSync(path) || fs.readFileSync(path, "utf8") !== text) fs.writeFileSync(path, text);
   }
 }
@@ -84,11 +86,33 @@ function runFile(file: string): Row {
       "--reporter=json",
       `--outputFile=${out}`,
     ],
-    { cwd: testsDir, env: { ...process.env, CI: "1" }, stdio: ["ignore", "ignore", "pipe"], timeout, killSignal: "SIGKILL" },
+    {
+      cwd: testsDir,
+      env: { ...process.env, CI: "1" },
+      stdio: "ignore",
+      detached: process.platform !== "win32",
+      timeout,
+      killSignal: "SIGKILL",
+    },
   );
+  // spawnSync kills only Vitest on timeout. Its workers and spawned CLIs share this
+  // process group; kill them too, so a timed-out file cannot keep running into the next.
+  if (res.error && res.pid && process.platform !== "win32") {
+    try { process.kill(-res.pid, "SIGKILL"); } catch {}
+  }
   if (!fs.existsSync(out)) {
-    const why = res.error ? `timed out after ${timeout / 1000}s` : `vitest exited ${res.status}`;
+    fs.rmSync(dirname(out), { recursive: true, force: true });
+    const why = res.error
+      ? (res.error as NodeJS.ErrnoException).code === "ETIMEDOUT"
+        ? `timed out after ${timeout / 1000}s`
+        : res.error.message
+      : `vitest exited ${res.status}`;
     return { file, passed: 0, failed: 0, skipped: 0, note: why };
+  }
+  if (process.env.FNPM_STATUS_REPORT_DIR) {
+    const reportPath = join(resolve(process.env.FNPM_STATUS_REPORT_DIR), file.replace(/\.test\.ts$/, ".json"));
+    fs.mkdirSync(dirname(reportPath), { recursive: true });
+    fs.copyFileSync(out, reportPath);
   }
   const report = JSON.parse(fs.readFileSync(out, "utf8"));
   fs.rmSync(dirname(out), { recursive: true, force: true });
@@ -99,7 +123,11 @@ function runFile(file: string): Row {
     passed: report.numPassedTests,
     failed: report.numFailedTests,
     skipped,
-    note: loadError ? "file failed to load" : "",
+    note: loadError ? "file failed to load"
+      : res.error ? res.error.message
+      : res.signal ? `vitest killed by ${res.signal}`
+      : report.numFailedTests === 0 && (report.success === false || res.status !== 0)
+        ? `suite failed (vitest exited ${res.status})` : "",
   };
 }
 
@@ -113,6 +141,8 @@ function write(rows: Map<string, Row>) {
     "Pass counts of the ported bun tests (tests/conformance/install) against the native release binary",
     "(`FNPM_EXE=target/release/fnpm`). Regenerate with `node tests/conformance/tools/status.ts [file ...]`;",
     "`FNPM_BUN_DIR` points at a bun checkout when the submodule is not initialised.",
+    "Only listed files have been measured. Each row keeps its latest per-file result; a partial run preserves other rows.",
+    "Timeouts and load failures are explicit in the note column; files without counts are excluded from the pass rate.",
     "",
     `Total: ${total.passed} passed, ${total.failed} failed, ${total.skipped} skipped (${rate(total)} of the tests that ran).`,
     "",

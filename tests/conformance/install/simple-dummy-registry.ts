@@ -4,7 +4,7 @@ import { bunSourceDir as __bunSourceDir } from "../harness.ts";
 const BUN_TEST_DIR = __bunSourceDir("test/cli/install");
 const BUN_TEST_FILE = __bunSourceDir("test/cli/install/simple-dummy-registry.ts");
 import { Server, file } from "../compat/bun.ts";
-import { dirname, join } from "node:path";
+import { dirname, join } from "../compat/path.ts";
 
 const __dirname = dirname(BUN_TEST_FILE);
 

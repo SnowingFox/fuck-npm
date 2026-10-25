@@ -16,7 +16,7 @@ Summary: 101 test files ported (5437 test call sites; `.each` rows count once), 
 - `bun` / the `Bun` global is `compat/bun.ts` (spawn, file, write, `$`, serve, listen, Archive, TOML, JSONC,
   Glob, semver, hashing) on node:*.
 - `harness` is `harness.ts`: `fnpmExe()`, `fnpmEnv` (FNPM_STORE_DIR / FNPM_CACHE_DIR in a temp dir per worker,
-  FNPM_REGISTRY = the shared fixture registry), `tempDirWithFiles`, `tempDir`, `runFnpm`, `readLockfile`, ...
+  a worker-local user npmrc supplying the shared fixture registry), `tempDirWithFiles`, `tempDir`, `runFnpm`, `readLockfile`, ...
 - `registry` (`TestRegistry`) and `./dummy.registry` run on `tests/registry` (node:http).
 - Text: `bun.lock` -> `fnpm.lock`, `bun install` -> `fnpm install` (and the other pm commands),
   `BUN_INSTALL_CACHE_DIR` -> `FNPM_CACHE_DIR`, `BUN_CONFIG_*` -> `FNPM_CONFIG_*`, `node_modules/.bun` ->

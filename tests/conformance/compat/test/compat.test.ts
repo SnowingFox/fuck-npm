@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { join } from "node:path";
+import { join } from "../path.ts";
 import { afterAll, describe, expect, test } from "vitest";
 import { fnpmEnv, readLockfile, runFnpm, tempDir, tempDirWithFiles } from "../../harness.ts";
 import { $, Archive, file, Glob, JSONC, serve, spawn, spawnSync, TOML, write } from "../bun.ts";
@@ -160,6 +160,17 @@ describe("harness", () => {
       expect(fs.readFileSync(join(path, "x.txt"), "utf8")).toBe("x");
     }
     expect(fs.existsSync(path)).toBe(false);
+  });
+
+  test("disposable paths work with path helpers and spawn cwd", async () => {
+    using dir = tempDir("boxed-path", { "x.txt": "x" });
+    expect(fs.readFileSync(join(dir, "x.txt"), "utf8")).toBe("x");
+    const proc = spawn({ cmd: [process.execPath, "-p", "process.cwd()"], cwd: dir, stdout: "pipe" });
+    expect((await proc.stdout!.text()).trim()).toBe(String(dir));
+    expect(await proc.exited).toBe(0);
+    const sync = spawnSync({ cmd: [process.execPath, "-p", "process.cwd()"], cwd: dir });
+    expect(sync.stdout.toString().trim()).toBe(String(dir));
+    expect(sync.exitCode).toBe(0);
   });
 
   test("fnpmEnv isolates the store and cache", () => {

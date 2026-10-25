@@ -5,7 +5,7 @@ import { file, write } from "../compat/bun.ts";
 import { afterAll, beforeAll, expect, test } from "../compat/bun-test.ts";
 import { lstat, mkdir, readdir, readFile, realpath, unlink } from "../compat/fs-promises.ts";
 import { fnpmEnv, fnpmExe, isWindows, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
-import { join, relative } from "path";
+import { join, relative } from "../compat/path.ts";
 import { TestRegistry } from "../compat/registry.ts";
 
 const registry = new TestRegistry();
@@ -118,42 +118,42 @@ function binFiles(nm: string, name: string) {
   return isWindows ? [`${bin}.exe`, `${bin}.bunx`] : [bin];
 }
 
-const noDepsStore = (version: string) => `.bun/no-deps@${version}/node_modules/no-deps`;
+const noDepsStore = (version: string) => `.fnpm/no-deps@${version}/node_modules/no-deps`;
 const noDepsPackage = (version: string) => ({ [noDepsStore(version)]: `no-deps@${version}` });
 
 // `oneRangeDep()` installed, with `no-deps@<version>` linked under one-range-dep.
 function oneRangeDepLayout(noDeps: string) {
-  const oneRangeDep = ".bun/one-range-dep@1.0.0/node_modules/one-range-dep";
+  const oneRangeDep = ".fnpm/one-range-dep@1.0.0/node_modules/one-range-dep";
   return {
     "one-range-dep": `-> ${oneRangeDep}`,
-    ".bun/node_modules/one-range-dep": `-> ${oneRangeDep}`,
-    ".bun/node_modules/no-deps": `-> ${noDepsStore(noDeps)}`,
+    ".fnpm/node_modules/one-range-dep": `-> ${oneRangeDep}`,
+    ".fnpm/node_modules/no-deps": `-> ${noDepsStore(noDeps)}`,
     [oneRangeDep]: "one-range-dep@1.0.0",
-    ".bun/one-range-dep@1.0.0/node_modules/no-deps": `-> ${noDepsStore(noDeps)}`,
+    ".fnpm/one-range-dep@1.0.0/node_modules/no-deps": `-> ${noDepsStore(noDeps)}`,
     ...noDepsPackage(noDeps),
   };
 }
 
-const whatBinStore = (version: string) => `.bun/what-bin@${version}/node_modules/what-bin`;
+const whatBinStore = (version: string) => `.fnpm/what-bin@${version}/node_modules/what-bin`;
 
 // The store entry of `what-bin@<version>`. A package's own bins are linked in its store entry too.
 function whatBinPackage(version: string) {
   return {
     [whatBinStore(version)]: `what-bin@${version}`,
-    [`.bun/what-bin@${version}/node_modules/.bin/what-bin`]: `-> ${whatBinStore(version)}/what-bin.js`,
+    [`.fnpm/what-bin@${version}/node_modules/.bin/what-bin`]: `-> ${whatBinStore(version)}/what-bin.js`,
   };
 }
 
 // `usesWhatBin()` installed, with `what-bin@<version>` linked under uses-what-bin.
 function usesWhatBinLayout(whatBin: string) {
-  const usesWhatBin = ".bun/uses-what-bin@1.0.0/node_modules/uses-what-bin";
+  const usesWhatBin = ".fnpm/uses-what-bin@1.0.0/node_modules/uses-what-bin";
   return {
     "uses-what-bin": `-> ${usesWhatBin}`,
-    ".bun/node_modules/uses-what-bin": `-> ${usesWhatBin}`,
-    ".bun/node_modules/what-bin": `-> ${whatBinStore(whatBin)}`,
+    ".fnpm/node_modules/uses-what-bin": `-> ${usesWhatBin}`,
+    ".fnpm/node_modules/what-bin": `-> ${whatBinStore(whatBin)}`,
     [usesWhatBin]: "uses-what-bin@1.0.0",
-    ".bun/uses-what-bin@1.0.0/node_modules/what-bin": `-> ${whatBinStore(whatBin)}`,
-    ".bun/uses-what-bin@1.0.0/node_modules/.bin/what-bin": `-> ${whatBinStore(whatBin)}/what-bin.js`,
+    ".fnpm/uses-what-bin@1.0.0/node_modules/what-bin": `-> ${whatBinStore(whatBin)}`,
+    ".fnpm/uses-what-bin@1.0.0/node_modules/.bin/what-bin": `-> ${whatBinStore(whatBin)}/what-bin.js`,
     ...whatBinPackage(whatBin),
   };
 }
@@ -179,7 +179,7 @@ test.concurrent("an existing store entry is re-linked when an override re-resolv
 
 test.concurrent("a dependency link deleted from an existing store entry is recreated", async () => {
   using packageDir = project(oneRangeDep());
-  const link = ".bun/one-range-dep@1.0.0/node_modules/no-deps";
+  const link = ".fnpm/one-range-dep@1.0.0/node_modules/no-deps";
 
   expect(await install(packageDir)).toEqual(installed("+ one-range-dep@1.0.0\n\n2 packages installed"));
   expect(await layout(packageDir)).toEqual(oneRangeDepLayout("1.1.0"));
@@ -208,7 +208,7 @@ test.concurrent("dependency bins are re-linked when a store entry is re-linked",
 
   for (const bin of binFiles(nm, "what-bin")) await unlink(bin);
   expect(await layout(packageDir)).toEqual(
-    without(usesWhatBinLayout("1.0.0"), ".bun/uses-what-bin@1.0.0/node_modules/.bin/what-bin"),
+    without(usesWhatBinLayout("1.0.0"), ".fnpm/uses-what-bin@1.0.0/node_modules/.bin/what-bin"),
   );
 
   await write(join(packageDir, "package.json"), JSON.stringify(usesWhatBin({ overrides: { "what-bin": "1.5.0" } })));
@@ -254,7 +254,7 @@ test.concurrent(
     await write(join(link, "package.json"), JSON.stringify({ name: "no-deps", version: "0.0.0-local-edit" }));
     const withLocalEdit = {
       ...oneRangeDepLayout("1.1.0"),
-      ".bun/one-range-dep@1.0.0/node_modules/no-deps": "no-deps@0.0.0-local-edit",
+      ".fnpm/one-range-dep@1.0.0/node_modules/no-deps": "no-deps@0.0.0-local-edit",
     };
 
     expect(await install(packageDir)).toEqual(noChanges);

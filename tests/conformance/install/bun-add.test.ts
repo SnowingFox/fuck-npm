@@ -1139,7 +1139,7 @@ it("should add dependency with package.json in it and http tarball", async () =>
         return new Response("bad request", { status: 400 });
       }
 
-      return new Response(Bun.file(join(__dirname, "baz-0.0.3.tgz")));
+      return new Response(Bun.file(join(BUN_TEST_DIR, "baz-0.0.3.tgz")));
     },
   });
   const urls: string[] = [];
@@ -2841,7 +2841,7 @@ it("should add local tarball dependency", async () => {
     }),
   );
   const tarball = "baz-0.0.3.tgz";
-  const absolutePath = join(__dirname, tarball);
+  const absolutePath = join(BUN_TEST_DIR, tarball);
   await copyFile(absolutePath, join(package_dir, tarball));
   const { stdout, stderr, exited } = spawn({
     cmd: [fnpmExe(), "add", tarball],
@@ -2939,7 +2939,7 @@ describe("a relative local path typed from a directory below package.json", () =
   ])("the local tarball %s resolves against the cwd and is written as %s", async (typed, written) => {
     const cwd = await makeNestedCwd();
     await mkdir(join(package_dir, "vendor"));
-    await copyFile(join(__dirname, "baz-0.0.3.tgz"), join(package_dir, "vendor", "baz-0.0.3.tgz"));
+    await copyFile(join(BUN_TEST_DIR, "baz-0.0.3.tgz"), join(package_dir, "vendor", "baz-0.0.3.tgz"));
 
     const { stdout, stderr, exitCode } = await run(cwd, "add", typed);
     expect(stderr).not.toContain("error:");
@@ -3140,7 +3140,7 @@ describe("-g and a relative local path", () => {
   it("a local tarball", async () => {
     using dir = tempDir("bun-add-global-relative-tgz", files);
     const home = String(dir);
-    await copyFile(join(__dirname, "baz-0.0.3.tgz"), join(home, "sibling", "baz-0.0.3.tgz"));
+    await copyFile(join(BUN_TEST_DIR, "baz-0.0.3.tgz"), join(home, "sibling", "baz-0.0.3.tgz"));
 
     const { stdout, stderr, exitCode } = await runGlobal(
       home,
@@ -3254,7 +3254,7 @@ it("should not add duplicate package.json entries when installing the same tarba
   using server = Bun.serve({
     port: 0,
     fetch() {
-      return new Response(Bun.file(join(__dirname, "baz-0.0.3.tgz")));
+      return new Response(Bun.file(join(BUN_TEST_DIR, "baz-0.0.3.tgz")));
     },
   });
   const tarball_url = `${server.url.href.replace(/\/+$/, "")}/baz-0.0.3.tgz`;
@@ -3498,7 +3498,7 @@ it("should add multiple dependencies specified on command line", async () => {
   using server = Bun.serve({
     port: 0,
     fetch(req) {
-      return new Response(Bun.file(join(__dirname, "baz-0.0.3.tgz")));
+      return new Response(Bun.file(join(BUN_TEST_DIR, "baz-0.0.3.tgz")));
     },
   });
   const server_url = server.url.href.replace(/\/+$/, "");
@@ -3669,7 +3669,7 @@ it("should add a local tarball with an uppercase .TGZ extension", async () => {
       version: "0.0.1",
     }),
   );
-  await copyFile(join(__dirname, "baz-0.0.3.tgz"), join(package_dir, "BAZ-0.0.3.TGZ"));
+  await copyFile(join(BUN_TEST_DIR, "baz-0.0.3.tgz"), join(package_dir, "BAZ-0.0.3.TGZ"));
   const { stdout, stderr, exited } = spawn({
     cmd: [fnpmExe(), "add", "./BAZ-0.0.3.TGZ"],
     cwd: package_dir,
@@ -3704,7 +3704,7 @@ it("should add an uncompressed .tar local tarball", async () => {
   );
   await writeFile(
     join(package_dir, "baz-0.0.3.tar"),
-    Bun.gunzipSync(await file(join(__dirname, "baz-0.0.3.tgz")).bytes()),
+    Bun.gunzipSync(await file(join(BUN_TEST_DIR, "baz-0.0.3.tgz")).bytes()),
   );
   const { stdout, stderr, exited } = spawn({
     cmd: [fnpmExe(), "add", "baz-0.0.3.tar"],

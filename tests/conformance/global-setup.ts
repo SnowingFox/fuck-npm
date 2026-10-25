@@ -1,6 +1,6 @@
 /**
  * Starts one fixture registry (bun's fixture packages + loose tarballs) for the whole conformance run. Workers
- * read its URL with `inject("fnpmRegistry")`; fnpmEnv.FNPM_REGISTRY defaults to it.
+ * read its URL with `inject("fnpmRegistry")`; the harness writes it into a worker-local user npmrc.
  */
 import type { TestProject } from "vitest/node";
 import { start, type RunningRegistry } from "../registry/index.ts";
