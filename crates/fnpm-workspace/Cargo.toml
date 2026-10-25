@@ -1,0 +1,10 @@
+[package]
+name = "fnpm-workspace"
+description = "Workspace discovery, filter selectors and topological order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]

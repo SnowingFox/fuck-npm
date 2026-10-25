@@ -1,0 +1,10 @@
+[package]
+name = "fnpm-linker"
+description = "node_modules materialization: hoisted, isolated, bins, clone and hardlink"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]

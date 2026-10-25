@@ -1,0 +1,19 @@
+[package]
+name = "fnpm-napi"
+description = "Node-API bindings for the fnpm core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+napi.workspace = true
+napi-derive.workspace = true
+fnpm-core.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+napi-build.workspace = true

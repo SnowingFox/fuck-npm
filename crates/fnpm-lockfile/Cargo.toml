@@ -1,0 +1,10 @@
+[package]
+name = "fnpm-lockfile"
+description = "fnpm.lock format and converters for npm, yarn, pnpm and bun lockfiles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]

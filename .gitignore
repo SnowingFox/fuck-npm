@@ -1,0 +1,8 @@
+target/
+node_modules/
+dist/
+*.node
+bench/.tmp/
+.DS_Store
+*.log
+.env*

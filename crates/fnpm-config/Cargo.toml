@@ -1,0 +1,10 @@
+[package]
+name = "fnpm-config"
+description = "npmrc, fnpm.toml config, env vars and precedence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]

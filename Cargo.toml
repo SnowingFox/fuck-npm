@@ -1,0 +1,65 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/SnowingFox/fuck-npm"
+rust-version = "1.90"
+
+[workspace.dependencies]
+fnpm-semver = { path = "crates/fnpm-semver" }
+fnpm-config = { path = "crates/fnpm-config" }
+fnpm-registry = { path = "crates/fnpm-registry" }
+fnpm-store = { path = "crates/fnpm-store" }
+fnpm-resolver = { path = "crates/fnpm-resolver" }
+fnpm-lockfile = { path = "crates/fnpm-lockfile" }
+fnpm-linker = { path = "crates/fnpm-linker" }
+fnpm-scripts = { path = "crates/fnpm-scripts" }
+fnpm-workspace = { path = "crates/fnpm-workspace" }
+fnpm-core = { path = "crates/fnpm-core" }
+
+anyhow = "=1.0.100"
+thiserror = "=2.0.21"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+sonic-rs = "=0.5.10"
+rkyv = "=0.8.18"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "fs", "sync", "time", "io-util", "net", "process"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["http2", "rustls", "stream", "charset"] }
+futures-util = "0.3"
+bytes = "1"
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
+libdeflater = "=1.26.1"
+sha2 = "=0.11.1"
+sha1 = "=0.11.0"
+base64 = "=0.23.1"
+hex = "=0.4.3"
+rayon = "=1.12.0"
+parking_lot = "=0.13.0"
+crossbeam-channel = "=0.5.17"
+reflink-copy = "=0.1.30"
+rustix = { version = "=1.1.5", features = ["fs", "process"] }
+libc = "0.2"
+globset = "=0.4.20"
+serde_yaml_ng = "=0.10.0"
+xxhash-rust = { version = "=0.8.19", features = ["xxh3"] }
+memchr = "=2.8.3"
+tempfile = "=3.27.0"
+mimalloc = "=0.1.52"
+napi = { version = "=3.15.0", features = ["napi9", "tokio_rt", "serde-json"] }
+napi-derive = "=3.6.13"
+napi-build = "=2.6.0"
+axum = "=0.8.9"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 2
