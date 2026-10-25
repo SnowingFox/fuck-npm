@@ -872,7 +872,7 @@ test.concurrent.each(["isolated", "hoisted"] as const)(
 );
 
 test.concurrent.each(["install", "remove test-native-binlink"])(
-  "a bin link into a store entry is removed when bun prune removes the entry: after bun %s",
+  "a bin link into a store entry is removed when fnpm prune removes the entry: after bun %s",
   async command => {
     const native = ["test-native-binlink"];
     const root = { name: "command-into-the-store", nativeDependencies: native, trustedDependencies: native };
@@ -3348,7 +3348,7 @@ test.concurrent(
     expect(await peerEntries()).toEqual(entries);
     expect(await file(join(packageDir, "fnpm.lock")).text()).toBe(lockfile);
 
-    // The old variant stays in the store until `bun prune`, like after any peer bump.
+    // The old variant stays in the store until `fnpm prune`, like after any peer bump.
     const [rebound, ...rest] = entries.filter(entry => entry !== initialEntry);
     expect(rest).toEqual([]);
     expect(await peerNoDepsVersion(rebound)).toBe("1.0.1");
@@ -5831,7 +5831,7 @@ describe.each(["isolated", "hoisted"] as const)("lifecycle scripts of a link: de
 
 // The hoisted linker links a package's bins before its lifecycle scripts run. When a script of an optional dependency
 // fails, the bin links into the package are removed with it (like every link in that `.bin` whose target is gone, as
-// with `fnpm remove` and `bun prune`). The links of other packages are kept.
+// with `fnpm remove` and `fnpm prune`). The links of other packages are kept.
 describe.concurrent("bin links of a failed optional dependency (hoisted)", () => {
   const cli = "#!/usr/bin/env bun\n";
 

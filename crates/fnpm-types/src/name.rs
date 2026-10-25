@@ -385,6 +385,23 @@ pub fn is_safe_install_folder_name(name: &str) -> bool {
     safe(&b[start..])
 }
 
+/// bun's `alias_is_safe_install_target`: `node_modules/<alias>` is deleted and made again, so
+/// it must be one package folder (`name` or `@scope/name`) and none the installer owns
+/// (`.bin`, a dot entry, `node_modules` in any case, a bare `@scope`).
+pub fn alias_is_safe_install_target(alias: &str) -> bool {
+    if alias.len() >= 4096 || !is_safe_install_folder_name(alias) {
+        return false;
+    }
+    let name = match alias.split_once('/') {
+        Some((scope, name)) if scope.len() > 1 && scope.starts_with('@') && !name.contains('/') => {
+            name
+        }
+        None if !alias.starts_with('@') => alias,
+        _ => return false,
+    };
+    !name.starts_with('.') && !name.eq_ignore_ascii_case("node_modules")
+}
+
 /// A name that a lockfile's `"<name>@<resolution>"` keys can round-trip.
 pub fn is_safe_lockfile_package_name(name: &str) -> bool {
     is_safe_install_folder_name(name) && !name[1..].contains('@')
@@ -414,6 +431,30 @@ pub fn without_build_tag(version: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aliases_cannot_replace_installer_directories_or_escape_the_package_folder() {
+        for name in [
+            ".bin",
+            ".fnpm",
+            ".cache",
+            "node_modules",
+            "NODE_MODULES",
+            "@scope",
+            "@scope/.bin",
+            "@scope/Node_Modules",
+            "a/b",
+            "@scope/pkg/child",
+            "../outside",
+            "@scope/../outside",
+            "a\u{1b}[2K",
+        ] {
+            assert!(!alias_is_safe_install_target(name), "{name:?}");
+        }
+        for name in ["package", "@scope/package", "NODE_MODULES-helper", "a.b"] {
+            assert!(alias_is_safe_install_target(name), "{name:?}");
+        }
+    }
 
     #[test]
     fn parse_names() {

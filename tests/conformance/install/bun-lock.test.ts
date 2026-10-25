@@ -41,7 +41,7 @@ afterAll(() => {
 it("should write plaintext lockfiles", async () => {
   const { packageDir, packageJson } = await registry.createTestDir();
   // copy bar-0.0.2.tgz to package_dir
-  await copyFile(join(__dirname, "bar-0.0.2.tgz"), join(packageDir, "bar-0.0.2.tgz"));
+  await copyFile(join(BUN_TEST_DIR, "bar-0.0.2.tgz"), join(packageDir, "bar-0.0.2.tgz"));
 
   // Create a simple package.json
   await writeFile(

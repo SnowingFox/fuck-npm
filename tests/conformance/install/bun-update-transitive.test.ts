@@ -564,7 +564,7 @@ test.concurrent("a transitive dependency pinned exactly by its dependent stays p
   expect(exitCode).toBe(0);
 });
 
-// The root's no-deps@1.0.0 dedupes both dependents onto 1.0.0 before it is dropped; the fixed edge keeps 1.0.0 alive, so the `^1.0.0` edge is held instead of forked into the duplicate `bun dedupe` would remove.
+// The root's no-deps@1.0.0 dedupes both dependents onto 1.0.0 before it is dropped; the fixed edge keeps 1.0.0 alive, so the `^1.0.0` edge is held instead of forked into the duplicate `fnpm dedupe` would remove.
 test.concurrent("a range edge is not forked off an instance a fixed sibling keeps alive", async () => {
   const dependents = { "one-fixed-dep": "1.0.0", "one-range-dep": "1.0.0" };
   const dir = await setup({ "package.json": pkgJson({ "no-deps": "1.0.0", ...dependents }) });
@@ -583,7 +583,7 @@ test.concurrent("a range edge is not forked off an instance a fixed sibling keep
   expect(exitCode).toBe(0);
 });
 
-// #38903: `fnpm update` and `bun dedupe` must reach a fixed point. After dedupe collapses the `^1.0.0`
+// #38903: `fnpm update` and `fnpm dedupe` must reach a fixed point. After dedupe collapses the `^1.0.0`
 // edge onto the exact pin's 1.0.0, a bare update holds that edge instead of re-adding the duplicate.
 test.concurrent("a deduped lockfile is a fixed point of `fnpm update`", async () => {
   const dir = await setup({ "package.json": pkgJson({ "one-range-dep": "1.0.0" }) });
@@ -2898,7 +2898,7 @@ async function staleDirectLeaf(server: Bun.Server<undefined>, groups: Groups = {
 
 // Nothing but the header: no table, and no "up to date" either.
 const expectHeaderOnly = (stdout: string, command: string) =>
-  expect(stdout).toMatch(new RegExp(`^bun ${command} v[^\\n]*\\n$`));
+  expect(stdout).toMatch(new RegExp(`^fnpm ${command} v[^\\n]*\\n$`));
 
 test.concurrent.each<[number, string[]]>([
   [502, []],

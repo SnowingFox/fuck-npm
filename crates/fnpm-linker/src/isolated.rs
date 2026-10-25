@@ -207,11 +207,12 @@ impl<'g> Ctx<'g> {
         if e.owner != 0 {
             return false;
         }
-        if !b.is_workspace() {
-            return false;
-        }
         match &self.filter.workspaces {
-            Some(sel) => !sel.contains(&target),
+            Some(sel) => !sel.contains(&if b.is_workspace() {
+                target
+            } else {
+                PackageId::ROOT
+            }),
             None => false,
         }
     }

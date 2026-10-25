@@ -135,19 +135,27 @@ fn targets(
                 ..SelectOptions::default()
             },
         );
-        let positive: Vec<&String> = opts.filter.iter().filter(|f| !f.starts_with('!')).collect();
-        for &i in &sel.unmatched_patterns {
-            if let Some(p) = positive.get(i) {
-                events.emit(Event::warn(
-                    fnpm_workspace::unmatched_message(&[p.as_str()]),
-                    None,
-                ));
-            }
-        }
-        if sel.selected.is_empty() {
+        // Add/remove/update need an edit target. A plain install still resolves the whole
+        // lockfile, warns, and links nothing when its selection is empty.
+        let install_only = opts.command == InstallCommand::Install && opts.packages.is_empty();
+        if sel.selected.is_empty() && !install_only {
             return Err(Error::usage(fnpm_workspace::unmatched_message(
                 &opts.filter,
             )));
+        }
+        let unmatched: Vec<&str> = if sel.selected.is_empty() {
+            opts.filter.iter().map(String::as_str).collect()
+        } else {
+            sel.unmatched_patterns
+                .iter()
+                .filter_map(|&i| opts.filter.get(i).map(String::as_str))
+                .collect()
+        };
+        if !unmatched.is_empty() {
+            events.emit(Event::warn(
+                fnpm_workspace::unmatched_message(&unmatched),
+                None,
+            ));
         }
         return Ok((sel.selected.into_iter().map(path_of).collect(), true));
     }
@@ -188,7 +196,10 @@ pub(crate) fn plan(
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
     match opts.command {
         _ if is_add => {
-            let (targets, _) = targets(opts, ws, cwd, events)?;
+            let (targets, filtered) = targets(opts, ws, cwd, events)?;
+            if filtered {
+                planned.selected = Some(targets.clone());
+            }
             if opts.catalog.is_some() && !edits::catalog_supported(&ws.root.raw) {
                 return Err(Error::usage(
                     "--catalog requires a \"workspaces\" field in the root package.json",
@@ -197,6 +208,7 @@ pub(crate) fn plan(
             for input in &opts.packages {
                 let positional = Positional::parse(input)?;
                 for target in &targets {
+                    let positional = positional.relative_to(cwd, &ws.root_dir.join(target));
                     let manifest = manifest_of(ws, target);
                     let name = positional.request_name();
                     if opts.only_missing && declared_group(manifest, &name).is_some() {
@@ -234,7 +246,10 @@ pub(crate) fn plan(
             }
         }
         InstallCommand::Remove => {
-            let (targets, _) = targets(opts, ws, cwd, events)?;
+            let (targets, filtered) = targets(opts, ws, cwd, events)?;
+            if filtered {
+                planned.selected = Some(targets.clone());
+            }
             for input in &opts.packages {
                 let name = input.trim();
                 let mut found = false;

@@ -31,12 +31,11 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
     out
 }
 
-/// The version shown for a package (the resolution for packages without one).
+/// The terminal resolution: registry version, source URL, or local path without `file:`.
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
-    if p.version.is_empty() {
-        p.resolution.to_string()
-    } else {
-        p.version.clone()
+    match &p.resolution {
+        Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+        resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }
 
@@ -86,6 +85,94 @@ pub(crate) fn changes(
     (added, updated, removed)
 }
 
+/// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
+/// run wrote (`written`, per package id), workspace links excluded, by name.
+pub(crate) fn installed_direct(
+    graph: &LockGraph,
+    ws_path: &str,
+    written: &[bool],
+) -> Vec<AddedPackage> {
+    let mut out: Vec<AddedPackage> = Vec::new();
+    let Some(pkg) = graph.workspaces.get(ws_path).and_then(|id| graph.get(*id)) else {
+        return out;
+    };
+    let mut edges: Vec<_> = pkg.dependencies.iter().collect();
+    edges.sort_by(|a, b| a.name.cmp(&b.name));
+    for edge in edges {
+        let Some(id) = edge.target else { continue };
+        if !written.get(id.index()).copied().unwrap_or(false) {
+            continue;
+        }
+        let Some(t) = graph.get(id) else { continue };
+        if matches!(
+            t.resolution,
+            Resolution::Workspace { .. } | Resolution::Root
+        ) {
+            continue;
+        }
+        let entry = AddedPackage {
+            name: edge.name.clone(),
+            version: version_of(t),
+            alias: (edge.name != t.name).then(|| edge.name.clone()),
+            available_version: None,
+        };
+        if !out.iter().any(|e| e.name == entry.name) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// bun's `(v1.2.4 available)`: the `latest` of a manifest this run loaded, when it is newer
+/// than the registry release that was picked (prereleases get no hint).
+pub(crate) fn later_version(
+    graph: &LockGraph,
+    client: &fnpm_registry::RegistryClient,
+    config: &fnpm_config::Config,
+    name: &str,
+    version: &str,
+) -> Option<String> {
+    let installed = fnpm_semver::Version::parse(version).ok()?;
+    if installed.is_prerelease() {
+        return None;
+    }
+    let npm = graph.packages.iter().any(|p| {
+        p.name == name && p.version == version && matches!(p.resolution, Resolution::Npm { .. })
+    });
+    if !npm {
+        return None;
+    }
+    let manifest = client.cached_manifest(name)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let excludes = config
+        .minimum_release_age_ms
+        .filter(|ms| *ms > 0)
+        .map(|ms| {
+            let (excludes, _) = fnpm_resolver::options::ReleaseAgeExcludes::parse(
+                &config.minimum_release_age_excludes,
+            );
+            (ms, excludes)
+        });
+    let gate = excludes
+        .as_ref()
+        .map(|(ms, excludes)| fnpm_resolver::pick::AgeGate {
+            min_age_ms: *ms,
+            now_ms,
+            excludes,
+        });
+    let latest =
+        match fnpm_resolver::pick::find_by_dist_tag_with_filter(&manifest, "latest", gate.as_ref())
+        {
+            fnpm_resolver::pick::Picked::Found(v)
+            | fnpm_resolver::pick::Picked::FoundWithFilter { result: v, .. } => v,
+            fnpm_resolver::pick::Picked::Err(_) => return None,
+        };
+    (latest.version.cmp(&installed) == std::cmp::Ordering::Greater)
+        .then(|| latest.version.to_string())
+}
+
 /// `requested`: what each `add` / `update` request resolved to, with its bins.
 pub(crate) fn requested(
     graph: &LockGraph,
@@ -98,7 +185,8 @@ pub(crate) fn requested(
         let entry = RequestedPackage {
             name: req.name.clone(),
             version: version_of(p),
-            real_name: (p.name != req.name).then(|| p.name.clone()),
+            real_name: (p.name != req.name && matches!(p.resolution, Resolution::Npm { .. }))
+                .then(|| p.name.clone()),
             bins: p
                 .bin
                 .entries(&p.name)
@@ -112,4 +200,29 @@ pub(crate) fn requested(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_resolutions_redact_url_credentials() {
+        let mut p = fnpm_types::Package::new("root", "1.0.0", Resolution::Root);
+        p.resolution = Resolution::RemoteTarball {
+            url: "https://user:secret@example.com/pkg.tgz?token=secret".into(),
+            integrity: None,
+        };
+        assert_eq!(version_of(&p), "https://***@example.com/pkg.tgz?token=***");
+        p.resolution = Resolution::Git {
+            url: "https://user:secret@example.com/repo.git".into(),
+            committish: String::new(),
+            resolved_commit: "abcdef".into(),
+            integrity: None,
+        };
+        assert_eq!(
+            version_of(&p),
+            "git+https://***@example.com/repo.git#abcdef"
+        );
+    }
 }

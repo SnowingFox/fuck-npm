@@ -127,6 +127,11 @@ impl Project {
         Ok(ws)
     }
 
+    /// What fnpm keeps about this project's `node_modules` ([`crate::fast_path::meta_dir`]).
+    pub fn meta_dir(&self) -> std::path::PathBuf {
+        crate::fast_path::meta_dir(&self.config.cache_dir, &self.root_dir)
+    }
+
     /// A registry client over this configuration and environment.
     pub fn client(&self) -> Result<RegistryClient> {
         Ok(RegistryClient::with_env(

@@ -64,12 +64,24 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
+    /// A line bun prints on stderr when it shows no progress bar: `Resolving dependencies`,
+    /// `Resolved, downloaded and extracted [N]`, `Saved lockfile`. A progress renderer
+    /// ignores it.
+    Status {
+        message: String,
+    },
     Summary {
         summary: InstallSummary,
     },
 }
 
 impl Event {
+    pub fn status(message: impl Into<String>) -> Self {
+        Self::Status {
+            message: message.into(),
+        }
+    }
+
     pub fn warn(message: impl Into<String>, code: Option<&str>) -> Self {
         Self::Warn {
             message: message.into(),
@@ -210,6 +222,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&e).unwrap(),
             r#"{"type":"script","package":"esbuild","script":"postinstall","phase":"end","exitCode":0}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Event::status("Saved lockfile")).unwrap(),
+            r#"{"type":"status","message":"Saved lockfile"}"#
         );
         let e = Event::Resolve {
             resolved: 1,

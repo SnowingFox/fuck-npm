@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { emptySummary } from "@/core/fake.ts";
 import { plain, testBed } from "../harness.ts";
@@ -110,7 +113,7 @@ describe("install family", () => {
     expect(options?.latest).toBe(true);
   });
 
-  test("plain output: header on stderr, bun-style summary on stdout", async () => {
+  test("plain output: header and bun-style summary on stdout", async () => {
     const bed = testBed({
       core: {
         install: () =>
@@ -124,10 +127,10 @@ describe("install family", () => {
 
     expect(await bed.run(["install"])).toBe(0);
 
-    // Together: header, one blank line, rows, as bun prints them (`bun install v…\n` then
-    // its tree printer's leading `\n`).
-    expect(bed.stderr.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n$/);
-    expect(bed.stdout.text()).toBe("\n+ react@18.3.1\n\n3 packages installed [123.00ms]\n");
+    // Header, one blank line, rows, as bun prints them (`bun install v…\n` then its tree
+    // printer's leading `\n`).
+    expect(bed.stderr.text()).toBe("");
+    expect(bed.stdout.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n\n\+ react@18\.3\.1\n\n3 packages installed \[123\.00ms\]\n$/);
   });
 
   test("--json prints only the summary document", async () => {
@@ -277,4 +280,19 @@ describe("generic commands", () => {
     expect(await bed.run(["pm", "hash"])).toBe(1);
     expect(bed.stderr.text()).toBe("error: lockfile is corrupt\n");
   });
+});
+
+test("script paths own help, tree and version arguments", async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), "fnpm-script-dispatch-"));
+  const result = join(dir, "args.json");
+  fs.writeFileSync(join(dir, "cli.cjs"), `require("node:fs").writeFileSync(${JSON.stringify(result)}, JSON.stringify(process.argv.slice(2)));`);
+  try {
+    const bed = testBed({ cwd: dir });
+    expect(await bed.run(["cli.cjs", "--help", "--version", "--tree"])).toBe(0);
+    expect(JSON.parse(fs.readFileSync(result, "utf8"))).toEqual(["--help", "--version", "--tree"]);
+    expect(bed.stdout.text()).toBe("");
+    expect(bed.coreLoads()).toBe(0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

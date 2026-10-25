@@ -235,13 +235,12 @@ pub(crate) fn prepare(
         && !opts.pm.lockfile_only
         && !opts.pm.trust
         && config.install_packages
-        && let Check::Noop { packages } = fast_path::check(&project.root_dir, hash)
+        && let Check::Noop { packages, installs } =
+            fast_path::check(&project.root_dir, &project.meta_dir(), hash)
     {
         noop = Some(InstallSummary {
-            checked: Some(CheckedCount {
-                installs: packages,
-                packages,
-            }),
+            // A project without dependencies checks nothing: bun prints `[1.00ms] done`.
+            checked: (installs > 0).then_some(CheckedCount { installs, packages }),
             elapsed_ms: start.elapsed().as_millis() as u64,
             noop: true,
             ..InstallSummary::default()
@@ -345,7 +344,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.clone(),
     );
     let omits = config.omit.dev || config.omit.optional || config.omit.peer || config.production;
-    let stream = config.install_packages && !opts.pm.lockfile_only && !omits;
+    let stream =
+        config.install_packages && !opts.pm.lockfile_only && !omits && planned.selected.is_none();
     let previous = if config.force && planned.mode != Mode::Frozen {
         None
     } else {
@@ -406,6 +406,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         )
         .await?;
     }
+    // bun announces the resolve when it had to ask the network; its warnings follow.
+    let mut announced = false;
+    announce_resolving(&client, &*events, &mut announced);
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
@@ -427,7 +430,32 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &mut graph,
     );
 
-    let (added, updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
+    // Without a link (`--lockfile-only`, `--dry-run`) the rows are what the lockfile gained.
+    let (mut added, mut updated, mut removed) = summary::changes(lock.graph.as_ref(), &graph);
+    if opts.command == InstallCommand::Remove {
+        // The graph differ decides which declarations were removed. Keep that gate (a
+        // peer never recorded in a lockfile has no row), but display them in argument order.
+        removed.sort_by_key(|name| {
+            opts.packages
+                .iter()
+                .position(|input| input.trim() == name)
+                .unwrap_or(usize::MAX)
+        });
+    }
+    if opts.pm.lockfile_only || !config.install_packages {
+        for pkg in &mut added {
+            pkg.available_version =
+                summary::later_version(&graph, &client, &config, &pkg.name, &pkg.version);
+        }
+    }
+    // bun lists `↑` rows only for `update`; an install shows what it wrote as `+` rows.
+    if opts.command != InstallCommand::Update {
+        updated.clear();
+    }
+    for pkg in &mut updated {
+        pkg.available_version =
+            summary::later_version(&graph, &client, &config, &pkg.name, &pkg.to);
+    }
     let requested = summary::requested(&graph, &resolved_requests, &config.platform);
     let mut summary = InstallSummary {
         added,
@@ -439,6 +467,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let lockfile_dirty = changed || lock.migrated || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
 
     if opts.pm.lockfile_only || !config.install_packages {
+        announce_resolved(&client, &*events, announced);
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.
         if opts.pm.lockfile_only && !config.dry_run {
             save(
@@ -458,15 +487,22 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         return Ok(summary);
     }
 
+    // A name fnpm.lock carries (the resolver reused it) is checked like a resolved one.
+    if let Some(bad) = unsafe_dependency_name(&graph) {
+        return Err(Error::UnsafeName(fnpm_types::text::escape_control_chars(
+            &bad,
+        )));
+    }
+
     // 6. Link, overlapping the downloads still in flight. When node_modules is what the
     // previous lockfile's install left (the no-op state still matches it), packages that keep
     // their place are trusted without being read.
     let intact = in_place
         && previous.is_some()
-        && lock
-            .hash
-            .is_some_and(|h| fast_path::layout_intact(&root, hash, h, "hoisted"));
-    fast_path::remove(&root);
+        && lock.hash.is_some_and(|h| {
+            fast_path::layout_intact(&root, &project.meta_dir(), hash, h, "hoisted")
+        });
+    fast_path::remove(&root, &project.meta_dir());
     if config.global {
         // `remove -g`: the global bin links of removed packages go before their directories.
         for (_, name) in &planned.removals {
@@ -475,7 +511,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         }
     }
     let selected_ids: Option<Vec<PackageId>> = planned.selected.as_ref().and_then(|paths| {
-        (!paths.is_empty() && opts.command == InstallCommand::Install).then(|| {
+        (opts.command != InstallCommand::Update).then(|| {
             paths
                 .iter()
                 .filter_map(|p| graph.workspaces.get(p).copied())
@@ -523,9 +559,50 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     )
     .await?;
     phases.mark("link");
-    summary.installed_count = linked.report.installed;
+    // `+` rows: the direct dependencies of the cwd's workspace that this run wrote.
+    let ws_path = ws
+        .member_for_dir(&project.cwd)
+        .map(|m| m.path.clone())
+        .unwrap_or_default();
+    summary.added = summary::installed_direct(&graph, &ws_path, &linked.report.written)
+        .into_iter()
+        .filter(|pkg| !summary.updated.iter().any(|u| u.name == pkg.name))
+        .collect();
+    for pkg in &mut summary.added {
+        let real = pkg.alias.as_ref().and_then(|_| {
+            graph
+                .workspaces
+                .get(&ws_path)
+                .and_then(|id| graph.get(*id))
+                .and_then(|p| p.dependencies.iter().find(|e| e.name == pkg.name))
+                .and_then(|e| e.target)
+                .and_then(|t| graph.get(t))
+                .map(|t| t.name.clone())
+        });
+        let name = real.unwrap_or_else(|| pkg.name.clone());
+        pkg.available_version =
+            summary::later_version(&graph, &client, &config, &name, &pkg.version);
+    }
+    // bun counts each package once, however many places it was copied to.
+    summary.installed_count = linked.report.installed_packages;
     summary.removed_count = linked.report.removed;
     summary.failed_count = linked.failed;
+    // Nothing written: bun reports the places it checked (`Checked 4 installs across 3
+    // packages`), for `install` and `update` (not for an `add` or `remove`).
+    if summary.installed_count == 0
+        && summary.removed_count == 0
+        && summary.failed_count == 0
+        && (linked.report.verified > 0 || !opts.filter.is_empty())
+        && matches!(
+            opts.command,
+            InstallCommand::Install | InstallCommand::Update
+        )
+    {
+        summary.checked = Some(CheckedCount {
+            installs: linked.report.verified,
+            packages: graph.len() as u32,
+        });
+    }
 
     // Integrity the lockfile did not have (migrations, URL tarballs) comes from the imports.
     let mut integrity_filled = false;
@@ -548,6 +625,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             integrity_filled = true;
         }
     }
+
+    // Every download is done (the link waited for them).
+    announce_resolved(&client, &*events, announced);
 
     // Global installs link the direct dependencies' bins into the global bin directory.
     if config.global {
@@ -591,19 +671,14 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let packages = fetcher.store_dir_names(&graph, &linked.reachable).await;
     let background = {
         let (store, root, config) = (store.clone(), root.clone(), config.clone());
-        let restore = !saved && lock.from_cached_sidecar;
-        let loaded =
-            (!saved && lock.sidecar_missing && !restore && lock.format == Some(Format::Fnpm))
-                .then(|| lock.graph.clone().zip(lock.hash))
-                .flatten();
+        // `save` wrote the sidecar with the lockfile; otherwise a parsed fnpm.lock leaves one.
+        let loaded = (!saved && lock.sidecar_missing && lock.format == Some(Format::Fnpm))
+            .then(|| lock.graph.clone().zip(lock.hash))
+            .flatten();
         tokio::task::spawn_blocking(move || {
             let _ = store.set_project_packages(&root, packages);
-            if saved {
-                lock::mirror_sidecar(&config, &root);
-            } else if restore {
-                lock::restore_sidecar(&config, &root);
-            } else if let Some((graph, hash)) = loaded {
-                lock::save_sidecars(&config, &root, hash, &graph, true);
+            if let Some((graph, hash)) = loaded {
+                lock::save_sidecar(&config, &root, hash, &graph);
             }
         })
     };
@@ -628,7 +703,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         if linked.report.removed > 0 || linked.report.installed > 0 {
             let _ = tokio::task::spawn_blocking(fnpm_linker::flush_background_deletes).await;
         }
-        write_state(&root, &ws, &graph, hash, &linked.linker);
+        let installs = linked.report.installed + linked.report.verified;
+        write_state(
+            &root,
+            &project.meta_dir(),
+            &ws,
+            &graph,
+            hash,
+            &linked.linker,
+            installs,
+        );
     }
     phases.mark("state");
     client.flush_cache_writes().await;
@@ -1013,7 +1097,14 @@ pub(crate) fn plan_layout(
 ) -> Layout {
     match kind {
         NodeLinker::Hoisted => {
-            let mut layout = linker.plan(view, kind);
+            let mut layout = Layout::Hoisted(fnpm_lockfile::tree::hoist(
+                view,
+                &fnpm_lockfile::tree::HoistOptions {
+                    include: linker.include(),
+                    platform: linker.config().platform,
+                    workspaces: selected,
+                },
+            ));
             if let Layout::Hoisted(tree) = &mut layout {
                 for (_, ids) in &tree.workspace_roots {
                     for &id in ids {
@@ -1114,10 +1205,44 @@ async fn link(
                 fetcher.ensure_package(p);
             }
         }
+        let previous_hoisted_workspaces = if kind == NodeLinker::Hoisted && graph.has_workspaces() {
+            lock.graph
+                .as_ref()
+                .filter(|previous| *previous != graph)
+                .map(|previous| {
+                    let old_view = link_view(previous);
+                    let Layout::Hoisted(old_tree) = plan_layout(&linker, &old_view, kind, None)
+                    else {
+                        unreachable!("hoisted layout requested");
+                    };
+                    old_tree
+                        .workspace_roots
+                        .iter()
+                        .filter_map(|(id, _)| {
+                            let path = previous
+                                .workspaces
+                                .iter()
+                                .find_map(|(path, old)| (old == id).then_some(path))?;
+                            graph.workspaces.get(path).copied()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let link_opts = LinkOptions {
+            previous_hoisted_workspaces,
             backend: config.backend.unwrap_or_else(fnpm_linker::default_backend),
             force: config.force,
             fresh: !root.join("node_modules").exists(),
+            selected_workspaces: selected.clone(),
+            hoisted_prune_tree: (selected.is_some() && kind == NodeLinker::Hoisted).then(|| {
+                match plan_layout(&linker, &view, kind, None) {
+                    Layout::Hoisted(tree) => tree,
+                    _ => unreachable!("hoisted layout requested"),
+                }
+            }),
             global_store: config.global_store,
             check_unpatched: lock
                 .graph
@@ -1242,10 +1367,35 @@ fn save(
             events.emit(Event::warn(line, Some("MIGRATED_PACKAGE_JSON")));
         }
     }
+    // Bun deletes the lockfile when remove leaves only the dependency-free root.
+    // Keep this inside the normal save gate so --no-save and frozen installs preserve it.
+    let removing = edits
+        .by_workspace
+        .values()
+        .flatten()
+        .any(|edit| matches!(edit, Edit::Remove { .. }));
+    if removing && graph.len() == 1 && graph.packages[0].dependencies.is_empty() {
+        let path = root.join(fnpm_lockfile::FNPM_LOCK);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io(&path)(e)),
+        }
+        let _ = std::fs::remove_file(lock::sidecar_path(config, root));
+        if !config.global {
+            events.emit(Event::status(
+                "\npackage.json has no dependencies! Deleted empty lockfile",
+            ));
+        }
+        return Ok(true);
+    }
     match prepared {
-        Some(p) => fnpm_lockfile::save_prepared(root, &p)?,
-        None => fnpm_lockfile::save(root, graph)?,
+        Some(p) => {
+            fnpm_lockfile::save_prepared_with(root, &p, Some(&lock::sidecar_path(config, root)))?
+        }
+        None => fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?,
     };
+    events.emit(Event::status("Saved lockfile"));
     if config.lockfile.print_yarn {
         fnpm_lockfile::save_yarn(
             root,
@@ -1257,6 +1407,59 @@ fn save(
         )?;
     }
     Ok(true)
+}
+
+/// The first edge whose name cannot be a folder under `node_modules` (workspace links aside).
+fn unsafe_dependency_name(graph: &LockGraph) -> Option<String> {
+    for p in &graph.packages {
+        for e in &p.dependencies {
+            if e.target.is_some()
+                && !e.behavior.is_workspace()
+                && !fnpm_types::name::alias_is_safe_install_target(&e.name)
+            {
+                return Some(e.name.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Registry tasks so far: bun schedules the HTTP request and the manifest parse / tarball
+/// extraction separately. A 304 response reuses the parsed manifest.
+fn network_tasks(client: &fnpm_registry::RegistryClient) -> u64 {
+    let stats = client.stats();
+    2 * (stats.manifest_requests + stats.tarball_requests) - stats.not_modified
+}
+
+/// bun's `Resolving dependencies` (on stderr, without a progress bar), once, when the install
+/// had to ask the network.
+fn announce_resolving(
+    client: &fnpm_registry::RegistryClient,
+    events: &dyn EventSink,
+    announced: &mut bool,
+) {
+    if !*announced && network_tasks(client) > 0 {
+        events.emit(Event::status("Resolving dependencies"));
+        *announced = true;
+    }
+}
+
+/// bun's `Resolved, downloaded and extracted [N]`, after the downloads.
+fn announce_resolved(
+    client: &fnpm_registry::RegistryClient,
+    events: &dyn EventSink,
+    announced: bool,
+) {
+    let tasks = network_tasks(client);
+    if tasks == 0 {
+        return;
+    }
+    if !announced {
+        events.emit(Event::status("Resolving dependencies"));
+    }
+    events.emit(Event::status(format!(
+        "Resolved, downloaded and extracted [{tasks}]"
+    )));
 }
 
 /// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns
@@ -1323,10 +1526,12 @@ async fn run_scripts(
 /// Writes the no-op state for the files as they are now.
 fn write_state(
     root: &Path,
+    meta: &Path,
     ws: &Workspace,
     graph: &LockGraph,
     config_hash: u64,
     linker: &NodeLinker,
+    installs: u32,
 ) {
     let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
         return;
@@ -1349,10 +1554,11 @@ fn write_state(
             NodeLinker::Isolated => "isolated".into(),
         },
         packages: graph.len() as u32,
+        installs,
         workspace_patterns,
         workspace_dirs,
     };
-    let _ = fast_path::write(root, &state);
+    let _ = fast_path::write(root, meta, &state);
 }
 
 #[allow(dead_code)]

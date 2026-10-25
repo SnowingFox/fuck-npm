@@ -177,7 +177,7 @@ test("dependency on workspace without version in package.json", async () => {
       JSON.stringify(lockfile, null, 2).replaceAll(/http:\/\/localhost:\d+/g, "http://localhost:1234"),
     ).toMatchSnapshot(`version: ${version}`);
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "2 packages installed",
     ]);
@@ -206,7 +206,7 @@ test("dependency on workspace without version in package.json", async () => {
       JSON.stringify(lockfile, null, 2).replaceAll(/http:\/\/localhost:\d+/g, "http://localhost:1234"),
     ).toMatchSnapshot(`version: ${version}`);
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "3 packages installed",
     ]);
@@ -552,7 +552,7 @@ test("dependency on same name as workspace and dist-tag", async () => {
   ).toMatchSnapshot("with version");
   expect(lockfile).toMatchNodeModulesAt(packageDir);
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "3 packages installed",
   ]);
@@ -1068,7 +1068,7 @@ test.concurrent("adding workspace in workspace edits package.json with correct v
   const out = await stdout.text();
 
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed pkg2@workspace:apps/pkg2",
     "",
@@ -1736,7 +1736,7 @@ test.concurrent("adding packages in a subdirectory of a workspace", async () => 
   });
   let out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed no-deps@2.0.0",
     "",
@@ -1763,7 +1763,7 @@ test.concurrent("adding packages in a subdirectory of a workspace", async () => 
   }));
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed what-bin@1.5.0 with binaries:",
     " - what-bin",
@@ -1793,7 +1793,7 @@ test.concurrent("adding packages in a subdirectory of a workspace", async () => 
   }));
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ no-deps@2.0.0",
     "",
@@ -1816,7 +1816,7 @@ test.concurrent("adding packages in a subdirectory of a workspace", async () => 
   }));
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ what-bin@1.5.0",
     "",
@@ -1871,7 +1871,7 @@ test.concurrent("adding packages in workspaces", async () => {
 
   let out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ bar@workspace:packages/bar",
     "",
@@ -1895,7 +1895,7 @@ test.concurrent("adding packages in workspaces", async () => {
 
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed no-deps@2.0.0",
     "",
@@ -1924,7 +1924,7 @@ test.concurrent("adding packages in workspaces", async () => {
 
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed two-range-deps@1.0.0",
     "",
@@ -1961,7 +1961,7 @@ test.concurrent("adding packages in workspaces", async () => {
 
   out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.7",
     "",
@@ -2336,7 +2336,7 @@ for (const rootVersion of versions) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ pkg2@workspace:packages/pkg2`,
         "",
@@ -2360,7 +2360,7 @@ for (const rootVersion of versions) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 2 installs across 3 packages (no changes)",
       ]);
@@ -2385,7 +2385,7 @@ for (const rootVersion of versions) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ pkg2@workspace:packages/pkg2`,
         "",
@@ -2409,7 +2409,7 @@ for (const rootVersion of versions) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 2 installs across 3 packages (no changes)",
       ]);
@@ -2463,7 +2463,7 @@ for (const version of versions) {
       expect(err).not.toContain('workspace dependency "workspace-1" not found');
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ workspace-1@workspace:packages/workspace-1`,
         "",
@@ -2495,7 +2495,7 @@ for (const version of versions) {
       expect(err).not.toContain('workspace dependency "workspace-1" not found');
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -2529,7 +2529,7 @@ for (const version of versions) {
       expect(err).not.toContain('workspace dependency "workspace-1" not found');
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -2557,7 +2557,7 @@ for (const version of versions) {
       expect(err).not.toContain('workspace dependency "workspace-1" not found');
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);

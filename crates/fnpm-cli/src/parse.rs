@@ -68,9 +68,9 @@ fn flag_name(token: &str) -> Option<&str> {
 
 fn spell(name: &str) -> String {
     if name.chars().count() > 1 {
-        format!("`--{name}`")
+        format!("--{name}")
     } else {
-        format!("`-{name}`")
+        format!("-{name}")
     }
 }
 
@@ -86,10 +86,10 @@ fn cluster_letters(body: &str, leaf: &LeafDef) -> Vec<String> {
     letters
 }
 
-/// `rejectUnknownFlags`: a flag declared elsewhere points at its owner, anything else is a
-/// typo. `command` is `fnpm <canonical path>`.
+/// `rejectUnknownFlags`, bun's way: `fnpm install has no --nope flag.`, even when another
+/// command has the flag.
 pub fn reject_unknown_flags(own: &[String], leaf: &LeafDef, bin: &BinDef) -> Result<(), CliError> {
-    let command = format!("{} {}", bin.name, leaf.name);
+    let command = format!("{} {}", bin.name, help_command(leaf.name));
     let mut index = 0;
     while index < own.len() {
         let token = own[index].as_str();
@@ -106,24 +106,9 @@ pub fn reject_unknown_flags(own: &[String], leaf: &LeafDef, bin: &BinDef) -> Res
             if (leaf.allowed)(&candidate) {
                 continue;
             }
-            let owners = (bin.flag_owners)(&candidate);
-            if !owners.is_empty() {
-                let belongs = owners
-                    .iter()
-                    .map(|path| format!("`{} {path}`", bin.name))
-                    .collect::<Vec<_>>()
-                    .join(" or ");
-                return Err(CliError::usage(
-                    "UNKNOWN_FLAG",
-                    format!(
-                        "{} is not a flag of `{command}`. It belongs to {belongs}.",
-                        spell(&candidate)
-                    ),
-                ));
-            }
             return Err(CliError::usage(
                 "UNKNOWN_FLAG",
-                format!("`{command}` has no {} flag.", spell(&candidate)),
+                format!("{command} has no {} flag.", spell(&candidate)),
             ));
         }
         if consumes_next(token, leaf.long, leaf.short) {
@@ -131,6 +116,11 @@ pub fn reject_unknown_flags(own: &[String], leaf: &LeafDef, bin: &BinDef) -> Res
         }
     }
     Ok(())
+}
+
+/// The command bun names in an unknown-flag error (`ci` is `install`).
+pub fn help_command(leaf: &str) -> &str {
+    if leaf == "ci" { "install" } else { leaf }
 }
 
 fn boolean_word(value: &str) -> Option<bool> {

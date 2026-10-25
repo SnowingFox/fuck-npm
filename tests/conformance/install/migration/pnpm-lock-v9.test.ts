@@ -3713,7 +3713,7 @@ snapshots:
 
         const { stdout, stderr, exitCode } = await run(String(dir), ...args);
 
-        expect(stdout).toMatch(new RegExp(`^bun ${header} v[^\\n]*\\n$`));
+        expect(stdout).toMatch(new RegExp(`^fnpm ${header} v[^\\n]*\\n$`));
         expect(fetchLines(stderr)).toStrictEqual([
           `warn: GET ${registry.url.origin}/no-deps - 404`,
           `error: GET ${registry.url.origin}/no-deps - 404`,

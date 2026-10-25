@@ -21,11 +21,15 @@
 import fs from "node:fs";
 import { dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const conformanceDir = resolve(here, "..");
 const repoRoot = resolve(conformanceDir, "..", "..");
-const sourceRoot = join(repoRoot, "submodule", "bun", "test", "cli", "install");
+/** The submodule, where the ported files point to; FNPM_BUN_DIR reads another checkout of the same commit. */
+const submoduleRoot = join(repoRoot, "submodule", "bun");
+const bunRoot = process.env.FNPM_BUN_DIR ?? submoduleRoot;
+const sourceRoot = join(bunRoot, "test", "cli", "install");
 const outputRoot = join(conformanceDir, "install");
 
 /** Tests that are not ported, with the reason. */
@@ -65,16 +69,22 @@ const renames: [RegExp, string][] = [
 ];
 
 const pmCommands =
-  "install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|x|i|a|rm|ci";
+  "install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|prune|dedupe|x|i|a|rm|ci";
 
 const textChanges: [RegExp, string][] = [
   [/\bbun\.lock(?![b\w])/g, "fnpm.lock"],
   [new RegExp(`\\bbun (${pmCommands})\\b`, "g"), "fnpm $1"],
+  // bun's header is `bun install v1.x.y`; fnpm has its own version (`fnpm install v0.0.1`).
+  [/\bfnpm (install|add|update|remove|link|unlink|outdated) v1\./g, "fnpm $1 v"],
+  // A command name in a variable: `bun ${command} has no --x flag`, `bun ${command} <version> (<revision>)`
+  // (not `bun ${script}.js`, which runs a file).
+  [/\bbun (\$\{(?:command|header|cmd|subcommand)\})/g, "fnpm $1"],
   [/\bBUN_INSTALL_CACHE_DIR\b/g, "FNPM_CACHE_DIR"],
   [/\bBUN_CONFIG_/g, "FNPM_CONFIG_"],
   [/node_modules\/\.bun\//g, "node_modules/.fnpm/"],
   [/node_modules\/\.bun\b(?!-)/g, "node_modules/.fnpm"],
   [/"\.bun"/g, '".fnpm"'],
+  [/([`"'])\.bun\//g, "$1.fnpm/"],
 ];
 
 function transformText(text: string): string {
@@ -83,6 +93,9 @@ function transformText(text: string): string {
 }
 
 function rel(fromFile: string, toFile: string): string {
+  // A file of the bun checkout is referenced through the submodule path, wherever it was read.
+  const inBun = relative(bunRoot, toFile);
+  if (!inBun.startsWith("..")) toFile = join(submoduleRoot, inBun);
   let path = relative(dirname(fromFile), toFile).split("\\").join("/");
   if (!path.startsWith(".")) path = `./${path}`;
   return path;
@@ -103,6 +116,9 @@ function mapSpecifier(specifier: string, sourceFile: string, outFile: string): s
       return compat("compat/internal-for-testing.ts");
     case "mkfifo":
       return compat("compat/mkfifo.ts");
+    case "path":
+    case "node:path":
+      return compat("compat/path.ts");
     case "fs/promises":
     case "node:fs/promises":
       return compat("compat/fs-promises.ts");
@@ -161,10 +177,41 @@ function prelude(code: string, relPath: string, outFile: string): string {
   return parts.length ? `${parts.join("\n")}\n` : "";
 }
 
+/** Bun's CommonJS globals refer to the original file. Walk syntax so embedded scripts keep theirs. */
+function rewriteFileGlobals(code: string): string {
+  const source = ts.createSourceFile("test.ts", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const edits: { start: number; end: number; text: string }[] = [];
+  // Bind this file without loading libraries: a symbol means a local declaration or import.
+  // The checker handles parameters, destructuring and shadowing in each lexical scope.
+  const options: ts.CompilerOptions = { noLib: true, noResolve: true };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = name => name === "test.ts" ? source : undefined;
+  const checker = ts.createProgram(["test.ts"], options, host).getTypeChecker();
+  function visit(node: ts.Node) {
+    if (ts.isIdentifier(node) && (node.text === "__dirname" || node.text === "__filename")) {
+      const parent = node.parent;
+      const shorthand = ts.isShorthandPropertyAssignment(parent) && parent.name === node;
+      const propertyName = (ts.isPropertyAccessExpression(parent) && parent.name === node)
+        || ("name" in parent && parent.name === node && !shorthand);
+      const symbol = shorthand ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(node);
+      if (!propertyName && symbol === undefined) {
+        const value = node.text === "__dirname" ? "BUN_TEST_DIR" : "BUN_TEST_FILE";
+        edits.push({ start: node.getStart(source), end: node.end, text: shorthand ? `${node.text}: ${value}` : value });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    code = code.slice(0, edit.start) + edit.text + code.slice(edit.end);
+  }
+  return code;
+}
+
 function port(relPath: string, kind: "test" | "helper"): { out: string; tests: number } {
   const sourceFile = join(sourceRoot, relPath);
   const outFile = join(outputRoot, relPath);
-  let code = fs.readFileSync(sourceFile, "utf8");
+  let code = rewriteFileGlobals(fs.readFileSync(sourceFile, "utf8"));
   code = code
     .replace(/(?:Bun\.)?fileURLToPath\(import\.meta\.url\)/g, "BUN_TEST_FILE")
     .replace(/import\.meta\.dirname\b/g, "BUN_TEST_DIR")
@@ -303,7 +350,7 @@ ${counts.excluded} excluded.
 - \`bun\` / the \`Bun\` global is \`compat/bun.ts\` (spawn, file, write, \`$\`, serve, listen, Archive, TOML, JSONC,
   Glob, semver, hashing) on node:*.
 - \`harness\` is \`harness.ts\`: \`fnpmExe()\`, \`fnpmEnv\` (FNPM_STORE_DIR / FNPM_CACHE_DIR in a temp dir per worker,
-  FNPM_REGISTRY = the shared fixture registry), \`tempDirWithFiles\`, \`tempDir\`, \`runFnpm\`, \`readLockfile\`, ...
+  a worker-local user npmrc supplying the shared fixture registry), \`tempDirWithFiles\`, \`tempDir\`, \`runFnpm\`, \`readLockfile\`, ...
 - \`registry\` (\`TestRegistry\`) and \`./dummy.registry\` run on \`tests/registry\` (node:http).
 - Text: \`bun.lock\` -> \`fnpm.lock\`, \`bun install\` -> \`fnpm install\` (and the other pm commands),
   \`BUN_INSTALL_CACHE_DIR\` -> \`FNPM_CACHE_DIR\`, \`BUN_CONFIG_*\` -> \`FNPM_CONFIG_*\`, \`node_modules/.bun\` ->

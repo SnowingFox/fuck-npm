@@ -18,7 +18,7 @@ use crate::parse::{parse_flags, reject_unknown_flags};
 use crate::plan::Invocation;
 use crate::progress::{DiagnosticsSink, ProgressSink, wants_progress};
 use crate::spec::{BinDef, LeafDef, VERSION};
-use crate::summary::format_install_summary;
+use crate::summary::format_install_summary_at;
 use crate::terminal::{Terminal, color_enabled};
 
 /// What the core did with an install.
@@ -128,12 +128,14 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
     let silent = options.pm.log_level == fnpm_config::LogLevel::Silent;
     let stderr_colors = Colors::new(color_enabled(&terminal.env, terminal.stderr_is_tty));
 
-    // `fnpm add v0.1.0` on stderr, like bun's header; the summary opens with the blank line.
+    // `fnpm add v0.1.0` on stdout, like bun's header (`<b>bun add <r><d>v1.2.3<r>`); the
+    // summary opens with the blank line.
     if mode != Mode::Json && !silent && options.pm.summary {
-        terminal.stderr.write(&format!(
-            "{} {}\n",
-            stderr_colors.bold(&format!("fnpm {label}")),
-            stderr_colors.dim(&format!("v{VERSION}"))
+        let pc = Colors::new(color_enabled(&terminal.env, terminal.stdout_is_tty));
+        terminal.stdout.write(&format!(
+            "{}{}\n",
+            pc.bold(&format!("fnpm {label} ")),
+            pc.dim(&format!("v{VERSION}"))
         ));
     }
 
@@ -193,12 +195,19 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                 return Outcome::Exit(exit_code);
             }
             if show_summary {
+                // Like bun, the time since the process started.
+                let elapsed_ms = terminal
+                    .started
+                    .map_or(summary.elapsed_ms as f64, |started| {
+                        (started.elapsed().as_secs_f64() * 1000.0).max(summary.elapsed_ms as f64)
+                    });
                 let stdout_color = color_enabled(&terminal.env, terminal.stdout_is_tty);
-                let lines = format_install_summary(
+                let lines = format_install_summary_at(
                     &summary,
                     command,
                     Colors::new(stdout_color),
                     mode == Mode::Rich && stdout_color,
+                    elapsed_ms,
                 );
                 let mut text = String::new();
                 for line in lines {
@@ -299,7 +308,13 @@ pub fn report_error(
         return 1;
     }
     let mut text = format!("error: {}\n", error.message);
-    if error.kind == ErrorKind::Usage {
+    if error.code == "UNKNOWN_FLAG" {
+        text.push_str(&format!(
+            "note: Run '{} {} --help' for more information\n",
+            bin.name,
+            crate::parse::help_command(leaf.name)
+        ));
+    } else if error.kind == ErrorKind::Usage {
         text.push_str(&format!(
             "Run '{} {} --help' for detailed usage.\n",
             bin.name, leaf.name

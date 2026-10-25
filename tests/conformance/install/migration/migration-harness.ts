@@ -6,7 +6,7 @@ const BUN_TEST_FILE = __bunSourceDir("test/cli/install/migration/migration-harne
 import fs from "fs";
 import { fnpmEnv, fnpmExe, isASAN, isDebug, tempDir, tls } from "../../harness.ts";
 import net from "net";
-import { dirname, join } from "path";
+import { dirname, join } from "../../compat/path.ts";
 import { fixturePackages } from "../../compat/registry.ts";
 
 /**

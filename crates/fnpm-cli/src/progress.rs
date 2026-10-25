@@ -253,7 +253,7 @@ impl Renderer {
                 self.above(&line, now, out);
                 return;
             }
-            Event::Summary { .. } => return,
+            Event::Status { .. } | Event::Summary { .. } => return,
         }
         self.schedule(now, out);
     }
@@ -417,6 +417,7 @@ impl DiagnosticsSink {
         match event {
             Event::Warn { message, .. } => Some(format!("{} {message}\n", self.pc.yellow("warn:"))),
             Event::Error { message, .. } => Some(format!("{} {message}\n", self.pc.red("error:"))),
+            Event::Status { message } => Some(format!("{message}\n")),
             _ => None,
         }
     }

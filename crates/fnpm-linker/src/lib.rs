@@ -224,6 +224,15 @@ pub struct LinkOptions {
     /// untouched since (the no-op state still matches). A package at the same place as before
     /// is trusted without reading its `package.json`.
     pub previous: Option<Previous>,
+    /// Full hoisted tree used for pruning during a filtered install. Only the selected
+    /// layout is written; entries still required by unselected workspaces are preserved.
+    pub hoisted_prune_tree: Option<Tree>,
+    /// Importers with nested packages in the previous hoisted layout. They still need
+    /// pruning when their last nested entry disappeared from the current layout.
+    pub previous_hoisted_workspaces: Vec<PackageId>,
+    /// Selected importers of a filtered install. Unselected importer directories are
+    /// neither cleared nor pruned; the virtual store keeps its existing hidden links.
+    pub selected_workspaces: Option<Vec<PackageId>>,
 }
 
 /// See [`LinkOptions::previous`].
@@ -245,6 +254,9 @@ impl Default for LinkOptions {
             global_store: true,
             check_unpatched: false,
             previous: None,
+            hoisted_prune_tree: None,
+            previous_hoisted_workspaces: Vec::new(),
+            selected_workspaces: None,
         }
     }
 }
@@ -252,8 +264,16 @@ impl Default for LinkOptions {
 /// What [`Linker::link`] did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LinkReport {
-    /// Packages written (not already up to date).
+    /// Packages written (not already up to date), once per place.
     pub installed: u32,
+    /// Distinct packages written: bun's `N packages installed` (a package copied to two
+    /// places counts once).
+    pub installed_packages: u32,
+    /// Places that were already up to date, workspace links included: bun's `skipped`, the
+    /// `Checked N installs` of a run that changed nothing.
+    pub verified: u32,
+    /// Per package id: written by this run (bun's `successfully_installed`, the `+` rows).
+    pub written: Vec<bool>,
     /// Directories removed because they are no longer in the layout.
     pub removed: u32,
     /// Packages skipped because they do not match the platform.

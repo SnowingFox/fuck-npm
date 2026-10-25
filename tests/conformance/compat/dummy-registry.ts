@@ -1,6 +1,6 @@
 /**
  * Ported from bun test/cli/install/dummy.registry.ts (MIT): Bun.serve -> compat serve (node:http), bun:test -> vitest.
- * dummyBeforeAll() also points fnpmEnv.FNPM_REGISTRY at this server.
+ * dummyBeforeAll() also makes this server the default registry (setDefaultRegistry).
  *
  * ## Concurrent Test Support
  *
@@ -27,7 +27,7 @@
  * ```
  */
 import { expect } from "vitest";
-import { fnpmEnv, githubTarball, tmpdirSync, bunSourceDir } from "../harness.ts";
+import { fnpmEnv, githubTarball, setDefaultRegistry, tmpdirSync, bunSourceDir } from "../harness.ts";
 import { file, serve, TOML, write as bunWrite, type Server } from "./bun.ts";
 
 /** bun's test/cli/install, where the `.tgz` fixtures are. */
@@ -444,7 +444,7 @@ export function dummyBeforeAll() {
     port: 0,
   });
   root_url = `http://localhost:${server.port}`;
-  fnpmEnv.FNPM_REGISTRY = `${root_url}/`;
+  setDefaultRegistry(`${root_url}/`);
 }
 
 export function dummyAfterAll() {

@@ -36,22 +36,37 @@ export function semverIntersects(a: string, b: string): boolean {
   return semver.intersects(a, b, { loose: true });
 }
 
-function matchList(list: string[] | string | undefined, current: string): boolean {
-  if (list === undefined) return true;
-  const values = Array.isArray(list) ? list : [list];
-  if (values.length === 0) return true;
-  const allowed = values.filter(value => !value.startsWith("!"));
-  const denied = values.filter(value => value.startsWith("!")).map(value => value.slice(1));
-  if (denied.includes(current)) return false;
-  return allowed.length === 0 || allowed.includes(current) || allowed.includes("any");
+// Bun's Negatable resets wildcard/unknown state when it sees a recognized platform.
+function matchList(list: string[] | string | undefined, current: string, known: readonly string[]): boolean {
+  const added = new Set<string>();
+  const removed = new Set<string>();
+  let wildcard = false;
+  let unknown = false;
+  for (const value of list === undefined ? [] : Array.isArray(list) ? list : [list]) {
+    if (value === "") continue;
+    if (value === "any") { wildcard = true; continue; }
+    if (value === "none") { unknown = true; continue; }
+    const denied = value.startsWith("!");
+    const name = denied ? value.slice(1) : value;
+    if (!known.includes(name)) {
+      if (!denied) unknown = true;
+      continue;
+    }
+    (denied ? removed : added).add(name);
+    wildcard = unknown = false;
+  }
+  if (removed.has(current)) return false;
+  if (wildcard) return true;
+  if (added.size === 0 && removed.size === 0) return !unknown;
+  return added.size === 0 || added.has(current);
 }
 
 export function isArchitectureMatch(cpu: string[] | string | undefined, arch: string = process.arch): boolean {
-  return matchList(cpu, arch);
+  return matchList(cpu, arch, ["arm", "arm64", "ia32", "mips", "mipsel", "ppc", "ppc64", "s390", "s390x", "x32", "x64"]);
 }
 
 export function isOperatingSystemMatch(os: string[] | string | undefined, platform: string = process.platform): boolean {
-  return matchList(os, platform);
+  return matchList(os, platform, ["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32", "android"]);
 }
 
 export const install_test_helpers = stub("install_test_helpers");

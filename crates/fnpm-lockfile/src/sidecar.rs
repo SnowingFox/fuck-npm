@@ -554,15 +554,25 @@ pub fn decode(bytes: &[u8], lock_hash: u64) -> Option<LockGraph> {
 
 /// `Some` only when the stored key equals `lock_hash` and the format version matches.
 pub fn load(project_dir: &Path, lock_hash: u64) -> Option<LockGraph> {
-    let bytes = std::fs::read(project_dir.join(SIDECAR)).ok()?;
+    load_at(&project_dir.join(SIDECAR), lock_hash)
+}
+
+/// [`load`] from the sidecar file at `path`.
+pub fn load_at(path: &Path, lock_hash: u64) -> Option<LockGraph> {
+    let bytes = std::fs::read(path).ok()?;
     decode(&bytes, lock_hash)
 }
 
 /// The sidecar exists with this key and image version (only the header is read).
 pub fn is_fresh(project_dir: &Path, lock_hash: u64) -> bool {
+    is_fresh_at(&project_dir.join(SIDECAR), lock_hash)
+}
+
+/// [`is_fresh`] for the sidecar file at `path`.
+pub fn is_fresh_at(path: &Path, lock_hash: u64) -> bool {
     use std::io::Read as _;
     let mut header = [0u8; HEADER];
-    std::fs::File::open(project_dir.join(SIDECAR))
+    std::fs::File::open(path)
         .and_then(|mut f| f.read_exact(&mut header))
         .is_ok()
         && &header[..8] == MAGIC
@@ -572,19 +582,28 @@ pub fn is_fresh(project_dir: &Path, lock_hash: u64) -> bool {
 
 /// Writes the sidecar atomically, creating `node_modules/.fnpm` if needed.
 pub fn save(project_dir: &Path, lock_hash: u64, graph: &LockGraph) -> Result<()> {
-    write(project_dir, &encode(lock_hash, graph)?)
+    save_at(&project_dir.join(SIDECAR), lock_hash, graph)
 }
 
-/// Writes [`encode`]d sidecar bytes atomically, creating `node_modules/.fnpm` if needed.
+/// [`save`] to the sidecar file at `path`, creating its directory if needed.
+pub fn save_at(path: &Path, lock_hash: u64, graph: &LockGraph) -> Result<()> {
+    write_at(path, &encode(lock_hash, graph)?)
+}
+
+/// Writes encoded sidecar bytes to the default project location.
 pub fn write(project_dir: &Path, bytes: &[u8]) -> Result<()> {
-    let path = project_dir.join(SIDECAR);
+    write_at(&project_dir.join(SIDECAR), bytes)
+}
+
+/// Writes encoded sidecar bytes atomically, creating its directory if needed.
+pub fn write_at(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|source| Error::Io {
             path: dir.to_owned(),
             source,
         })?;
     }
-    crate::write_atomic(&path, bytes)
+    crate::write_atomic(path, bytes)
 }
 
 #[cfg(test)]

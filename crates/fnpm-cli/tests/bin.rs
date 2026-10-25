@@ -168,7 +168,7 @@ fn usage_errors_never_need_node() {
     assert_eq!(stdout(&output), "");
     assert_eq!(
         stderr(&output),
-        "error: `fnpm install` has no `--bogus` flag.\nRun 'fnpm install --help' for detailed usage.\n"
+        "error: fnpm install has no --bogus flag.\nnote: Run 'fnpm install --help' for more information\n"
     );
 
     let output = run(FNPM, &["add", "--json"], &[("FNPM_NODE", &missing)]);
@@ -177,4 +177,18 @@ fn usage_errors_never_need_node() {
         stdout(&output),
         "{\"ok\":false,\"error\":{\"code\":\"MISSING_ARGUMENT\",\"message\":\"`fnpm add` needs <packages>: \\\"name\\\" or \\\"name@version\\\" of package(s) to install.\"}}\n"
     );
+}
+
+#[test]
+fn script_version_flag_is_forwarded_to_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let node = PathBuf::from(SH);
+    let entry = fake_entry(&dir.path().join("fnpm.js"));
+    let output = run(
+        FNPM,
+        &["script.cjs", "--version"],
+        &[("FNPM_NODE", &node), ("FNPM_JS_ENTRY", &entry)],
+    );
+    assert_eq!(output.status.code(), Some(7));
+    assert!(stdout(&output).contains("script.cjs\n--version\n"));
 }

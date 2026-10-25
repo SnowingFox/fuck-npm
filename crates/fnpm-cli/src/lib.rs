@@ -151,6 +151,7 @@ fn run_route(
 /// `fnpm-lock` has no native commands, so its executable calls [`main_lock`] directly and
 /// never links the core.
 pub fn main(bin: Bin) -> i32 {
+    let started = std::time::Instant::now();
     if bin == Bin::FnpmLock {
         return main_lock();
     }
@@ -159,7 +160,12 @@ pub fn main(bin: Bin) -> i32 {
     if let Route::Version = route {
         return print_version();
     }
-    match run_route(bin, route, Terminal::from_process, &NativeCore) {
+    let terminal = || {
+        let mut terminal = Terminal::from_process();
+        terminal.started = Some(started);
+        terminal
+    };
+    match run_route(bin, route, terminal, &NativeCore) {
         Some(code) => code,
         None => exec::run_node(bin.def(), &args, &Env::from_process()),
     }

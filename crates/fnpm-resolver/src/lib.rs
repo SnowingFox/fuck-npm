@@ -80,6 +80,17 @@ pub enum Error {
         /// What is wrong with it.
         message: String,
     },
+    /// A dependency name (or the registry name it asks for) that cannot be a folder under
+    /// `node_modules`. bun reports it, then the dependency that failed.
+    #[error("invalid dependency name \"{bad}\"\nerror: {name}@{spec} failed to resolve")]
+    InvalidName {
+        /// The dependency name.
+        name: String,
+        /// The specifier as written.
+        spec: String,
+        /// The unsafe name, escaped for the terminal.
+        bad: String,
+    },
     /// The registry, git or a tarball download failed.
     #[error(transparent)]
     Registry(#[from] fnpm_registry::Error),

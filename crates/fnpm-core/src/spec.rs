@@ -111,6 +111,42 @@ impl Positional {
         }
     }
 
+    /// Re-spells a local positional, interpreted from `cwd`, relative to the package.json
+    /// receiving it. Registry names and global `link:` registrations keep their spelling.
+    pub(crate) fn relative_to(&self, cwd: &std::path::Path, target: &std::path::Path) -> Self {
+        let path = match &self.spec {
+            DependencySpec::Folder { path } => path,
+            DependencySpec::Symlink { path } if fnpm_types::spec::is_link_path(path) => path,
+            DependencySpec::Tarball {
+                uri: TarballUri::Local(path),
+            } => path,
+            _ => return self.clone(),
+        };
+        if std::path::Path::new(path).is_absolute() || path.starts_with('~') {
+            return self.clone();
+        }
+        let relative = fnpm_store::fsops::relative_path(target, &cwd.join(path));
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        let relative = if relative.starts_with('.') {
+            relative
+        } else {
+            format!("./{relative}")
+        };
+        let prefix = if self.literal.starts_with("file:") {
+            "file:"
+        } else if self.literal.starts_with("link:") {
+            "link:"
+        } else {
+            ""
+        };
+        let literal = format!("{prefix}{relative}");
+        let input = match &self.name {
+            Some(name) => format!("{name}@{literal}"),
+            None => literal,
+        };
+        Self::parse(&input).expect("rebasing a local path preserves its dependency format")
+    }
+
     /// Whether the user named a version, range or tag (`react@18`, not `react`).
     pub fn has_version(&self) -> bool {
         !self.literal.is_empty()

@@ -1,4 +1,6 @@
-//! The no-op fast path: `node_modules/.fnpm/.state/state`.
+//! The no-op fast path: `<cache>/projects/<project>/state` ([`meta_dir`]).
+//!
+//! Stored in the configured cache so the hoisted package tree needs no `.fnpm` directory.
 //!
 //! If the lockfile, every workspace package.json, the effective config and the
 //! `node_modules` directory are unchanged since the last successful install, `fnpm install`
@@ -10,14 +12,27 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Where the state lives, relative to the project root. In a directory of its own, so writing it
-/// changes neither `node_modules` nor `node_modules/.fnpm` (both identities are recorded).
-pub const STATE_FILE: &str = "node_modules/.fnpm/.state/state";
+/// The state file in the meta directory ([`meta_dir`]).
+pub const STATE_FILE: &str = "state";
 
-/// The state file of fnpm versions before `.state/` (deleted with the current one).
-const LEGACY_STATE_FILE: &str = "node_modules/.fnpm/state";
+/// Project metadata (state and parsed lockfile) in `<cache>/projects/<xxh3 of the project path>`.
+/// Usually outside the project; `cache = false` puts the cache in `node_modules/.cache`.
+/// Later writes inside this directory leave the recorded package-tree identities unchanged.
+pub fn meta_dir(cache_dir: &Path, project_dir: &Path) -> std::path::PathBuf {
+    let key = xxhash_rust::xxh3::xxh3_64(project_dir.to_string_lossy().as_bytes());
+    cache_dir.join("projects").join(format!("{key:016x}"))
+}
+
+/// `dir_identity`, or zeros when the directory does not exist (the hoisted layout has no
+/// `node_modules/.fnpm`).
+fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
+    match dir_identity(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok((0, 0, 0)),
+        other => other,
+    }
+}
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 3;
+pub const STATE_VERSION: u32 = 4;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,8 +58,12 @@ pub struct State {
     pub virtual_store: (u64, u64, i128),
     /// `hoisted` or `isolated`.
     pub linker: String,
-    /// Packages in the lockfile graph (the no-op summary's `checked` count).
+    /// Packages in the lockfile graph (the no-op summary's `across N packages`).
     pub packages: u32,
+    /// Places in `node_modules` (a package copied to two places counts twice, a workspace
+    /// link counts): the no-op summary's `Checked N installs`, as bun counts them.
+    #[serde(default)]
+    pub installs: u32,
     /// The `workspaces` patterns (root package.json or pnpm-workspace.yaml).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_patterns: Vec<String>,
@@ -62,6 +81,8 @@ pub enum Check {
     Noop {
         /// Packages in the graph.
         packages: u32,
+        /// Places in `node_modules` ([`State::installs`]).
+        installs: u32,
     },
     /// Something changed; carry the parsed state so the install can reuse the hashes.
     Changed(Option<Box<State>>),
@@ -106,21 +127,23 @@ pub fn manifest_entry(project_dir: &Path, rel: &str) -> io::Result<(String, u64,
     ))
 }
 
-/// Reads and parses the state file; `None` when it is missing or unreadable.
-pub fn read(project_dir: &Path) -> Option<State> {
-    let bytes = std::fs::read(project_dir.join(STATE_FILE)).ok()?;
+/// Reads and parses the state file of the meta directory `meta`; `None` when it is missing or
+/// unreadable.
+pub fn read(meta: &Path) -> Option<State> {
+    let bytes = std::fs::read(meta.join(STATE_FILE)).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
 /// Compares `STATE_FILE` with the current files. Package.json contents are only hashed when
 /// size or mtime differ.
-pub fn check(project_dir: &Path, config_hash: u64) -> Check {
-    let Some(state) = read(project_dir) else {
+pub fn check(project_dir: &Path, meta: &Path, config_hash: u64) -> Check {
+    let Some(state) = read(meta) else {
         return Check::Changed(None);
     };
     if is_unchanged(project_dir, config_hash, &state) {
         Check::Noop {
             packages: state.packages,
+            installs: state.installs,
         }
     } else {
         Check::Changed(Some(Box::new(state)))
@@ -134,11 +157,12 @@ pub fn check(project_dir: &Path, config_hash: u64) -> Check {
 /// Must be called before [`remove`].
 pub fn layout_intact(
     project_dir: &Path,
+    meta: &Path,
     config_hash: u64,
     lockfile_hash: u64,
     linker: &str,
 ) -> bool {
-    let Some(state) = read(project_dir) else {
+    let Some(state) = read(meta) else {
         return false;
     };
     let nm = project_dir.join("node_modules");
@@ -148,7 +172,7 @@ pub fn layout_intact(
         && state.lockfile_hash == lockfile_hash
         && state.linker == linker
         && dir_identity(&nm).is_ok_and(|id| id == state.node_modules)
-        && dir_identity(&nm.join(".fnpm")).is_ok_and(|id| id == state.virtual_store)
+        && identity_or_zero(&nm.join(".fnpm")).is_ok_and(|id| id == state.virtual_store)
 }
 
 fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
@@ -163,7 +187,7 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         Ok(id) if id == state.node_modules => {}
         _ => return false,
     }
-    match dir_identity(&nm.join(".fnpm")) {
+    match identity_or_zero(&nm.join(".fnpm")) {
         Ok(id) if id == state.virtual_store => {}
         _ => return false,
     }
@@ -207,17 +231,16 @@ fn members_unchanged(project_dir: &Path, state: &State) -> bool {
 /// The pnpm workspace file, part of the manifest set when present.
 pub const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
 
-/// Writes the state file atomically. `state.node_modules` is replaced by the identity of
-/// `node_modules` taken after `node_modules/.fnpm` exists, so writing the file itself does not
-/// invalidate it.
-pub fn write(project_dir: &Path, state: &State) -> io::Result<()> {
-    let path = project_dir.join(STATE_FILE);
-    let dir = path.parent().expect("STATE_FILE has a parent");
+/// Writes the state file atomically. Creates the metadata directory and removes legacy
+/// metadata before recording package-tree identities, so these writes do not invalidate it.
+pub fn write(project_dir: &Path, meta: &Path, state: &State) -> io::Result<()> {
+    let path = meta.join(STATE_FILE);
+    let dir = meta;
     std::fs::create_dir_all(dir)?;
+    remove_legacy_metadata(project_dir);
     let mut state = state.clone();
     state.node_modules = dir_identity(&project_dir.join("node_modules"))?;
-    state.virtual_store = dir_identity(&project_dir.join("node_modules/.fnpm"))?;
-    let _ = std::fs::remove_file(project_dir.join(LEGACY_STATE_FILE));
+    state.virtual_store = identity_or_zero(&project_dir.join("node_modules/.fnpm"))?;
     let bytes = serde_json::to_vec(&state).map_err(io::Error::other)?;
     let tmp = dir.join(format!(".state-{}.tmp", std::process::id()));
     std::fs::write(&tmp, &bytes)?;
@@ -227,9 +250,30 @@ pub fn write(project_dir: &Path, state: &State) -> io::Result<()> {
 }
 
 /// Deletes the state file (at the start of an install that changes `node_modules`).
-pub fn remove(project_dir: &Path) {
-    let _ = std::fs::remove_file(project_dir.join(STATE_FILE));
-    let _ = std::fs::remove_file(project_dir.join(LEGACY_STATE_FILE));
+pub fn remove(project_dir: &Path, meta: &Path) {
+    let _ = std::fs::remove_file(meta.join(STATE_FILE));
+    remove_legacy_metadata(project_dir);
+}
+
+/// Remove only old bookkeeping files and empty directories, preserving isolated packages.
+fn remove_legacy_metadata(project_dir: &Path) {
+    let node_modules = project_dir.join("node_modules");
+    let virtual_store = node_modules.join(".fnpm");
+    let real_dir =
+        |path: &Path| std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir());
+    // Bookkeeping from an older install is optional. Never follow a planted parent link
+    // while deleting it: the target may belong to another project or to the user.
+    if !real_dir(&node_modules) || !real_dir(&virtual_store) {
+        return;
+    }
+    let state_dir = virtual_store.join(".state");
+    if real_dir(&state_dir) {
+        let _ = std::fs::remove_file(state_dir.join("state"));
+        let _ = std::fs::remove_dir(&state_dir);
+    }
+    let _ = std::fs::remove_file(virtual_store.join("state"));
+    let _ = std::fs::remove_file(virtual_store.join("lock.bin"));
+    let _ = std::fs::remove_dir(virtual_store);
 }
 
 #[cfg(test)]
@@ -255,54 +299,198 @@ mod tests {
             virtual_store: (0, 0, 0),
             linker: "hoisted".into(),
             packages: 3,
+            installs: 4,
             workspace_patterns: Vec::new(),
             workspace_dirs: Vec::new(),
         }
     }
 
     #[test]
+    fn hoisted_layout_trust_uses_cached_metadata_without_virtual_store() {
+        let p = project();
+        let cache = tempfile::tempdir().unwrap();
+        let meta = meta_dir(cache.path(), p.path());
+        let mut state = state_for(p.path());
+        state.linker = "hoisted".into();
+        state.virtual_store = (0, 0, 0);
+        state.node_modules = dir_identity(&p.path().join("node_modules")).unwrap();
+        write(p.path(), &meta, &state).unwrap();
+        assert!(layout_intact(
+            p.path(),
+            &meta,
+            state.config_hash,
+            state.lockfile_hash,
+            "hoisted"
+        ));
+        assert!(!layout_intact(
+            p.path(),
+            &meta,
+            state.config_hash.wrapping_add(1),
+            state.lockfile_hash,
+            "hoisted"
+        ));
+        std::fs::create_dir(p.path().join("node_modules/new-entry")).unwrap();
+        assert!(!layout_intact(
+            p.path(),
+            &meta,
+            state.config_hash,
+            state.lockfile_hash,
+            "hoisted"
+        ));
+    }
+
+    #[test]
     fn unchanged_project_is_a_noop() {
-        let dir = project();
-        write(dir.path(), &state_for(dir.path())).unwrap();
-        assert_eq!(check(dir.path(), 7), Check::Noop { packages: 3 });
+        for meta_path in ["meta", "node_modules/.cache/projects/test"] {
+            let dir = project();
+            let meta = dir.path().join(meta_path);
+            write(dir.path(), &meta, &state_for(dir.path())).unwrap();
+            assert_eq!(
+                check(dir.path(), &meta, 7),
+                Check::Noop {
+                    packages: 3,
+                    installs: 4
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_metadata_cleanup_preserves_isolated_packages_and_noop() {
+        for isolated in [false, true] {
+            let dir = project();
+            let p = dir.path();
+            let meta = p.join("meta");
+            let virtual_store = p.join("node_modules/.fnpm");
+            std::fs::create_dir_all(virtual_store.join(".state")).unwrap();
+            for file in [".state/state", "state", "lock.bin"] {
+                std::fs::write(virtual_store.join(file), "old metadata").unwrap();
+            }
+            if isolated {
+                std::fs::create_dir(virtual_store.join("a@1.0.0")).unwrap();
+            }
+            write(p, &meta, &state_for(p)).unwrap();
+            assert_eq!(virtual_store.exists(), isolated);
+            if isolated {
+                assert!(virtual_store.join("a@1.0.0").is_dir());
+                assert_eq!(std::fs::read_dir(&virtual_store).unwrap().count(), 1);
+            }
+            assert!(matches!(check(p, &meta, 7), Check::Noop { .. }));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_metadata_cleanup_does_not_follow_virtual_store_symlinks() {
+        for symlink_state in [false, true] {
+            let dir = project();
+            let outside = tempfile::tempdir().unwrap();
+            std::fs::write(outside.path().join("state"), "keep").unwrap();
+            std::fs::write(outside.path().join("lock.bin"), "keep").unwrap();
+            let virtual_store = dir.path().join("node_modules/.fnpm");
+            let link = if symlink_state {
+                std::fs::create_dir(&virtual_store).unwrap();
+                virtual_store.join(".state")
+            } else {
+                virtual_store
+            };
+            std::os::unix::fs::symlink(outside.path(), link).unwrap();
+            remove(dir.path(), &dir.path().join("meta"));
+            assert_eq!(
+                std::fs::read_to_string(outside.path().join("state")).unwrap(),
+                "keep"
+            );
+            assert_eq!(
+                std::fs::read_to_string(outside.path().join("lock.bin")).unwrap(),
+                "keep"
+            );
+        }
     }
 
     #[test]
     fn every_input_invalidates() {
         let dir = project();
         let p = dir.path();
-        write(p, &state_for(p)).unwrap();
-        assert!(matches!(check(p, 8), Check::Changed(Some(_))), "config");
+        write(p, &p.join("meta"), &state_for(p)).unwrap();
+        assert!(
+            matches!(check(p, &p.join("meta"), 8), Check::Changed(Some(_))),
+            "config"
+        );
 
         std::fs::write(p.join("fnpm.lock"), "{ }\n").unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "lockfile");
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "lockfile"
+        );
         std::fs::write(p.join("fnpm.lock"), "{}\n").unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::write(p.join("package.json"), r#"{"name":"app2"}"#).unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "manifest");
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "manifest"
+        );
         std::fs::write(p.join("package.json"), r#"{"name":"app"}"#).unwrap();
         // Same content, new mtime: hashed and accepted.
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::create_dir(p.join("node_modules/left-pad")).unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "node_modules");
-        write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "node_modules"
+        );
+        write(p, &p.join("meta"), &state_for(p)).unwrap();
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // An isolated entry deleted from the virtual store.
-        std::fs::create_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
-        write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        std::fs::create_dir_all(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
+        write(p, &p.join("meta"), &state_for(p)).unwrap();
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
         // Directory mtimes come from the coarse kernel clock (a few ms per tick).
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::remove_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "virtual store");
-        write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "virtual store"
+        );
+        write(p, &p.join("meta"), &state_for(p)).unwrap();
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::write(p.join(PNPM_WORKSPACE), "packages: []\n").unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "pnpm workspace");
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "pnpm workspace"
+        );
     }
 
     #[test]
@@ -319,33 +507,57 @@ mod tests {
         s.workspace_dirs = fnpm_workspace::Workspace::candidate_dirs(p, &patterns).unwrap();
         assert_eq!(s.workspace_dirs, vec!["packages/a", "packages/empty"]);
         s.workspace_patterns = patterns;
-        write(p, &s).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        write(p, &p.join("meta"), &s).unwrap();
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // A directory without package.json gains one: a new member.
         std::fs::write(p.join("packages/empty/package.json"), r#"{"name":"e"}"#).unwrap();
         assert!(
-            matches!(check(p, 7), Check::Changed(_)),
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
             "package.json added"
         );
         std::fs::remove_file(p.join("packages/empty/package.json")).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, &p.join("meta"), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // A new directory matching the glob.
         std::fs::create_dir_all(p.join("packages/b")).unwrap();
         std::fs::write(p.join("packages/b/package.json"), r#"{"name":"b"}"#).unwrap();
-        assert!(matches!(check(p, 7), Check::Changed(_)), "new member dir");
+        assert!(
+            matches!(check(p, &p.join("meta"), 7), Check::Changed(_)),
+            "new member dir"
+        );
     }
 
     #[test]
     fn missing_or_foreign_state_is_changed() {
         let dir = project();
-        assert_eq!(check(dir.path(), 7), Check::Changed(None));
+        assert_eq!(
+            check(dir.path(), &dir.path().join("meta"), 7),
+            Check::Changed(None)
+        );
         let mut s = state_for(dir.path());
         s.fnpm_version = "0.0.0-other".into();
-        write(dir.path(), &s).unwrap();
-        assert!(matches!(check(dir.path(), 7), Check::Changed(Some(_))));
-        remove(dir.path());
-        assert_eq!(check(dir.path(), 7), Check::Changed(None));
+        write(dir.path(), &dir.path().join("meta"), &s).unwrap();
+        assert!(matches!(
+            check(dir.path(), &dir.path().join("meta"), 7),
+            Check::Changed(Some(_))
+        ));
+        remove(dir.path(), &dir.path().join("meta"));
+        assert_eq!(
+            check(dir.path(), &dir.path().join("meta"), 7),
+            Check::Changed(None)
+        );
     }
 }

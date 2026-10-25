@@ -19,8 +19,17 @@ import type { Colors } from "./output.ts";
 
 /** `[12.34ms]` up to 1500 ms, `[1.23s]` above. */
 export function formatElapsed(ms: number): string {
-  return ms <= 1500 ? `[${ms.toFixed(2)}ms]` : `[${(ms / 1000).toFixed(2)}s]`;
+  return `[${elapsedValue(ms)}]`;
 }
+
+const elapsedValue = (ms: number): string => (ms <= 1500 ? `${ms.toFixed(2)}ms` : `${(ms / 1000).toFixed(2)}s`);
+
+/** bun's `<d>[<b>12.00ms<r><d>]<r>`. */
+const timeOf = (ms: number, pc: Colors): string => pc.dim(`[${pc.bold(elapsedValue(ms))}]`);
+
+/** bun's ` <d>(<blue>v1.2.4 available<r><d>)<r>`. */
+const availableOf = (version: string | undefined, pc: Colors): string =>
+  version ? ` ${pc.dim(`(${pc.blue(`v${version} available`)})`)}` : "";
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -32,7 +41,7 @@ export function formatInstallSummary(
 ): string[] {
   // bun's tree printer opens with a newline; the header above ends with one.
   const lines: string[] = [""];
-  const time = pc.dim(formatElapsed(summary.elapsedMs));
+  const time = timeOf(summary.elapsedMs, pc);
 
   // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
   // (its update requests; `update` lists them): an add shows them once, in the `installed`
@@ -43,15 +52,16 @@ export function formatInstallSummary(
   let rows = 0;
   for (const pkg of summary.added) {
     if (requestedNames.has(pkg.name)) continue;
-    const available = pkg.availableVersion ? pc.dim(` (v${pkg.availableVersion} available)`) : "";
-    lines.push(`${pc.green("+")} ${pkg.name}${pc.dim(`@${pkg.version}`)}${available}`);
+    lines.push(`${pc.green("+")} ${pc.bold(pkg.name)}${pc.dim(`@${pkg.version}`)}${availableOf(pkg.availableVersion, pc)}`);
     rows += 1;
   }
   for (const pkg of summary.updated) {
-    const available = pkg.availableVersion ? pc.dim(` (v${pkg.availableVersion} available)`) : "";
     const arrowUp = opts.color ? "↑" : "^";
     const arrow = opts.color ? "→" : "->";
-    lines.push(`${pc.cyan(arrowUp)} ${pkg.name} ${pc.dim(pkg.from)} ${arrow} ${pkg.to}${available}`);
+    const to = opts.color ? pc.bold(pc.cyan(pkg.to)) : pc.bold(pkg.to);
+    lines.push(
+      `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
+    );
     rows += 1;
   }
   if (rows > 0) {
@@ -60,18 +70,22 @@ export function formatInstallSummary(
 
   if (summary.requested.length > 0 && (command === "add" || command === "update")) {
     for (const pkg of summary.requested) {
-      const shown = pkg.realName ? `${pkg.name}@npm:${pkg.realName}` : pkg.name;
       if (pkg.skipped) {
-        lines.push(`${pc.yellow("skipped")} ${shown}@${pkg.version} ${pc.dim("(unsupported platform)")}`);
+        lines.push(
+          `${pc.yellow("skipped")} ${pc.bold(pkg.name)}${pc.dim(`@${pkg.version}`)} ${pc.dim("(unsupported platform)")}`,
+        );
         continue;
       }
+      // bun: `<green>installed<r> <b>alias<r><d>@npm:<r><b>name<r><d>@1.0.0<r>`.
+      const shown = pkg.realName ? `${pc.bold(pkg.name)}${pc.dim("@npm:")}${pc.bold(pkg.realName)}` : pc.bold(pkg.name);
+      const installed = `${pc.green("installed")} ${shown}${pc.dim(`@${pkg.version}`)}`;
       if (pkg.bins.length > 0) {
-        lines.push(`${pc.green("installed")} ${pc.bold(`${shown}@${pkg.version}`)} with binaries:`);
+        lines.push(`${installed} with binaries:`);
         for (const bin of pkg.bins) {
-          lines.push(`  ${pc.dim("-")} ${pc.bold(bin)}`);
+          lines.push(` ${pc.dim("- ")}${pc.bold(bin)}`);
         }
       } else {
-        lines.push(`${pc.green("installed")} ${pc.bold(`${shown}@${pkg.version}`)}`);
+        lines.push(installed);
       }
     }
     lines.push("");
@@ -107,8 +121,11 @@ export function formatInstallSummary(
     blocked();
   } else if (summary.checked && summary.failedCount === 0) {
     const { installs, packages } = summary.checked;
+    // bun shortens the line when every package has exactly one place.
     lines.push(
-      `Checked ${pc.green(String(installs))} ${installs === 1 ? "install" : "installs"} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
+      installs === packages
+        ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`
+        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
     );
     blocked();
   } else {

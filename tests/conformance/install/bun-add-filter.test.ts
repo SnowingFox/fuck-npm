@@ -72,7 +72,7 @@ async function run(args: string[], dir: string, opts: { linker?: Linker; cwd?: s
   return { stdout, stderr: stderr.replace(PROGRESS_LINES, ""), exitCode };
 }
 
-const HEADER = (command: string) => `bun ${command} <version> (<revision>)`;
+const HEADER = (command: string) => `fnpm ${command} <version> (<revision>)`;
 
 // Durations are stripped before normalizing so a leading `[12.00ms] done` keeps its own line (as ` done`).
 function stdoutLines(stdout: string) {
@@ -2018,7 +2018,7 @@ test.concurrent.each(
     expect(fresh.stderr).not.toContain("error:");
     const { packages, bins } = await topLevel();
     // `add` removes the folders of the packages that it's given. Their dependencies are in a slot that this install
-    // skips, and no install removes that. `bun prune` does.
+    // skips, and no install removes that. `fnpm prune` does.
     expect(after).toStrictEqual({ packages: linker === "hoisted" ? [...packages, "no-deps"].sort() : packages, bins });
     expect(after.packages).not.toContain("one-fixed-dep");
     expect(fresh.exitCode).toBe(0);

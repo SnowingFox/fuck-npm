@@ -4,8 +4,8 @@
  * aliases too.
  *
  * Every fnpm spawned with `fnpmEnv` gets its own FNPM_STORE_DIR and FNPM_CACHE_DIR under a temp directory of this
- * worker, so tests never touch the user's store, and FNPM_REGISTRY points at the shared fixture registry that
- * globalSetup starts (a file that starts its own registry repoints it).
+ * worker, so tests never touch the user's store. A worker-local user npmrc supplies the fixture registry
+ * that globalSetup starts (a file that starts its own registry repoints it).
  */
 import fs from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -20,7 +20,7 @@ export type { Subprocess };
 const here = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(here, "..", "..");
 /** bun's sources (the submodule). Fixtures of the ported tests are read from here, not copied. */
-export const bunRoot = join(repoRoot, "submodule", "bun");
+export const bunRoot = process.env.FNPM_BUN_DIR ?? join(repoRoot, "submodule", "bun");
 
 /** A directory of bun's test tree, e.g. `bunSourceDir("test/cli/install")`. The ported tests use it for `import.meta.dir`. */
 export function bunSourceDir(relativePath: string): string {
@@ -108,6 +108,15 @@ export function sharedRegistryUrl(): string | undefined {
   }
 }
 
+/** The user .npmrc of this worker; [`setDefaultRegistry`] writes its `registry=`. */
+const defaultRegistryNpmrc = join(workerRoot, "user.npmrc");
+
+/** Points the fixture registry every fnpm falls back to (no registry in bunfig.toml or .npmrc) at `url`. */
+export function setDefaultRegistry(url: string | undefined) {
+  fs.writeFileSync(defaultRegistryNpmrc, url ? `registry=${url}\n` : "");
+}
+setDefaultRegistry(sharedRegistryUrl());
+
 function buildEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -119,9 +128,6 @@ function buildEnv(): Record<string, string | undefined> {
     AGENT: "false",
     FNPM_STORE_DIR: join(workerRoot, "store"),
     FNPM_CACHE_DIR: join(workerRoot, "cache"),
-    FNPM_REGISTRY: sharedRegistryUrl(),
-    // bun's env for the same purpose, in case fnpm reads it for compatibility.
-    BUN_INSTALL_CACHE_DIR: join(workerRoot, "cache"),
     // retry backoff of 1ms, like BUN_CONFIG_HTTP_RETRY_BACKOFF in bun's harness
     FNPM_CONFIG_HTTP_RETRY_BACKOFF: "1",
     FNPM_DISABLE_SLOW_FILESYSTEM_WARNING: "1",
@@ -133,6 +139,13 @@ function buildEnv(): Record<string, string | undefined> {
       delete env[key];
     }
   }
+  // The default registry goes in a user .npmrc: like bun's harness, a test's bunfig.toml or .npmrc wins over it
+  // (an FNPM_REGISTRY variable would win over both).
+  env.NPM_CONFIG_USERCONFIG = defaultRegistryNpmrc;
+  delete env.FNPM_REGISTRY;
+  // The porter renames BUN_INSTALL_CACHE_DIR to FNPM_CACHE_DIR. Tests remove that variable
+  // to exercise their configured cache; a second legacy override would silently defeat it.
+  delete env.BUN_INSTALL_CACHE_DIR;
   delete env.NODE_ENV;
   delete env.NODE_OPTIONS;
   delete env.VITEST;
@@ -141,7 +154,7 @@ function buildEnv(): Record<string, string | undefined> {
   return env;
 }
 
-/** The environment for every spawned fnpm (bunEnv). Mutable: a test file that starts a registry repoints FNPM_REGISTRY. */
+/** The environment for every spawned fnpm (bunEnv). A test file that starts a registry repoints the default with setDefaultRegistry. */
 export const fnpmEnv: Record<string, string | undefined> = buildEnv();
 
 /** bunEnv/installEnv with a cache of its own under `dir`. */
@@ -150,7 +163,6 @@ export function installEnv(dir: string, env: Record<string, string | undefined> 
     ...env,
     FNPM_CACHE_DIR: join(dir, ".fnpm-cache"),
     FNPM_STORE_DIR: join(dir, ".fnpm-store"),
-    BUN_INSTALL_CACHE_DIR: join(dir, ".fnpm-cache"),
   };
 }
 
@@ -345,6 +357,8 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
   const version = (globalThis as { Bun?: { version: string } }).Bun?.version ?? "0.0.0";
   return snapshot
     .replaceAll("\r\n", "\n")
+    // A command header (`fnpm install v0.0.1`) reads like bun's normalized one: `fnpm install <version> (<revision>)`.
+    .replace(/^(fnpm(?: [a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
     .replaceAll("\\", "/")
     .replaceAll(fs.realpathSync.native(process.cwd()).replaceAll("\\", "/"), "<cwd>")
     .replaceAll(fs.realpathSync.native(os.tmpdir()).replaceAll("\\", "/"), "<tmp>")

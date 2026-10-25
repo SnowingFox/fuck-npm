@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use fnpm_registry::PackageManifest;
 use fnpm_semver::{Range, Version};
-use fnpm_types::name::{is_npm_package_name, is_safe_install_folder_name};
+use fnpm_types::name::{alias_is_safe_install_target, is_npm_package_name};
 use fnpm_types::spec::{is_link_path, link_path_for_lockfile};
 use fnpm_types::{
     DepEdge, DependencySpec, Package, PackageId, Resolution, TarballUri, WorkspaceSpec,
@@ -281,18 +281,13 @@ impl Engine<'_> {
             Ok(None) => return Ok(Step::Done),
             Err(e) => return self.fail(row, &edge, e),
         };
-        if !is_safe_install_folder_name(&edge.name)
-            || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name))
-        {
-            let bad = if is_safe_install_folder_name(&edge.name) {
-                &asked.name
-            } else {
-                &edge.name
-            };
-            let err = Error::InvalidSpec {
-                name: edge.name.clone(),
-                spec: edge.literal.clone(),
-                message: format!("invalid dependency name \"{bad}\""),
+        let alias_ok = alias_is_safe_install_target(&edge.name);
+        if !alias_ok || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name)) {
+            let bad = if alias_ok { &asked.name } else { &edge.name };
+            let err = Error::InvalidName {
+                name: fnpm_types::text::escape_control_chars(&edge.name),
+                spec: fnpm_types::text::escape_control_chars(&edge.literal),
+                bad: fnpm_types::text::escape_control_chars(bad),
             };
             return self.fail(row, &edge, err);
         }
@@ -951,6 +946,18 @@ impl Engine<'_> {
                 &mut package.dependencies,
             );
         }
+        let deprecated = vm.deprecated.as_ref().filter(|_| {
+            package
+                .platform
+                .matches_for_edge(&self.cfg.platform, edge.behavior.is_optional())
+        });
+        let deprecated = deprecated.map(|message| {
+            format!(
+                "deprecated {}@{version}: {}",
+                fnpm_types::text::escape_control_chars(name),
+                fnpm_types::text::escape_control_chars(message)
+            )
+        });
         let owner = &self.st[row.pkg.index()];
         let mut state = PState::new(Kind::Registry, Some(vm.version.clone()));
         state.optional_only = owner.optional_only || edge.behavior.is_optional();
@@ -959,6 +966,9 @@ impl Engine<'_> {
         state.prev = self.prev_by_key.get(&package.key()).copied();
         package.meta.bundled = state.in_bundle;
         let id = self.add_package(package, state);
+        if let Some(line) = deprecated {
+            self.deprecated.push((id, line));
+        }
         self.set_target(row, id);
         self.push_rows(id, false);
         id

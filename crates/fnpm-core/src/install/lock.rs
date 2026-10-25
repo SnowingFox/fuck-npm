@@ -32,112 +32,20 @@ pub(crate) struct LockState {
     pub warnings: Vec<String>,
     /// xxh3 of fnpm.lock when the graph came from it.
     pub hash: Option<u64>,
-    /// `node_modules/.fnpm/lock.bin` was not fresh, so it (and the cached copy) should be
-    /// written from [`LockState::graph`] after the install.
+    /// The sidecar ([`sidecar_path`]) was not fresh, so it should be written from
+    /// [`LockState::graph`] after the install.
     pub sidecar_missing: bool,
-    /// The graph came from the cached sidecar copy, which only needs to be linked back.
-    pub from_cached_sidecar: bool,
 }
 
-/// A copy of the parsed-lockfile sidecar outside `node_modules`, keyed by project, so an
-/// install after `rm -rf node_modules` (CI caches, `fnpm ci`) skips the text parse. Validated
-/// by the lockfile hash like the sidecar itself.
-pub(crate) fn cached_sidecar_path(config: &Config, root: &Path) -> PathBuf {
-    let key = xxhash_rust::xxh3::xxh3_64(root.to_string_lossy().as_bytes());
-    config
-        .cache_dir
-        .join("lockfile-sidecars")
-        .join(format!("{key:016x}.bin"))
+/// The parsed-lockfile sidecar in the project's cache metadata directory, validated by the
+/// lockfile hash. With the default cache, it survives `rm -rf node_modules` (`fnpm ci`).
+pub(crate) fn sidecar_path(config: &Config, root: &Path) -> PathBuf {
+    crate::fast_path::meta_dir(&config.cache_dir, root).join("lock.bin")
 }
 
-/// Writes `node_modules/.fnpm/lock.bin` (when `write_project`) and the cached copy for the
-/// loaded graph. Best effort: both are caches.
-pub(crate) fn save_sidecars(
-    config: &Config,
-    root: &Path,
-    hash: u64,
-    graph: &LockGraph,
-    write_project: bool,
-) {
-    let Ok(bytes) = fnpm_lockfile::sidecar::encode(hash, graph) else {
-        return;
-    };
-    if write_project {
-        let path = root.join(fnpm_lockfile::sidecar::SIDECAR);
-        if let Some(dir) = path.parent()
-            && std::fs::create_dir_all(dir).is_ok()
-        {
-            let _ = fnpm_store::fsops::write_atomic(&path, &bytes);
-        }
-    }
-    let cached = cached_sidecar_path(config, root);
-    if let Some(dir) = cached.parent()
-        && std::fs::create_dir_all(dir).is_ok()
-    {
-        let _ = fnpm_store::fsops::write_atomic(&cached, &bytes);
-    }
-}
-
-/// Copies the project's fresh sidecar to the cache (after `fnpm_lockfile::save` wrote it).
-pub(crate) fn mirror_sidecar(config: &Config, root: &Path) {
-    let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::sidecar::SIDECAR)) else {
-        return;
-    };
-    let cached = cached_sidecar_path(config, root);
-    if std::fs::read(&cached).is_ok_and(|old| old == bytes) {
-        return;
-    }
-    if let Some(dir) = cached.parent()
-        && std::fs::create_dir_all(dir).is_ok()
-    {
-        let _ = fnpm_store::fsops::write_atomic(&cached, &bytes);
-    }
-}
-
-/// fnpm.lock through the cached sidecar when the project's own is gone.
-fn load_fnpm_lock(
-    config: &Config,
-    ws: &Workspace,
-    path: &Path,
-    state: &mut LockState,
-) -> Result<bool> {
-    let dir = &ws.root_dir;
-    let Ok(bytes) = std::fs::read(path) else {
-        return Ok(false);
-    };
-    let hash = fnpm_lockfile::content_hash(&bytes);
-    state.hash = Some(hash);
-    if fnpm_lockfile::sidecar::is_fresh(dir, hash) {
-        return Ok(false);
-    }
-    state.sidecar_missing = true;
-    let cached = cached_sidecar_path(config, dir);
-    let Some(graph) = std::fs::read(&cached)
-        .ok()
-        .and_then(|b| fnpm_lockfile::sidecar::decode(&b, hash))
-    else {
-        return Ok(false);
-    };
-    state.graph = Some(graph);
-    state.format = Some(Format::Fnpm);
-    state.path = Some(path.to_path_buf());
-    state.migrated = false;
-    state.from_cached_sidecar = true;
-    Ok(true)
-}
-
-/// Puts the cached sidecar copy back into `node_modules/.fnpm` (a hard link, else a copy).
-pub(crate) fn restore_sidecar(config: &Config, root: &Path) {
-    let cached = cached_sidecar_path(config, root);
-    let dest = root.join(fnpm_lockfile::sidecar::SIDECAR);
-    let Some(dir) = dest.parent() else { return };
-    if std::fs::create_dir_all(dir).is_err() {
-        return;
-    }
-    let _ = std::fs::remove_file(&dest);
-    if std::fs::hard_link(&cached, &dest).is_err() {
-        let _ = std::fs::copy(&cached, &dest);
-    }
+/// Writes the sidecar for the loaded graph. Best effort: it is a cache.
+pub(crate) fn save_sidecar(config: &Config, root: &Path, hash: u64, graph: &LockGraph) {
+    let _ = fnpm_lockfile::sidecar::save_at(&sidecar_path(config, root), hash, graph);
 }
 
 fn parse_options(config: &Config) -> ParseOptions {
@@ -195,23 +103,21 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
         if !path.exists() {
             continue;
         }
-        if path
-            .file_name()
-            .is_some_and(|n| n == fnpm_lockfile::FNPM_LOCK)
-            && load_fnpm_lock(config, ws, &path, &mut state)?
-        {
-            return Ok(state);
-        }
         let opts = LoadOptions {
             lockfile_path: Some(path.clone()),
             parse: parse_options(config),
             no_sidecar: false,
+            sidecar_path: Some(sidecar_path(config, dir)),
         };
         match fnpm_lockfile::load_with(dir, ws, &opts) {
             Ok(Some(loaded)) => {
                 state.warnings.extend(loaded.warnings);
                 if loaded.format == Format::Fnpm {
                     state.hash = Some(loaded.hash);
+                    state.sidecar_missing = !fnpm_lockfile::sidecar::is_fresh_at(
+                        &sidecar_path(config, dir),
+                        loaded.hash,
+                    );
                 } else {
                     state.hash = None;
                     state.sidecar_missing = false;
@@ -297,6 +203,7 @@ pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> R
                 lockfile_path: Some(path.clone()),
                 parse: parse_options(config),
                 no_sidecar: true,
+                sidecar_path: None,
             };
             fnpm_lockfile::load_with(dir, ws, &opts)
                 .map_err(Error::from)

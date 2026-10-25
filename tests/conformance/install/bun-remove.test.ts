@@ -103,7 +103,7 @@ it.concurrent("should remove existing package", async () => {
     const err1 = await new Response(stderr1).text();
 
     expect(out1.replace(/\s*\[[0-9\.]+m?s\]/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm remove v1."),
+      expect.stringContaining("fnpm remove v"),
       "",
       "- pkg1",
       "1 package removed",
@@ -141,7 +141,7 @@ it.concurrent("should remove existing package", async () => {
     const err2 = await new Response(stderr2).text();
 
     expect(out2.replace(/ \[[0-9\.]+m?s\]/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm remove v1."),
+      expect.stringContaining("fnpm remove v"),
       "",
       "- pkg2",
       "1 package removed",
@@ -229,7 +229,7 @@ it.concurrent("should not affect if package is not installed", async () => {
     });
     expect(await exited).toBe(0);
     const out = await stdout.text();
-    expect(out.split("\n")).toEqual([expect.stringContaining("fnpm remove v1."), ""]);
+    expect(out.split("\n")).toEqual([expect.stringContaining("fnpm remove v"), ""]);
     const err = await stderr.text();
     expect(err.replace(/ \[[0-9\.]+m?s\]/, "").split(/\r?\n/)).toEqual([
       "package.json doesn't have dependencies, there's nothing to remove!",
@@ -337,7 +337,7 @@ it.concurrent("should remove peerDependencies", async () => {
     expect(err).not.toContain("error:");
     const out = await stdout.text();
     expect(out.replace(/\[[0-9\.]+m?s\]/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm remove v1."),
+      expect.stringContaining("fnpm remove v"),
       "",
       " done",
       "",

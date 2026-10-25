@@ -82,9 +82,10 @@ async fn pipeline_timings() {
     })
     .unwrap();
     let hash = fnpm_core::config_hash(&config);
+    let meta = fnpm_core::fast_path::meta_dir(&config.cache_dir, &p.dir);
     let t = Instant::now();
     for _ in 0..100 {
-        let _ = fnpm_core::fast_path::check(&p.dir, hash);
+        let _ = fnpm_core::fast_path::check(&p.dir, &meta, hash);
     }
     let check = t.elapsed() / 100;
 

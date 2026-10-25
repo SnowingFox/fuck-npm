@@ -108,6 +108,14 @@ pub fn route(bin: &'static BinDef, args: &[String]) -> Route {
     };
 
     let Some(leaf) = leaf else {
+        // A script owns its trailing flags; the TS dispatcher checks that the file exists.
+        if args.first().is_some_and(|arg| {
+            [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]
+                .iter()
+                .any(|ext| arg.ends_with(ext))
+        }) {
+            return Route::Node;
+        }
         return if has(&rest, "-v", "--version") {
             Route::Version
         } else {

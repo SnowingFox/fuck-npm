@@ -385,9 +385,9 @@ pub(crate) async fn trust(cx: &Ctx) -> Result<CoreResult> {
             .get_or_insert_with(Default::default)
             .extend(plan.names_to_add.iter().cloned());
         if config.lockfile.save {
-            fnpm_lockfile::save(&project.root_dir, &graph)?;
+            fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
         }
-        crate::fast_path::remove(&project.root_dir);
+        crate::fast_path::remove(&project.root_dir, &project.meta_dir());
     }
     let _ = ws;
     let lines = fnpm_scripts::pm::render_trust_result(&list, &plan, started.elapsed());

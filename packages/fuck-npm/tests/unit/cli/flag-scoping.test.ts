@@ -73,15 +73,14 @@ describe("passthrough leaves", () => {
 });
 
 describe("unknown flag rejection", () => {
-  test("a sibling's flag names the command that owns it", async () => {
+  test("a sibling's flag is unknown too, like bun", async () => {
     const bed = testBed();
 
     expect(await bed.run(["pm", "ls", "--max-age", "3"])).toBe(1);
 
-    const output = bed.stderr.text();
-    expect(output).toContain("`--max-age` is not a flag of `fnpm pm ls`");
-    expect(output).toContain("`fnpm pm cache prune`");
-    expect(output).toContain("fnpm pm ls --help");
+    expect(bed.stderr.text()).toBe(
+      "error: fnpm pm has no --max-age flag.\nnote: Run 'fnpm pm --help' for more information\n",
+    );
     expect(bed.coreLoads()).toBe(0);
   });
 
@@ -89,23 +88,23 @@ describe("unknown flag rejection", () => {
     const bed = testBed();
 
     expect(await bed.run(["install", "--frozen-lockfil"])).toBe(1);
-    expect(bed.stderr.text()).toContain("`fnpm install` has no `--frozen-lockfil` flag.");
+    expect(bed.stderr.text()).toBe(
+      "error: fnpm install has no --frozen-lockfil flag.\nnote: Run 'fnpm install --help' for more information\n",
+    );
   });
 
   test("unknown short flags inside a cluster are caught", async () => {
     const bed = testBed();
 
     expect(await bed.run(["add", "-dZ", "react"])).toBe(1);
-    expect(bed.stderr.text()).toContain("`-Z`");
+    expect(bed.stderr.text()).toContain("fnpm add has no -Z flag.");
   });
 
-  test("a flag declared elsewhere lists every owner", async () => {
+  test("a flag another command has is still unknown", async () => {
     const bed = testBed();
 
     expect(await bed.run(["doctor", "--latest"])).toBe(1);
-    const output = bed.stderr.text();
-    expect(output).toContain("`fnpm update`");
-    expect(output).toContain("`fnpm audit`");
+    expect(bed.stderr.text()).toContain("error: fnpm doctor has no --latest flag.");
   });
 
   test("--json failures are a JSON document on stdout", async () => {

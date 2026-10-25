@@ -228,6 +228,8 @@ pub struct LoadOptions {
     pub parse: ParseOptions,
     /// Skip the sidecar (always parse the text).
     pub no_sidecar: bool,
+    /// Where the sidecar is; `None` is `dir/`[`sidecar::SIDECAR`].
+    pub sidecar_path: Option<PathBuf>,
 }
 
 /// xxh3-64 of lockfile bytes.
@@ -293,7 +295,10 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
         let migrated = format != Format::Fnpm;
         if format == Format::Fnpm
             && !opts.no_sidecar
-            && let Some(graph) = sidecar::load(dir, hash)
+            && let Some(graph) = match &opts.sidecar_path {
+                Some(p) => sidecar::load_at(p, hash),
+                None => sidecar::load(dir, hash),
+            }
         {
             return Ok(Some(Loaded {
                 graph,
@@ -416,6 +421,20 @@ pub fn prepare_save(graph: &LockGraph) -> Result<PreparedSave> {
 /// Writes a [`prepare_save`] result: fnpm.lock (atomic, skipped when the bytes are unchanged)
 /// and the sidecar (when it is not fresh). A sidecar failure never fails the save.
 pub fn save_prepared(dir: &Path, prepared: &PreparedSave) -> Result<u64> {
+    save_prepared_with(dir, prepared, Some(&dir.join(sidecar::SIDECAR)))
+}
+
+/// [`save`] with the sidecar at `sidecar_path` (`None`: no sidecar).
+pub fn save_with(dir: &Path, graph: &LockGraph, sidecar_path: Option<&Path>) -> Result<u64> {
+    save_prepared_with(dir, &prepare_save(graph)?, sidecar_path)
+}
+
+/// Writes a prepared lockfile with an explicitly located sidecar cache.
+pub fn save_prepared_with(
+    dir: &Path,
+    prepared: &PreparedSave,
+    sidecar_path: Option<&Path>,
+) -> Result<u64> {
     let PreparedSave {
         text,
         hash,
@@ -426,10 +445,11 @@ pub fn save_prepared(dir: &Path, prepared: &PreparedSave) -> Result<u64> {
     if !unchanged {
         write_atomic(&path, text.as_bytes())?;
     }
-    if (!unchanged || !sidecar::is_fresh(dir, *hash))
+    if let Some(sidecar_path) = sidecar_path
+        && (!unchanged || !sidecar::is_fresh_at(sidecar_path, *hash))
         && let Some(bytes) = sidecar
     {
-        let _ = sidecar::write(dir, bytes);
+        let _ = sidecar::write_at(sidecar_path, bytes);
     }
     Ok(*hash)
 }

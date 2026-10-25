@@ -94,7 +94,7 @@ describe("formatInstallSummary", () => {
       pc,
     );
 
-    expect(text).toContain("installed typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver");
+    expect(text).toContain("installed typescript@5.9.3 with binaries:\n - tsc\n - tsserver");
     expect(text).toContain("skipped fsevents@2.3.3 (unsupported platform)");
     // add reports max(installed, requests).
     expect(text).toContain("2 packages installed [80.00ms]");
@@ -114,6 +114,16 @@ describe("formatInstallSummary", () => {
 
     expect(text).toContain("2 packages removed [3.00ms]");
     expect(text).toContain("Blocked 1 postinstall. Run `fnpm pm untrusted` for details.");
+  });
+
+  test("availability hints and bold timing stay dim like bun", () => {
+    const colored = render(emptySummary({
+      added: [{ name: "pkg", version: "1.0.0", availableVersion: "2.0.0" }],
+      installedCount: 1,
+      elapsedMs: 12,
+    }), "install", createColors(true));
+    expect(colored).toContain("\u001b[2m(\u001b[34mv2.0.0 available\u001b[39m)\u001b[22m");
+    expect(colored).toContain("\u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m");
   });
 
   test("coloured output carries the same text", () => {
