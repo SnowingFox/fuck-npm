@@ -5,30 +5,29 @@ less disk than bun or pnpm.
 
 Two binaries: `fnpm` (the package manager) and `fnpm-lock` (a lockfile toolkit).
 
-> **Status: not usable yet.** The foundations are in place (contracts, CLI surface, test
-> registry, ported conformance suite, benchmark harness) and the core crates are being built.
-> `fnpm install` does not install anything today. See the [roadmap](#roadmap).
+> **Status: in development.** Native installs, migrations, packing, publishing, patching,
+> execution and security commands are wired end to end. Full Bun conformance and the
+> requirement to beat Bun on every benchmark remain open. See the [roadmap](#roadmap).
 
 ## Why
 
-bun showed that a package manager can be an order of magnitude faster than npm. fnpm takes bun's
-design (read from its source in `submodule/bun`), keeps compatibility with its behaviour, and adds
-the techniques bun doesn't use:
+bun showed that a package manager can be an order of magnitude faster than npm. fnpm uses bun's
+design (read from its source in `submodule/bun`) as its compatibility target. The goals are:
 
 - **Faster than bun in every benchmark scenario:** cold, cold with a lockfile, warm cache,
   no-op re-install, `add`, and frozen CI install, on every fixture. On the small fixture that
   means a no-op under 7.2 ms and a warm install under 23 ms. A gate (`bench/gate.ts`) fails when
   fnpm is slower than bun anywhere.
-- **Less disk than bun and pnpm:** fnpm's store deduplicates *files*, not packages, so two
-  versions of a package share every unchanged file. Projects get those files as copy-on-write
-  clones or hardlinks, not copies.
+- **Less disk than bun and pnpm:** the v2 store shares identical files within each package.
+  Projects use copy-on-write clones or hardlinks where supported. Cross-version file
+  deduplication was removed to reduce import overhead.
 - **Drop-in:** reads `package-lock.json`, `yarn.lock` (v1 and berry), `pnpm-lock.yaml` and
   `bun.lock`, plus `.npmrc` and `bunfig.toml`, and accepts npm/yarn/pnpm flag spellings.
 
 ## Features
 
 The full feature list is [docs/PARITY.md](docs/PARITY.md): 414 rows, each naming the bun source it
-ports and the owning crate, ticked once its tests pass (none are yet). In short:
+ports and the owning crate. Checked rows have crate-level tests; command and end-to-end gaps remain open.
 
 - **Commands:** `install`/`i`, `ci`, `add`, `remove`, `update` (including `-i`), `outdated`,
   `why`, `ls`, `info`, `dedupe`, `prune`, `link`/`unlink`, `patch`/`patch-commit`, `audit`,
@@ -36,7 +35,7 @@ ports and the owning crate, ticked once its tests pass (none are yet). In short:
   `whoami`, `migrate`, `completions`, and the `pm` subcommands (`cache`, `pkg`, `trust`,
   `version`, `hash`, `licenses`, ...).
 - **Layouts:** hoisted (npm-style) and isolated (pnpm-style), with bun's default (hoisted for
-  single packages, isolated for workspaces). The global virtual store is on by default for
+  single packages, isolated for workspaces). The global virtual store is opt-in for
   isolated installs.
 - **Workspaces:** globs, the `workspace:` protocol, `--filter` selectors (`...`, `^`, `!`,
   `{dir}`), catalogs, topological script order.
@@ -46,7 +45,7 @@ ports and the owning crate, ticked once its tests pass (none are yet). In short:
   bun's default list, lifecycle scripts, `minimumReleaseAge`, security scanners, `--cpu`/`--os`.
 - **Lockfiles:** `fnpm.lock` (bun.lock's text format), migration from every major lockfile on
   first install, and `fnpm-lock migrate | export | verify | diff | why | dedupe | audit | print`.
-- **Output:** `--json` everywhere (failures included), a single-line progress view on a TTY,
+- **Output:** structured JSON for supported command results, a single-line progress view on a TTY,
   plain text when piped, bun's install summary format.
 
 Excluded on purpose: bun-runtime features (running files, `bun build`, `bun upgrade`). fnpm reads
@@ -120,10 +119,10 @@ disk measurement are in [bench/README.md](bench/README.md).
 - **Pipeline.** Resolution, download, extraction and linking overlap: each package is fetched as
   soon as it is resolved and linked as soon as it is in the store. Tarballs stream through
   gunzip, untar and hashing in one pass.
-- **Beyond bun.** A no-op fast path (`node_modules/.fnpm/.state/state`: exit after a few `stat` calls
+- **Beyond bun.** A no-op fast path (`<cache>/projects/<project-path-hash>/state`: exit after a few `stat` calls
   when nothing changed), within-package file sharing, the file index (no `readdir` while
   linking), HTTP/2 multiplexing to the registry, a lockfile that holds everything an install
-  needs (zero manifest fetches on a frozen install), the global virtual store on by default,
+  needs (zero manifest fetches on a frozen install), an optional global virtual store,
   and the native launcher.
 
 The full design, including every crate's API, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

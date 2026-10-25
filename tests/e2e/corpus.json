@@ -223,7 +223,7 @@
       "verify": "pnpm vitest run --project unit packages/shared packages/reactivity",
       "baseline": "tests/e2e/baselines/vue-core.json",
       "fnpm": {
-        "known": "blocked on fnpm x: the root preinstall is `npx only-allow pnpm`, which fnpm (like bun) runs as `fnpm x`; x/dlx return NOT_IMPLEMENTED on main (implemented on feat/cmds-exec). only-allow would then reject fnpm anyway, as it rejects bun.",
+        "known": "The root preinstall runs `npx only-allow pnpm`. fnpm executes it through `fnpm x`; the package-manager guard requires pnpm and rejects fnpm, as it rejects Bun.",
         "knownFailures": [
           "^install exited 1:.*fnpm x"
         ]

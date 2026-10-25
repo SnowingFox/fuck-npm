@@ -360,7 +360,7 @@ package):
 }
 ```
 
-(The `…` stand for full SRI strings.) The binary sidecar `node_modules/.fnpm/lock.bin` caches
+(The `…` stand for full SRI strings.) The binary sidecar `<cache>/projects/<project-path-hash>/lock.bin` caches
 the parsed graph keyed by xxh3-64 of these bytes; it is never committed and is safe to delete.
 
 ## Install pipeline
@@ -368,7 +368,7 @@ the parsed graph keyed by xxh3-64 of these bytes; it is never committed and is s
 `fnpm_core::install`, in order. Steps marked (overlap) start before the previous step ends.
 
 1. **Fast path.** Locate the project root (walk up for package.json), `stat`
-   `node_modules/.fnpm/.state/state`, compare the lockfile hash, each package.json's size/mtime
+   `<cache>/projects/<project-path-hash>/state`, compare the lockfile hash, each package.json's size/mtime
    (hash on mismatch) and the config hash. Unchanged: emit the summary with `noop: true` and
    return. Budget: < 5 ms of Rust for a 100-workspace monorepo.
 2. **Config + workspace.** `Config::load`, `Workspace::load` (parallel package.json reads).
@@ -1202,7 +1202,7 @@ the same package and the same resolved peer set are shared. Root/workspaces/link
 entries; dependents link to their folders. Hidden hoist into `.fnpm/node_modules` when
 `hoist`, public hoist into the root by `publicHoistPattern` (pnpm matcher semantics).
 
-**Global virtual store** (on by default; bun's is opt-in): an eligible entry lives at
+**Global virtual store** (opt-in, like bun): an eligible entry lives at
 `<store>/links/<key>-<16 hex closure hash>/node_modules/<name>` and the project's
 `.fnpm/<key>` is a symlink to it. Eligibility and hashing follow bun
 `isolated_install.rs:1770-2080`: npm, git, github and tarball resolutions only; not trusted
@@ -1407,7 +1407,7 @@ package.json with bun's `updated_version_literal` rules, `--latest` moves to the
 `ci` / `--frozen-lockfile`: `Mode::Frozen`, no saves. `--lockfile-only`: resolve and save only;
 `--dry-run`: nothing written; `--no-save`: no package.json or lockfile, no state file;
 `--production` / `--omit`: linker `include` and no streaming of omitted packages; `--force`:
-re-resolve without the previous graph and relink. `install --analyze` is `NOT_IMPLEMENTED`.
+re-resolve without the previous graph and relink. `install --analyze` scans import declarations and adds missing bare package requests.
 
 **Commands** (`request.command` path -> module), each returning `CoreResult` with `data`
 (the `--json` payload) and pre-rendered `lines` (ASCII tables unless `options.color`):
@@ -1433,7 +1433,8 @@ re-resolve without the previous graph and relink. `install --analyze` is `NOT_IM
 | `pack`, `pm pack` | streaming tar/gzip, file/ignore rules, bins, bundled dependencies, workspace/catalog rewriting, lifecycle scripts, atomic output | `commands/pack/` |
 | `publish` | directory or existing tarball, publishConfig, lifecycle scripts, registry PUT, OTP/browser authentication, recursive dependency order | `commands/publish.rs`, `fnpm-registry/src/publish.rs` |
 | `patch`, `patch --commit`, `patch-commit` | editable store copy, verified Git diff, patchedDependencies, install-time application; pending patch persistence waits for resolution | `commands/patch.rs`, `install/mod.rs`, `fetch.rs` |
-| `x`/`dlx`, `create`, `pm diff/scan`, `audit fix` | P4: `Error::NotImplemented` (`NOT_IMPLEMENTED`) | `commands/mod.rs` |
+| `x`/`dlx`, `create` | native execution cache, binary inference, arguments, local/GitHub templates, hooks and nested installs | `x/` |
+| `pm diff`, `pm scan`, `audit fix` | archive comparison, scanner subprocess protocol, advisory-driven manifest and lockfile updates | `commands/diff.rs`, `commands/scan.rs`, `commands/audit_fix.rs`, `security.rs` |
 
 Pack, publish and patch print directly to process stdout/stderr and return the exit code
 with no structured `CoreResult.data` or `lines`. Their conformance ports use the local test
@@ -1455,14 +1456,14 @@ implement extglobs or numeric brace ranges.
 and the package's own name) must be valid package names: they become paths under the link
 registry.
 
-**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 5): `version`,
+**Fast path state** (`<cache>/projects/<project-path-hash>/state`, JSON, `STATE_VERSION` 5): `version`,
 `fnpmVersion`, `lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs,
 xxh3]` per package.json, `pnpm-workspace.yaml` when present (a new one invalidates), the
 package.json of every directory the workspace globs select, and the `patchedDependencies`
 patch files), `configHash` (`config_hash`: linker, backend, omit, platform, registry and scope
 URLs, ignoreScripts, production, globalStore, hoist patterns, store dir, verify),
 `nodeModules` and `virtualStore` (`[dev, ino, mtimeNs]` of `node_modules` and
-`node_modules/.fnpm`, taken after `.state/` exists and background deletes finished: a deleted
+`node_modules/.fnpm`, taken after background deletes finish: a deleted
 isolated entry changes `.fnpm`), `workspacePatterns` and `workspaceDirs` (the globs and the
 directories they selected, re-expanded single-threaded by `Workspace::candidate_dirs`: a new
 member directory or one that gains a package.json is a change), `linker`, `packages`. `check`
@@ -1470,9 +1471,11 @@ returns `Noop` only if every field matches; a package.json whose size and mtime 
 read. Deleted at the start of any install that will modify `node_modules`, written last, and
 not written after `--filter`, `--no-save` with changes, or a failure.
 
-**Parsed-lockfile cache.** Besides `node_modules/.fnpm/lock.bin`, a copy keyed by project path
-lives in `<cache>/lockfile-sidecars/<xxh3>.bin` (same format and hash check), so an install
-after `rm -rf node_modules` skips the text parse and links the copy back.
+**Parsed-lockfile cache.** The project metadata directory in the configured cache holds
+`lock.bin`, keyed by the lockfile hash and sidecar format version. It survives removal of
+node_modules. Hoisted installs need no metadata directory inside node_modules; isolated
+installs retain `.fnpm` for package entries. Legacy metadata cleanup preserves those entries
+and skips symlinked directories.
 
 **Incremental add/remove.** A previous package is fetched lazily when `node_modules` exists:
 if its placement needs repair, the linker asks the source for its contents. For a hoisted,

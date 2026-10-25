@@ -221,12 +221,6 @@ async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
     ))
 }
 
-fn not_implemented(path: &[&str]) -> Error {
-    Error::NotImplemented {
-        command: path.join(" "),
-    }
-}
-
 /// Runs `request.command`.
 pub async fn dispatch(
     request: CoreRequest,

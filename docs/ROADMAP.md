@@ -91,16 +91,16 @@ Exit criteria:
 - Benchmark: `small` and `medium`, all six scenarios; `large` cold-lockfile, warm, noop.
 - Platforms: Linux x64 (ext4, hardlink) and macOS arm64 (APFS, clonefile).
 
-## P2: Workspaces and policy (not started)
+## P2: Workspaces and policy (in progress)
 
 | deliverable | status |
 |---|---|
-| Isolated layout and global virtual store end to end (default for workspaces) | not started (linker side merged in P1) |
-| Workspaces, `workspace:` protocol, `--filter`, `-r`, catalogs | not started |
-| Overrides and nested overrides, `packageExtensions`, patches applied at install | not started |
-| Lifecycle scripts in dependency order, trusted dependencies, postinstall optimizer, native binlink | not started |
-| git, GitHub, remote/local tarball, `file:` and `link:` dependencies | not started |
-| `minimumReleaseAge`, security scanner, `--cpu` / `--os` filters | not started |
+| Isolated layout end to end (default for workspaces), optional global virtual store | implemented; global sharing is opt-in to preserve hidden-hoist visibility |
+| Workspaces, `workspace:` protocol, `--filter`, `-r`, catalogs | implemented with conformance gaps in aliases, catalogs and isolated relinking |
+| Overrides and nested overrides, `packageExtensions`, patches applied at install | implemented with open conformance cases |
+| Lifecycle scripts in dependency order, trusted dependencies, postinstall optimizer, native binlink | implemented; failed optional packages are removed before dependent scripts |
+| git, GitHub, remote/local tarball, `file:` and `link:` dependencies | implemented and covered by crate and corpus tests |
+| `minimumReleaseAge`, security scanner, `--cpu` / `--os` filters | implemented; scanner retry/scope and policy conformance remain partial |
 
 Exit criteria:
 
@@ -119,7 +119,7 @@ Exit criteria:
 | deliverable | status |
 |---|---|
 | First-install migration from package-lock / shrinkwrap, yarn.lock (v1, berry), pnpm-lock.yaml, bun.lock, bun.lockb, carrying pnpm workspace config | implemented in core; real-project corpus exercises npm v3, Yarn v1/Berry v8, pnpm v9 and bun text; shrinkwrap/binary corpus coverage remains |
-| `fnpm migrate`, `fnpm-lock migrate / export / verify / diff / why / dedupe / audit / print` | not started |
+| `fnpm migrate`, `fnpm-lock migrate / export / verify / diff / why / dedupe / audit / print` | wired to core commands; full foreign-lock conformance remains open |
 | Golden tests: real lockfiles from each tool for every fixture; migrate, install, compare resolved versions with the source tool's `ls --json` | in progress: 18-project corpus compares native-PM snapshots, package versions, declared deps, bins, observed scripts, verification and reinstalls; results and remaining failures in `tests/e2e/results` |
 
 Exit criteria:

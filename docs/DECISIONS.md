@@ -51,7 +51,7 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   location, bin, os/cpu/libc, install-script flag), so a frozen install makes zero manifest
   requests. It is text, sorted and one line per package, so diffs review well.
 - **Cost:** fnpm inherits bun's format decisions (hoisted-path keys); anything fnpm-specific has
-  to stay additive. A binary sidecar (`node_modules/.fnpm/lock.bin`) covers fast reloads.
+  to stay additive. A binary sidecar (`<cache>/projects/<project-path-hash>/lock.bin`) covers fast reloads.
 
 ## 4. Global virtual store is opt-in
 
