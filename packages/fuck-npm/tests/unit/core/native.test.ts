@@ -113,12 +113,28 @@ describe.runIf(core !== undefined)("the real native core", () => {
     expect(error.message).not.toMatch(/^invalid install options/);
   });
 
+  test("invoke resolves with the command's result", async () => {
+    const dir = mkdtempSync(join(root, "invoke-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "invoked", version: "2.0.0" }));
+    const result = await native.invoke({
+      command: ["pkg", "get"],
+      cwd: dir,
+      positionals: ["name"],
+      passthrough: [],
+      options: {},
+      json: true,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.stringify(result.data)).toContain("invoked");
+  });
+
   test("rejections carry the core's code", async () => {
     const dir = mkdtempSync(join(root, "codes-"));
     let error = await rejection(
-      native.invoke({ command: ["pm", "ls"], cwd: dir, positionals: [], passthrough: [], options: {}, json: false }),
+      native.invoke({ command: ["no-such-command"], cwd: dir, positionals: [], passthrough: [], options: {}, json: false }),
     );
-    expect(["USAGE", "NOT_IMPLEMENTED"]).toContain(error.code);
+    expect(error.code).toBe("USAGE");
+    expect(error.message).toContain("no-such-command");
 
     error = await rejection(native.install({ ...installOptions("install", {}, [], dir), cwd: "relative" }));
     expect(error.code).toBe("USAGE");

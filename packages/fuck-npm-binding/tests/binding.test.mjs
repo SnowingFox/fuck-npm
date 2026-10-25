@@ -191,9 +191,9 @@ describe("payloads", () => {
     expect(summary.failedCount).toBe(0);
   });
 
-  it("rejects a command the core does not run with a documented code", async () => {
+  it("rejects an unknown command with USAGE", async () => {
     const error = await rejectionOf(() => binding.invoke({ command: ["definitely-not-a-command"], cwd }));
-    expect(["USAGE", "NOT_IMPLEMENTED"]).toContain(error.code);
+    expect(error.code).toBe("USAGE");
     expect(error.message).toContain("definitely-not-a-command");
   });
 });
@@ -262,6 +262,12 @@ describe("installs against a local registry", () => {
     // Nothing changed: the fast path answers, without a callback too.
     const again = await binding.install({ cwd, registry: registry.url });
     expect(again).toMatchObject({ noop: true, installedCount: 0 });
+
+    // invoke resolves with CoreResult: `data` for --json, `lines` for humans.
+    const listed = await binding.invoke({ command: ["pm", "ls"], cwd, json: true }, () => {});
+    expect(listed.exitCode).toBe(0);
+    expect(JSON.stringify(listed.data)).toContain("tiny");
+    for (const line of listed.lines ?? []) expect(typeof line).toBe("string");
     rmSync(cwd, { recursive: true, force: true });
   });
 

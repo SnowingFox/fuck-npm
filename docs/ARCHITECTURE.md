@@ -1466,7 +1466,7 @@ callback, event batches in order and all before settling (also before a rejectio
 batches, and through the batching sink while its timer flushes), progress coalescing, a
 throwing listener, the process exiting once the promise settles, panics as `CORE_ERROR`, and
 real installs against an in-memory registry (`tests/helpers/registry.mjs`): `add` with events
-then the no-op fast path, `NOT_FOUND`, `NO_MATCHING_VERSION`, `FROZEN_LOCKFILE`,
+then the no-op fast path and `pm ls`, `NOT_FOUND`, `NO_MATCHING_VERSION`, `FROZEN_LOCKFILE`,
 `INVALID_PACKAGE_JSON`, and concurrent installs in one process.
 `packages/fuck-npm/tests/unit/core/native.test.ts` runs the CLI's `Core` (`loadCore`) over the
 same build: options the CLI builds for every install flag deserialize in Rust, events reach
