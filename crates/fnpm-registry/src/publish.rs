@@ -80,29 +80,37 @@ pub fn tarball_filename(name: &str, version: &str) -> String {
     format!("{name}-{version}.tgz")
 }
 
-/// POSIX path normalisation: `./a/../b/` to `b`; `..` that leaves the root is kept.
+/// bun `normalize_buf::<Posix>`: `.` and empty segments are dropped, `..` removes the segment
+/// before it and is dropped at the start of a relative path, a trailing `/` is kept, `\\` also
+/// separates. An empty path is `.`.
 fn normalize_posix(path: &str) -> String {
+    if path.is_empty() {
+        return ".".to_owned();
+    }
     let absolute = path.starts_with('/');
+    let trailing = path.ends_with('/');
     let mut parts: Vec<&str> = Vec::new();
-    for seg in path.split('/') {
+    for seg in path.split(['/', '\\']) {
         match seg {
             "" | "." => {}
             ".." => {
                 if parts.last().is_some_and(|p| *p != "..") {
                     parts.pop();
-                } else if !absolute {
+                } else if absolute {
                     parts.push("..");
                 }
             }
             s => parts.push(s),
         }
     }
-    let joined = parts.join("/");
+    let mut joined = parts.join("/");
     if absolute {
-        format!("/{joined}")
-    } else {
-        joined
+        joined.insert(0, '/');
     }
+    if trailing && !joined.is_empty() && !joined.ends_with('/') {
+        joined.push('/');
+    }
+    joined
 }
 
 fn is_package_root_or_outside(p: &str) -> bool {
@@ -128,7 +136,12 @@ fn push_bin(
     if is_package_root_or_outside(&target) {
         return;
     }
-    if !files.contains(&target.as_str()) {
+    let below = target.trim_end_matches('/');
+    let has = files.iter().any(|f| {
+        f.strip_prefix(below)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    });
+    if !has {
         warnings.push(format!("bin '{target}' does not exist"));
     }
     out.insert(key.to_owned(), Value::String(target));
@@ -177,7 +190,7 @@ fn normalize_bin(
     else {
         return;
     };
-    let dir = normalize_posix(dir);
+    let dir = normalize_posix(dir).trim_end_matches('/').to_owned();
     if is_package_root_or_outside(&dir) {
         return;
     }
@@ -599,10 +612,13 @@ mod tests {
     fn paths() {
         assert_eq!(normalize_posix("./bin/cli.js"), "bin/cli.js");
         assert_eq!(normalize_posix("bin//x/../cli.js"), "bin/cli.js");
-        assert_eq!(normalize_posix("../x"), "../x");
+        assert_eq!(normalize_posix("../x"), "x");
+        assert_eq!(normalize_posix("lib/"), "lib/");
         assert_eq!(normalize_posix("."), "");
+        assert_eq!(normalize_posix(""), ".");
         assert!(is_package_root_or_outside(&normalize_posix("./")));
-        assert!(is_package_root_or_outside(&normalize_posix("a/../../x")));
+        assert_eq!(normalize_posix("a/../../x"), "x");
+        assert!(is_package_root_or_outside(&normalize_posix("/x")));
         assert_eq!(without_build_tag("1.0.0+abc"), "1.0.0");
         assert_eq!(tarball_filename("@s/p", "1.0.0"), "@s/p-1.0.0.tgz");
     }
@@ -639,9 +655,20 @@ mod tests {
 
     #[test]
     fn bins() {
-        let mut m = json!({ "bin": { "./a": "./x/../a.js", "": "b.js", "b": 1, "c": "../out.js", "d": "missing.js" } });
-        let w = normalize_manifest(&mut m, "p", "1.0.0", b"", "https://r/", None, &["a.js"]);
-        assert_eq!(m["bin"], json!({ "a": "a.js", "d": "missing.js" }));
+        let mut m = json!({ "bin": { "./a": "./x/../a.js", "": "b.js", "b": 1, "c": "../out.js", "d": "missing.js", "e": "." } });
+        let w = normalize_manifest(
+            &mut m,
+            "p",
+            "1.0.0",
+            b"",
+            "https://r/",
+            None,
+            &["a.js", "out.js"],
+        );
+        assert_eq!(
+            m["bin"],
+            json!({ "a": "a.js", "c": "out.js", "d": "missing.js" })
+        );
         assert_eq!(w, vec!["bin 'missing.js' does not exist".to_owned()]);
 
         let mut m = json!({ "directories": { "bin": "./bin" } });

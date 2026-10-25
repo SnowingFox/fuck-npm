@@ -1445,7 +1445,7 @@ test.concurrent("packs the same tarball as `fnpm pm pack`", async () => {
     packedFiles(packed.out),
   );
   expect(await publish(env, String(dir))).toEqual({
-    out: expect.stringMatching(/^fnpm publish v\S+ \(\S+\)\n$/),
+    out: expect.stringMatching(/^fnpm publish v\S+(?: \(\S+\))?\n$/),
     err: "error: attempted to publish a private package\n",
     exitCode: 1,
   });

@@ -421,7 +421,25 @@ fn publish_failure(out: &Out, e: &fnpm_registry::Error) -> Fatal {
         E::Status { url, status } => Fatal(status_line(*status, url)),
         E::NeedAuth(m) => out.error(m),
         E::WebLogin(m) => out.named("WebLogin", m),
-        other => out.error(&format!("failed to publish package: {other}")),
+        other => match tls_code(&other.to_string()) {
+            Some(code) => out.named(code, "failed to publish package"),
+            None => out.error(&format!("failed to publish package: {other}")),
+        },
+    }
+}
+
+/// The OpenSSL name of a certificate failure, as bun and node report it.
+fn tls_code(message: &str) -> Option<&'static str> {
+    if message.contains("CaUsedAsEndEntity") || message.contains("SelfSigned") {
+        Some("DEPTH_ZERO_SELF_SIGNED_CERT")
+    } else if message.contains("UnknownIssuer") {
+        Some("UNABLE_TO_GET_ISSUER_CERT_LOCALLY")
+    } else if message.contains("NotValidForName") {
+        Some("ERR_TLS_CERT_ALTNAME_INVALID")
+    } else if message.contains("Expired") {
+        Some("CERT_HAS_EXPIRED")
+    } else {
+        None
     }
 }
 
@@ -455,6 +473,7 @@ fn normalized_manifest(
     tarball: &[u8],
     files: &[String],
     readme: Option<&(String, String)>,
+    package_dir: Option<&Path>,
 ) -> String {
     let mut value = manifest.to_value();
     let file_refs: Vec<&str> = files.iter().map(String::as_str).collect();
@@ -475,7 +494,18 @@ fn normalized_manifest(
             serde_json::Value::String(node.clone()),
         );
     }
-    for w in warnings {
+    for mut w in warnings {
+        // A folder's `directories.bin` that is there but is no directory (a symlink, a file).
+        if let Some(dir) = package_dir
+            && let Some(bin) = w
+                .strip_prefix("bin directory '")
+                .and_then(|r| r.strip_suffix("' does not exist"))
+            && let Ok(Some(kind)) =
+                super::pack::walk::bin_kind_without_following_symlinks(out, dir, bin.as_bytes())
+            && kind != super::pack::walk::Kind::Dir
+        {
+            w = format!("bin directory '{bin}' is not a directory");
+        }
         out.eprintln(&format!(
             "{} {}",
             out.paint_err("33", "warn:"),
@@ -535,7 +565,10 @@ async fn send(
         tarball: &p.tarball,
     };
     let prompt = Prompt { out: *out };
-    match client.publish(&pkg, &target.options(), &prompt).await {
+    let result = client.publish(&pkg, &target.options(), &prompt).await;
+    // The login is over: ENTER no longer opens its page.
+    AUTH_URL.lock().take();
+    match result {
         Ok(published) => {
             if let Some(n) = published.notice {
                 print_notice(out, &n);
@@ -629,6 +662,7 @@ async fn pack_for_publish(
             &packed.tarball,
             &packed.files,
             packed.readme.as_ref(),
+            package_json.parent(),
         )
     };
     Ok(Publishing {
@@ -792,6 +826,7 @@ async fn from_tarball(cx: &Ctx, out: &Out, target: &mut Target, tarball_path: &s
         &bytes,
         &files,
         readme.as_ref(),
+        None,
     );
     if !matches!(target.cli.log_level, LogLevel::Silent | LogLevel::Quiet) {
         let label = |s: &str| out.paint("1;34", s);

@@ -539,7 +539,7 @@ async fn audit_store_cache_doctor_and_not_implemented() {
     let r = p.invoke(&["doctor"], &[], json!({})).await.unwrap();
     assert_eq!(r.exit_code, 0, "{:?}", r.lines);
 
-    let err = p.invoke(&["publish"], &[], json!({})).await.unwrap_err();
+    let err = p.invoke(&["pm", "scan"], &[], json!({})).await.unwrap_err();
     assert_eq!(err.code(), "NOT_IMPLEMENTED");
     let err = p.invoke(&["frobnicate"], &[], json!({})).await.unwrap_err();
     assert_eq!(err.code(), "USAGE");

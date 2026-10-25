@@ -59,6 +59,11 @@ const BOOLEAN_WORDS: Record<string, boolean> = {
   no: false,
 };
 
+/** A token that is a flag rather than a value. `-` and a PEM block (`--ca "-----BEGIN ..."`) are values. */
+function looksLikeFlag(token: string): boolean {
+  return token.startsWith("-") && token !== "-" && !token.startsWith("---");
+}
+
 export function parseFlags(tokens: readonly string[], specs: readonly FlagSpec[]): ParsedFlags {
   const index = indexSpecs(specs);
   const values: ParsedFlags["values"] = {};
@@ -117,7 +122,7 @@ export function parseFlags(tokens: readonly string[], specs: readonly FlagSpec[]
         continue;
       }
       const next = tokens[position + 1];
-      if (next === undefined || (next.startsWith("-") && next !== "-")) {
+      if (next === undefined || looksLikeFlag(next)) {
         throw new SilentError(`\`--${name}\` requires a value.`, { code: "MISSING_ARGUMENT" });
       }
       assign(spec, next);
@@ -145,7 +150,7 @@ export function parseFlags(tokens: readonly string[], specs: readonly FlagSpec[]
           assign(spec, true);
         } else {
           const next = tokens[position + 1];
-          if (next === undefined || (next.startsWith("-") && next !== "-")) {
+          if (next === undefined || looksLikeFlag(next)) {
             throw new SilentError(`\`-${letter}\` requires a value.`, {
               code: "MISSING_ARGUMENT",
             });
