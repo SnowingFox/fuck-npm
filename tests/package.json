@@ -1,0 +1,35 @@
+{
+  "name": "@fnpm/tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test registry harness and bun conformance suite for fnpm.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.5.0"
+  },
+  "bin": {
+    "fnpm-test-registry": "./registry/serve.ts"
+  },
+  "exports": {
+    "./registry": "./registry/index.ts",
+    "./conformance/harness": "./conformance/harness.ts"
+  },
+  "scripts": {
+    "registry": "node registry/serve.ts",
+    "test": "vitest run --project harness",
+    "test:harness": "vitest run --project harness",
+    "test:conformance": "CI=1 vitest run --project conformance",
+    "port": "node conformance/tools/port-bun-tests.ts",
+    "type-check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "semver": "7.7.3",
+    "smol-toml": "1.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/semver": "7.7.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}
