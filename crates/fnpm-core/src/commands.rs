@@ -14,10 +14,32 @@ use crate::{CoreRequest, CoreResult, Error, Result};
 pub async fn dispatch(request: CoreRequest, _events: Arc<dyn EventSink>) -> Result<CoreResult> {
     let path: Vec<&str> = request.command.iter().map(String::as_str).collect();
     match path.as_slice() {
-        ["outdated"] | ["why"] | ["ls"] | ["info"] | ["link"] | ["unlink"] | ["patch"] | ["patch-commit"]
-        | ["prune"] | ["dedupe"] | ["audit", ..] | ["pack"] | ["publish"] | ["run"] | ["exec"] | ["x"]
-        | ["create"] | ["init"] | ["cache", ..] | ["pkg", ..] | ["pm", ..] | ["store", ..] | ["doctor"]
-        | ["whoami"] | ["migrate"] | ["lock", ..] => todo!("command {:?}", request.command),
+        ["outdated"]
+        | ["why"]
+        | ["ls"]
+        | ["info"]
+        | ["link"]
+        | ["unlink"]
+        | ["patch"]
+        | ["patch-commit"]
+        | ["prune"]
+        | ["dedupe"]
+        | ["audit", ..]
+        | ["pack"]
+        | ["publish"]
+        | ["run"]
+        | ["exec"]
+        | ["x"]
+        | ["create"]
+        | ["init"]
+        | ["cache", ..]
+        | ["pkg", ..]
+        | ["pm", ..]
+        | ["store", ..]
+        | ["doctor"]
+        | ["whoami"]
+        | ["migrate"]
+        | ["lock", ..] => todo!("command {:?}", request.command),
         _ => Err(Error::UnknownCommand(request.command)),
     }
 }

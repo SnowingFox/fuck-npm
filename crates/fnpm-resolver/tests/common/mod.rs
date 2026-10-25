@@ -224,6 +224,7 @@ pub fn config() -> Config {
             print_yarn: false,
             path: None,
             save_path: None,
+            force_save: false,
         },
         omit: Omit::default(),
         auto_install_peers: true,
@@ -234,6 +235,8 @@ pub fn config() -> Config {
         security_scanner: None,
         log_level: LogLevel::Default,
         ci: false,
+        // Fields the test does not care about keep the crate's defaults.
+        ..Config::defaults(Path::new("/project"))
     }
 }
 

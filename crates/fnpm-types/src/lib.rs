@@ -21,8 +21,8 @@ pub use behavior::{Behavior, DependencyGroup, PeerMeta};
 pub use bin::Bin;
 pub use event::{Event, EventSink, InstallSummary, NoopSink};
 pub use graph::{
-    Catalogs, ConfigVersion, DepEdge, GraphError, GraphIndex, LockGraph, NodeLinker, Package, PackageExtension,
-    PackageId, PatchedDependency,
+    Catalogs, ConfigVersion, DepEdge, GraphError, GraphIndex, LockGraph, NodeLinker, Package,
+    PackageExtension, PackageId, PatchedDependency,
 };
 pub use hosted_git::{HostProvider, HostedGitError, HostedGitInfo, Representation};
 pub use integrity::{HashAlgorithm, Integrity, IntegrityError, IntegrityHasher};
@@ -32,8 +32,8 @@ pub use overrides::{OverrideRule, OverrideSelector, PackageSelector, SelectorErr
 pub use platform::{CpuSet, LibcSet, OsSet, Platform, PlatformConstraints, PlatformError};
 pub use resolution::{Resolution, ResolutionTag};
 pub use spec::{
-    Committish, Dependency, DependencySpec, GitSpec, GithubSpec, SpecError, SpecTag, TarballUri, WorkspaceSpec,
-    infer_tag,
+    Committish, Dependency, DependencySpec, GitSpec, GithubSpec, SpecError, SpecTag, TarballUri,
+    WorkspaceSpec, infer_tag,
 };
 
 /// Any error this crate returns.

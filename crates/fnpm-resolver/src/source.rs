@@ -344,5 +344,19 @@ pub(crate) fn clone_registry_error(e: &fnpm_registry::Error) -> fnpm_registry::E
         },
         E::Git(m) => E::Git(m.clone()),
         E::Io(io) => E::Io(std::io::Error::new(io.kind(), io.to_string())),
+        E::Registry {
+            url,
+            status,
+            message,
+        } => E::Registry {
+            url: url.clone(),
+            status: *status,
+            message: message.clone(),
+        },
+        E::NeedAuth(m) => E::NeedAuth(m.clone()),
+        E::InvalidResponse { url, message } => E::InvalidResponse {
+            url: url.clone(),
+            message: message.clone(),
+        },
     }
 }

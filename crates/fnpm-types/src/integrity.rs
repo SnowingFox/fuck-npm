@@ -10,7 +10,9 @@ use sha1::Digest as _;
 
 const B64: GeneralPurpose = GeneralPurpose::new(
     &base64::alphabet::STANDARD,
-    GeneralPurposeConfig::new().with_encode_padding(true).with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    GeneralPurposeConfig::new()
+        .with_encode_padding(true)
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
 );
 
 /// Ordered from weakest to strongest; [`Integrity::parse`] keeps the strongest entry.
@@ -60,7 +62,11 @@ pub enum IntegrityError {
     #[error("invalid hex shasum {0:?}")]
     InvalidHex(String),
     #[error("digest is {got} bytes, {algorithm:?} needs {expected}")]
-    WrongLength { algorithm: HashAlgorithm, expected: usize, got: usize },
+    WrongLength {
+        algorithm: HashAlgorithm,
+        expected: usize,
+        got: usize,
+    },
 }
 
 /// A digest with its algorithm. `Copy`, 65 bytes, no heap.
@@ -74,11 +80,18 @@ impl Integrity {
     pub fn from_digest(algorithm: HashAlgorithm, digest: &[u8]) -> Result<Self, IntegrityError> {
         let expected = algorithm.digest_len();
         if digest.len() != expected {
-            return Err(IntegrityError::WrongLength { algorithm, expected, got: digest.len() });
+            return Err(IntegrityError::WrongLength {
+                algorithm,
+                expected,
+                got: digest.len(),
+            });
         }
         let mut buf = [0u8; 64];
         buf[..expected].copy_from_slice(digest);
-        Ok(Self { algorithm, digest: buf })
+        Ok(Self {
+            algorithm,
+            digest: buf,
+        })
     }
 
     /// Parses an SRI string such as `sha512-<base64>`. With several whitespace-separated
@@ -101,8 +114,10 @@ impl Integrity {
 
     /// npm's legacy `dist.shasum`: 40 hex digits of SHA-1.
     pub fn parse_sha1_hex(hex_str: &str) -> Result<Self, IntegrityError> {
-        let bytes = hex::decode(hex_str).map_err(|_| IntegrityError::InvalidHex(hex_str.to_owned()))?;
-        Self::from_digest(HashAlgorithm::Sha1, &bytes).map_err(|_| IntegrityError::InvalidHex(hex_str.to_owned()))
+        let bytes =
+            hex::decode(hex_str).map_err(|_| IntegrityError::InvalidHex(hex_str.to_owned()))?;
+        Self::from_digest(HashAlgorithm::Sha1, &bytes)
+            .map_err(|_| IntegrityError::InvalidHex(hex_str.to_owned()))
     }
 
     /// Prefers `integrity`, falls back to `shasum`, as the registry's `dist` object is read.
@@ -222,8 +237,7 @@ mod tests {
     use super::*;
 
     // `echo -n hello | openssl dgst -sha512 -binary | base64`
-    const HELLO_SHA512: &str =
-        "sha512-m3HSJL1i83hdltRq0+o9czGb+8KJDKra4t/3JRlnPKcjI8PZm6XBHXx6zG4UuMXaDEZjR1wuXDre9G9zvN7AQw==";
+    const HELLO_SHA512: &str = "sha512-m3HSJL1i83hdltRq0+o9czGb+8KJDKra4t/3JRlnPKcjI8PZm6XBHXx6zG4UuMXaDEZjR1wuXDre9G9zvN7AQw==";
     const HELLO_SHA1_HEX: &str = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d";
 
     #[test]
@@ -240,7 +254,10 @@ mod tests {
     fn strongest_wins_and_options_ignored() {
         let sha1 = Integrity::compute(HashAlgorithm::Sha1, b"hello").to_sri();
         let s = format!("{sha1} {HELLO_SHA512}?foo bogus-abc");
-        assert_eq!(Integrity::parse(&s).unwrap().algorithm(), HashAlgorithm::Sha512);
+        assert_eq!(
+            Integrity::parse(&s).unwrap().algorithm(),
+            HashAlgorithm::Sha512
+        );
         let no_pad = HELLO_SHA512.trim_end_matches('=');
         assert_eq!(Integrity::parse(no_pad).unwrap().to_sri(), HELLO_SHA512);
     }
@@ -270,7 +287,10 @@ mod tests {
         let mut h = IntegrityHasher::new(HashAlgorithm::Sha256);
         h.update(b"hel");
         h.update(b"lo");
-        assert_eq!(h.finish(), Integrity::compute(HashAlgorithm::Sha256, b"hello"));
+        assert_eq!(
+            h.finish(),
+            Integrity::compute(HashAlgorithm::Sha256, b"hello")
+        );
         let i = Integrity::parse(HELLO_SHA512).unwrap();
         let j = serde_json::to_string(&i).unwrap();
         assert_eq!(j, format!("\"{HELLO_SHA512}\""));

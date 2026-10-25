@@ -157,7 +157,12 @@ impl WorkspaceSpec {
             "" | "*" => Self::Any,
             "^" => Self::Caret,
             "~" => Self::Tilde,
-            _ if raw.starts_with("./") || raw.starts_with("../") || raw.starts_with('/') || raw == "." || raw == ".." => {
+            _ if raw.starts_with("./")
+                || raw.starts_with("../")
+                || raw.starts_with('/')
+                || raw == "."
+                || raw == ".." =>
+            {
                 Self::Path(raw.to_owned())
             }
             _ => Self::Range(raw.to_owned()),
@@ -191,16 +196,34 @@ pub enum DependencySpec {
     /// A registry range. `name` is the registry name: the alias target for `npm:` aliases,
     /// else the dependency's own name. `range` is the semver text with a single leading `v`
     /// removed; empty means `*`.
-    Npm { name: String, range: String, is_alias: bool },
-    DistTag { name: String, tag: String, is_alias: bool },
-    Tarball { uri: TarballUri },
-    Folder { path: String },
-    Symlink { path: String },
-    Workspace { spec: WorkspaceSpec },
+    Npm {
+        name: String,
+        range: String,
+        is_alias: bool,
+    },
+    DistTag {
+        name: String,
+        tag: String,
+        is_alias: bool,
+    },
+    Tarball {
+        uri: TarballUri,
+    },
+    Folder {
+        path: String,
+    },
+    Symlink {
+        path: String,
+    },
+    Workspace {
+        spec: WorkspaceSpec,
+    },
     Git(GitSpec),
     Github(GithubSpec),
     /// The catalog name; `""` is the default catalog.
-    Catalog { catalog: String },
+    Catalog {
+        catalog: String,
+    },
 }
 
 impl DependencySpec {
@@ -231,7 +254,11 @@ impl DependencySpec {
                 if input.len() > 1 && input.starts_with('v') {
                     input = &input[1..];
                 }
-                Ok(Self::Npm { name: name.to_owned(), range: input.to_owned(), is_alias })
+                Ok(Self::Npm {
+                    name: name.to_owned(),
+                    range: input.to_owned(),
+                    is_alias,
+                })
             }
             SpecTag::DistTag => {
                 let (name, tag, is_alias) = match dep.strip_prefix("npm:") {
@@ -242,7 +269,11 @@ impl DependencySpec {
                     None => (alias, dep, false),
                 };
                 let tag = if tag.is_empty() { "latest" } else { tag };
-                Ok(Self::DistTag { name: name.to_owned(), tag: tag.to_owned(), is_alias })
+                Ok(Self::DistTag {
+                    name: name.to_owned(),
+                    tag: tag.to_owned(),
+                    is_alias,
+                })
             }
             SpecTag::Git => {
                 let input = dep.strip_prefix("git+").unwrap_or(dep);
@@ -251,7 +282,11 @@ impl DependencySpec {
                     None => (input, ""),
                 };
                 let hosted = HostedGitInfo::from_url(dep).ok().flatten();
-                Ok(Self::Git(GitSpec { url: url.to_owned(), committish: Committish::parse(committish), hosted }))
+                Ok(Self::Git(GitSpec {
+                    url: url.to_owned(),
+                    committish: Committish::parse(committish),
+                    hosted,
+                }))
             }
             SpecTag::Github => {
                 let info = match HostedGitInfo::from_url(dep) {
@@ -297,15 +332,23 @@ impl DependencySpec {
             SpecTag::Folder => parse_folder(dep).map(|path| Self::Folder { path }),
             SpecTag::Symlink => {
                 let path = dep.split_once(':').map_or(dep, |(_, rest)| rest);
-                Ok(Self::Symlink { path: path.to_owned() })
+                Ok(Self::Symlink {
+                    path: path.to_owned(),
+                })
             }
             SpecTag::Workspace => {
                 let raw = dep.strip_prefix("workspace:").unwrap_or(dep);
-                Ok(Self::Workspace { spec: WorkspaceSpec::parse(raw) })
+                Ok(Self::Workspace {
+                    spec: WorkspaceSpec::parse(raw),
+                })
             }
             SpecTag::Catalog => {
-                let group = dep.strip_prefix("catalog:").ok_or_else(|| SpecError::InvalidCatalog(dep.to_owned()))?;
-                Ok(Self::Catalog { catalog: group.trim().to_owned() })
+                let group = dep
+                    .strip_prefix("catalog:")
+                    .ok_or_else(|| SpecError::InvalidCatalog(dep.to_owned()))?;
+                Ok(Self::Catalog {
+                    catalog: group.trim().to_owned(),
+                })
             }
         }
     }
@@ -333,7 +376,10 @@ impl DependencySpec {
     }
 
     pub fn is_alias(&self) -> bool {
-        matches!(self, Self::Npm { is_alias: true, .. } | Self::DistTag { is_alias: true, .. })
+        matches!(
+            self,
+            Self::Npm { is_alias: true, .. } | Self::DistTag { is_alias: true, .. }
+        )
     }
 }
 
@@ -351,7 +397,12 @@ pub struct Dependency {
 impl Dependency {
     pub fn parse(name: &str, literal: &str, behavior: Behavior) -> Result<Self, SpecError> {
         let lit = trim_literal(literal);
-        Ok(Self { name: name.to_owned(), literal: lit.to_owned(), spec: DependencySpec::parse(name, lit)?, behavior })
+        Ok(Self {
+            name: name.to_owned(),
+            literal: lit.to_owned(),
+            spec: DependencySpec::parse(name, lit)?,
+            behavior,
+        })
     }
 
     /// The name of the package on the registry.
@@ -368,7 +419,8 @@ pub fn trim_literal(literal: &str) -> &str {
 /// `.tgz`, `.tar.gz` or `.tar`, case-insensitive. Query strings are not considered.
 pub fn is_tarball(dep: &str) -> bool {
     let lower_ends = |suffix: &str| {
-        dep.len() >= suffix.len() && dep.as_bytes()[dep.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
+        dep.len() >= suffix.len()
+            && dep.as_bytes()[dep.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
     };
     lower_ends(".tgz") || lower_ends(".tar.gz") || lower_ends(".tar")
 }
@@ -444,7 +496,9 @@ fn starts_with_windows_drive_letter(dep: &str) -> bool {
 }
 
 fn hosted_tag(info: &HostedGitInfo) -> SpecTag {
-    if info.provider == HostProvider::Github && info.default_representation == Representation::Shortcut {
+    if info.provider == HostProvider::Github
+        && info.default_representation == Representation::Shortcut
+    {
         SpecTag::Github
     } else {
         SpecTag::Git
@@ -463,14 +517,19 @@ pub fn split_npm_alias(target: &str) -> (&str, Option<&str>) {
 /// `npm:^1.0.0` and `npm:1.0.0` are ranges for the dependency's own name (like Yarn);
 /// `npm:x`, `npm:1`, `npm:1.x` are aliases, because those are valid package names.
 fn is_range_after_npm_protocol(target: &str) -> bool {
-    (target.contains(['^', '~', '>', '<', '=', '*', '|', ' ']) || loose_version::is_exact_version(target))
+    (target.contains(['^', '~', '>', '<', '=', '*', '|', ' '])
+        || loose_version::is_exact_version(target))
         && infer_tag(target) == SpecTag::Npm
 }
 
 /// `npm:^1.0.0` gives `^1.0.0`; an alias such as `npm:name@^1.0.0` is returned unchanged.
 pub fn without_npm_protocol(literal: &str) -> &str {
     match literal.strip_prefix("npm:") {
-        Some(target) if split_npm_alias(target).1.is_none() && is_range_after_npm_protocol(target) => target,
+        Some(target)
+            if split_npm_alias(target).1.is_none() && is_range_after_npm_protocol(target) =>
+        {
+            target
+        }
         _ => literal,
     }
 }
@@ -550,14 +609,28 @@ pub fn infer_tag(dep: &str) -> SpecTag {
         return SpecTag::DistTag;
     }
     if starts_with_windows_drive_letter(dep) && (b[2] == b'/' || (cfg!(windows) && b[2] == b'\\')) {
-        return if is_tarball(dep) { SpecTag::Tarball } else { SpecTag::Folder };
+        return if is_tarball(dep) {
+            SpecTag::Tarball
+        } else {
+            SpecTag::Folder
+        };
     }
     match b[0] {
         b'=' | b'>' | b'<' | b'^' | b'*' | b'|' => return SpecTag::Npm,
-        b'.' | b'/' => return if is_tarball(dep) { SpecTag::Tarball } else { SpecTag::Folder },
+        b'.' | b'/' => {
+            return if is_tarball(dep) {
+                SpecTag::Tarball
+            } else {
+                SpecTag::Folder
+            };
+        }
         b'~' => {
             if b.len() > 1 && b[1] == b'/' {
-                return if is_tarball(dep) { SpecTag::Tarball } else { SpecTag::Folder };
+                return if is_tarball(dep) {
+                    SpecTag::Tarball
+                } else {
+                    SpecTag::Folder
+                };
             }
             return SpecTag::Npm;
         }
@@ -572,7 +645,11 @@ pub fn infer_tag(dep: &str) -> SpecTag {
         }
         b'f' => {
             if dep.starts_with("file:") {
-                return if is_tarball(dep) { SpecTag::Tarball } else { SpecTag::Folder };
+                return if is_tarball(dep) {
+                    SpecTag::Tarball
+                } else {
+                    SpecTag::Folder
+                };
             }
         }
         b'c' => {
@@ -599,7 +676,10 @@ pub fn infer_tag(dep: &str) -> SpecTag {
                         }
                     }
                     b'+' => {
-                        if url.starts_with("+ssh:") || url.starts_with("+file:") || url.starts_with("+git:") {
+                        if url.starts_with("+ssh:")
+                            || url.starts_with("+file:")
+                            || url.starts_with("+git:")
+                        {
                             return SpecTag::Git;
                         }
                         if let Some(rest) = url.strip_prefix("+http") {

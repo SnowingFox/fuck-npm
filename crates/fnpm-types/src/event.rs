@@ -17,7 +17,11 @@ pub enum ScriptPhase {
 
 /// `CoreEvent` in `types.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Event {
     Resolve {
         resolved: u32,
@@ -67,13 +71,19 @@ pub enum Event {
 
 impl Event {
     pub fn warn(message: impl Into<String>, code: Option<&str>) -> Self {
-        Self::Warn { message: message.into(), code: code.map(str::to_owned) }
+        Self::Warn {
+            message: message.into(),
+            code: code.map(str::to_owned),
+        }
     }
 
     /// Progress events can be coalesced (only the latest of each kind matters); the others
     /// must all be delivered in order.
     pub fn is_progress(&self) -> bool {
-        matches!(self, Self::Resolve { .. } | Self::Download { .. } | Self::Extract { .. } | Self::Link { .. })
+        matches!(
+            self,
+            Self::Resolve { .. } | Self::Download { .. } | Self::Extract { .. } | Self::Link { .. }
+        )
     }
 }
 
@@ -191,14 +201,33 @@ mod tests {
 
     #[test]
     fn json_matches_ts_contract() {
-        let e = Event::Script { package: "esbuild".into(), script: "postinstall".into(), phase: ScriptPhase::End, exit_code: Some(0) };
+        let e = Event::Script {
+            package: "esbuild".into(),
+            script: "postinstall".into(),
+            phase: ScriptPhase::End,
+            exit_code: Some(0),
+        };
         assert_eq!(
             serde_json::to_string(&e).unwrap(),
             r#"{"type":"script","package":"esbuild","script":"postinstall","phase":"end","exitCode":0}"#
         );
-        let e = Event::Resolve { resolved: 1, total: 2, name: None };
-        assert_eq!(serde_json::to_string(&e).unwrap(), r#"{"type":"resolve","resolved":1,"total":2}"#);
-        let s = InstallSummary { installed_count: 3, checked: Some(CheckedCount { installs: 1, packages: 2 }), ..Default::default() };
+        let e = Event::Resolve {
+            resolved: 1,
+            total: 2,
+            name: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&e).unwrap(),
+            r#"{"type":"resolve","resolved":1,"total":2}"#
+        );
+        let s = InstallSummary {
+            installed_count: 3,
+            checked: Some(CheckedCount {
+                installs: 1,
+                packages: 2,
+            }),
+            ..Default::default()
+        };
         let j = serde_json::to_value(Event::Summary { summary: s.clone() }).unwrap();
         assert_eq!(j["summary"]["installedCount"], 3);
         assert_eq!(j["summary"]["checked"]["packages"], 2);

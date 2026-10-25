@@ -28,7 +28,11 @@ fn tag_len(input: &[u8]) -> usize {
 }
 
 pub(crate) fn scan(input: &[u8]) -> Scan {
-    let mut result = Scan { valid: true, wildcard: Wildcard::None, len: 0 };
+    let mut result = Scan {
+        valid: true,
+        wildcard: Wildcard::None,
+        len: 0,
+    };
     if input.is_empty() {
         result.valid = false;
         return result;
@@ -146,7 +150,8 @@ pub(crate) fn scan(input: &[u8]) -> Scan {
 
 /// One complete version and nothing else, apart from surrounding whitespace.
 pub(crate) fn is_exact_version(input: &str) -> bool {
-    let trimmed = input.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0B' | '\x0C'));
+    let trimmed =
+        input.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0B' | '\x0C'));
     let s = scan(trimmed.as_bytes());
     s.valid && s.wildcard == Wildcard::None && s.len == trimmed.len()
 }
@@ -157,10 +162,28 @@ mod tests {
 
     #[test]
     fn exact() {
-        for ok in ["1.2.3", "v1.2.3", "1.2.3-beta.1", "1.2.3+build", "=1.2.3", "1.0.0rc.1", " 1.2.3 "] {
+        for ok in [
+            "1.2.3",
+            "v1.2.3",
+            "1.2.3-beta.1",
+            "1.2.3+build",
+            "=1.2.3",
+            "1.0.0rc.1",
+            " 1.2.3 ",
+        ] {
             assert!(is_exact_version(ok), "{ok}");
         }
-        for bad in ["1", "1.2", "1.x", "^1.2.3", "1.2.3 - 2", "latest", "", "1.2.3.4", "x"] {
+        for bad in [
+            "1",
+            "1.2",
+            "1.x",
+            "^1.2.3",
+            "1.2.3 - 2",
+            "latest",
+            "",
+            "1.2.3.4",
+            "x",
+        ] {
             assert!(!is_exact_version(bad), "{bad}");
         }
     }

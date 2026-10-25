@@ -30,7 +30,9 @@ pub async fn install(
     on_events: Option<ThreadsafeFunction<serde_json::Value>>,
 ) -> Result<serde_json::Value> {
     let _ = (options, on_events);
-    Err(Error::from_reason("fnpm-napi: install is not implemented yet"))
+    Err(Error::from_reason(
+        "fnpm-napi: install is not implemented yet",
+    ))
 }
 
 #[napi]
@@ -39,5 +41,7 @@ pub async fn invoke(
     on_events: Option<ThreadsafeFunction<serde_json::Value>>,
 ) -> Result<serde_json::Value> {
     let _ = (request, on_events);
-    Err(Error::from_reason("fnpm-napi: invoke is not implemented yet"))
+    Err(Error::from_reason(
+        "fnpm-napi: invoke is not implemented yet",
+    ))
 }

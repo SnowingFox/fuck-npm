@@ -36,7 +36,11 @@ impl Behavior {
     }
     #[inline]
     pub fn with(self, flag: Self, on: bool) -> Self {
-        if on { Self(self.0 | flag.0) } else { Self(self.0 & !flag.0) }
+        if on {
+            Self(self.0 | flag.0)
+        } else {
+            Self(self.0 & !flag.0)
+        }
     }
     #[inline]
     pub fn is_prod(self) -> bool {
@@ -193,8 +197,17 @@ mod tests {
         assert_eq!(o.group(), DependencyGroup::Optional);
         assert_eq!(Behavior::DEV.with(Behavior::DEV, false), Behavior::NONE);
         assert_eq!(Behavior::PROD.bits(), 2);
-        assert_eq!(format!("{:?}", Behavior::PROD | Behavior::WORKSPACE), "{\"prod\", \"workspace\"}");
-        assert_eq!(DependencyGroup::from_field("devDependencies"), Some(DependencyGroup::Dev));
-        assert_eq!(serde_json::to_string(&DependencyGroup::Optional).unwrap(), "\"optionalDependencies\"");
+        assert_eq!(
+            format!("{:?}", Behavior::PROD | Behavior::WORKSPACE),
+            "{\"prod\", \"workspace\"}"
+        );
+        assert_eq!(
+            DependencyGroup::from_field("devDependencies"),
+            Some(DependencyGroup::Dev)
+        );
+        assert_eq!(
+            serde_json::to_string(&DependencyGroup::Optional).unwrap(),
+            "\"optionalDependencies\""
+        );
     }
 }

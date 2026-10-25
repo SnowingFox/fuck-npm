@@ -1,6 +1,6 @@
-//! End-to-end tests of planning and linking with an in-memory graph, a fake store laid out in a
-//! temp dir and a fake [`PackageSource`]. Upstream crates are not exercised (their stubs may be
-//! unimplemented); hoisted trees are written by hand.
+//! End-to-end tests of planning and linking with an in-memory graph, a store laid out in a
+//! temp dir and a fake [`PackageSource`] (no registry). Hoisted trees are written by hand so
+//! each test pins the exact layout it links.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -68,6 +68,7 @@ pub(crate) fn test_config(project: &Path, store: &Path) -> Config {
             print_yarn: false,
             path: None,
             save_path: None,
+            force_save: false,
         },
         omit: Omit::default(),
         auto_install_peers: true,
@@ -78,6 +79,8 @@ pub(crate) fn test_config(project: &Path, store: &Path) -> Config {
         security_scanner: None,
         log_level: LogLevel::Default,
         ci: false,
+        // Fields the tests do not care about keep the crate's defaults.
+        ..Config::defaults(project)
     }
 }
 

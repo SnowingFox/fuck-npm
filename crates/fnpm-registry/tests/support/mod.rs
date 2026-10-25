@@ -262,6 +262,7 @@ pub fn config(registry: &str, cache_dir: &Path) -> Config {
             print_yarn: false,
             path: None,
             save_path: None,
+            force_save: false,
         },
         omit: Omit::default(),
         auto_install_peers: true,
@@ -272,6 +273,8 @@ pub fn config(registry: &str, cache_dir: &Path) -> Config {
         security_scanner: None,
         log_level: LogLevel::Default,
         ci: false,
+        // Fields the test does not care about keep the crate's defaults.
+        ..Config::defaults(cache_dir)
     }
 }
 

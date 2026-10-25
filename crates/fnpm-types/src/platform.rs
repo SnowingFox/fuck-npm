@@ -5,7 +5,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PlatformError {
     #[error("invalid {what}: '{value}'. valid values: *, any, none, {valid}; use !name to negate")]
-    Unknown { what: &'static str, value: String, valid: String },
+    Unknown {
+        what: &'static str,
+        value: String,
+        valid: String,
+    },
 }
 
 /// Accumulates `name` / `!name` / `any` / `none` entries, then [`Negatable::combine`]s them.
@@ -42,9 +46,17 @@ impl Negatable {
         };
         // bun resets the wildcard / unrecognized flags on every recognised entry.
         *self = if is_not {
-            Self { added: self.added, removed: self.removed | bit, ..Default::default() }
+            Self {
+                added: self.added,
+                removed: self.removed | bit,
+                ..Default::default()
+            }
         } else {
-            Self { added: self.added | bit, removed: self.removed, ..Default::default() }
+            Self {
+                added: self.added | bit,
+                removed: self.removed,
+                ..Default::default()
+            }
         };
     }
 
@@ -252,7 +264,11 @@ pub struct Platform {
 
 impl Platform {
     pub fn current() -> Self {
-        Self { os: OsSet::current(), cpu: CpuSet::current(), libc: LibcSet::current() }
+        Self {
+            os: OsSet::current(),
+            cpu: CpuSet::current(),
+            libc: LibcSet::current(),
+        }
     }
 }
 
@@ -296,10 +312,18 @@ impl Default for PlatformConstraints {
 }
 
 impl PlatformConstraints {
-    pub const ANY: Self = Self { os: OsSet::ALL, cpu: CpuSet::ALL, libc: LibcSet::NONE };
+    pub const ANY: Self = Self {
+        os: OsSet::ALL,
+        cpu: CpuSet::ALL,
+        libc: LibcSet::NONE,
+    };
 
     pub fn from_package_json<S: AsRef<str>>(os: &[S], cpu: &[S], libc: &[S]) -> Self {
-        Self { os: OsSet::from_list(os), cpu: CpuSet::from_list(cpu), libc: LibcSet::from_package_list(libc) }
+        Self {
+            os: OsSet::from_list(os),
+            cpu: CpuSet::from_list(cpu),
+            libc: LibcSet::from_package_list(libc),
+        }
     }
 
     pub fn is_any(&self) -> bool {
@@ -336,7 +360,12 @@ mod tests {
         assert_eq!(os(&[]), OsSet::ALL);
         assert_eq!(os(&["darwin"]).names().collect::<Vec<_>>(), ["darwin"]);
         assert_eq!(os(&["!win32"]), OsSet(OsSet::ALL.0 & !(1 << 7)));
-        assert_eq!(os(&["darwin", "linux", "!linux"]).names().collect::<Vec<_>>(), ["darwin"]);
+        assert_eq!(
+            os(&["darwin", "linux", "!linux"])
+                .names()
+                .collect::<Vec<_>>(),
+            ["darwin"]
+        );
         assert_eq!(os(&["any"]), OsSet::ALL);
         assert_eq!(os(&["none"]), OsSet::NONE);
         assert_eq!(os(&["beos"]), OsSet::NONE);
@@ -350,7 +379,12 @@ mod tests {
         assert_eq!(os(&["!win32"]).to_list(), ["!win32"]);
         assert!(OsSet::ALL.to_list().is_empty());
         assert_eq!(OsSet::NONE.to_list(), ["none"]);
-        for set in [os(&["darwin", "linux"]), os(&["!win32", "!aix"]), OsSet::ALL, OsSet::NONE] {
+        for set in [
+            os(&["darwin", "linux"]),
+            os(&["!win32", "!aix"]),
+            OsSet::ALL,
+            OsSet::NONE,
+        ] {
             assert_eq!(OsSet::from_list(&set.to_list()), set);
         }
     }
@@ -358,14 +392,24 @@ mod tests {
     #[test]
     fn cli_parse() {
         assert_eq!(CpuSet::parse_cli(&["*"]).unwrap(), CpuSet::ALL);
-        assert_eq!(CpuSet::parse_cli(&["arm64", "!x64"]).unwrap().names().collect::<Vec<_>>(), ["arm64"]);
+        assert_eq!(
+            CpuSet::parse_cli(&["arm64", "!x64"])
+                .unwrap()
+                .names()
+                .collect::<Vec<_>>(),
+            ["arm64"]
+        );
         let e = CpuSet::parse_cli(&["sparc"]).unwrap_err();
         assert!(e.to_string().starts_with("invalid cpu: 'sparc'"));
     }
 
     #[test]
     fn matching() {
-        let linux_x64_glibc = Platform { os: os(&["linux"]), cpu: CpuSet::from_list(&["x64"]), libc: LibcSet::from_list(&["glibc"]) };
+        let linux_x64_glibc = Platform {
+            os: os(&["linux"]),
+            cpu: CpuSet::from_list(&["x64"]),
+            libc: LibcSet::from_list(&["glibc"]),
+        };
         let c = PlatformConstraints::from_package_json(&["linux"], &["x64", "arm64"], &[]);
         assert!(c.matches(&linux_x64_glibc));
         let musl = PlatformConstraints::from_package_json::<&str>(&[], &[], &["musl"]);
@@ -384,7 +428,10 @@ mod tests {
         let j = serde_json::to_string(&c).unwrap();
         assert_eq!(j, r#"{"os":["!win32"],"libc":["glibc"]}"#);
         assert_eq!(serde_json::from_str::<PlatformConstraints>(&j).unwrap(), c);
-        assert_eq!(serde_json::from_str::<PlatformConstraints>("{}").unwrap(), PlatformConstraints::ANY);
+        assert_eq!(
+            serde_json::from_str::<PlatformConstraints>("{}").unwrap(),
+            PlatformConstraints::ANY
+        );
         let one: OsSet = serde_json::from_str("\"darwin\"").unwrap();
         assert_eq!(one.names().collect::<Vec<_>>(), ["darwin"]);
     }

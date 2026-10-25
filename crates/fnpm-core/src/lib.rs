@@ -45,15 +45,19 @@ impl Error {
         match self {
             Self::Resolve(fnpm_resolver::Error::FrozenLockfile { .. }) => "FROZEN_LOCKFILE",
             Self::Resolve(fnpm_resolver::Error::NoMatchingVersion { .. }) => "NO_MATCHING_VERSION",
-            Self::Resolve(fnpm_resolver::Error::NotFound(_)) | Self::Registry(fnpm_registry::Error::NotFound(_)) => {
-                "NOT_FOUND"
+            Self::Resolve(fnpm_resolver::Error::NotFound(_))
+            | Self::Registry(fnpm_registry::Error::NotFound(_)) => "NOT_FOUND",
+            Self::Store(fnpm_store::Error::Integrity { .. })
+            | Self::Registry(fnpm_registry::Error::Integrity { .. }) => "INTEGRITY",
+            Self::Registry(
+                fnpm_registry::Error::Network { .. } | fnpm_registry::Error::Status { .. },
+            ) => "NETWORK",
+            Self::Scripts(
+                fnpm_scripts::Error::Failed { .. } | fnpm_scripts::Error::Signaled { .. },
+            ) => "SCRIPT_FAILED",
+            Self::Workspace(fnpm_workspace::Error::InvalidPackageJson { .. }) => {
+                "INVALID_PACKAGE_JSON"
             }
-            Self::Store(fnpm_store::Error::Integrity { .. }) | Self::Registry(fnpm_registry::Error::Integrity { .. }) => {
-                "INTEGRITY"
-            }
-            Self::Registry(fnpm_registry::Error::Network { .. } | fnpm_registry::Error::Status { .. }) => "NETWORK",
-            Self::Scripts(fnpm_scripts::Error::Failed { .. } | fnpm_scripts::Error::Signaled { .. }) => "SCRIPT_FAILED",
-            Self::Workspace(fnpm_workspace::Error::InvalidPackageJson { .. }) => "INVALID_PACKAGE_JSON",
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             _ => "CORE_ERROR",
         }

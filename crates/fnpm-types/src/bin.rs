@@ -27,7 +27,12 @@ impl Bin {
     pub fn from_map(entries: impl IntoIterator<Item = (String, String)>) -> Self {
         let mut v: Vec<(String, String)> = entries
             .into_iter()
-            .filter_map(|(n, p)| Some((normalize_bin_name(&n)?.to_owned(), normalize_bin_target(&p)?)))
+            .filter_map(|(n, p)| {
+                Some((
+                    normalize_bin_name(&n)?.to_owned(),
+                    normalize_bin_target(&p)?,
+                ))
+            })
             .collect();
         match v.len() {
             0 => Self::None,
@@ -59,7 +64,10 @@ impl Bin {
                 .map(|n| vec![(n, path.as_str())])
                 .unwrap_or_default(),
             Self::NamedFile { name, path } => vec![(name.as_str(), path.as_str())],
-            Self::Map { entries } => entries.iter().map(|(n, p)| (n.as_str(), p.as_str())).collect(),
+            Self::Map { entries } => entries
+                .iter()
+                .map(|(n, p)| (n.as_str(), p.as_str()))
+                .collect(),
         }
     }
 }
@@ -68,7 +76,11 @@ impl Bin {
 /// with a separator or control character.
 pub fn normalize_bin_name(name: &str) -> Option<&str> {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    if base.is_empty() || base == "." || base == ".." || base.chars().any(|c| c.is_control() || c == ':') {
+    if base.is_empty()
+        || base == "."
+        || base == ".."
+        || base.chars().any(|c| c.is_control() || c == ':')
+    {
         return None;
     }
     Some(base)
@@ -103,12 +115,29 @@ mod tests {
 
     #[test]
     fn shapes() {
-        assert_eq!(Bin::from_file("./cli.js"), Bin::File { path: "cli.js".into() });
+        assert_eq!(
+            Bin::from_file("./cli.js"),
+            Bin::File {
+                path: "cli.js".into()
+            }
+        );
         let one = Bin::from_map([("babel".to_owned(), "./bin/babel.js".to_owned())]);
-        assert_eq!(one, Bin::NamedFile { name: "babel".into(), path: "bin/babel.js".into() });
-        let many = Bin::from_map([("a".to_owned(), "a.js".to_owned()), ("b".to_owned(), "b.js".to_owned())]);
+        assert_eq!(
+            one,
+            Bin::NamedFile {
+                name: "babel".into(),
+                path: "bin/babel.js".into()
+            }
+        );
+        let many = Bin::from_map([
+            ("a".to_owned(), "a.js".to_owned()),
+            ("b".to_owned(), "b.js".to_owned()),
+        ]);
         assert!(matches!(many, Bin::Map { ref entries } if entries.len() == 2));
-        assert_eq!(Bin::from_map([("x".to_owned(), "../../etc/passwd".to_owned())]), Bin::None);
+        assert_eq!(
+            Bin::from_map([("x".to_owned(), "../../etc/passwd".to_owned())]),
+            Bin::None
+        );
         assert_eq!(Bin::from_dir("./bin"), Bin::Dir { path: "bin".into() });
     }
 
@@ -126,7 +155,10 @@ mod tests {
 
     #[test]
     fn serde_shape() {
-        let b = Bin::NamedFile { name: "x".into(), path: "y".into() };
+        let b = Bin::NamedFile {
+            name: "x".into(),
+            path: "y".into(),
+        };
         let j = serde_json::to_string(&b).unwrap();
         assert_eq!(j, r#"{"kind":"namedFile","name":"x","path":"y"}"#);
         assert_eq!(serde_json::from_str::<Bin>(&j).unwrap(), b);

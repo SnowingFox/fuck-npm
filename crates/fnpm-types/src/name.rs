@@ -187,16 +187,57 @@ pub enum NameProblem {
 }
 
 const NODE_BUILTINS: &[&str] = &[
-    "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants",
-    "crypto", "dgram", "diagnostics_channel", "dns", "domain", "events", "fs", "http", "http2",
-    "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process", "punycode",
-    "querystring", "readline", "repl", "stream", "string_decoder", "sys", "timers", "tls",
-    "trace_events", "tty", "url", "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+    "assert",
+    "async_hooks",
+    "buffer",
+    "child_process",
+    "cluster",
+    "console",
+    "constants",
+    "crypto",
+    "dgram",
+    "diagnostics_channel",
+    "dns",
+    "domain",
+    "events",
+    "fs",
+    "http",
+    "http2",
+    "https",
+    "inspector",
+    "module",
+    "net",
+    "os",
+    "path",
+    "perf_hooks",
+    "process",
+    "punycode",
+    "querystring",
+    "readline",
+    "repl",
+    "stream",
+    "string_decoder",
+    "sys",
+    "timers",
+    "tls",
+    "trace_events",
+    "tty",
+    "url",
+    "util",
+    "v8",
+    "vm",
+    "wasi",
+    "worker_threads",
+    "zlib",
 ];
 
 fn is_uri_component_safe(s: &str) -> bool {
     s.bytes().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')')
+        c.is_ascii_alphanumeric()
+            || matches!(
+                c,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            )
     })
 }
 
@@ -230,7 +271,10 @@ pub fn validate_new_package_name(name: &str) -> Result<(), Vec<NameProblem>> {
         problems.push(NameProblem::Uppercase);
     }
     let last = name.rsplit('/').next().unwrap_or(name);
-    if last.bytes().any(|c| matches!(c, b'~' | b'\'' | b'!' | b'(' | b')' | b'*')) {
+    if last
+        .bytes()
+        .any(|c| matches!(c, b'~' | b'\'' | b'!' | b'(' | b')' | b'*'))
+    {
         problems.push(NameProblem::SpecialCharacters);
     }
     if !is_uri_component_safe(name) {
@@ -238,13 +282,20 @@ pub fn validate_new_package_name(name: &str) -> Result<(), Vec<NameProblem>> {
             .strip_prefix('@')
             .and_then(|rest| rest.split_once('/'))
             .is_some_and(|(user, pkg)| {
-                !user.is_empty() && !pkg.is_empty() && is_uri_component_safe(user) && is_uri_component_safe(pkg)
+                !user.is_empty()
+                    && !pkg.is_empty()
+                    && is_uri_component_safe(user)
+                    && is_uri_component_safe(pkg)
             });
         if !scoped_ok {
             problems.push(NameProblem::NotUrlFriendly);
         }
     }
-    if problems.is_empty() { Ok(()) } else { Err(problems) }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems)
+    }
 }
 
 /// `@scope/name` gives `name`; an unscoped name is returned as is.
@@ -304,7 +355,8 @@ pub fn split_name_and_version_or_latest(s: &str) -> (&str, &str) {
 pub fn contains_control_character(name: &str) -> bool {
     let b = name.as_bytes();
     b.iter().enumerate().any(|(i, &byte)| {
-        byte.is_ascii_control() || (byte == 0xC2 && b.get(i + 1).is_some_and(|n| (0x80..=0x9F).contains(n)))
+        byte.is_ascii_control()
+            || (byte == 0xC2 && b.get(i + 1).is_some_and(|n| (0x80..=0x9F).contains(n)))
     })
 }
 
@@ -347,7 +399,11 @@ pub fn fallback_package_name(location: &str) -> &str {
     let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let name = base.strip_suffix(".tgz").unwrap_or(base);
     let name = name.strip_suffix(".tar.gz").unwrap_or(name);
-    if is_safe_lockfile_package_name(name) { name } else { "unnamed-package" }
+    if is_safe_lockfile_package_name(name) {
+        name
+    } else {
+        "unnamed-package"
+    }
 }
 
 /// `1.2.3+build` gives `1.2.3`.
@@ -368,7 +424,9 @@ mod tests {
         assert!(PackageName::parse("$").is_ok());
         assert_eq!(PackageName::parse(""), Err(NameError::Empty));
         assert!(PackageName::parse(&"a".repeat(215)).is_err());
-        for bad in ["@types", "@types/", "@/x", "a/b", ".foo", "_foo", "foo bar", "fo~o", "@a/b/c", "@a/b~"] {
+        for bad in [
+            "@types", "@types/", "@/x", "a/b", ".foo", "_foo", "foo bar", "fo~o", "@a/b/c", "@a/b~",
+        ] {
             assert!(PackageName::parse(bad).is_err(), "{bad}");
         }
     }
@@ -400,12 +458,18 @@ mod tests {
         assert!(validate_new_package_name("some-package").is_ok());
         assert!(validate_new_package_name("@npm/thingy").is_ok());
         assert!(validate_new_package_name("example.com").is_ok());
-        assert_eq!(validate_new_package_name("Hello").unwrap_err(), vec![NameProblem::Uppercase]);
+        assert_eq!(
+            validate_new_package_name("Hello").unwrap_err(),
+            vec![NameProblem::Uppercase]
+        );
         let has = |n: &str, p: NameProblem| validate_new_package_name(n).unwrap_err().contains(&p);
         assert!(has(" leading", NameProblem::SurroundingSpaces));
         assert!(has(".start", NameProblem::LeadingPeriod));
         assert!(has("_start", NameProblem::LeadingUnderscore));
-        assert!(has("node_modules", NameProblem::Blacklisted("node_modules".into())));
+        assert!(has(
+            "node_modules",
+            NameProblem::Blacklisted("node_modules".into())
+        ));
         assert!(has("fs", NameProblem::CoreModule("fs".into())));
         assert!(has("crazy!", NameProblem::SpecialCharacters));
         assert!(has("a/b", NameProblem::NotUrlFriendly));
@@ -415,12 +479,21 @@ mod tests {
 
     #[test]
     fn split_name_version() {
-        assert_eq!(split_name_and_maybe_version("foo@1.1.1"), ("foo", Some("1.1.1")));
-        assert_eq!(split_name_and_maybe_version("@foo/bar@1.1.1"), ("@foo/bar", Some("1.1.1")));
+        assert_eq!(
+            split_name_and_maybe_version("foo@1.1.1"),
+            ("foo", Some("1.1.1"))
+        );
+        assert_eq!(
+            split_name_and_maybe_version("@foo/bar@1.1.1"),
+            ("@foo/bar", Some("1.1.1"))
+        );
         assert_eq!(split_name_and_maybe_version("@foo/bar"), ("@foo/bar", None));
         assert_eq!(split_name_and_maybe_version("foo"), ("foo", None));
         assert_eq!(split_name_and_maybe_version("foo@"), ("foo", None));
-        assert_eq!(split_name_and_maybe_version("foo@npm:bar@2"), ("foo", Some("npm:bar@2")));
+        assert_eq!(
+            split_name_and_maybe_version("foo@npm:bar@2"),
+            ("foo", Some("npm:bar@2"))
+        );
         assert_eq!(split_name_and_version_or_latest("foo"), ("foo", "latest"));
     }
 
@@ -428,7 +501,9 @@ mod tests {
     fn folder_safety() {
         assert!(is_safe_install_folder_name("foo"));
         assert!(is_safe_install_folder_name("@a/b"));
-        for bad in ["", ".", "..", "a/..", "a\\b", "c:x", "a\nb", "a/", "/a", "a\u{85}"] {
+        for bad in [
+            "", ".", "..", "a/..", "a\\b", "c:x", "a\nb", "a/", "/a", "a\u{85}",
+        ] {
             assert!(!is_safe_install_folder_name(bad), "{bad:?}");
         }
         assert!(contains_control_character("a\u{1b}[0m"));

@@ -13,8 +13,8 @@ mod semver;
 mod text;
 
 pub mod formats;
-pub mod migration;
 pub mod hash;
+pub mod migration;
 pub mod print;
 pub mod sidecar;
 pub mod tree;
@@ -348,7 +348,8 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
 pub fn parse(format: Format, bytes: &[u8], workspace: &Workspace) -> Result<LockGraph> {
     match format {
         Format::Fnpm => formats::fnpm::parse(bytes),
-        Format::BunText => formats::bun_text::parse(bytes),
+        // The shared text reader that `load` uses (bun.lock and fnpm.lock are one format).
+        Format::BunText => text_parse(bytes, "bun.lock", &ParseOptions::default()).map(|(g, _)| g),
         Format::BunBinary => formats::bun_binary::parse(bytes),
         Format::Npm => formats::npm::parse(bytes, workspace),
         Format::YarnV1 => formats::yarn_v1::parse(bytes, workspace),
@@ -361,7 +362,11 @@ pub fn parse(format: Format, bytes: &[u8], workspace: &Workspace) -> Result<Lock
 pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
     match format {
         Format::Fnpm => Ok(formats::fnpm::serialize(graph).into_bytes()),
-        Format::BunText => Ok(formats::bun_text::serialize(graph).into_bytes()),
+        // bun's dialect of the shared writer: byte-identical with every bun.lock in bun's test
+        // snapshots (`text::roundtrip_tests`).
+        Format::BunText => Ok(text::write::write(graph, text::Dialect::Bun)
+            .text
+            .into_bytes()),
         Format::Npm => formats::npm::serialize(graph).map(String::into_bytes),
         Format::YarnV1 => Ok(formats::yarn_v1::serialize(graph).into_bytes()),
         Format::Pnpm => formats::pnpm::serialize(graph).map(String::into_bytes),
