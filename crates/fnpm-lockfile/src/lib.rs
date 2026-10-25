@@ -1,6 +1,6 @@
 //! Lockfiles: `fnpm.lock` read/write, the binary sidecar, the hoisted tree algorithm, and
 //! converters from/to bun.lock, bun.lockb, package-lock.json / npm-shrinkwrap.json (v1-v3),
-//! yarn.lock v1, yarn berry and pnpm-lock.yaml (v5.4-v9).
+//! yarn.lock v1, yarn berry and pnpm-lock.yaml (lockfileVersion 7-11).
 //! See `docs/ARCHITECTURE.md#fnpm-lockfile`.
 
 mod bun_hash;

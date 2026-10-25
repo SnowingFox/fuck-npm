@@ -5,7 +5,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
-use super::support::{TestSemver, empty_workspace, install_tests, snapshots, tree_from_bun_paths};
+use super::support::{empty_workspace, install_tests, snapshots, tree_from_bun_paths};
 use crate::formats::{bun_binary, bun_text, npm};
 use crate::migration::MigrateOptions;
 
@@ -290,7 +290,7 @@ fn mutated_bun_locks_never_panic() {
             let seed = (f as u64) << 32 | k as u64 | 1;
             let input = mutate(file, &mut Rng(seed), true);
             failures.extend(check("bun.lock", seed, || {
-                let parsed = bun_text::parse_with_semver(&input, &options, &TestSemver).ok()?;
+                let parsed = bun_text::parse_with(&input, &options).ok()?;
                 if let Err(e) = parsed.graph.validate() {
                     return Some(format!("invalid graph: {e}"));
                 }

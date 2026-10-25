@@ -64,15 +64,6 @@ pub fn parse_with(bytes: &[u8], options: &MigrateOptions) -> Result<Parsed> {
     Parser::run(bytes, options, &NodeSemver)
 }
 
-#[cfg(test)]
-pub(crate) fn parse_with_semver(
-    bytes: &[u8],
-    options: &MigrateOptions,
-    semver: &dyn Semver,
-) -> Result<Parsed> {
-    Parser::run(bytes, options, semver)
-}
-
 fn err(message: impl Into<String>) -> Error {
     Error::Parse {
         path: PathBuf::from(BUN_LOCK),

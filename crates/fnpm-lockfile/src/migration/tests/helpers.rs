@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::support::{TestSemver, workspace};
+use super::support::workspace;
 use crate::formats::bun_text::{json_str, resolved_commit};
 use crate::migration::{
     MigrateOptions, Report, Semver, default_tarball_url, is_safe_resolved_tag, is_yarn_berry,
@@ -81,7 +81,7 @@ fn json_strings() {
 
 #[test]
 fn test_semver_sanity() {
-    let s = TestSemver;
+    let s = crate::migration::NodeSemver;
     assert!(s.satisfies("1.2.3", "^1.0.0"));
     assert!(!s.satisfies("2.0.0", "^1.0.0"));
     assert!(s.satisfies("0.1.5", "^0.1.2"));

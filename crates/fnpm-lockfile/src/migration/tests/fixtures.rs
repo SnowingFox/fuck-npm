@@ -8,8 +8,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::support::{
-    TestSemver, diff_norm, install_tests, normalize, snapshots, tree_from_bun_paths,
-    tree_from_npm_locations, workspace_from_dir,
+    diff_norm, install_tests, normalize, snapshots, tree_from_bun_paths, tree_from_npm_locations,
+    workspace_from_dir,
 };
 use crate::formats::{bun_text, npm};
 use crate::migration::MigrateOptions;
@@ -122,14 +122,13 @@ fn npm_arborist_fixtures_match_bun() {
                     failures.push(format!("{name}: no bun.lock in snapshot"));
                     continue;
                 };
-                let parsed =
-                    match bun_text::parse_with_semver(lock.as_bytes(), &options, &TestSemver) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            failures.push(format!("{name}: expected bun.lock does not parse: {e}"));
-                            continue;
-                        }
-                    };
+                let parsed = match bun_text::parse_with(lock.as_bytes(), &options) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        failures.push(format!("{name}: expected bun.lock does not parse: {e}"));
+                        continue;
+                    }
+                };
                 let diff = diff_norm(&normalize(&graph), &normalize(&parsed.graph));
                 if !diff.is_empty() {
                     failures.push(format!("{name}:\n    {}", diff.join("\n    ")));
@@ -271,11 +270,7 @@ fn bun_lock_snapshots_round_trip() {
                 lock.push('\n');
             }
             checked += 1;
-            let parsed = match bun_text::parse_with_semver(
-                lock.as_bytes(),
-                &MigrateOptions::default(),
-                &TestSemver,
-            ) {
+            let parsed = match bun_text::parse_with(lock.as_bytes(), &MigrateOptions::default()) {
                 Ok(p) => p,
                 // Some yarn migration snapshots list a dependency without its package (bun's
                 // own loader rejects them the same way); they are only checked to fail.
@@ -400,10 +395,7 @@ fn migration_speed() {
     let start = std::time::Instant::now();
     let mut parsed = None;
     for _ in 0..n {
-        parsed = Some(
-            bun_text::parse_with_semver(lock.as_bytes(), &options, &super::support::TestSemver)
-                .unwrap(),
-        );
+        parsed = Some(bun_text::parse_with(lock.as_bytes(), &options).unwrap());
     }
     let parsed = parsed.unwrap();
     eprintln!(

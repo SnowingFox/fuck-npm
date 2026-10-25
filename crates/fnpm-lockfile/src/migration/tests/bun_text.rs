@@ -4,14 +4,14 @@
 use fnpm_types::{ConfigVersion, LockGraph, Package, Resolution};
 
 use super::fixtures::first_difference;
-use super::support::{TestSemver, tree_from_bun_paths};
+use super::support::tree_from_bun_paths;
 use crate::formats::bun_text::{self, Parsed};
 use crate::migration::MigrateOptions;
 
 const SHA: &str = "sha512-v4w12JRjUGvfHDUP8vFDwu0gUWu04j0cv9hLb1Abf9VdaXu4XcrddYFTMVBVvmldKViGWH7jrb6xPJRF0wq6gw==";
 
 fn parse(text: &str) -> crate::Result<Parsed> {
-    bun_text::parse_with_semver(text.as_bytes(), &MigrateOptions::default(), &TestSemver)
+    bun_text::parse_with(text.as_bytes(), &MigrateOptions::default())
 }
 
 fn find<'g>(g: &'g LockGraph, name: &str, version: &str) -> &'g Package {

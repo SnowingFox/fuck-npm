@@ -1,4 +1,4 @@
-//! Shared helpers for the migration tests: a local stand-in for `Workspace::load`, a
+//! Shared helpers for the migration tests: the project's `Workspace`, a
 //! filesystem view that stays inside the fixture, and readers for bun's `.snap` files.
 #![allow(dead_code)]
 
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use fnpm_lockfile::formats::foreign::{MigrateOptions, ProjectFiles};
 use fnpm_types::{LockGraph, Package, PackageId, Resolution};
-use fnpm_workspace::{Member, PackageJson, Workspace};
+use fnpm_workspace::{PackageJson, Workspace};
 use serde_json::Value;
 
 pub fn fixtures() -> PathBuf {
@@ -98,68 +98,24 @@ fn patterns(root: &Value, dir: &Path) -> Vec<String> {
     out
 }
 
-/// A stand-in for `Workspace::load` (implemented in fnpm-workspace by another change): the
-/// root package.json plus members from `dir/*` and literal workspace patterns.
+/// The project's workspace, loaded by fnpm-workspace the way lockfile migration loads it.
 pub fn workspace(dir: &Path) -> Workspace {
-    let root_raw = read_json(&dir.join("package.json")).unwrap_or_else(|| serde_json::json!({}));
-    let mut paths: BTreeSet<String> = BTreeSet::new();
-    let mut excluded: BTreeSet<String> = BTreeSet::new();
-    for pattern in patterns(&root_raw, dir) {
-        let (negated, pattern) = match pattern.strip_prefix('!') {
-            Some(p) => (true, p.to_owned()),
-            None => (false, pattern),
-        };
-        let pattern = pattern
-            .trim_start_matches("./")
-            .trim_end_matches('/')
-            .to_owned();
-        let mut found = Vec::new();
-        if let Some(base) = pattern
-            .strip_suffix("/*")
-            .or_else(|| pattern.strip_suffix("/**"))
-        {
-            if let Ok(entries) = std::fs::read_dir(dir.join(base)) {
-                for e in entries.flatten() {
-                    if e.path().join("package.json").exists() {
-                        found.push(format!("{base}/{}", e.file_name().to_string_lossy()));
-                    }
-                }
-            }
-        } else if dir.join(&pattern).join("package.json").exists() {
-            found.push(pattern.clone());
-        }
-        if negated {
-            excluded.extend(found)
-        } else {
-            paths.extend(found)
-        }
-    }
-    let members = paths
-        .into_iter()
-        .filter(|p| !excluded.contains(p))
-        .filter_map(|path| {
-            let raw = read_json(&dir.join(&path).join("package.json"))?;
-            let name = raw.get("name").and_then(Value::as_str).map(str::to_owned)?;
-            let version = raw
-                .get("version")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            Some(Member {
-                name,
-                version,
-                dir: dir.join(&path),
-                path,
-                manifest: manifest(raw),
-            })
+    // The real discovery, in the mode lockfile migration uses (missing members are skipped).
+    let opts = fnpm_workspace::LoadOptions {
+        missing: fnpm_workspace::MissingWorkspace::Skip,
+    };
+    // A project whose workspace config does not load (the broken pnpm-workspace.yaml cases) is
+    // migrated with its root package.json alone, as the migration does.
+    Workspace::load_with(dir, &opts)
+        .map(|(ws, _)| ws)
+        .unwrap_or_else(|_| Workspace {
+            root_dir: dir.to_path_buf(),
+            root: manifest(
+                read_json(&dir.join("package.json")).unwrap_or_else(|| serde_json::json!({})),
+            ),
+            members: Vec::new(),
+            settings: Default::default(),
         })
-        .collect();
-    Workspace {
-        root_dir: dir.to_path_buf(),
-        root: manifest(root_raw),
-        members,
-        settings: Default::default(),
-    }
 }
 
 pub fn options(files: &dyn ProjectFiles) -> MigrateOptions<'_> {

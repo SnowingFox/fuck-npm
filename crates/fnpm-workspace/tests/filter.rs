@@ -33,15 +33,6 @@ fn sel(ws: &Workspace, patterns: &[&str], cwd: &Path) -> Vec<String> {
     names(ws, &select(ws, &selectors, cwd).unwrap())
 }
 
-/// A fake `satisfies` for exact versions and `^1`-style majors, so these tests do not depend
-/// on fnpm-semver.
-fn fake_satisfies(version: &str, range: &str) -> bool {
-    match range.strip_prefix('^') {
-        Some(major) => version.split('.').next() == major.split('.').next(),
-        None => version == range,
-    }
-}
-
 fn sel_with(
     ws: &Workspace,
     patterns: &[&str],
@@ -51,7 +42,6 @@ fn sel_with(
     let selectors = Selector::parse_all(patterns).unwrap();
     let opts = SelectOptions {
         root,
-        satisfies: fake_satisfies,
         ..Default::default()
     };
     let s = select_with(ws, &selectors, cwd, &opts);
@@ -259,7 +249,6 @@ fn relations_walk_the_workspace_graph() {
     // linkWorkspacePackages = false: only workspace: specs are edges
     let opts = SelectOptions {
         link_workspace_packages: false,
-        satisfies: fake_satisfies,
         ..Default::default()
     };
     let s2 = select_with(&ws, &Selector::parse_all(&["...lib"]).unwrap(), r, &opts);
@@ -393,7 +382,7 @@ fn workspace_protocol_resolution() {
     let r = dir.path();
     let a_dir = r.join("packages/a");
     let res = |from: &Path, alias: &str, lit: &str| {
-        ws.resolve_workspace_spec(from, alias, lit, fake_satisfies)
+        ws.resolve_workspace_spec(from, alias, lit, fnpm_semver::satisfies)
     };
     let a = Some(0);
     let b = Some(1);
@@ -505,7 +494,6 @@ fn nothing_depends_on_the_root() {
     assert_eq!(rel(&["./..."]), [ROOT, "b"]);
     assert_eq!(rel(&["...b"]), [ROOT, "a", "b"]);
     let opts = SelectOptions {
-        satisfies: fake_satisfies,
         ..Default::default()
     };
     let order = ws.dependency_order(&[usize::MAX, 0, 1, 2], &opts);
