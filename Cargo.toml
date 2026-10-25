@@ -72,5 +72,11 @@ panic = "abort"
 strip = "symbols"
 opt-level = 3
 
+# The napi addon runs inside the user's Node process: a panic in the core must reject the
+# promise (fnpm-napi catches it), not abort Node. Everything else keeps `panic = "abort"`.
+[profile.release-napi]
+inherits = "release"
+panic = "unwind"
+
 [profile.dev.package."*"]
 opt-level = 2
