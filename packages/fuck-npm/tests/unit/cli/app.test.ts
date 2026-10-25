@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { emptySummary } from "@/core/fake.ts";
 import { plain, testBed } from "../harness.ts";
@@ -277,4 +280,19 @@ describe("generic commands", () => {
     expect(await bed.run(["pm", "hash"])).toBe(1);
     expect(bed.stderr.text()).toBe("error: lockfile is corrupt\n");
   });
+});
+
+test("script paths own help, tree and version arguments", async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), "fnpm-script-dispatch-"));
+  const result = join(dir, "args.json");
+  fs.writeFileSync(join(dir, "cli.cjs"), `require("node:fs").writeFileSync(${JSON.stringify(result)}, JSON.stringify(process.argv.slice(2)));`);
+  try {
+    const bed = testBed({ cwd: dir });
+    expect(await bed.run(["cli.cjs", "--help", "--version", "--tree"])).toBe(0);
+    expect(JSON.parse(fs.readFileSync(result, "utf8"))).toEqual(["--help", "--version", "--tree"]);
+    expect(bed.stdout.text()).toBe("");
+    expect(bed.coreLoads()).toBe(0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

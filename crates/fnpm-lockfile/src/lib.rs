@@ -228,6 +228,8 @@ pub struct LoadOptions {
     pub parse: ParseOptions,
     /// Skip the sidecar (always parse the text).
     pub no_sidecar: bool,
+    /// Where the sidecar is; `None` is `dir/`[`sidecar::SIDECAR`].
+    pub sidecar_path: Option<PathBuf>,
 }
 
 /// xxh3-64 of lockfile bytes.
@@ -293,7 +295,10 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
         let migrated = format != Format::Fnpm;
         if format == Format::Fnpm
             && !opts.no_sidecar
-            && let Some(graph) = sidecar::load(dir, hash)
+            && let Some(graph) = match &opts.sidecar_path {
+                Some(p) => sidecar::load_at(p, hash),
+                None => sidecar::load(dir, hash),
+            }
         {
             return Ok(Some(Loaded {
                 graph,
@@ -377,6 +382,11 @@ pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
 /// Writes `fnpm.lock` atomically (temp + rename) and refreshes the sidecar. Returns the new
 /// file hash. Skips the write when the bytes are unchanged.
 pub fn save(dir: &Path, graph: &LockGraph) -> Result<u64> {
+    save_with(dir, graph, Some(&dir.join(sidecar::SIDECAR)))
+}
+
+/// [`save`] with the sidecar at `sidecar_path` (`None`: no sidecar).
+pub fn save_with(dir: &Path, graph: &LockGraph, sidecar_path: Option<&Path>) -> Result<u64> {
     let text = formats::fnpm::try_serialize(graph)?;
     let path = dir.join(FNPM_LOCK);
     let hash = content_hash(text.as_bytes());
@@ -387,10 +397,11 @@ pub fn save(dir: &Path, graph: &LockGraph) -> Result<u64> {
     // The sidecar caches what loading the file gives (bindings and hoisting re-derived the
     // way a reload derives them), so a warm load and a cold one never differ. It is a cache:
     // failing to write it never fails the save.
-    if (!unchanged || !sidecar::is_fresh(dir, hash))
+    if let Some(sidecar_path) = sidecar_path
+        && (!unchanged || !sidecar::is_fresh_at(sidecar_path, hash))
         && let Ok((loaded, _)) = text_parse(text.as_bytes(), FNPM_LOCK, &ParseOptions::default())
     {
-        let _ = sidecar::save(dir, hash, &loaded);
+        let _ = sidecar::save_at(sidecar_path, hash, &loaded);
     }
     Ok(hash)
 }

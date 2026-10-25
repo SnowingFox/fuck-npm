@@ -40,6 +40,8 @@ struct Plan<'t> {
     /// Packages whose every incoming edge is optional: a failed download skips them.
     optional_only: Vec<bool>,
     skipped: Vec<bool>,
+    /// Expected children of each node_modules, including unselected workspaces when filtered.
+    expected: HashMap<PathBuf, Vec<String>>,
 }
 
 /// Packages that some root or workspace declares (prod, dev, optional or workspace edge).
@@ -136,6 +138,7 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
     let mut children = vec![Vec::new(); n];
     let mut tops = Vec::new();
     let mut skipped = vec![false; n];
+    let mut expected: HashMap<PathBuf, Vec<String>> = HashMap::new();
     for (i, node) in tree.nodes.iter().enumerate() {
         let label = || {
             node.parent
@@ -166,6 +169,10 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
         if node.parent.is_none() {
             tops.push(i as u32);
         }
+        expected
+            .entry(base.clone())
+            .or_default()
+            .push(node.name.clone());
         dirs.push(fsutil::join_name(&base, &node.name));
         let pkg = cx.graph.get(node.package).ok_or_else(|| Error::Missing {
             package: node.path.clone(),
@@ -187,6 +194,7 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
         tops,
         optional_only: optional_only(cx.graph),
         skipped,
+        expected,
     })
 }
 
@@ -239,7 +247,10 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         fresh = true;
     }
     fsutil::create_dir_all(&nm).map_err(Error::NodeModules)?;
-    let plan = build_plan(cx, tree)?;
+    let mut plan = build_plan(cx, tree)?;
+    if let Some(full) = &cx.opts.hoisted_prune_tree {
+        plan.expected = build_plan(cx, full)?.expected;
+    }
     cx.total
         .fetch_add(plan.dirs.len() as u32, Ordering::Relaxed);
 
@@ -276,23 +287,48 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         let mut removed = 0;
         removed += remove_stale(
             &nm,
-            plan.tops
-                .iter()
-                .filter(|&&t| !is_ws_root(tree, t))
-                .map(|&t| tree.nodes[t as usize].name.as_str()),
+            plan.expected
+                .get(&nm)
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
         );
-        for (ws, ids) in &tree.workspace_roots {
+        let project_root = std::fs::canonicalize(cx.project_dir).ok();
+        // A workspace with no remaining nested dependencies has no workspace_roots row.
+        // Visit importers as well so removing its last nested dependency prunes the old copy.
+        for ws in cx.graph.workspaces.values().filter(|&&id| {
+            id != PackageId::ROOT
+                && cx
+                    .opts
+                    .selected_workspaces
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&id))
+        }) {
             if let Some(dir) = cx
                 .graph
                 .get(*ws)
                 .and_then(|p| local_target(cx.project_dir, &p.resolution))
             {
+                let nm = dir.join("node_modules");
+                // Only prune real package trees inside this project. An external workspace
+                // or a symlinked node_modules can belong to another install entirely.
+                if !crate::is_inside_project(cx.project_dir, &dir)
+                    || fsutil::kind(&nm) != Kind::Dir
+                    || !project_root.as_ref().is_some_and(|root| {
+                        std::fs::canonicalize(&nm).is_ok_and(|real| real.starts_with(root))
+                    })
+                {
+                    continue;
+                }
                 removed += remove_stale(
-                    &dir.join("node_modules"),
-                    ids.iter()
-                        .filter_map(|&i| tree.nodes.get(i as usize))
-                        .map(|n| n.name.as_str()),
+                    &nm,
+                    plan.expected
+                        .get(&nm)
+                        .into_iter()
+                        .flatten()
+                        .map(String::as_str),
                 );
+                crate::bins::prune_dangling_bins(&nm.join(".bin"));
             }
         }
         out.removed.fetch_add(removed, Ordering::Relaxed);
@@ -316,12 +352,6 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         dirs,
         backend_used: None,
     })
-}
-
-fn is_ws_root(tree: &Tree, id: u32) -> bool {
-    tree.workspace_roots
-        .iter()
-        .any(|(_, ids)| ids.contains(&id))
 }
 
 fn place_node<'s>(
@@ -409,7 +439,14 @@ fn place_node<'s>(
                             let nested = dest.join("node_modules");
                             if fsutil::kind(&nested) == Kind::Dir {
                                 out.removed.fetch_add(
-                                    remove_stale(&nested, std::iter::empty()),
+                                    remove_stale(
+                                        &nested,
+                                        plan.expected
+                                            .get(&nested)
+                                            .into_iter()
+                                            .flatten()
+                                            .map(String::as_str),
+                                    ),
                                     Ordering::Relaxed,
                                 );
                             }
@@ -452,12 +489,16 @@ fn place_node<'s>(
     out.refreshed[idx].store(rebuilt, Ordering::Relaxed);
     let child_fresh = parent_fresh || (rebuilt && plan.places[idx] == Place::Copy);
     if !child_fresh && !plan.children[idx].is_empty() && plan.places[idx] == Place::Copy {
-        let expected: Vec<&str> = plan.children[idx]
-            .iter()
-            .map(|&c| plan.tree.nodes[c as usize].name.as_str())
-            .collect();
+        let nested = dest.join("node_modules");
         out.removed.fetch_add(
-            remove_stale(&dest.join("node_modules"), expected.into_iter()),
+            remove_stale(
+                &nested,
+                plan.expected
+                    .get(&nested)
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str),
+            ),
             Ordering::Relaxed,
         );
     }

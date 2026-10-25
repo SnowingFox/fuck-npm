@@ -220,6 +220,12 @@ pub struct LinkOptions {
     /// A package without a patch must also have no [`verify::PATCH_TAG_FILE`] (set when the
     /// previous install had patches: a removed patch reinstalls the package unpatched).
     pub check_unpatched: bool,
+    /// Full hoisted tree used for pruning during a filtered install. Only the selected
+    /// layout is written; entries still required by unselected workspaces are preserved.
+    pub hoisted_prune_tree: Option<Tree>,
+    /// Selected importers of a filtered install. Unselected importer directories are
+    /// neither cleared nor pruned; the virtual store keeps its existing hidden links.
+    pub selected_workspaces: Option<Vec<PackageId>>,
 }
 
 impl Default for LinkOptions {
@@ -231,6 +237,8 @@ impl Default for LinkOptions {
             threads: fnpm_types::available_parallelism().min(8),
             global_store: true,
             check_unpatched: false,
+            hoisted_prune_tree: None,
+            selected_workspaces: None,
         }
     }
 }

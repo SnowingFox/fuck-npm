@@ -433,6 +433,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn aliases_cannot_replace_installer_directories_or_escape_the_package_folder() {
+        for name in [
+            ".bin",
+            ".fnpm",
+            ".cache",
+            "node_modules",
+            "NODE_MODULES",
+            "@scope",
+            "@scope/.bin",
+            "@scope/Node_Modules",
+            "a/b",
+            "@scope/pkg/child",
+            "../outside",
+            "@scope/../outside",
+            "a\u{1b}[2K",
+        ] {
+            assert!(!alias_is_safe_install_target(name), "{name:?}");
+        }
+        for name in ["package", "@scope/package", "NODE_MODULES-helper", "a.b"] {
+            assert!(alias_is_safe_install_target(name), "{name:?}");
+        }
+    }
+
+    #[test]
     fn parse_names() {
         assert!(PackageName::parse("react").is_ok());
         assert!(PackageName::parse("@types/node").is_ok());

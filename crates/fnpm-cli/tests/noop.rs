@@ -65,7 +65,8 @@ fn a_repeat_install_is_a_noop() {
     let env = isolated_env(dir.path());
     let first = install_json(&project, &env, &["install"]);
     assert_eq!(first["summary"]["noop"], false);
-    assert!(project.join(fnpm_core::fast_path::STATE_FILE).is_file());
+    let meta = fnpm_core::fast_path::meta_dir(&dir.path().join("fnpm_cache_dir"), &project);
+    assert!(meta.join(fnpm_core::fast_path::STATE_FILE).is_file());
 
     for args in [
         &["install"][..],

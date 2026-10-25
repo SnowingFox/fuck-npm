@@ -178,3 +178,17 @@ fn usage_errors_never_need_node() {
         "{\"ok\":false,\"error\":{\"code\":\"MISSING_ARGUMENT\",\"message\":\"`fnpm add` needs <packages>: \\\"name\\\" or \\\"name@version\\\" of package(s) to install.\"}}\n"
     );
 }
+
+#[test]
+fn script_version_flag_is_forwarded_to_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let node = PathBuf::from(SH);
+    let entry = fake_entry(&dir.path().join("fnpm.js"));
+    let output = run(
+        FNPM,
+        &["script.cjs", "--version"],
+        &[("FNPM_NODE", &node), ("FNPM_JS_ENTRY", &entry)],
+    );
+    assert_eq!(output.status.code(), Some(7));
+    assert!(stdout(&output).contains("script.cjs\n--version\n"));
+}

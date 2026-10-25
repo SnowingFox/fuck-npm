@@ -112,14 +112,15 @@ pub struct Terminal {
     pub stderr_is_tty: bool,
     /// Terminal width for the progress line; 80 when unknown.
     pub columns: usize,
-    /// When the process started (`main`): bun times an install from there. `None` keeps the
-    /// core's own measure (tests).
+    /// When command timing started (the launcher supplies its `main` entry). `None` keeps
+    /// the core's own measure (tests).
     pub started: Option<std::time::Instant>,
 }
 
 impl Terminal {
     /// The real process: environment, cwd, std streams and their TTY state.
     pub fn from_process() -> Self {
+        let started = std::time::Instant::now();
         let stdout_is_tty = std::io::stdout().is_terminal();
         let stderr_is_tty = std::io::stderr().is_terminal();
         Self {
@@ -130,7 +131,7 @@ impl Terminal {
             stdout_is_tty,
             stderr_is_tty,
             columns: terminal_columns(stdout_is_tty, stderr_is_tty),
-            started: Some(std::time::Instant::now()),
+            started: Some(started),
         }
     }
 }

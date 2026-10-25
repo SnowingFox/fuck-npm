@@ -56,6 +56,12 @@ export async function runParsedCli(
 
     plan = planInvocation(argv, registry);
 
+    // Everything after a script path belongs to the script, including help/version flags.
+    const script = argv[2];
+    if (registry.bin === "fnpm" && plan.matched.length === 0 && script !== undefined && isScriptFile(runtime.cwd, script)) {
+      return runScriptFile(runtime, script, argv.slice(3));
+    }
+
     if (plan.wantsVersion && plan.node.kind === "group") {
       runtime.stdout.write(`${getCliVersion()}\n`);
       return 0;
@@ -78,10 +84,6 @@ export async function runParsedCli(
       if (typed === undefined) {
         // Only global flags (`fnpm --json`): there is nothing to run.
         return await writeHelp(registry, runtime);
-      }
-      // `fnpm script.js`, like `bun script.js`: a file in place of a command runs with Node.
-      if (argv[2] === typed && isScriptFile(runtime.cwd, typed)) {
-        return runScriptFile(runtime, typed, argv.slice(3));
       }
       throw new SilentError(`Unknown command: ${typed}`, { code: "UNKNOWN_COMMAND" });
     }

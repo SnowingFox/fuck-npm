@@ -66,7 +66,7 @@ pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
         ));
     }
     let (removed, errors) = fnpm_linker::prune::execute(&project.root_dir, &plan);
-    crate::fast_path::remove(&project.root_dir);
+    crate::fast_path::remove(&project.root_dir, &project.meta_dir());
     let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();
     for (p, e) in &errors {
         lines.push(format!("error: {}: {e}", p.display()));
@@ -136,7 +136,7 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if check || cx.pm.dry_run {
         return Ok(exit(i32::from(check), data, lines));
     }
-    fnpm_lockfile::save(&project.root_dir, &graph)?;
+    fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
     if !lock_tool {
         reinstall(cx).await?;
     }
@@ -209,7 +209,7 @@ pub(crate) fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         ));
     }
     let mut lines = crate::install::write_migration(&root, &ws, &state)?;
-    fnpm_lockfile::save(&root, graph)?;
+    fnpm_lockfile::save_with(&root, graph, None)?;
     let _ = lock_tool;
     lines.push(format!(
         "migrated lockfile from {source} ({count} {})",

@@ -117,8 +117,16 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         .graph
         .packages
         .iter()
-        .filter(|p| matches!(p.resolution, Resolution::Workspace { .. }))
-        .filter_map(|p| local_target(cx.project_dir, &p.resolution))
+        .enumerate()
+        .filter(|(i, p)| {
+            matches!(p.resolution, Resolution::Workspace { .. })
+                && cx
+                    .opts
+                    .selected_workspaces
+                    .as_ref()
+                    .is_none_or(|selected| selected.contains(&PackageId(*i as u32)))
+        })
+        .filter_map(|(_, p)| local_target(cx.project_dir, &p.resolution))
         .filter(|d| crate::is_inside_project(cx.project_dir, d))
         .collect();
     let mut is_new_fnpm = is_new_nm;
@@ -353,7 +361,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         r?;
     }
     let mut removed = 0;
-    if !fresh {
+    if !fresh && cx.opts.selected_workspaces.is_none() {
         removed += remove_stale(&hidden, layout.hidden_hoist.iter().map(|(a, _)| a.as_str()));
     }
 
@@ -376,7 +384,13 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                     fsutil::join_name(&local.join("node_modules"), paths.name(i as u32)),
                 ));
             }
-            link_project_to_global(&local, final_dir, fresh)
+            if link_project_to_global(&local, final_dir, fresh)?
+                && !states[i].built.swap(true, Ordering::Relaxed)
+            {
+                // Reusing the global bytes still installs a new entry in this project.
+                count_written(layout.entries[i].package);
+            }
+            Ok(())
         })
         .collect();
     for r in publish {
@@ -386,6 +400,14 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     // Stale top-level entries and dangling bins.
     if !is_new_nm {
         for (pkg, deps) in &layout.roots {
+            if cx
+                .opts
+                .selected_workspaces
+                .as_ref()
+                .is_some_and(|selected| !selected.contains(pkg))
+            {
+                continue;
+            }
             let Some(dir) = cx
                 .graph
                 .get(*pkg)
@@ -412,8 +434,15 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
         written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
-        // Every entry that was neither written nor skipped for the platform was checked.
-        verified: (layout.entries.len() as u32).saturating_sub(installed + skipped),
+        // Importers and duplicate link-only entries are not installed store packages.
+        verified: states
+            .iter()
+            .filter(|st| {
+                matches!(st.kind, Kindof::Local | Kindof::Global { .. })
+                    && !st.built.load(Ordering::Relaxed)
+                    && !st.skipped.load(Ordering::Relaxed)
+            })
+            .count() as u32,
         removed,
         skipped,
         dirs,
@@ -731,15 +760,19 @@ fn is_collision(e: &std::io::Error) -> bool {
 
 /// `.fnpm/<key>` -> `<store>/links/<key>-<hash>` (absolute, so the project may move). A correct
 /// link costs one `readlink`; a different one is replaced atomically.
-fn link_project_to_global(local: &Path, final_dir: &Path, fresh: bool) -> Result<()> {
+fn link_project_to_global(local: &Path, final_dir: &Path, fresh: bool) -> Result<bool> {
     let io = |source| Error::Io {
         path: local.to_path_buf(),
         source,
     };
     if !fresh {
         match std::fs::read_link(local) {
-            Ok(cur) if cur == final_dir => return Ok(()),
-            Ok(_) => return fsutil::replace_symlink_atomic(final_dir, local).map_err(io),
+            Ok(cur) if cur == final_dir => return Ok(false),
+            Ok(_) => {
+                return fsutil::replace_symlink_atomic(final_dir, local)
+                    .map(|()| true)
+                    .map_err(io);
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => {
                 // A real directory from an install without the global store: out of the way
@@ -748,7 +781,5 @@ fn link_project_to_global(local: &Path, final_dir: &Path, fresh: bool) -> Result
             }
         }
     }
-    fsutil::ensure_symlink(final_dir, local, Strategy::ExpectMissing, None)
-        .map(|_| ())
-        .map_err(io)
+    fsutil::ensure_symlink(final_dir, local, Strategy::ExpectMissing, None).map_err(io)
 }

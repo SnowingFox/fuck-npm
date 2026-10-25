@@ -400,6 +400,18 @@ impl Project {
         ])
     }
 
+    /// The project's meta directory (state file, lockfile sidecar) under its cache.
+    #[allow(dead_code)]
+    pub fn meta_dir(&self) -> PathBuf {
+        let config = fnpm_config::Config::load(&fnpm_config::LoadOptions {
+            cwd: self.dir.clone(),
+            env: self.env(),
+            ..Default::default()
+        })
+        .unwrap();
+        fnpm_core::fast_path::meta_dir(&config.cache_dir, &self.dir)
+    }
+
     pub fn opts(&self, command: InstallCommand, packages: &[&str]) -> InstallOptions {
         InstallOptions {
             pm: PmOptions {

@@ -42,14 +42,14 @@ async fn fresh_install_resolves_fetches_links_and_saves() {
     let lock = p.read("fnpm.lock");
     assert!(lock.contains("\"a\": [\"a@1.1.0\""), "{lock}");
     assert!(lock.contains("sha512-"), "integrity recorded: {lock}");
+    let meta = p.meta_dir();
     assert!(
-        exists(&p.path(fnpm_core::fast_path::STATE_FILE)),
+        exists(&meta.join(fnpm_core::fast_path::STATE_FILE)),
         "state written"
     );
-    assert!(
-        exists(&p.path("node_modules/.fnpm/lock.bin")),
-        "sidecar written"
-    );
+    assert!(exists(&meta.join("lock.bin")), "sidecar written");
+    // Like bun's, the hoisted node_modules holds only packages.
+    assert!(!exists(&p.path("node_modules/.fnpm")), "no .fnpm");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -202,6 +202,84 @@ async fn remove_drops_dependency_and_files() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn removing_the_last_dependency_deletes_lockfile_and_cached_graph() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    assert!(exists(&p.meta_dir().join("lock.bin")));
+    let (_, events) = p.run(p.opts(InstallCommand::Remove, &["b"])).await.unwrap();
+    assert!(!exists(&p.path("fnpm.lock")));
+    assert!(!exists(&p.meta_dir().join("lock.bin")));
+    assert!(events.iter().any(|event| matches!(event,
+        fnpm_types::Event::Status { message }
+            if message == "\npackage.json has no dependencies! Deleted empty lockfile"
+    )));
+    assert!(!events.iter().any(|event| matches!(event,
+        fnpm_types::Event::Status { message } if message == "Saved lockfile"
+    )));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn removing_the_last_dependency_with_no_save_preserves_lockfile() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    let before = p.read("fnpm.lock");
+    let mut opts = p.opts(InstallCommand::Remove, &["b"]);
+    opts.pm.save = false;
+    p.run(opts).await.unwrap();
+    assert_eq!(p.read("fnpm.lock"), before);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn removing_a_peer_without_a_previous_lockfile_has_no_removal_row() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "peerDependencies": { "b": "1.0.0" } }),
+    );
+    let (summary, _) = p.run(p.opts(InstallCommand::Remove, &["b"])).await.unwrap();
+    assert!(summary.removed.is_empty());
+    assert_eq!(summary.removed_count, 0);
+    assert!(p.json("package.json").get("peerDependencies").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn filtered_remove_reports_argument_order_once_and_preserves_shared_packages() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "name": "root", "workspaces": ["packages/*"],
+            "dependencies": { "b": "1.0.0", "tool": "1.0.0" }
+        }),
+    );
+    p.write(
+        "packages/lib/package.json",
+        &json!({
+            "name": "lib", "dependencies": { "b": "1.0.0", "tool": "1.0.0" }
+        })
+        .to_string(),
+    );
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    p.run(opts).await.unwrap();
+    let mut opts = p.opts(InstallCommand::Remove, &["tool", "b", "tool"]);
+    opts.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    opts.filter = vec!["lib".into()];
+    let (summary, _) = p.run(opts).await.unwrap();
+    assert_eq!(summary.removed, ["tool", "b"]);
+    assert_eq!(summary.removed_count, 0);
+    assert!(
+        p.json("packages/lib/package.json")
+            .get("dependencies")
+            .is_none()
+    );
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn update_moves_within_range_and_latest() {
     let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("b", "1.0.0")]).await;
     let p = Project::new(
@@ -281,6 +359,177 @@ async fn workspaces_link_members_and_install_their_deps() {
         p.json("packages/lib/package.json")["dependencies"]["tool"],
         "^1.0.0"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn filtered_install_links_only_selected_workspaces_and_preserves_full_lockfile() {
+    let reg = Registry::start(&basic()).await;
+    for filter in ["lib", "missing"] {
+        let p = Project::new(
+            &reg,
+            json!({ "name": "root", "workspaces": ["packages/*"], "dependencies": { "tool": "1.0.0" } }),
+        );
+        p.write(
+            "packages/lib/package.json",
+            &json!({ "name": "lib", "dependencies": { "a": "1.0.0" } }).to_string(),
+        );
+        p.write(
+            "packages/other/package.json",
+            &json!({ "name": "other", "dependencies": { "@scope/pkg": "3.0.0" } }).to_string(),
+        );
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+        opts.filter = vec!["!other".into(), filter.into()];
+        let (summary, events) = p.run(opts).await.unwrap();
+        assert_eq!(exists(&p.path("node_modules/lib")), filter == "lib");
+        assert_eq!(p.installed("a").is_some(), filter == "lib");
+        assert_eq!(p.installed("b").is_some(), filter == "lib");
+        assert!(p.installed("tool").is_none());
+        assert!(p.installed("@scope/pkg").is_none());
+        let lock = p.read("fnpm.lock");
+        assert!(lock.contains("tool@1.0.0"), "{lock}");
+        assert!(lock.contains("@scope/pkg@3.0.0"), "{lock}");
+        if filter == "missing" {
+            assert_eq!(summary.installed_count, 0);
+            assert!(events.iter().any(|event| matches!(event,
+                fnpm_types::Event::Warn { message, .. } if message.contains("missing")
+            )));
+        }
+        assert!(!exists(
+            &p.meta_dir().join(fnpm_core::fast_path::STATE_FILE)
+        ));
+        // A partial install must not make a later full install take the no-op path.
+        let mut full = p.opts(InstallCommand::Install, &[]);
+        full.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+        assert!(!p.run(full).await.unwrap().0.noop);
+        assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"));
+        assert_eq!(p.installed("@scope/pkg").as_deref(), Some("3.0.0"));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn filtered_add_remove_only_link_targets_and_keep_other_workspaces_installed() {
+    let reg = Registry::start(&basic()).await;
+    for linker in [
+        fnpm_config::LinkerSetting::Hoisted,
+        fnpm_config::LinkerSetting::Isolated,
+    ] {
+        let p = Project::new(
+            &reg,
+            json!({
+                "name": "root", "workspaces": ["packages/*"],
+                "dependencies": { "tool": "1.0.0" },
+                "scripts": { "postinstall": "exit 1" }
+            }),
+        );
+        p.write("packages/lib/package.json", r#"{"name":"lib"}"#);
+        p.write(
+            "packages/other/package.json",
+            r#"{"name":"other","dependencies":{"a":"1.0.0"}}"#,
+        );
+        let mut add = p.opts(InstallCommand::Add, &["b@1.0.0"]);
+        add.pm.linker = Some(linker);
+        add.filter = vec!["lib".into()];
+        p.run(add).await.unwrap();
+        let lib_b = if linker == fnpm_config::LinkerSetting::Hoisted {
+            p.path("node_modules/b/package.json")
+        } else {
+            p.path("packages/lib/node_modules/b/package.json")
+        };
+        assert!(lib_b.exists());
+        assert!(!p.path("node_modules/tool").exists());
+        assert!(!p.path("node_modules/other").exists());
+        assert!(!p.path("packages/other/node_modules/a").exists());
+        // Full install materializes the other workspace. A filtered remove must preserve it,
+        // and must not run the excluded root's failing script.
+        let mut full = p.opts(InstallCommand::Install, &[]);
+        full.pm.linker = Some(linker);
+        full.pm.ignore_scripts = true;
+        p.run(full).await.unwrap();
+        let other_a = if linker == fnpm_config::LinkerSetting::Hoisted {
+            p.path("node_modules/a/package.json")
+        } else {
+            p.path("packages/other/node_modules/a/package.json")
+        };
+        assert!(other_a.exists());
+        let other_link_before = p.path("node_modules/other").exists();
+        let mut remove = p.opts(InstallCommand::Remove, &["b"]);
+        remove.pm.linker = Some(linker);
+        remove.filter = vec!["lib".into()];
+        p.run(remove).await.unwrap();
+        assert!(other_a.exists());
+        assert!(p.path("node_modules/tool/package.json").exists());
+        assert_eq!(p.path("node_modules/other").exists(), other_link_before);
+        assert!(
+            p.json("packages/lib/package.json")
+                .get("dependencies")
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn filtered_local_add_rebases_paths_for_each_target_and_frozen_reinstall() {
+    let reg = Registry::start(&basic()).await;
+    for (positional, root_spec, member_spec) in [
+        ("./vendor/local", "./vendor/local", "../../vendor/local"),
+        (
+            "file:./vendor/local",
+            "file:./vendor/local",
+            "file:../../vendor/local",
+        ),
+        (
+            "alias@file:./vendor/local",
+            "file:./vendor/local",
+            "file:../../vendor/local",
+        ),
+        (
+            "link:./vendor/local",
+            "link:./vendor/local",
+            "link:../../vendor/local",
+        ),
+        (
+            "file:./vendor/local-1.0.0.tgz",
+            "file:./vendor/local-1.0.0.tgz",
+            "file:../../vendor/local-1.0.0.tgz",
+        ),
+    ] {
+        let p = Project::new(
+            &reg,
+            json!({ "name": "root", "workspaces": ["packages/*"] }),
+        );
+        p.write("packages/lib/package.json", r#"{"name":"lib"}"#);
+        p.write(
+            "vendor/local/package.json",
+            r#"{"name":"local","version":"1.0.0"}"#,
+        );
+        std::fs::write(
+            p.path("vendor/local-1.0.0.tgz"),
+            Pkg::new("local", "1.0.0").tgz(),
+        )
+        .unwrap();
+        let name = if positional.starts_with("alias@") {
+            "alias"
+        } else {
+            "local"
+        };
+        let mut opts = p.opts(InstallCommand::Add, &[positional]);
+        opts.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+        opts.filter = vec!["root".into(), "lib".into()];
+        p.run(opts).await.unwrap();
+        assert_eq!(p.json("package.json")["dependencies"][name], root_spec);
+        assert_eq!(
+            p.json("packages/lib/package.json")["dependencies"][name],
+            member_spec
+        );
+        assert_eq!(p.installed(name).as_deref(), Some("1.0.0"));
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.frozen_lockfile = true;
+        opts.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+        p.run(opts).await.unwrap();
+        assert_eq!(p.installed(name).as_deref(), Some("1.0.0"));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -537,17 +786,12 @@ async fn parsed_lockfile_survives_node_modules_removal() {
     let reg = Registry::start(&basic()).await;
     let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
     p.install().await;
-    let sidecar = p.path("node_modules/.fnpm/lock.bin");
+    let sidecar = p.meta_dir().join("lock.bin");
     assert!(exists(&sidecar));
-    let cached: Vec<_> = std::fs::read_dir(p.tmp.path().join("fnpm-home/cache/lockfile-sidecars"))
-        .expect("cached sidecar dir")
-        .flatten()
-        .collect();
-    assert_eq!(cached.len(), 1);
     std::fs::remove_dir_all(p.path("node_modules")).unwrap();
     let s = p.install().await;
     assert_eq!(s.installed_count, 2);
-    assert!(exists(&sidecar), "restored from the cached copy");
+    assert!(exists(&sidecar), "outside node_modules, the sidecar stays");
     assert!(p.install().await.noop);
     // A changed lockfile never uses a stale copy.
     let lock = p.read("fnpm.lock").replace("\"^1.0.0\"", "\"^1.0.0\" ");
@@ -570,9 +814,19 @@ async fn tampered_tarball_is_an_integrity_error() {
     std::fs::remove_dir_all(p.tmp.path().join("fnpm-home/store")).unwrap();
     let mut o = p.opts(InstallCommand::Install, &[]);
     o.pm.frozen_lockfile = true;
-    let err = p.run(o).await.unwrap_err();
+    let events = std::sync::Arc::new(fnpm_types::event::VecSink::default());
+    let err = fnpm_core::install_with_env(o, events.clone(), p.env())
+        .await
+        .unwrap_err();
     assert_eq!(err.code(), "INTEGRITY", "{err}");
     assert!(!exists(&p.path("node_modules/b/evil.js")));
+    assert!(
+        !events.0.lock().unwrap().iter().any(|event| matches!(
+            event,
+            fnpm_types::Event::Download { .. } | fnpm_types::Event::Extract { .. }
+        )),
+        "a failed integrity check must not report a completed import"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -782,4 +1036,54 @@ async fn dependencies_of_another_platforms_package_are_not_downloaded() {
     let s = p.install().await;
     assert_eq!(s.installed_count, 1, "{s:?}");
     assert_eq!(downloaded(&reg), Vec::<String>::new(), "from the lockfile");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn filtered_remove_prunes_the_last_nested_workspace_dependency() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "name": "root", "workspaces": ["packages/*"], "dependencies": {"b": "1.0.0"}
+        }),
+    );
+    p.write(
+        "packages/lib/package.json",
+        r#"{"name":"lib","dependencies":{"b":"1.2.0"}}"#,
+    );
+    let mut full = p.opts(InstallCommand::Install, &[]);
+    full.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    p.run(full).await.unwrap();
+    assert!(p.path("packages/lib/node_modules/b/package.json").exists());
+    let mut remove = p.opts(InstallCommand::Remove, &["b"]);
+    remove.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    remove.filter = vec!["lib".into()];
+    p.run(remove).await.unwrap();
+    assert!(!p.path("packages/lib/node_modules/b").exists());
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_global_store_reuse_counts_new_project_installs() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({"dependencies": {"b": "1.0.0"}}));
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.linker = Some(fnpm_config::LinkerSetting::Isolated);
+    assert_eq!(p.run(opts.clone()).await.unwrap().0.installed_count, 1);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    let (summary, _) = p.run(opts.clone()).await.unwrap();
+    assert_eq!(summary.installed_count, 1, "{summary:?}");
+    assert_eq!(
+        summary
+            .added
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>(),
+        ["b"]
+    );
+    assert!(reg.seen().is_empty());
+    let summary = p.run(opts).await.unwrap().0;
+    assert!(summary.noop);
+    assert_eq!(summary.checked.unwrap().installs, 1);
 }

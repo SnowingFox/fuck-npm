@@ -31,12 +31,11 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
     out
 }
 
-/// The version shown for a package (the resolution for packages without one).
+/// The terminal resolution: registry version, source URL, or local path without `file:`.
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
-    if p.version.is_empty() {
-        p.resolution.to_string()
-    } else {
-        p.version.clone()
+    match &p.resolution {
+        Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+        resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }
 
@@ -186,7 +185,8 @@ pub(crate) fn requested(
         let entry = RequestedPackage {
             name: req.name.clone(),
             version: version_of(p),
-            real_name: (p.name != req.name).then(|| p.name.clone()),
+            real_name: (p.name != req.name && matches!(p.resolution, Resolution::Npm { .. }))
+                .then(|| p.name.clone()),
             bins: p
                 .bin
                 .entries(&p.name)
@@ -200,4 +200,29 @@ pub(crate) fn requested(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_resolutions_redact_url_credentials() {
+        let mut p = fnpm_types::Package::new("root", "1.0.0", Resolution::Root);
+        p.resolution = Resolution::RemoteTarball {
+            url: "https://user:secret@example.com/pkg.tgz?token=secret".into(),
+            integrity: None,
+        };
+        assert_eq!(version_of(&p), "https://***@example.com/pkg.tgz?token=***");
+        p.resolution = Resolution::Git {
+            url: "https://user:secret@example.com/repo.git".into(),
+            committish: String::new(),
+            resolved_commit: "abcdef".into(),
+            integrity: None,
+        };
+        assert_eq!(
+            version_of(&p),
+            "git+https://***@example.com/repo.git#abcdef"
+        );
+    }
 }

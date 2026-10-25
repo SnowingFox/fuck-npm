@@ -777,6 +777,8 @@ fn lopts(global: bool) -> LinkOptions {
         threads: 4,
         global_store: global,
         check_unpatched: false,
+        hoisted_prune_tree: None,
+        selected_workspaces: None,
     }
 }
 
@@ -966,13 +968,14 @@ fn isolated_global_store_cold_and_warm() {
     assert!(names.iter().all(|n| !n.contains(".tmp-")), "{names:?}");
     assert_eq!(names.len(), 4);
 
-    // A second project with the same closure: warm hit, nothing materialised.
+    // A second project reuses the same global bytes but installs four project entries.
     let p2 = env.project.parent().unwrap().join("project2");
     std::fs::create_dir_all(&p2).unwrap();
     let r2 = linker
         .link(&p2, &g.g, &layout, &store, &lopts(true), &NoopSink)
         .unwrap();
-    assert_eq!(r2.installed, 0);
+    assert_eq!(r2.installed, 4);
+    assert_eq!(r2.installed_packages, 4);
     assert_eq!(
         read(&p2.join("node_modules/.fnpm/c@1.0.0/node_modules/b/lib/x.js")),
         "2"
@@ -1896,6 +1899,70 @@ fn switching_layouts_leaves_workspaces_outside_the_project_alone() {
         .unwrap();
     crate::flush_background_deletes();
     assert!(outside.join("node_modules/.bin/keep-me").is_file());
+}
+
+#[test]
+fn hoisted_reinstall_preserves_external_workspace_modules() {
+    let env = Env::new();
+    let outside = env.project.parent().unwrap().join("outside");
+    let keep = outside.join("node_modules/keep-me/package.json");
+    std::fs::create_dir_all(keep.parent().unwrap()).unwrap();
+    std::fs::write(&keep, r#"{"name":"keep-me","version":"1.0.0"}"#).unwrap();
+    let mut store = FakeStore::new(&env.store_dir);
+    let mut g = sample(&mut store);
+    g.workspace("outside", "../outside");
+    let linker = env.linker();
+    for _ in 0..2 {
+        linker
+            .link(
+                &env.project,
+                &g.g,
+                &Layout::Hoisted(sample_tree()),
+                &store,
+                &lopts(false),
+                &NoopSink,
+            )
+            .unwrap();
+    }
+    crate::flush_background_deletes();
+    assert!(
+        keep.is_file(),
+        "external workspace modules must not be pruned"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hoisted_reinstall_preserves_symlinked_workspace_modules() {
+    let env = Env::new();
+    let outside = env.project.parent().unwrap().join("outside");
+    let keep = outside.join("keep-me/package.json");
+    std::fs::create_dir_all(keep.parent().unwrap()).unwrap();
+    std::fs::write(&keep, r#"{"name":"keep-me","version":"1.0.0"}"#).unwrap();
+    let workspace = env.project.join("packages/lib");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::os::unix::fs::symlink(&outside, workspace.join("node_modules")).unwrap();
+    let mut store = FakeStore::new(&env.store_dir);
+    let mut g = sample(&mut store);
+    g.workspace("lib", "packages/lib");
+    let linker = env.linker();
+    for _ in 0..2 {
+        linker
+            .link(
+                &env.project,
+                &g.g,
+                &Layout::Hoisted(sample_tree()),
+                &store,
+                &lopts(false),
+                &NoopSink,
+            )
+            .unwrap();
+    }
+    crate::flush_background_deletes();
+    assert!(
+        keep.is_file(),
+        "symlinked workspace modules must not be pruned"
+    );
 }
 
 #[test]
