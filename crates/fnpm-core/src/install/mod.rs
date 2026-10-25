@@ -8,7 +8,7 @@ mod lock;
 mod plan;
 mod summary;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -340,12 +340,17 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lock.graph.as_ref()
     };
     let resolver = Resolver::new(config.clone(), client.clone());
+    let skip = Arc::new(if stream {
+        not_fetched(previous, &config)
+    } else {
+        HashSet::new()
+    });
     let mut out = resolve(
         &resolver,
         &ws,
         previous,
         &planned,
-        stream.then_some(&fetcher),
+        stream.then(|| (&fetcher, skip.clone())),
         &events,
     )
     .await?;
@@ -374,7 +379,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             &ws,
             previous,
             &planned,
-            stream.then_some(&fetcher),
+            stream.then(|| (&fetcher, skip.clone())),
             &events,
         )
         .await?;
@@ -577,17 +582,85 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     Ok(summary)
 }
 
-/// One resolve; with a fetcher, every streamed package starts its fetch immediately.
+/// [`LockGraph::reachable`] that stops at packages built for another platform: like bun, their
+/// dependencies are not installed either (`@img/sharp-wasm32` under the disabled
+/// `@img/sharp-webcontainers-wasm32`), so they are neither fetched, linked nor counted.
+pub(crate) fn installable(
+    graph: &LockGraph,
+    include: fnpm_types::Behavior,
+    roots: Option<&[PackageId]>,
+    platform: &fnpm_types::Platform,
+) -> Vec<bool> {
+    use fnpm_types::Behavior;
+    let mut seen = vec![false; graph.packages.len()];
+    let mut stack: Vec<PackageId> = match roots {
+        Some(r) => r.to_vec(),
+        None => graph.workspaces.values().copied().collect(),
+    };
+    while let Some(id) = stack.pop() {
+        let Some(p) = graph.packages.get(id.index()) else {
+            continue;
+        };
+        if seen[id.index()] {
+            continue;
+        }
+        let local = p.resolution.is_local_tree();
+        if !local && p.is_disabled(platform) {
+            continue;
+        }
+        seen[id.index()] = true;
+        for e in &p.dependencies {
+            let Some(t) = e.target else { continue };
+            let b = if local {
+                e.behavior
+            } else {
+                e.behavior.with(Behavior::DEV, false)
+            };
+            let follows =
+                b.intersects(include) || (b.is_workspace() && include.intersects(Behavior::PROD));
+            if follows && !seen.get(t.index()).copied().unwrap_or(true) {
+                stack.push(t);
+            }
+        }
+    }
+    seen
+}
+
+/// Whether the store must hold `p` for this install: it has content, and it is not a bundled
+/// dependency (those come inside their parent's tarball).
+fn fetches(p: &fnpm_types::Package) -> bool {
+    needs_content(&p.resolution) && !p.meta.bundled
+}
+
+/// The `name@resolution` keys of the previous graph that this install will not fetch
+/// (bundled, or only reachable through packages for another platform). The streaming consumer
+/// skips them; a package that does end up installed is fetched by the link step.
+fn not_fetched(previous: Option<&LockGraph>, config: &Config) -> HashSet<String> {
+    let Some(g) = previous else {
+        return HashSet::new();
+    };
+    let include = Linker::include_for(config);
+    let wanted = installable(g, include, None, &config.platform);
+    g.packages
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| needs_content(&p.resolution) && !(wanted[*i] && fetches(p)))
+        .map(|(_, p)| p.key())
+        .collect()
+}
+
+/// One resolve; with a fetcher, every streamed package starts its fetch immediately (except
+/// the `skip` keys).
 async fn resolve(
     resolver: &Resolver,
     ws: &Workspace,
     previous: Option<&LockGraph>,
     planned: &Planned,
-    fetcher: Option<&Fetcher>,
+    fetcher: Option<(&Fetcher, Arc<HashSet<String>>)>,
     events: &Arc<dyn EventSink>,
 ) -> Result<ResolveOutput> {
     let (tx, consumer) = match fetcher {
-        Some(f) => {
+        Some((f, skip)) => {
             let (tx, mut rx) = mpsc::unbounded_channel::<Resolved>();
             let f = f.clone();
             let task = tokio::spawn(async move {
@@ -598,7 +671,9 @@ async fn resolve(
                     ..
                 }) = rx.recv().await
                 {
-                    if needs_content(&resolution) {
+                    if needs_content(&resolution)
+                        && (skip.is_empty() || !skip.contains(&format!("{name}@{resolution}")))
+                    {
                         f.ensure(&name, &version, &resolution);
                     }
                 }
@@ -933,9 +1008,14 @@ async fn link(
             .with_native_dependencies(native_dependencies(config, ws));
         let view = link_view(graph);
         let layout = plan_layout(&linker, &view, kind, selected.clone());
-        let reachable = graph.reachable(linker.include(), selected.as_deref());
+        let reachable = installable(
+            graph,
+            linker.include(),
+            selected.as_deref(),
+            &config.platform,
+        );
         for (i, p) in graph.packages.iter().enumerate() {
-            if reachable[i] && needs_content(&p.resolution) && !p.is_disabled(&config.platform) {
+            if reachable[i] && fetches(p) {
                 fetcher.ensure_package(p);
             }
         }

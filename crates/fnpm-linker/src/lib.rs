@@ -348,7 +348,11 @@ impl Linker {
 
     /// Which edges are installed, from the configuration (`--omit`, `--production`).
     pub fn include(&self) -> Behavior {
-        let c = &self.config;
+        Self::include_for(&self.config)
+    }
+
+    /// [`Linker::include`] for `c` without building a linker.
+    pub fn include_for(c: &Config) -> Behavior {
         let mut b = Behavior::PROD | Behavior::WORKSPACE;
         if !c.omit.dev && !c.production {
             b |= Behavior::DEV;

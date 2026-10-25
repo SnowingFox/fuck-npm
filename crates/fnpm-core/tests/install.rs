@@ -747,3 +747,36 @@ async fn patched_dependency_follows_the_patch_file_isolated() {
         "module.exports = \"two\";\n"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dependencies_of_another_platforms_package_are_not_downloaded() {
+    // sharp's shape: an optional per-platform package whose own dependency has no `os`.
+    let reg = Registry::start(&[
+        Pkg::new("host", "1.0.0").optional("only-aix", "1.0.0"),
+        Pkg::new("only-aix", "1.0.0")
+            .os(&["aix"])
+            .dep("aix-runtime", "1.0.0"),
+        Pkg::new("aix-runtime", "1.0.0"),
+    ])
+    .await;
+    let p = Project::new(&reg, json!({ "dependencies": { "host": "1.0.0" } }));
+    let downloaded = |reg: &Registry| {
+        reg.seen()
+            .iter()
+            .filter(|r| {
+                r.ends_with(".tgz") && (r.contains("aix-runtime") || r.contains("only-aix"))
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    p.install().await;
+    assert!(!exists(&p.path("node_modules/aix-runtime")));
+    assert_eq!(downloaded(&reg), Vec::<String>::new(), "fresh install");
+    // A cold install from the lockfile (empty store) neither.
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    std::fs::remove_dir_all(p.tmp.path().join("fnpm-home")).unwrap();
+    reg.clear_seen();
+    let s = p.install().await;
+    assert_eq!(s.installed_count, 1, "{s:?}");
+    assert_eq!(downloaded(&reg), Vec::<String>::new(), "from the lockfile");
+}
