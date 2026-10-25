@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/admin", "version": "1.0.0", "private": true, "dependencies": { "@bench-mono/ui": "*", "@bench-mono/api-client": "*", "react": "^19.0.0", "react-dom": "^19.0.0", "@tanstack/react-table": "^8.20.6", "recharts": "^2.15.0" }, "devDependencies": { "vite": "^6.0.7", "@vitejs/plugin-react": "^4.3.4", "@types/react": "^19.0.7" } }

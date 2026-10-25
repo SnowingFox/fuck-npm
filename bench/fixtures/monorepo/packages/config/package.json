@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/config", "version": "1.0.0", "private": true, "dependencies": { "zod": "^3.24.1", "dotenv": "^16.4.7" } }

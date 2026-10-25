@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/api-client", "version": "1.0.0", "private": true, "dependencies": { "@bench-mono/core": "*", "axios": "^1.7.9", "@tanstack/react-query": "^5.64.1" }, "peerDependencies": { "react": "^18.0.0 || ^19.0.0" }, "devDependencies": { "react": "^19.0.0" } }

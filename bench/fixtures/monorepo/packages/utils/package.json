@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/utils", "version": "1.0.0", "private": true, "dependencies": { "lodash": "^4.17.21", "date-fns": "^4.1.0" }, "devDependencies": { "@types/lodash": "^4.17.14" } }

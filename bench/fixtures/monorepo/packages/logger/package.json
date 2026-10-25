@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/logger", "version": "1.0.0", "private": true, "dependencies": { "@bench-mono/utils": "*", "pino": "^9.6.0", "pino-pretty": "^13.0.0" } }

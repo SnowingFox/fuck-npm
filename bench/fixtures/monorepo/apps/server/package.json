@@ -1,0 +1,1 @@
+{ "name": "@bench-mono/server", "version": "1.0.0", "private": true, "dependencies": { "@bench-mono/core": "*", "@bench-mono/logger": "*", "@bench-mono/config": "*", "fastify": "^5.2.1", "@fastify/cors": "^10.0.2", "drizzle-orm": "^0.38.4", "postgres": "^3.4.5", "ioredis": "^5.4.2" }, "devDependencies": { "tsx": "^4.19.2", "drizzle-kit": "^0.30.2" } }
