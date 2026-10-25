@@ -16,11 +16,11 @@
   "babel@8.0.9 postinstall (.)"
  ],
  "verify": {
-  "command": "yarn jest packages/babel-parser",
-  "ok": false,
-  "exitCode": 1,
+  "command": "yarn gulp build-dev && yarn jest packages/babel-parser",
+  "ok": true,
+  "exitCode": 0,
   "timedOut": false,
-  "ms": 3272
+  "ms": 18729
  },
  "counts": {
   "packages": 1447,

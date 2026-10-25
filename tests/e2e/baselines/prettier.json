@@ -14,11 +14,11 @@
  },
  "scriptsRan": [],
  "verify": {
-  "command": "yarn jest tests/format/js/arrows",
-  "ok": false,
-  "exitCode": 1,
+  "command": "yarn jest tests/format/js/arrow-function",
+  "ok": true,
+  "exitCode": 0,
   "timedOut": false,
-  "ms": 2346
+  "ms": 6784
  },
  "counts": {
   "packages": 914,

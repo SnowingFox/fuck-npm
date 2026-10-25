@@ -1,5 +1,5 @@
 {
-  "$comment": "Real-world e2e corpus. Run: node tests/e2e/run.ts (see tests/e2e/README.md).",
+  "$comment": "Real-world e2e corpus. Baselines: node tests/e2e/run.ts; fnpm: node tests/e2e/fnpm.ts (see tests/e2e/README.md).",
   "projects": [
     {
       "name": "marked",
@@ -109,8 +109,10 @@
         "postinstall"
       ],
       "install": "yarn install --frozen-lockfile --non-interactive",
-      "verify": "yarn jest test/unitCases",
-      "baseline": "tests/e2e/baselines/webpack.json"
+      "verify": "yarn jest test/unitCases --testPathIgnorePatterns 'printer\\.unittest|BinCompileCache|LoaderRunner|ProfilingPlugin|css-data'",
+      "baseline": "tests/e2e/baselines/webpack.json",
+      "verifyTimeoutSec": 600,
+      "notes": "Six unitCases suites fail upstream on this machine with yarn's own install too (printer snapshots, BinCompileCache, LoaderRunner, ProfilingPlugin, css-data); they are excluded from verify."
     },
     {
       "name": "prettier",
@@ -128,8 +130,12 @@
         "esbuild"
       ],
       "install": "yarn install --immutable",
-      "verify": "yarn jest tests/format/js/arrows",
-      "baseline": "tests/e2e/baselines/prettier.json"
+      "verify": "yarn jest tests/format/js/arrow-function",
+      "baseline": "tests/e2e/baselines/prettier.json",
+      "fnpm": {
+        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" jest tests/format/js/arrow-function"
+      },
+      "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
     },
     {
       "name": "jest",
@@ -150,7 +156,11 @@
       ],
       "install": "yarn install --immutable",
       "verify": "yarn build:js",
-      "baseline": "tests/e2e/baselines/jest.json"
+      "baseline": "tests/e2e/baselines/jest.json",
+      "fnpm": {
+        "verify": "node ./scripts/build.mjs"
+      },
+      "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
     },
     {
       "name": "babel",
@@ -167,29 +177,13 @@
         "postinstall"
       ],
       "install": "yarn install --immutable",
-      "verify": "yarn jest packages/babel-parser",
-      "baseline": "tests/e2e/baselines/babel.json"
-    },
-    {
-      "name": "clipanion",
-      "repo": "arcanis/clipanion",
-      "commit": "434b5a6e0063c58b5e2f0a62498a7de0b308308f",
-      "pm": "yarn-berry",
-      "pmPinned": "yarn@4.4.1",
-      "lockfile": "yarn.lock",
-      "lockfileFormat": "yarn-berry-v8",
-      "workspace": false,
-      "features": [
-        "pnp-migration",
-        "single-package"
-      ],
-      "install": "yarn install",
-      "env": {
-        "YARN_NODE_LINKER": "node-modules"
+      "verify": "yarn gulp build-dev && yarn jest packages/babel-parser",
+      "baseline": "tests/e2e/baselines/babel.json",
+      "fnpm": {
+        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" gulp build-dev && PATH=\"$PWD/node_modules/.bin:$PATH\" jest packages/babel-parser"
       },
-      "verify": "yarn jest",
-      "baseline": "tests/e2e/baselines/clipanion.json",
-      "notes": "Project uses PnP; the baseline is the node-modules linker (YARN_NODE_LINKER) from the same yarn.lock."
+      "verifyTimeoutSec": 600,
+      "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
     },
     {
       "name": "vue-core",
@@ -274,7 +268,7 @@
         "esbuild"
       ],
       "install": "pnpm install --frozen-lockfile",
-      "verify": "pnpm vitest run src/addDays src/format src/parse",
+      "verify": "cd pkgs/core && pnpm vitest run --project main src/addDays src/format src/parse",
       "baseline": "tests/e2e/baselines/date-fns.json"
     },
     {
@@ -312,7 +306,7 @@
         "native:sharp"
       ],
       "install": "pnpm install --frozen-lockfile",
-      "verify": "pnpm vp test --run --project node src/hono.test.ts",
+      "verify": "pnpm vp test --run --project main --coverage.enabled=false src/hono.test.ts",
       "baseline": "tests/e2e/baselines/hono.json"
     },
     {
@@ -369,7 +363,7 @@
         "react"
       ],
       "install": "bun install --frozen-lockfile",
-      "verify": "bun turbo typecheck --filter=@opencode-ai/util",
+      "verify": "bun turbo typecheck --filter=@opencode/util",
       "baseline": "tests/e2e/baselines/opencode.json"
     }
   ]

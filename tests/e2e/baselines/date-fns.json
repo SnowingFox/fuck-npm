@@ -21,11 +21,11 @@
   "protobufjs@7.5.3 postinstall"
  ],
  "verify": {
-  "command": "pnpm vitest run src/addDays src/format src/parse",
-  "ok": false,
-  "exitCode": 1,
+  "command": "cd pkgs/core && pnpm vitest run --project main src/addDays src/format src/parse",
+  "ok": true,
+  "exitCode": 0,
   "timedOut": false,
-  "ms": 3390
+  "ms": 2368
  },
  "counts": {
   "packages": 744,

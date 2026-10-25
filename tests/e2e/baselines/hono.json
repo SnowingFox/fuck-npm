@@ -14,11 +14,11 @@
  },
  "scriptsRan": [],
  "verify": {
-  "command": "pnpm vp test --run --project node src/hono.test.ts",
-  "ok": false,
-  "exitCode": 1,
+  "command": "pnpm vp test --run --project main --coverage.enabled=false src/hono.test.ts",
+  "ok": true,
+  "exitCode": 0,
   "timedOut": false,
-  "ms": 6697
+  "ms": 2555
  },
  "counts": {
   "packages": 719,

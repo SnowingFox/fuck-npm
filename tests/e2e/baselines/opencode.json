@@ -16,11 +16,11 @@
   "opencode@2.1.4 prepare (.)"
  ],
  "verify": {
-  "command": "bun turbo typecheck --filter=@opencode-ai/util",
-  "ok": false,
-  "exitCode": 1,
+  "command": "bun turbo typecheck --filter=@opencode/util",
+  "ok": true,
+  "exitCode": 0,
   "timedOut": false,
-  "ms": 3412
+  "ms": 3631
  },
  "counts": {
   "packages": 2150,

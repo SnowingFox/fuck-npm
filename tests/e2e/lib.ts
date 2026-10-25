@@ -36,6 +36,15 @@ export interface CorpusEntry {
   verifyTimeoutSec?: number;
   baseline: string;
   notes?: string;
+  /** fnpm side (tests/e2e/fnpm.ts). */
+  fnpm?: {
+    /** Verify command when the project's own one cannot run on a tree it did not install. */
+    verify?: string;
+    /** A documented genuine incompatibility: failures are reported as KNOWN instead of FAIL. */
+    known?: string;
+    /** Regexes of accepted baseline differences, each with its reason in `notes`. */
+    allow?: { missing?: string[]; extra?: string[]; declared?: string[]; bins?: string[]; scripts?: string[] };
+  };
 }
 
 export function loadCorpus(): CorpusEntry[] {
@@ -50,11 +59,16 @@ export interface Sh {
   timedOut: boolean;
 }
 
+const HAS_TIMEOUT = process.platform === "linux" && spawnSync("timeout", ["--version"]).status === 0;
+
 export function sh(cmd: string, cwd: string, env: NodeJS.ProcessEnv = process.env, timeoutSec = 1800, logFile?: string): Sh {
   const t0 = performance.now();
-  const full = logFile ? `(${cmd}) >>${shq(logFile)} 2>&1` : cmd;
-  const r = spawnSync("bash", ["-c", full], { cwd, env, encoding: "utf8", timeout: timeoutSec * 1000, maxBuffer: 256 << 20 });
-  const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
+  const body = logFile ? `(${cmd}) >>${shq(logFile)} 2>&1` : cmd;
+  // GNU timeout signals the whole process group, so test runners' workers do not outlive a
+  // timed-out step (spawnSync's own timeout only kills bash).
+  const full = HAS_TIMEOUT ? `timeout -k 10 ${timeoutSec} bash -c ${shq(body)}` : body;
+  const r = spawnSync("bash", ["-c", full], { cwd, env, encoding: "utf8", timeout: (timeoutSec + 30) * 1000, maxBuffer: 256 << 20 });
+  const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT" || (HAS_TIMEOUT && (r.status === 124 || r.status === 137));
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ms: Math.round(performance.now() - t0), timedOut };
 }
 
@@ -232,9 +246,13 @@ export function snapshot(root: string): Snapshot {
     }
     for (const e of entries) {
       if (e === ".bin") continue;
-      if (e === ".pnpm" || e === ".bun") {
+      if (e === ".pnpm" || e === ".bun" || e === ".fnpm") {
         // Isolated-linker stores: <store>/<id>/node_modules/<pkg>.
-        for (const id of readdirSync(join(nm, e))) {
+        let ids: string[] = [];
+        try {
+          ids = readdirSync(join(nm, e));
+        } catch {}
+        for (const id of ids) {
           const inner = join(nm, e, id, "node_modules");
           if (id !== "node_modules" && isDir(inner)) walkNm(inner);
         }
