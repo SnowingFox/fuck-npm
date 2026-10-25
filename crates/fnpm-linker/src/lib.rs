@@ -220,6 +220,19 @@ pub struct LinkOptions {
     /// A package without a patch must also have no [`verify::PATCH_TAG_FILE`] (set when the
     /// previous install had patches: a removed patch reinstalls the package unpatched).
     pub check_unpatched: bool,
+    /// The hoisted layout the previous install left, when `node_modules` is known to be
+    /// untouched since (the no-op state still matches). A package at the same place as before
+    /// is trusted without reading its `package.json`.
+    pub previous: Option<Previous>,
+}
+
+/// See [`LinkOptions::previous`].
+#[derive(Debug, Clone)]
+pub struct Previous {
+    /// The graph of the previous install, as the linker saw it ([`Linker::plan`]'s input).
+    pub graph: Arc<LockGraph>,
+    /// Its hoisted tree.
+    pub tree: Arc<fnpm_lockfile::tree::Tree>,
 }
 
 impl Default for LinkOptions {
@@ -231,6 +244,7 @@ impl Default for LinkOptions {
             threads: fnpm_types::available_parallelism().min(8),
             global_store: true,
             check_unpatched: false,
+            previous: None,
         }
     }
 }

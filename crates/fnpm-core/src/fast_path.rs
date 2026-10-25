@@ -127,6 +127,30 @@ pub fn check(project_dir: &Path, config_hash: u64) -> Check {
     }
 }
 
+/// Whether `node_modules` is exactly what the install of the lockfile with hash
+/// `lockfile_hash` left (same fnpm, same config, `node_modules` and `node_modules/.fnpm`
+/// untouched since), with the linker `linker`. Then the linker may trust every package that
+/// stays at the same place without reading it: the same test the no-op path relies on.
+/// Must be called before [`remove`].
+pub fn layout_intact(
+    project_dir: &Path,
+    config_hash: u64,
+    lockfile_hash: u64,
+    linker: &str,
+) -> bool {
+    let Some(state) = read(project_dir) else {
+        return false;
+    };
+    let nm = project_dir.join("node_modules");
+    state.version == STATE_VERSION
+        && state.fnpm_version == crate::version()
+        && state.config_hash == config_hash
+        && state.lockfile_hash == lockfile_hash
+        && state.linker == linker
+        && dir_identity(&nm).is_ok_and(|id| id == state.node_modules)
+        && dir_identity(&nm.join(".fnpm")).is_ok_and(|id| id == state.virtual_store)
+}
+
 fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
     if state.version != STATE_VERSION
         || state.fnpm_version != crate::version()

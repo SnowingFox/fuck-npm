@@ -572,6 +572,11 @@ pub fn is_fresh(project_dir: &Path, lock_hash: u64) -> bool {
 
 /// Writes the sidecar atomically, creating `node_modules/.fnpm` if needed.
 pub fn save(project_dir: &Path, lock_hash: u64, graph: &LockGraph) -> Result<()> {
+    write(project_dir, &encode(lock_hash, graph)?)
+}
+
+/// Writes [`encode`]d sidecar bytes atomically, creating `node_modules/.fnpm` if needed.
+pub fn write(project_dir: &Path, bytes: &[u8]) -> Result<()> {
     let path = project_dir.join(SIDECAR);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|source| Error::Io {
@@ -579,8 +584,7 @@ pub fn save(project_dir: &Path, lock_hash: u64, graph: &LockGraph) -> Result<()>
             source,
         })?;
     }
-    let bytes = encode(lock_hash, graph)?;
-    crate::write_atomic(&path, &bytes)
+    crate::write_atomic(&path, bytes)
 }
 
 #[cfg(test)]

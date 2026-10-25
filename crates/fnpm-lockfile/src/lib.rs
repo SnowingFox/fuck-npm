@@ -377,22 +377,61 @@ pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
 /// Writes `fnpm.lock` atomically (temp + rename) and refreshes the sidecar. Returns the new
 /// file hash. Skips the write when the bytes are unchanged.
 pub fn save(dir: &Path, graph: &LockGraph) -> Result<u64> {
+    save_prepared(dir, &prepare_save(graph)?)
+}
+
+/// What [`save`] writes, computed without touching the disk (so it can run beside other work).
+#[derive(Debug, Clone)]
+pub struct PreparedSave {
+    text: String,
+    hash: u64,
+    /// The sidecar of the text, `None` if it could not be built (it is a cache).
+    sidecar: Option<Vec<u8>>,
+}
+
+impl PreparedSave {
+    /// The hash of the lockfile text ([`content_hash`]).
+    pub fn hash(&self) -> u64 {
+        self.hash
+    }
+}
+
+/// Serialises `graph` and builds the sidecar of the result. The sidecar caches what loading
+/// the file gives (bindings and hoisting re-derived the way a reload derives them), so it is
+/// built from a parse of the text, never from `graph` itself: a warm load and a cold one
+/// never differ.
+pub fn prepare_save(graph: &LockGraph) -> Result<PreparedSave> {
     let text = formats::fnpm::try_serialize(graph)?;
-    let path = dir.join(FNPM_LOCK);
     let hash = content_hash(text.as_bytes());
+    let sidecar = text_parse(text.as_bytes(), FNPM_LOCK, &ParseOptions::default())
+        .ok()
+        .and_then(|(loaded, _)| sidecar::encode(hash, &loaded).ok());
+    Ok(PreparedSave {
+        text,
+        hash,
+        sidecar,
+    })
+}
+
+/// Writes a [`prepare_save`] result: fnpm.lock (atomic, skipped when the bytes are unchanged)
+/// and the sidecar (when it is not fresh). A sidecar failure never fails the save.
+pub fn save_prepared(dir: &Path, prepared: &PreparedSave) -> Result<u64> {
+    let PreparedSave {
+        text,
+        hash,
+        sidecar,
+    } = prepared;
+    let path = dir.join(FNPM_LOCK);
     let unchanged = read(&path)?.is_some_and(|old| old == text.as_bytes());
     if !unchanged {
         write_atomic(&path, text.as_bytes())?;
     }
-    // The sidecar caches what loading the file gives (bindings and hoisting re-derived the
-    // way a reload derives them), so a warm load and a cold one never differ. It is a cache:
-    // failing to write it never fails the save.
-    if (!unchanged || !sidecar::is_fresh(dir, hash))
-        && let Ok((loaded, _)) = text_parse(text.as_bytes(), FNPM_LOCK, &ParseOptions::default())
+    if (!unchanged || !sidecar::is_fresh(dir, *hash))
+        && let Some(bytes) = sidecar
     {
-        let _ = sidecar::save(dir, hash, &loaded);
+        let _ = sidecar::write(dir, bytes);
     }
-    Ok(hash)
+    Ok(*hash)
 }
 
 /// Writes `yarn.lock` v1 next to the lockfile (`--yarn`, `install.lockfile.print = "yarn"`),

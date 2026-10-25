@@ -320,6 +320,21 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 4. + 5. Resolve, streaming packages to the fetcher.
     let client = project.client()?;
     client.set_event_sink(events.clone());
+    // `add <name>`: start reading (or fetching) the requested manifests while the resolve is
+    // set up; the resolver joins the request in flight.
+    let registry_names: Vec<String> = planned
+        .requests
+        .iter()
+        .filter(|r| {
+            fnpm_types::name::is_npm_package_name(&r.name)
+                && !r.spec.contains(':')
+                && !r.spec.contains('/')
+        })
+        .map(|r| r.name.clone())
+        .collect();
+    if !registry_names.is_empty() {
+        client.prefetch(registry_names);
+    }
     let store = project.store()?;
     let fetcher = Fetcher::new(
         store.clone(),
@@ -434,6 +449,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 &edits,
                 &graph,
                 lockfile_dirty,
+                None,
                 &*events,
             )?;
         }
@@ -442,7 +458,14 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         return Ok(summary);
     }
 
-    // 6. Link, overlapping the downloads still in flight.
+    // 6. Link, overlapping the downloads still in flight. When node_modules is what the
+    // previous lockfile's install left (the no-op state still matches it), packages that keep
+    // their place are trusted without being read.
+    let intact = in_place
+        && previous.is_some()
+        && lock
+            .hash
+            .is_some_and(|h| fast_path::layout_intact(&root, hash, h, "hoisted"));
     fast_path::remove(&root);
     if config.global {
         // `remove -g`: the global bin links of removed packages go before their directories.
@@ -467,6 +490,21 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         Vec::new()
     };
+    // The lockfile text and its sidecar are built beside the link step when linking cannot
+    // change the graph (no integrity left to fill in, no `--trust`).
+    let complete = graph.packages.iter().all(|p| {
+        !needs_content(&p.resolution)
+            || matches!(p.resolution, Resolution::Folder { .. })
+            || p.resolution.integrity().is_some()
+    });
+    let prepared = (config.lockfile.save
+        && (lockfile_dirty || config.lockfile.force_save || !edits.is_empty())
+        && !opts.pm.trust
+        && complete)
+        .then(|| {
+            let g = graph.clone();
+            tokio::task::spawn_blocking(move || fnpm_lockfile::prepare_save(&g))
+        });
     let lazy: HashSet<String> = match previous {
         Some(prev) if in_place => prev.packages.iter().map(|p| p.key()).collect(),
         _ => HashSet::new(),
@@ -480,6 +518,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         selected_ids.clone(),
         &trust_names,
         &lazy,
+        intact.then_some(previous).flatten(),
         &events,
     )
     .await?;
@@ -529,6 +568,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .get_or_insert_with(Default::default);
         set.extend(trust_names.iter().cloned());
     }
+    let prepared = match prepared {
+        Some(task) if !integrity_filled && linked.failed == 0 => {
+            task.await.ok().and_then(Result::ok)
+        }
+        _ => None,
+    };
     let saved = save(
         &root,
         &config,
@@ -537,6 +582,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &edits,
         &graph,
         lockfile_dirty || integrity_filled,
+        prepared,
         &*events,
     )?;
     phases.mark("save");
@@ -993,6 +1039,7 @@ async fn link(
     selected: Option<Vec<PackageId>>,
     trust_names: &[String],
     lazy: &HashSet<String>,
+    intact: Option<&LockGraph>,
     events: &Arc<dyn EventSink>,
 ) -> Result<Linked> {
     let config = &project.config;
@@ -1021,6 +1068,39 @@ async fn link(
             .with_native_dependencies(native_dependencies(config, ws));
         let view = link_view(graph);
         let layout = plan_layout(&linker, &view, kind, selected.clone());
+        // The previous install's tree, for packages that keep their place (hoisted only,
+        // without patches, whose files may have changed under the same key).
+        let previous = match (intact, &layout) {
+            (Some(prev), Layout::Hoisted(_))
+                if prev.patched_dependencies.is_empty()
+                    && graph.patched_dependencies.is_empty()
+                    && selected.is_none() =>
+            {
+                let prev_view = link_view(prev);
+                match plan_layout(&linker, &prev_view, NodeLinker::Hoisted, None) {
+                    Layout::Hoisted(tree) => Some(fnpm_linker::Previous {
+                        graph: Arc::new(prev_view),
+                        tree: Arc::new(tree),
+                    }),
+                    Layout::Isolated(_) => None,
+                }
+            }
+            _ => None,
+        };
+        // Threads for the work there is: with the previous layout trusted, only the packages
+        // that are new or moved are placed, and a full pool costs more to start than that work.
+        let threads = match (&previous, &layout) {
+            (Some(prev), Layout::Hoisted(tree)) => {
+                let before: HashSet<String> = prev.graph.packages.iter().map(|p| p.key()).collect();
+                let new = tree
+                    .nodes
+                    .iter()
+                    .filter(|n| !before.contains(&view.packages[n.package.index()].key()))
+                    .count();
+                new.div_ceil(16).clamp(1, LinkOptions::default().threads)
+            }
+            _ => LinkOptions::default().threads,
+        };
         let reachable = installable(
             graph,
             linker.include(),
@@ -1043,7 +1123,8 @@ async fn link(
                 .graph
                 .as_ref()
                 .is_some_and(|g| !g.patched_dependencies.is_empty()),
-            ..LinkOptions::default()
+            threads,
+            previous: previous.clone(),
         };
         let (f, ev, dir) = (fetcher.clone(), events.clone(), root.clone());
         let result = tokio::task::spawn_blocking(move || {
@@ -1145,6 +1226,7 @@ fn save(
     edits: &Edits,
     graph: &LockGraph,
     dirty: bool,
+    prepared: Option<fnpm_lockfile::PreparedSave>,
     events: &dyn EventSink,
 ) -> Result<bool> {
     if config.save_package_json && !edits.is_empty() {
@@ -1160,7 +1242,10 @@ fn save(
             events.emit(Event::warn(line, Some("MIGRATED_PACKAGE_JSON")));
         }
     }
-    fnpm_lockfile::save(root, graph)?;
+    match prepared {
+        Some(p) => fnpm_lockfile::save_prepared(root, &p)?,
+        None => fnpm_lockfile::save(root, graph)?,
+    };
     if config.lockfile.print_yarn {
         fnpm_lockfile::save_yarn(
             root,

@@ -164,12 +164,19 @@ pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         let workers = io_threads();
-        tokio::runtime::Builder::new_multi_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(workers)
             .thread_name("fnpm-io")
             .enable_all()
             .build()
-            .expect("the tokio runtime can be created")
+            .expect("the tokio runtime can be created");
+        // Start two blocking threads now (the runtime is usually built on a background thread
+        // while the project loads): the first manifest-cache read and the link step would
+        // otherwise each wait for a thread to be spawned, 0.2 to several ms on a busy machine.
+        for _ in 0..2 {
+            rt.spawn_blocking(|| std::thread::sleep(std::time::Duration::from_micros(200)));
+        }
+        rt
     })
 }
 

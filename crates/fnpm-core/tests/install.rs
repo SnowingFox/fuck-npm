@@ -783,3 +783,50 @@ async fn dependencies_of_another_platforms_package_are_not_downloaded() {
     assert_eq!(s.installed_count, 1, "{s:?}");
     assert_eq!(downloaded(&reg), Vec::<String>::new(), "from the lockfile");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_after_an_install_downloads_and_places_only_the_new_package() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    let before = std::fs::metadata(p.path("node_modules/a/package.json")).unwrap();
+    reg.clear_seen();
+    let (s, _) = p.run(p.opts(InstallCommand::Add, &["tool"])).await.unwrap();
+    assert_eq!(s.installed_count, 1, "{s:?}");
+    assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"));
+    assert!(exists(&p.path("node_modules/.bin/tool")));
+    assert_eq!(reg.tarball_requests(), 1, "{:?}", reg.seen());
+    // The packages already in place were not rebuilt.
+    let after = std::fs::metadata(p.path("node_modules/a/package.json")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(before.ino(), after.ino());
+    }
+    let _ = (before, after);
+    // The state is consistent: the next install is a no-op.
+    assert!(p.install().await.noop);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_repairs_what_changed_in_node_modules_since_the_install() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    // A removed package changes node_modules, so nothing is trusted and `b` comes back.
+    std::fs::remove_dir_all(p.path("node_modules/b")).unwrap();
+    p.run(p.opts(InstallCommand::Add, &["tool"])).await.unwrap();
+    assert_eq!(p.installed("b").as_deref(), Some("1.2.0"));
+    // A package whose version changes in the graph is rebuilt even with node_modules intact.
+    p.run(p.opts(InstallCommand::Add, &["b@1.0.0"]))
+        .await
+        .unwrap();
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    p.run(p.opts(InstallCommand::Remove, &["b"])).await.unwrap();
+    assert_eq!(
+        p.installed("b").as_deref(),
+        Some("1.2.0"),
+        "a's b is hoisted again"
+    );
+    assert!(p.install().await.noop);
+}

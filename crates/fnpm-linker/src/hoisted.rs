@@ -190,6 +190,65 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
     })
 }
 
+/// One key per tree node: its workspace, folder path and package (`name@resolution`). Two
+/// nodes with the same key are the same package in the same directory.
+fn node_keys(tree: &Tree, graph: &fnpm_types::LockGraph) -> Vec<String> {
+    let mut ws_of: HashMap<u32, String> = HashMap::new();
+    for (ws, ids) in &tree.workspace_roots {
+        let key = graph.get(*ws).map(|p| p.key()).unwrap_or_default();
+        for &i in ids {
+            ws_of.insert(i, key.clone());
+        }
+    }
+    let mut ws: Vec<String> = Vec::with_capacity(tree.nodes.len());
+    let mut keys = Vec::with_capacity(tree.nodes.len());
+    for (i, node) in tree.nodes.iter().enumerate() {
+        let w = match (ws_of.get(&(i as u32)), node.parent) {
+            (Some(w), _) => w.clone(),
+            (None, Some(p)) if (p as usize) < i => ws[p as usize].clone(),
+            _ => String::new(),
+        };
+        let pkg = graph.get(node.package).map(|p| p.key()).unwrap_or_default();
+        keys.push(format!("{w}\0{}\0{}\0{pkg}", node.path, node.name));
+        ws.push(w);
+    }
+    keys
+}
+
+/// For each node of `tree`: the previous install placed the same package in the same
+/// directory, and that directory had no nested `node_modules` unless this node has one too
+/// (a leftover nested copy would shadow a hoisted one, so that case is checked).
+fn unchanged_nodes(cx: &LinkCx<'_>, tree: &Tree) -> Vec<bool> {
+    let Some(prev) = cx.opts.previous.as_ref() else {
+        return vec![false; tree.nodes.len()];
+    };
+    let mut prev_has_children = vec![false; prev.tree.nodes.len()];
+    for n in &prev.tree.nodes {
+        if let Some(p) = n.parent
+            && let Some(slot) = prev_has_children.get_mut(p as usize)
+        {
+            *slot = true;
+        }
+    }
+    let before: HashMap<String, bool> = node_keys(&prev.tree, &prev.graph)
+        .into_iter()
+        .zip(prev_has_children)
+        .collect();
+    let mut has_children = vec![false; tree.nodes.len()];
+    for n in &tree.nodes {
+        if let Some(p) = n.parent
+            && let Some(slot) = has_children.get_mut(p as usize)
+        {
+            *slot = true;
+        }
+    }
+    node_keys(tree, cx.graph)
+        .iter()
+        .zip(has_children)
+        .map(|(k, children)| before.get(k).is_some_and(|had| children || !had))
+        .collect()
+}
+
 struct Out {
     installed: AtomicU32,
     removed: AtomicU32,
@@ -248,6 +307,12 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         error: Mutex::new(None),
     };
     let force = cx.opts.force;
+    let unchanged = if fresh || force {
+        Vec::new()
+    } else {
+        unchanged_nodes(cx, tree)
+    };
+    let unchanged = &unchanged;
     // FIFO, biggest packages first: every worker starts on the largest remaining one, so a
     // big package does not start last and stretch the whole link.
     let tops = crate::largest_first(cx.source, &plan.tops, |t| {
@@ -256,7 +321,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     rayon::scope_fifo(|s| {
         for top in tops {
             let (plan, out) = (&plan, &out);
-            s.spawn_fifo(move |s| place_node(s, cx, plan, out, top, fresh, force));
+            s.spawn_fifo(move |s| place_node(s, cx, plan, out, unchanged, top, fresh, force));
         }
     });
     if let Some(e) = out.error.lock().take() {
@@ -308,11 +373,13 @@ fn is_ws_root(tree: &Tree, id: u32) -> bool {
         .any(|(_, ids)| ids.contains(&id))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn place_node<'s>(
     s: &rayon::ScopeFifo<'s>,
     cx: &'s LinkCx<'s>,
     plan: &'s Plan<'_>,
     out: &'s Out,
+    unchanged: &'s [bool],
     i: u32,
     parent_fresh: bool,
     force: bool,
@@ -368,6 +435,11 @@ fn place_node<'s>(
             Place::Copy => {
                 let pkg = &cx.graph.packages[node.package.index()];
                 if !parent_fresh && !force {
+                    let trusted = unchanged.get(idx).copied().unwrap_or(false)
+                        && !matches!(pkg.resolution, Resolution::Folder { .. });
+                    if trusted {
+                        return Ok(Some(false));
+                    }
                     let ok = match &pkg.resolution {
                         Resolution::Folder { .. } => match cx.source.wait(node.package) {
                             Ok(entry) => verify::same_file(
@@ -436,7 +508,7 @@ fn place_node<'s>(
         );
     }
     for &c in &plan.children[idx] {
-        s.spawn_fifo(move |s| place_node(s, cx, plan, out, c, child_fresh, force));
+        s.spawn_fifo(move |s| place_node(s, cx, plan, out, unchanged, c, child_fresh, force));
     }
 }
 
