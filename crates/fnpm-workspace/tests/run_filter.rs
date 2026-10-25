@@ -440,3 +440,55 @@ fn self_referential_symlink_does_not_loop() {
     // `pkga` once; `cyc` at packages/cyc and once more through its own `loop` alias
     assert_eq!(names(&r), ["cyc", "cyc", "pkga"]);
 }
+
+#[cfg(unix)]
+#[test]
+fn shared_directory_root_is_ignored_with_a_warning() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tree(&[
+        (
+            "shared/package.json",
+            &json!({ "name": "evil", "workspaces": ["**"] }).to_string(),
+        ),
+        ("shared/proj/package.json", &pkg("proj", json!({}))),
+        ("shared/proj/sub/package.json", &pkg("sub", json!({}))),
+        ("shared/other/package.json", &pkg("other", json!({}))),
+    ]);
+    let shared = dir.path().join("shared");
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
+    let r = RunPackages::discover(&shared.join("proj"), &["*"], false).unwrap();
+    assert_eq!(r.root_dir, shared.join("proj"));
+    assert_eq!(names(&r), ["proj", "sub"]);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("directory is writable by other users")),
+        "{:?}",
+        r.warnings
+    );
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let r = RunPackages::discover(&shared.join("proj"), &["*"], false).unwrap();
+    assert_eq!(r.root_dir, shared);
+}
+
+#[test]
+fn packages_with_odd_dependency_shapes_are_still_runnable() {
+    // bun's runtime package.json reader ignores non-object groups and non-string versions.
+    let dir = tree(&[
+        (
+            "package.json",
+            &json!({ "name": "ws", "workspaces": ["packages/*"] }).to_string(),
+        ),
+        (
+            "packages/a/package.json",
+            &pkg(
+                "a",
+                json!({ "dependencies": { "b": "workspace:*", "x": 1 }, "devDependencies": ["y"] }),
+            ),
+        ),
+        ("packages/b/package.json", &pkg("b", json!({}))),
+    ]);
+    let r = RunPackages::discover(dir.path(), &["a..."], false).unwrap();
+    assert_eq!(names(&r), ["a", "b"]);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}

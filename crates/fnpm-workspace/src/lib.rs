@@ -186,7 +186,9 @@ impl Workspace {
     /// Finds the project root from `cwd`: the nearest ancestor package.json whose
     /// `workspaces` (or sibling `pnpm-workspace.yaml`) includes `cwd`'s package, else the
     /// nearest package.json. Like bun, the first ancestor that declares workspaces decides: if
-    /// it does not list the package, the package is its own root.
+    /// it does not list the package, the package is its own root. A package without a usable
+    /// `name` is always its own root, and a package.json in a sticky, group- or world-writable
+    /// directory above `cwd` (such as `/tmp`) is ignored, as anyone could have written it.
     pub fn find_root(cwd: &Path) -> Result<PathBuf> {
         discover::find_root(cwd)
     }

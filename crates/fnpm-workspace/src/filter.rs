@@ -13,7 +13,7 @@ use std::path::Path;
 use fnpm_types::{DependencyGroup, DependencySpec};
 
 use crate::discover::abs_posix;
-use crate::glob::{Dots, Glob, strip_negations};
+use crate::glob::{Dots, Glob, escape_literal, strip_negations};
 use crate::graph::WorkspaceGraph;
 use crate::paths::{clean_relative, join_posix};
 use crate::{Error, Result, Workspace};
@@ -165,12 +165,15 @@ enum Base {
     Subtree(Glob),
 }
 
+/// The cwd is escaped so a directory named like `app[1]` matches itself; a trailing `**` needs
+/// a segment, as in bun's matcher (`./packages/**` does not select `packages` itself).
 fn base_of(target: &Target, cwd: &str) -> Base {
+    let path = |p: &str| Glob::new(&join_posix(cwd, p)).trailing_globstar_needs_segment();
     match target {
         Target::All => Base::All,
-        Target::Name(n) => Base::Name(Glob::new(n)),
-        Target::Path(p) => Base::Path(Glob::new(&join_posix(cwd, p))),
-        Target::Subtree(p) => Base::Subtree(Glob::new(&join_posix(cwd, p))),
+        Target::Name(n) => Base::Name(Glob::new(n).trailing_globstar_needs_segment()),
+        Target::Path(p) => Base::Path(path(p)),
+        Target::Subtree(p) => Base::Subtree(path(p)),
     }
 }
 
@@ -258,7 +261,7 @@ pub fn select_candidates(
     root: RootSelection,
 ) -> Selection {
     let n = candidates.len();
-    let cwd = abs_posix(&crate::paths::absolute(cwd));
+    let cwd = escape_literal(&abs_posix(&crate::paths::absolute(cwd)));
     let explicit_root_only = root == RootSelection::ExplicitOnly && n > 1;
     let root_index = if explicit_root_only {
         candidates.iter().position(|c| c.is_root)
@@ -311,7 +314,7 @@ pub fn select_candidates(
 /// first; `workspace:<path>` points at the member at that path, other `workspace:` specs at
 /// the member with the dependency's name; an npm range on a member's name is an edge when
 /// `link_workspace_packages` is on and the range is `*`/empty or the member's version
-/// satisfies it.
+/// satisfies it. The root has outgoing edges only.
 pub(crate) fn workspace_graph(ws: &Workspace, options: &SelectOptions) -> WorkspaceGraph {
     let n = ws.members.len() + 1;
     let mut by_name: std::collections::HashMap<&str, usize> =
@@ -382,7 +385,8 @@ pub(crate) fn workspace_graph(ws: &Workspace, options: &SelectOptions) -> Worksp
                     }
                     _ => None,
                 };
-                if let Some(to) = to.filter(|&to| to != from) {
+                // Like bun, nothing depends on the root: it is not a workspace by name or path.
+                if let Some(to) = to.filter(|&to| to != from && to != 0) {
                     edges.push((from as u32, to as u32));
                 }
             }

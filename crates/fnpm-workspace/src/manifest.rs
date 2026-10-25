@@ -75,6 +75,29 @@ impl PackageJson {
 
     /// Builds the typed view from an already parsed value.
     pub fn from_value(raw: Value, path: &Path) -> Result<Self> {
+        Self::build(raw, path, true)
+    }
+
+    /// Reads `path` the way bun's runtime reads a package.json (`run --filter`): a
+    /// dependency group that is not an object and non-string versions are ignored instead of
+    /// failing the whole file.
+    pub(crate) fn read_lenient(path: &Path) -> Result<Self> {
+        let bytes = std::fs::read(path).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let text = String::from_utf8(bytes).map_err(|_| invalid(path, "invalid UTF-8"))?;
+        if text
+            .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+            .is_empty()
+        {
+            return Err(invalid(path, "file is empty"));
+        }
+        let raw = crate::jsonc::parse_value(&text).map_err(|e| invalid(path, &e))?;
+        Self::build(raw, path, false)
+    }
+
+    fn build(raw: Value, path: &Path, strict: bool) -> Result<Self> {
         let Some(obj) = raw.as_object() else {
             return Err(invalid(path, "package.json must be an object"));
         };
@@ -91,7 +114,7 @@ impl PackageJson {
             ..Default::default()
         };
         for group in DependencyGroup::ALL {
-            let list = string_map(obj, group.field(), path)?;
+            let list = string_map(obj, group.field(), path, strict)?;
             match group {
                 DependencyGroup::Prod => pkg.dependencies = list,
                 DependencyGroup::Dev => pkg.dev_dependencies = list,
@@ -314,9 +337,19 @@ pub(crate) fn workspaces_strings(
         .map(Some)
 }
 
-fn string_map(obj: &Map<String, Value>, key: &str, path: &Path) -> Result<Vec<(String, String)>> {
+fn string_map(
+    obj: &Map<String, Value>,
+    key: &str,
+    path: &Path,
+    strict: bool,
+) -> Result<Vec<(String, String)>> {
     match obj.get(key) {
         None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Object(map)) if !strict => Ok(map
+            .iter()
+            .filter_map(|(name, v)| Some((name.clone(), v.as_str()?.to_owned())))
+            .collect()),
+        Some(_) if !strict => Ok(Vec::new()),
         Some(Value::Object(map)) => map
             .iter()
             .map(|(name, v)| match v {
@@ -411,6 +444,25 @@ mod tests {
         );
         // null groups are treated as absent
         assert!(PackageJson::parse(r#"{"dependencies": null}"#).is_ok());
+    }
+
+    #[test]
+    fn lenient_read_ignores_bad_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name": "a", "dependencies": {"x": 1, "y": "^1"}, "devDependencies": ["z"]}"#,
+        )
+        .unwrap();
+        assert!(PackageJson::read(&path).is_err());
+        let p = PackageJson::read_lenient(&path).unwrap();
+        assert_eq!(p.dependencies, vec![("y".to_owned(), "^1".to_owned())]);
+        assert!(p.dev_dependencies.is_empty());
+        std::fs::write(&path, "asdf").unwrap();
+        assert!(PackageJson::read_lenient(&path).is_err());
+        std::fs::write(&path, " ").unwrap();
+        assert!(PackageJson::read_lenient(&path).is_err());
     }
 
     #[test]

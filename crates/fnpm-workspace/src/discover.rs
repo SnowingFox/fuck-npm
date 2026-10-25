@@ -294,7 +294,7 @@ pub(crate) fn expand_glob_opts(
     ignored: &[&str],
     dots: Dots,
 ) -> Result<Vec<PathBuf>> {
-    let joined = join_posix(root_posix, user_pattern);
+    let joined = join_posix(&glob::escape_literal(root_posix), user_pattern);
     let mut out = Vec::new();
     for alt in glob::expand_braces(&joined) {
         let segs = glob::compile_segments(&alt);
@@ -672,7 +672,8 @@ pub(crate) fn lists(entries: &[String], root_dir: &Path, abs_dir: &Path) -> bool
                     continue;
                 }
                 matched = matched
-                    || Glob::new(&join_posix(&root_posix, &p)).matches(&dir_posix, Dots::Hide);
+                    || Glob::new(&join_posix(&glob::escape_literal(&root_posix), &p))
+                        .matches(&dir_posix, Dots::Hide);
             }
         }
     }
@@ -688,23 +689,66 @@ fn declared_entries(dir: &Path, pkg: &PackageJson) -> Result<Option<Vec<String>>
     Ok(read_pnpm_workspace(dir, &mut Vec::new())?.and_then(|p| p.packages))
 }
 
+/// Returns true if `dir` is sticky and group- or world-writable, like `/tmp`, or cannot be
+/// stat'd: any local user can plant a package.json there, so the upward walk ignores it (bun
+/// `is_shared_directory`).
+#[cfg(unix)]
+pub(crate) fn is_shared_directory(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    !std::fs::metadata(dir).is_ok_and(|m| {
+        let mode = m.permissions().mode();
+        mode & 0o1000 == 0 || mode & 0o022 == 0
+    })
+}
+
+#[cfg(not(unix))]
+pub(crate) fn is_shared_directory(_: &Path) -> bool {
+    false
+}
+
+/// bun's warning for a package.json the upward walk ignores.
+pub(crate) fn shared_directory_warning(dir: &Path) -> String {
+    format!(
+        "ignoring package.json in {}: directory is writable by other users",
+        dir.display()
+    )
+}
+
 /// [`crate::Workspace::find_root`].
 pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
     let cwd = paths::absolute(cwd);
     let mut child: Option<PathBuf> = None;
     let mut dir = Some(cwd.as_path());
     while let Some(d) = dir {
-        if d.join("package.json").is_file() {
-            child = Some(d.to_path_buf());
-            break;
-        }
         dir = d.parent();
+        if !d.join("package.json").is_file() {
+            continue;
+        }
+        if d != cwd && is_shared_directory(d) {
+            continue;
+        }
+        child = Some(d.to_path_buf());
+        break;
     }
     let Some(child) = child else {
         return Err(Error::NoProject(cwd));
     };
+    // Only a named package can be a member (bun matches the members it read, and skips
+    // nameless or unreadable ones), so anything else is its own root.
+    let child_pj = child.join("package.json");
+    let named = std::fs::read_to_string(&child_pj)
+        .ok()
+        .and_then(|text| PackageJson::parse_at(&text, &child_pj).ok())
+        .is_some_and(|pkg| pkg.name.is_some());
+    if !named {
+        return Ok(child);
+    }
     let mut parent = child.parent();
     while let Some(p) = parent {
+        parent = p.parent();
+        if is_shared_directory(p) {
+            continue;
+        }
         let pj = p.join("package.json");
         let pkg = match std::fs::read_to_string(&pj) {
             Ok(text) => Some(PackageJson::parse_at(&text, &pj)?),
@@ -732,7 +776,6 @@ pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
                 _ => child,
             });
         }
-        parent = p.parent();
     }
     Ok(child)
 }

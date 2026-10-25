@@ -5,13 +5,14 @@
 //! `**/package.json` under the cwd. A package.json without a name is kept (selectable by path
 //! only) and one that fails to parse is skipped with a warning.
 
+use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use serde_json::Value;
 
-use crate::discover::{abs_posix, expand_glob_opts};
+use crate::discover::{abs_posix, expand_glob_opts, is_shared_directory, shared_directory_warning};
 use crate::filter::{
     Candidate, RootSelection, Selector, quote_patterns, select_candidates, unmatched_message,
 };
@@ -69,7 +70,8 @@ impl RunPackages {
             filters.iter().map(|f| f.as_ref().to_owned()).collect()
         };
         let selectors = Selector::parse_all(&patterns)?;
-        let (root_dir, entries) = candidate_patterns(&cwd)?;
+        let mut warnings = Vec::new();
+        let (root_dir, entries) = candidate_patterns(&cwd, &mut warnings)?;
         let mut negated = NegatedWorkspaces::default();
         let mut globs: Vec<String> = Vec::new();
         for e in &entries {
@@ -78,8 +80,8 @@ impl RunPackages {
             }
         }
         let root_posix = abs_posix(&root_dir);
-        let mut warnings = Vec::new();
         let mut dirs: Vec<PathBuf> = Vec::new();
+        let mut seen: HashSet<PathBuf> = HashSet::new();
         for g in &globs {
             let mut found = match expand_run_pattern(&root_posix, g) {
                 Ok(found) => found,
@@ -95,7 +97,7 @@ impl RunPackages {
                 found.retain(|d| !negated.excludes(&relative_posix(&root_dir, d)));
             }
             for d in found {
-                if !dirs.contains(&d) {
+                if seen.insert(d.clone()) {
                     dirs.push(d);
                 }
             }
@@ -107,7 +109,7 @@ impl RunPackages {
             .par_iter()
             .map(|dir| {
                 let pj = dir.join("package.json");
-                match PackageJson::read(&pj) {
+                match PackageJson::read_lenient(&pj) {
                     Ok(manifest) => Ok(RunPackage {
                         name: manifest.name.clone().unwrap_or_default(),
                         package_json_path: pj,
@@ -228,11 +230,18 @@ fn expand_run_pattern(root_posix: &str, pattern: &str) -> Result<Vec<PathBuf>> {
 }
 
 /// Walks up from `cwd` to the first package.json with `workspaces`; returns the root and its
-/// entries, or `(cwd, ["**"])`.
-fn candidate_patterns(cwd: &Path) -> Result<(PathBuf, Vec<String>)> {
+/// entries, or `(cwd, ["**"])`. Like install's root detection (and unlike bun's run walk), a
+/// package.json in a shared directory above the cwd, such as `/tmp`, is ignored with a warning:
+/// anyone could have written it.
+fn candidate_patterns(cwd: &Path, warnings: &mut Vec<String>) -> Result<(PathBuf, Vec<String>)> {
     let mut dir = Some(cwd);
     while let Some(d) = dir {
         let pj = d.join("package.json");
+        if d != cwd && pj.exists() && is_shared_directory(d) {
+            warnings.push(shared_directory_warning(d));
+            dir = d.parent();
+            continue;
+        }
         let text = match std::fs::read_to_string(&pj) {
             Ok(t) => Some(t),
             Err(e)

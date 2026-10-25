@@ -52,6 +52,26 @@ fn has_extglob_prefix(b: &[u8]) -> bool {
         .any(|w| matches!(w[0], b'@' | b'+' | b'!' | b'?' | b'*') && w[1] == b'(')
 }
 
+/// `s` with every glob metacharacter backslash-escaped, so a directory path can prefix a
+/// pattern and still match literally (a root such as `/work/app[1]` or `/tmp/a{b,c}`). On
+/// Windows backslashes are separators, so the path is returned unchanged.
+pub(crate) fn escape_literal(s: &str) -> String {
+    if cfg!(windows) {
+        return s.to_owned();
+    }
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if matches!(
+            c,
+            '*' | '?' | '[' | ']' | '{' | '}' | '(' | ')' | '!' | '+' | '@' | ',' | '\\'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Removes leading `!`s; an odd count negates (bun `strip_negations`).
 pub fn strip_negations(raw: &str) -> (&str, bool) {
     let mut remain = raw;
@@ -208,8 +228,8 @@ pub(crate) fn compile_segments(pattern: &str) -> Vec<Seg> {
 /// A compiled glob over `/`-separated paths.
 #[derive(Debug, Clone)]
 pub struct Glob {
-    absolute: bool,
-    alternatives: Vec<Vec<Seg>>,
+    /// Each brace alternative: whether it is absolute, and its segments.
+    alternatives: Vec<(bool, Vec<Seg>)>,
 }
 
 impl Glob {
@@ -221,30 +241,36 @@ impl Glob {
         } else {
             pattern.to_owned()
         };
-        let absolute = pattern.starts_with('/');
         let alternatives = expand_braces(&pattern)
             .iter()
-            .map(|p| compile_segments(p))
+            .map(|p| (p.starts_with('/'), compile_segments(p)))
             .collect();
-        Glob {
-            absolute,
-            alternatives,
+        Glob { alternatives }
+    }
+
+    /// bun's matcher rule for a trailing `**`: it needs at least one segment, so `a/**`
+    /// matches `a/b` but not `a` (a `**` elsewhere may still match no segment).
+    pub(crate) fn trailing_globstar_needs_segment(mut self) -> Self {
+        for (_, alt) in &mut self.alternatives {
+            if matches!(alt.last(), Some(Seg::Globstar)) {
+                let at = alt.len() - 1;
+                alt.insert(at, Seg::Star);
+            }
         }
+        self
     }
 
     /// Whether `path` matches. `path` is `/`-separated; an absolute pattern only matches an
     /// absolute path and vice versa.
     pub fn matches(&self, path: &str, dots: Dots) -> bool {
-        if path.starts_with('/') != self.absolute {
-            return false;
-        }
+        let absolute = path.starts_with('/');
         let parts: Vec<&str> = path
             .split('/')
             .filter(|s| !s.is_empty() && *s != ".")
             .collect();
         self.alternatives
             .iter()
-            .any(|segs| match_segments(segs, &parts, dots))
+            .any(|(abs, segs)| *abs == absolute && match_segments(segs, &parts, dots))
     }
 }
 
@@ -402,6 +428,46 @@ mod tests {
         assert!(g.matches("packages/.hidden", Dots::Match));
         assert!(Glob::new("packages/.*").matches("packages/.hidden", Dots::Hide));
         assert!(!Glob::new("**/x").matches(".a/x", Dots::Hide));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn escaped_literal_prefix() {
+        for root in [
+            "/w/app[1]",
+            "/w/a{b,c}",
+            "/w/x*y",
+            "/w/q?",
+            "/w/!neg",
+            "/w/a+(b)",
+            "/w/@(x)",
+            "/w/back\\slash",
+        ] {
+            let g = Glob::new(&format!("{}/packages/*", escape_literal(root)));
+            assert!(
+                g.matches(&format!("{root}/packages/a"), Dots::Hide),
+                "{root}"
+            );
+            assert!(
+                !g.matches(&format!("{root}/packages/a/b"), Dots::Hide),
+                "{root}"
+            );
+            assert!(!g.matches("/w/app1/packages/a", Dots::Hide), "{root}");
+            let segs = compile_segments(&escape_literal(root));
+            assert!(segs.iter().all(|s| s.literal().is_some()), "{root}");
+        }
+    }
+
+    #[test]
+    fn trailing_globstar_needs_a_segment() {
+        let g = Glob::new("/r/packages/**").trailing_globstar_needs_segment();
+        assert!(!g.matches("/r/packages", Dots::Match));
+        assert!(g.matches("/r/packages/a", Dots::Match));
+        assert!(g.matches("/r/packages/a/b", Dots::Match));
+        let g = Glob::new("/r/**/x").trailing_globstar_needs_segment();
+        assert!(g.matches("/r/x", Dots::Match));
+        let g = Glob::new("{/r/a/**,/r/b}").trailing_globstar_needs_segment();
+        assert!(!g.matches("/r/a", Dots::Match) && g.matches("/r/b", Dots::Match));
     }
 
     #[test]

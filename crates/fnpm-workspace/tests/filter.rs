@@ -142,7 +142,8 @@ fn paths() {
     assert_eq!(sel(&ws, &["!./packages/*"], r), [ROOT]);
     assert_eq!(sel(&ws, &["!./"], r), ["pkg1", "pkg2"]);
     assert_eq!(sel(&ws, &["./"], r), [ROOT]);
-    assert_eq!(sel(&ws, &["./**"], r), [ROOT, "pkg1", "pkg2"]);
+    // bun's matcher: `a/**` does not match `a`, so `./**` leaves out the root.
+    assert_eq!(sel(&ws, &["./**"], r), ["pkg1", "pkg2"]);
     // relative to the cwd
     assert_eq!(sel(&ws, &["."], &r.join("packages/pkg2")), ["pkg2"]);
     assert_eq!(sel(&ws, &["../pkg1"], &r.join("packages/pkg2")), ["pkg1"]);
@@ -455,4 +456,76 @@ fn workspace_protocol_resolution() {
         sel_with(&ws2, &["a^..."], dir2.path(), RootSelection::Implicit).0,
         ["b", "c"]
     );
+}
+
+#[test]
+fn trailing_globstar_path_needs_a_segment() {
+    // bun's matcher: `a/**` matches `a/b` but not `a`.
+    let dir = tree(&[
+        (
+            "package.json",
+            &json!({ "name": "root", "workspaces": ["packages", "packages/*"] }).to_string(),
+        ),
+        ("packages/package.json", &pkg("top", json!({}))),
+        ("packages/a/package.json", &pkg("a", json!({}))),
+    ]);
+    let ws = Workspace::load(dir.path()).unwrap();
+    let r = dir.path();
+    assert_eq!(sel(&ws, &["./packages/**"], r), ["a"]);
+    assert_eq!(sel(&ws, &["./packages"], r), ["top"]);
+    let mut subtree = sel(&ws, &["{packages}"], r);
+    subtree.sort();
+    assert_eq!(subtree, ["a", "top"]);
+}
+
+#[test]
+fn nothing_depends_on_the_root() {
+    // bun `relation_graph`: the root is no workspace by name or path, so an edge never leads
+    // to it, while its own dependencies are followed.
+    let dir = tree(&[
+        (
+            "package.json",
+            &json!({ "name": "root", "version": "1.0.0", "workspaces": ["packages/*"], "dependencies": { "b": "workspace:*" } }).to_string(),
+        ),
+        (
+            "packages/a/package.json",
+            &pkg("a", json!({ "dependencies": { "root": "workspace:*", "b": "workspace:*" } })),
+        ),
+        ("packages/b/package.json", &pkg("b", json!({}))),
+        (
+            "packages/c/package.json",
+            &pkg("c", json!({ "dependencies": { "x": "workspace:../.." } })),
+        ),
+    ]);
+    let ws = Workspace::load(dir.path()).unwrap();
+    let r = dir.path();
+    let rel = |p: &[&str]| sel_with(&ws, p, r, RootSelection::Implicit).0;
+    assert_eq!(rel(&["a..."]), ["a", "b"]);
+    assert_eq!(rel(&["c..."]), ["c"]);
+    assert_eq!(rel(&["./..."]), [ROOT, "b"]);
+    assert_eq!(rel(&["...b"]), [ROOT, "a", "b"]);
+    let opts = SelectOptions {
+        satisfies: fake_satisfies,
+        ..Default::default()
+    };
+    let order = ws.dependency_order(&[usize::MAX, 0, 1, 2], &opts);
+    let pos = |i: usize| order.iter().position(|&x| x == i).unwrap();
+    assert!(pos(1) < pos(usize::MAX) && pos(1) < pos(0));
+}
+
+#[test]
+fn cwd_with_glob_characters_selects_by_path() {
+    let outer = tempfile::tempdir().unwrap();
+    let r = outer.path().join("w[1]");
+    common::write(
+        &r,
+        "package.json",
+        &json!({ "name": "root", "workspaces": ["packages/*"] }).to_string(),
+    );
+    common::write(&r, "packages/a/package.json", &pkg("a", json!({})));
+    common::write(&r, "packages/b/package.json", &pkg("b", json!({})));
+    let ws = Workspace::load(&r).unwrap();
+    assert_eq!(sel(&ws, &["./packages/a"], &r), ["a"]);
+    assert_eq!(sel(&ws, &["{packages}"], &r), ["a", "b"]);
+    assert_eq!(sel(&ws, &["../a"], &r.join("packages/b")), ["a"]);
 }

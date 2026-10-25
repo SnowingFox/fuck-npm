@@ -789,3 +789,83 @@ fn perf_load_100_members() {
         selected.len()
     );
 }
+
+#[test]
+fn root_path_with_glob_characters_matches_literally() {
+    let outer = tempfile::tempdir().unwrap();
+    for name in ["app[1]", "a{b,c}", "x*y", "q?", "a+(b)", "!neg"] {
+        let r = outer.path().join(name);
+        common::write(
+            &r,
+            "package.json",
+            &root(json!(["packages/*", "!packages/skip"])),
+        );
+        common::write(&r, "packages/a/package.json", &pkg("a", json!({})));
+        common::write(&r, "packages/skip/package.json", &pkg("skip", json!({})));
+        let ws = Workspace::load(&r).unwrap();
+        assert_eq!(paths(&ws), ["packages/a"], "{name}");
+        assert_eq!(
+            Workspace::find_root(&r.join("packages/a")).unwrap(),
+            r,
+            "{name}"
+        );
+        assert_eq!(
+            Workspace::find_root(&r.join("packages/skip")).unwrap(),
+            r.join("packages/skip"),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn find_root_keeps_a_nameless_or_unreadable_package_as_its_own_root() {
+    let dir = tree(&[
+        ("package.json", &root(json!(["packages/*"]))),
+        (
+            "packages/nameless/package.json",
+            r#"{"dependencies": {"x": "1"}}"#,
+        ),
+        ("packages/empty-name/package.json", r#"{"name": ""}"#),
+        ("packages/broken/package.json", "{not json"),
+        ("packages/ok/package.json", &pkg("ok", json!({}))),
+    ]);
+    let r = dir.path();
+    for d in [
+        "packages/nameless",
+        "packages/empty-name",
+        "packages/broken",
+    ] {
+        assert_eq!(Workspace::find_root(&r.join(d)).unwrap(), r.join(d), "{d}");
+    }
+    assert_eq!(Workspace::find_root(&r.join("packages/ok")).unwrap(), r);
+}
+
+/// bun `is_shared_directory`: a package.json in a sticky, world-writable directory above the
+/// project (like `/tmp`) could have been planted by another user and is ignored.
+#[cfg(unix)]
+#[test]
+fn find_root_ignores_package_json_in_shared_directories() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tree(&[
+        ("shared/package.json", &root(json!(["**"]))),
+        ("shared/proj/package.json", &pkg("proj", json!({}))),
+        ("shared/loose/file.txt", ""),
+    ]);
+    let shared = dir.path().join("shared");
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
+    assert_eq!(
+        Workspace::find_root(&shared.join("proj")).unwrap(),
+        shared.join("proj")
+    );
+    // Not as the nearest package.json either.
+    assert!(matches!(
+        Workspace::find_root(&shared.join("loose")),
+        Err(Error::NoProject(_))
+    ));
+    // The cwd itself is trusted.
+    assert_eq!(Workspace::find_root(&shared).unwrap(), shared);
+    // Sticky but not group/other-writable is fine.
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1755)).unwrap();
+    assert_eq!(Workspace::find_root(&shared.join("proj")).unwrap(), shared);
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
