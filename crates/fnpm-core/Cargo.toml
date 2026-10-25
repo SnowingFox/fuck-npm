@@ -30,3 +30,5 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+axum.workspace = true
+flate2.workspace = true

@@ -1,0 +1,493 @@
+//! End-to-end install pipeline tests against the in-process registry.
+
+mod common;
+
+use common::{Pkg, Project, Registry, exists};
+use fnpm_core::options::InstallCommand;
+use fnpm_types::DependencyGroup;
+use serde_json::json;
+
+fn basic() -> Vec<Pkg> {
+    vec![
+        Pkg::new("a", "1.0.0").dep("b", "^1.0.0"),
+        Pkg::new("a", "1.1.0").dep("b", "^1.0.0"),
+        Pkg::new("a", "2.0.0"),
+        Pkg::new("b", "1.0.0"),
+        Pkg::new("b", "1.2.0"),
+        Pkg::new("tool", "1.0.0").bin("tool", "bin/tool.js"),
+        Pkg::new("@scope/pkg", "3.0.0").dep("b", "1.0.0"),
+    ]
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn fresh_install_resolves_fetches_links_and_saves() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "a": "^1.0.0", "tool": "1" } }),
+    );
+    let s = p.install().await;
+    assert!(!s.noop);
+    assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
+    assert_eq!(p.installed("b").as_deref(), Some("1.2.0"));
+    assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"));
+    assert!(exists(&p.path("node_modules/.bin/tool")), "bin linked");
+    assert_eq!(s.installed_count, 3);
+    let names: Vec<_> = s
+        .added
+        .iter()
+        .map(|a| (a.name.as_str(), a.version.as_str()))
+        .collect();
+    assert_eq!(names, vec![("a", "1.1.0"), ("tool", "1.0.0")]);
+    let lock = p.read("fnpm.lock");
+    assert!(lock.contains("\"a\": [\"a@1.1.0\""), "{lock}");
+    assert!(lock.contains("sha512-"), "integrity recorded: {lock}");
+    assert!(exists(&p.path("node_modules/.fnpm/state")), "state written");
+    assert!(
+        exists(&p.path("node_modules/.fnpm/lock.bin")),
+        "sidecar written"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn second_install_is_a_noop_and_fast() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    reg.clear_seen();
+    let started = std::time::Instant::now();
+    let s = p.install().await;
+    let took = started.elapsed();
+    assert!(s.noop, "{s:?}");
+    assert_eq!(s.checked.unwrap().packages, 3);
+    assert!(reg.seen().is_empty(), "no requests: {:?}", reg.seen());
+    eprintln!("no-op install took {took:?}");
+
+    // Touching package.json without changing it is still a no-op (hash compare).
+    let text = p.read("package.json");
+    p.write("package.json", &text);
+    assert!(p.install().await.noop);
+
+    // Removing a package from node_modules is not.
+    std::fs::remove_dir_all(p.path("node_modules/b")).unwrap();
+    let s = p.install().await;
+    assert!(!s.noop);
+    assert_eq!(p.installed("b").as_deref(), Some("1.2.0"));
+    assert_eq!(
+        reg.manifest_requests(),
+        0,
+        "lockfile reused: {:?}",
+        reg.seen()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn warm_store_install_downloads_nothing() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    let s = p.install().await;
+    assert_eq!(s.installed_count, 2);
+    assert_eq!(reg.seen().len(), 0, "{:?}", reg.seen());
+    assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_lockfile_and_ci() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    // No lockfile: frozen fails.
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.frozen_lockfile = true;
+    let err = p.run(o.clone()).await.unwrap_err();
+    assert_eq!(err.code(), "FROZEN_LOCKFILE", "{err}");
+
+    p.install().await;
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    let lock_before = p.read("fnpm.lock");
+    let (s, _) = p.run(o.clone()).await.unwrap();
+    assert_eq!(s.installed_count, 2);
+    assert_eq!(
+        reg.manifest_requests(),
+        0,
+        "frozen installs read no manifests"
+    );
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+
+    // A changed package.json is a frozen error and changes nothing.
+    p.write(
+        "package.json",
+        "{ \"dependencies\": { \"a\": \"^1.0.0\", \"b\": \"1.0.0\" } }\n",
+    );
+    let err = p.run(o).await.unwrap_err();
+    assert_eq!(err.code(), "FROZEN_LOCKFILE");
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_writes_package_json_like_bun() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "name": "app" }));
+    // Four-space indentation and no trailing newline must survive.
+    p.write("package.json", "{\n    \"name\": \"app\"\n}");
+    let (s, _) = p.run(p.opts(InstallCommand::Add, &["a"])).await.unwrap();
+    assert_eq!(s.requested.len(), 1);
+    assert_eq!(s.requested[0].version, "2.0.0");
+    let text = p.read("package.json");
+    assert_eq!(
+        text,
+        "{\n    \"name\": \"app\",\n    \"dependencies\": {\n        \"a\": \"^2.0.0\"\n    }\n}"
+    );
+    assert_eq!(p.installed("a").as_deref(), Some("2.0.0"));
+
+    let mut o = p.opts(InstallCommand::Add, &["b@1.0.0", "tool"]);
+    o.group = Some(DependencyGroup::Dev);
+    o.exact = true;
+    let (s, _) = p.run(o).await.unwrap();
+    let pj = p.json("package.json");
+    assert_eq!(pj["devDependencies"]["b"], "1.0.0");
+    assert_eq!(pj["devDependencies"]["tool"], "1.0.0");
+    let tool = s.requested.iter().find(|r| r.name == "tool").unwrap();
+    assert_eq!(tool.bins, vec!["tool".to_owned()]);
+
+    // The lockfile matches package.json: a frozen install afterwards succeeds.
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.frozen_lockfile = true;
+    p.run(o).await.expect("lockfile in sync after add");
+
+    // A scoped package with a range keeps the range as typed.
+    p.run(p.opts(InstallCommand::Add, &["@scope/pkg@^3"]))
+        .await
+        .unwrap();
+    assert_eq!(p.json("package.json")["dependencies"]["@scope/pkg"], "^3");
+    assert_eq!(p.installed("@scope/pkg").as_deref(), Some("3.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_creates_package_json_and_only_missing() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({}));
+    std::fs::remove_file(p.path("package.json")).unwrap();
+    p.run(p.opts(InstallCommand::Add, &["b@1.0.0"]))
+        .await
+        .unwrap();
+    assert_eq!(p.json("package.json")["dependencies"]["b"], "1.0.0");
+    let mut o = p.opts(InstallCommand::Add, &["b"]);
+    o.only_missing = true;
+    p.run(o).await.unwrap();
+    assert_eq!(p.json("package.json")["dependencies"]["b"], "1.0.0", "kept");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn remove_drops_dependency_and_files() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "a": "^1.0.0", "tool": "1.0.0" } }),
+    );
+    p.install().await;
+    let (s, _) = p.run(p.opts(InstallCommand::Remove, &["a"])).await.unwrap();
+    assert_eq!(s.removed, vec!["a".to_owned()]);
+    assert!(p.json("package.json")["dependencies"].get("a").is_none());
+    assert!(!exists(&p.path("node_modules/a")));
+    assert!(!exists(&p.path("node_modules/b")), "transitive removed too");
+    assert!(!p.read("fnpm.lock").contains("\"a@"));
+    assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn update_moves_within_range_and_latest() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("b", "1.0.0")]).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "a": "^1.0.0", "b": "~1.0.0" } }),
+    );
+    p.install().await;
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    reg.publish(&Pkg::new("a", "1.5.0"));
+    reg.publish(&Pkg::new("a", "2.0.0"));
+    reg.publish(&Pkg::new("b", "1.0.3"));
+
+    // A plain install keeps the lockfile.
+    p.install().await;
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+
+    let (s, _) = p.run(p.opts(InstallCommand::Update, &[])).await.unwrap();
+    assert_eq!(p.installed("a").as_deref(), Some("1.5.0"));
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.3"));
+    let pj = p.json("package.json");
+    assert_eq!(pj["dependencies"]["a"], "^1.5.0");
+    assert_eq!(pj["dependencies"]["b"], "~1.0.3");
+    assert!(
+        s.updated
+            .iter()
+            .any(|u| u.name == "a" && u.from == "1.0.0" && u.to == "1.5.0"),
+        "{s:?}"
+    );
+
+    let mut o = p.opts(InstallCommand::Update, &["a"]);
+    o.latest = true;
+    p.run(o).await.unwrap();
+    assert_eq!(p.installed("a").as_deref(), Some("2.0.0"));
+    assert_eq!(p.json("package.json")["dependencies"]["a"], "^2.0.0");
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.3"), "untouched");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn workspaces_link_members_and_install_their_deps() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"], "dependencies": { "lib": "workspace:*" } }),
+    );
+    p.write(
+        "packages/lib/package.json",
+        &json!({ "name": "lib", "version": "0.1.0", "dependencies": { "a": "1.0.0" } }).to_string(),
+    );
+    p.write("packages/lib/index.js", "module.exports = 1;\n");
+    let s = p.install().await;
+    assert!(s.installed_count >= 2, "{s:?}");
+    let lib = std::fs::canonicalize(p.path("node_modules/lib")).unwrap();
+    assert_eq!(lib, std::fs::canonicalize(p.path("packages/lib")).unwrap());
+    // `a` is reachable from the member (isolated: through its own node_modules).
+    let a = p.path("packages/lib/node_modules/a/package.json");
+    let hoisted = p.path("node_modules/a/package.json");
+    assert!(a.exists() || hoisted.exists(), "a installed for lib");
+    let lock = p.read("fnpm.lock");
+    assert!(lock.contains("\"packages/lib\""), "{lock}");
+    assert!(p.install().await.noop);
+
+    // `add` inside the member edits the member's package.json.
+    let mut o = p.opts(InstallCommand::Add, &["b@1.0.0"]);
+    o.pm.cwd = p.path("packages/lib");
+    p.run(o).await.unwrap();
+    assert_eq!(
+        p.json("packages/lib/package.json")["dependencies"]["b"],
+        "1.0.0"
+    );
+    assert!(p.json("package.json")["dependencies"].get("b").is_none());
+
+    // --filter on add.
+    let mut o = p.opts(InstallCommand::Add, &["tool"]);
+    o.filter = vec!["lib".into()];
+    p.run(o).await.unwrap();
+    assert_eq!(
+        p.json("packages/lib/package.json")["dependencies"]["tool"],
+        "^1.0.0"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn migrates_package_lock_keeping_versions() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "a": "^1.0.0" } }),
+    );
+    let lock = json!({
+        "name": "app",
+        "lockfileVersion": 3,
+        "requires": true,
+        "packages": {
+            "": { "name": "app", "dependencies": { "a": "^1.0.0" } },
+            "node_modules/a": {
+                "version": "1.0.0",
+                "resolved": reg.tarball_url("a", "1.0.0"),
+                "integrity": reg.integrity("a", "1.0.0"),
+                "dependencies": { "b": "^1.0.0" }
+            },
+            "node_modules/b": {
+                "version": "1.0.0",
+                "resolved": reg.tarball_url("b", "1.0.0"),
+                "integrity": reg.integrity("b", "1.0.0")
+            }
+        }
+    });
+    p.write(
+        "package-lock.json",
+        &serde_json::to_string_pretty(&lock).unwrap(),
+    );
+    p.install().await;
+    assert_eq!(
+        p.installed("a").as_deref(),
+        Some("1.0.0"),
+        "migrated versions kept"
+    );
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    assert!(p.read("fnpm.lock").contains("a@1.0.0"));
+    assert!(
+        exists(&p.path("package-lock.json")),
+        "foreign lockfile left in place"
+    );
+    assert_eq!(reg.manifest_requests(), 0, "{:?}", reg.seen());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn broken_foreign_lockfile_falls_through_to_the_next() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "b": "1.0.0" } }),
+    );
+    p.write("package-lock.json", "{ not json");
+    p.write(
+        "yarn.lock",
+        &format!(
+            "# yarn lockfile v1\n\n\nb@1.0.0:\n  version \"1.0.0\"\n  resolved \"{}\"\n  integrity {}\n",
+            reg.tarball_url("b", "1.0.0"),
+            reg.integrity("b", "1.0.0")
+        ),
+    );
+    let (_, events) = p.run(p.opts(InstallCommand::Install, &[])).await.unwrap();
+    assert!(
+        events.iter().any(|e| matches!(e, fnpm_types::Event::Warn { message, .. } if message.contains("package-lock.json") && message.contains("yarn.lock"))),
+        "{events:?}"
+    );
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn lockfile_only_and_dry_run() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.dry_run = true;
+    p.run(o).await.unwrap();
+    assert!(!exists(&p.path("fnpm.lock")));
+    assert!(!exists(&p.path("node_modules")));
+
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.lockfile_only = true;
+    p.run(o).await.unwrap();
+    assert!(exists(&p.path("fnpm.lock")));
+    assert!(!exists(&p.path("node_modules/a")));
+    assert_eq!(reg.tarball_requests(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn production_omits_dev_dependencies() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "b": "1.0.0" }, "devDependencies": { "tool": "1.0.0" } }),
+    );
+    p.install().await;
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.production = true;
+    p.run(o).await.unwrap();
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    assert!(!exists(&p.path("node_modules/tool")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn scripts_root_runs_untrusted_is_blocked() {
+    let reg = Registry::start(&[
+        Pkg::new("native", "1.0.0").script("postinstall", "echo built > built.txt")
+    ])
+    .await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "native": "1.0.0" }, "scripts": { "postinstall": "echo ok > root-postinstall.txt" } }),
+    );
+    let s = p.install().await;
+    assert_eq!(s.blocked_scripts, 1, "{s:?}");
+    assert!(exists(&p.path("root-postinstall.txt")), "root scripts run");
+    assert!(!exists(&p.path("node_modules/native/built.txt")));
+
+    // Trusted by package.json: runs.
+    p.write(
+        "package.json",
+        &json!({ "dependencies": { "native": "1.0.0" }, "trustedDependencies": ["native"] })
+            .to_string(),
+    );
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let s = p.install().await;
+    assert_eq!(s.blocked_scripts, 0);
+    assert!(exists(&p.path("node_modules/native/built.txt")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failing_required_script_is_script_failed() {
+    let reg = Registry::start(&[Pkg::new("bad", "1.0.0").script("postinstall", "exit 3")]).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "bad": "1.0.0" }, "trustedDependencies": ["bad"] }),
+    );
+    let err = p
+        .run(p.opts(InstallCommand::Install, &[]))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "SCRIPT_FAILED", "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn missing_package_is_not_found() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "nope": "1.0.0" } }));
+    let err = p
+        .run(p.opts(InstallCommand::Install, &[]))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "NOT_FOUND", "{err}");
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^9" } }));
+    let err = p
+        .run(p.opts(InstallCommand::Install, &[]))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "NO_MATCHING_VERSION", "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn global_add_links_bins_into_the_global_bin_dir() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({}));
+    let mut o = p.opts(InstallCommand::Add, &["tool"]);
+    o.pm.global = true;
+    p.run(o).await.unwrap();
+    let global = p.tmp.path().join("global");
+    let pj: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(global.join("package.json")).unwrap())
+            .unwrap();
+    assert_eq!(pj["dependencies"]["tool"], "^1.0.0");
+    assert!(exists(&p.tmp.path().join("global-bin/tool")), "global bin");
+    assert!(!exists(&p.path("node_modules")), "project untouched");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn optional_platform_mismatch_is_skipped() {
+    let reg = Registry::start(&[
+        Pkg::new("host", "1.0.0").optional("only-aix", "1.0.0"),
+        Pkg::new("only-aix", "1.0.0").os(&["aix"]),
+    ])
+    .await;
+    let p = Project::new(&reg, json!({ "dependencies": { "host": "1.0.0" } }));
+    p.install().await;
+    assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
+    assert!(!exists(&p.path("node_modules/only-aix")));
+    assert!(
+        p.read("fnpm.lock").contains("only-aix"),
+        "kept in the lockfile"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn local_folder_dependency() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "local": "file:./vendor/local" } }),
+    );
+    p.write(
+        "vendor/local/package.json",
+        &json!({ "name": "local", "version": "0.0.1", "dependencies": { "b": "1.0.0" } })
+            .to_string(),
+    );
+    p.write("vendor/local/index.js", "module.exports = 2;\n");
+    p.install().await;
+    assert_eq!(p.installed("local").as_deref(), Some("0.0.1"));
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+}
