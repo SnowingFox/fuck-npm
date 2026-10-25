@@ -178,6 +178,14 @@ pub trait PackageSource: Sync {
         let _ = id;
         None
     }
+
+    /// The hash of the patch currently applied to `id` (`patchedDependencies`), if any. The
+    /// linker writes it to [`verify::PATCH_TAG_FILE`] and reinstalls a package whose tag
+    /// differs, so an edited patch file is applied again (bun `.bun-patch-tag`).
+    fn patch_tag(&self, id: PackageId) -> Option<String> {
+        let _ = id;
+        None
+    }
 }
 
 /// `items` ordered by the [`PackageSource::size_hint`] of their package, largest first
@@ -209,6 +217,9 @@ pub struct LinkOptions {
     pub threads: usize,
     /// Use `<store>/links` for eligible isolated entries.
     pub global_store: bool,
+    /// A package without a patch must also have no [`verify::PATCH_TAG_FILE`] (set when the
+    /// previous install had patches: a removed patch reinstalls the package unpatched).
+    pub check_unpatched: bool,
 }
 
 impl Default for LinkOptions {
@@ -219,6 +230,7 @@ impl Default for LinkOptions {
             fresh: false,
             threads: fnpm_types::available_parallelism().min(8),
             global_store: true,
+            check_unpatched: false,
         }
     }
 }
@@ -477,6 +489,16 @@ impl LinkCx<'_> {
     }
 
     /// Progress: one more package handled.
+    /// The installed copy at `dir` carries the patch `id` should have (none, or the current
+    /// patch hash).
+    pub fn patch_ok(&self, id: PackageId, dir: &Path) -> bool {
+        let tag = dir.join(verify::PATCH_TAG_FILE);
+        match self.source.patch_tag(id) {
+            Some(t) => std::fs::read(&tag).is_ok_and(|b| b == t.as_bytes()),
+            None => !self.opts.check_unpatched || std::fs::symlink_metadata(&tag).is_err(),
+        }
+    }
+
     pub fn tick(&self) {
         let done = self.done.fetch_add(1, Ordering::Relaxed) + 1;
         if done.is_multiple_of(64) && self.events.enabled() {
@@ -500,6 +522,10 @@ impl LinkCx<'_> {
                 package: self.label(id),
                 source,
             })?;
+        if let Some(tag) = self.source.patch_tag(id) {
+            let p = dest.join(verify::PATCH_TAG_FILE);
+            write_new_file(&p, tag.as_bytes()).map_err(|source| Error::Io { path: p, source })?;
+        }
         if let Some(pkg) = self.graph.get(id)
             && let Some(tag) = verify::tag_for(&pkg.resolution)
         {

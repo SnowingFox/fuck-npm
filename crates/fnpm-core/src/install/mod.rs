@@ -944,6 +944,10 @@ async fn link(
             force: config.force,
             fresh: !root.join("node_modules").exists(),
             global_store: config.global_store,
+            check_unpatched: lock
+                .graph
+                .as_ref()
+                .is_some_and(|g| !g.patched_dependencies.is_empty()),
             ..LinkOptions::default()
         };
         let (f, ev, dir) = (fetcher.clone(), events.clone(), root.clone());

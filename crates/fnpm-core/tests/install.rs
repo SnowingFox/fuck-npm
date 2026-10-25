@@ -673,3 +673,77 @@ async fn edited_patch_file_is_not_a_noop() {
         "an edited patch file must reinstall"
     );
 }
+
+fn patch_for(text: &str) -> String {
+    format!(
+        "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-module.exports = \"b@1.0.0\";\n+module.exports = \"{text}\";\n"
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patched_dependency_follows_the_patch_file() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "b": "1.0.0" },
+            "patchedDependencies": { "b@1.0.0": "patches/b@1.0.0.patch" }
+        }),
+    );
+    p.write("patches/b@1.0.0.patch", &patch_for("one"));
+    p.install().await;
+    assert_eq!(
+        p.read("node_modules/b/index.js"),
+        "module.exports = \"one\";\n"
+    );
+    assert!(p.install().await.noop);
+
+    p.write("patches/b@1.0.0.patch", &patch_for("two"));
+    let s = p.install().await;
+    assert!(!s.noop);
+    assert_eq!(
+        p.read("node_modules/b/index.js"),
+        "module.exports = \"two\";\n",
+        "the edited patch is applied"
+    );
+
+    // Dropping the patch reinstalls the package unpatched.
+    p.write(
+        "package.json",
+        &json!({ "dependencies": { "b": "1.0.0" } }).to_string(),
+    );
+    p.install().await;
+    assert_eq!(
+        p.read("node_modules/b/index.js"),
+        "module.exports = \"b@1.0.0\";\n"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patched_dependency_follows_the_patch_file_isolated() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "b": "1.0.0" },
+            "patchedDependencies": { "b@1.0.0": "patches/b@1.0.0.patch" }
+        }),
+    );
+    let install = || {
+        let mut o = p.opts(InstallCommand::Install, &[]);
+        o.pm.linker = Some(fnpm_config::LinkerSetting::Isolated);
+        p.run(o)
+    };
+    p.write("patches/b@1.0.0.patch", &patch_for("one"));
+    install().await.unwrap();
+    assert_eq!(
+        p.read("node_modules/b/index.js"),
+        "module.exports = \"one\";\n"
+    );
+    p.write("patches/b@1.0.0.patch", &patch_for("two"));
+    install().await.unwrap();
+    assert_eq!(
+        p.read("node_modules/b/index.js"),
+        "module.exports = \"two\";\n"
+    );
+}

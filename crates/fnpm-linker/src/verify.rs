@@ -13,6 +13,9 @@ use fnpm_types::Resolution;
 /// The marker file written into git, GitHub and tarball installs (bun `.bun-tag`).
 pub const TAG_FILE: &str = ".fnpm-tag";
 
+/// The hash of the patch applied to a patched install (bun `.bun-patch-tag`).
+pub const PATCH_TAG_FILE: &str = ".fnpm-patch-tag";
+
 /// What [`verify`] compares against.
 pub enum Expected<'a> {
     /// `package.json` must have this name and version.

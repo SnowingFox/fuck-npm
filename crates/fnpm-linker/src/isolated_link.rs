@@ -444,8 +444,11 @@ fn is_installed(cx: &LinkCx<'_>, id: PackageId, pkg_dir: &Path) -> bool {
             ),
             Err(_) => false,
         },
-        Resolution::Npm { .. } => pkg_dir.join("package.json").exists(),
-        r => verify::verify(pkg_dir, &verify::expected_for(&pkg.name, &pkg.version, r)),
+        Resolution::Npm { .. } => pkg_dir.join("package.json").exists() && cx.patch_ok(id, pkg_dir),
+        r => {
+            verify::verify(pkg_dir, &verify::expected_for(&pkg.name, &pkg.version, r))
+                && cx.patch_ok(id, pkg_dir)
+        }
     }
 }
 

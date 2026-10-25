@@ -378,6 +378,7 @@ fn place_node<'s>(
                         },
                         r => {
                             verify::verify(dest, &verify::expected_for(&pkg.name, &pkg.version, r))
+                                && cx.patch_ok(node.package, dest)
                         }
                     };
                     if ok && fsutil::kind(dest) == Kind::Dir {

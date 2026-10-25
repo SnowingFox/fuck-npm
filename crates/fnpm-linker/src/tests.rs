@@ -776,6 +776,7 @@ fn lopts(global: bool) -> LinkOptions {
         fresh: false,
         threads: 4,
         global_store: global,
+        check_unpatched: false,
     }
 }
 

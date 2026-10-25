@@ -555,4 +555,18 @@ impl fnpm_linker::PackageSource for GraphSource<'_> {
         let pkg = self.graph.get(id)?;
         self.fetcher.existing(pkg)?.files_if_ready()
     }
+
+    fn patch_tag(&self, id: PackageId) -> Option<String> {
+        if self.graph.patched_dependencies.is_empty() {
+            return None;
+        }
+        let pkg = self.graph.get(id)?;
+        let patch = self
+            .graph
+            .patched_dependencies
+            .get(&format!("{}@{}", pkg.name, pkg.version))?;
+        // A patch file that cannot be read fails in `wait`; no tag then.
+        let (hash, _) = read_patch(&self.fetcher.inner.root_dir, patch).ok()?;
+        Some(format!("{hash:016x}"))
+    }
 }
