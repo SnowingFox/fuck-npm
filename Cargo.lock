@@ -534,6 +534,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnpm-cli"
+version = "0.1.0"
+dependencies = [
+ "fnpm-config",
+ "fnpm-core",
+ "fnpm-types",
+ "mimalloc",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "fnpm-config"
 version = "0.1.0"
 dependencies = [

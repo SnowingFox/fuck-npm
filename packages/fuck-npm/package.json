@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "build:spec": "node --experimental-strip-types --no-warnings scripts/build-spec.ts",
     "start": "node ./src/bin/fnpm.ts",
     "test": "vitest run",
     "test:watch": "vitest",
