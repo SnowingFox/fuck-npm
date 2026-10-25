@@ -21,9 +21,10 @@
 // mirror. Checkouts and logs live in $FNPM_E2E_DIR (see README.md). Results:
 // tests/e2e/results/<date>.{md,json} (--out <stem> to change).
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
 import {
   type CorpusEntry,
   DEFAULT_MIRROR,
@@ -217,10 +218,20 @@ function trimList(xs: string[], n = 40): string[] {
   return xs.length > n ? [...xs.slice(0, n), `... +${xs.length - n} more`] : xs;
 }
 
+function scrub(s: string): string {
+  for (const [path, label] of [[workRoot(), "<e2e>"], [REPO_ROOT, "<repo>"]]) {
+    try { s = s.replaceAll(realpathSync(path), label); } catch {}
+    s = s.replaceAll(path, label);
+  }
+  return s;
+}
+
 function tailOf(file: string, n = 3): string {
   try {
     const lines = readFileSync(file, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-    return lines.slice(-n).join(" | ").slice(0, 400);
+    const firstError = lines.find((l) => /Cannot find|\bError:|\berror:|ERR!/.test(l));
+    const tail = lines.slice(-n).join(" | ");
+    return [firstError && !tail.includes(firstError) ? firstError : "", tail].filter(Boolean).join(" | ").slice(0, 600);
   } catch {
     return "";
   }
@@ -252,7 +263,10 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
   const fail = (m: string) => res.failures.push(m);
   const finish = () => {
     if (entry.fnpm?.known) res.known = entry.fnpm.known;
-    if (res.failures.length) res.status = entry.fnpm?.known ? "KNOWN" : "FAIL";
+    if (res.failures.length) {
+      const expected = entry.fnpm?.knownFailures ?? [];
+      res.status = entry.fnpm?.known && res.failures.every((f) => expected.some((p) => new RegExp(p).test(f))) ? "KNOWN" : "FAIL";
+    }
     return res;
   };
   if (!base?.install?.ok) {
@@ -398,7 +412,7 @@ function sec(ms: number | undefined): string {
   return ms === undefined ? "-" : ms >= 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 1000).toFixed(2)}s`;
 }
 
-function report(results: Result[], fnpmVersion: string, commit: string, date: string): string {
+export function report(results: Result[], fnpmVersion: string, commit: string, date: string): string {
   const pass = results.filter((r) => r.status === "PASS").length;
   const known = results.filter((r) => r.status === "KNOWN").length;
   const lines = [
@@ -448,7 +462,9 @@ async function main(): Promise<void> {
   if (!(await mirrorUp(mirror))) throw new Error(`registry mirror ${mirror} is down (node bench/mirror.ts start)`);
   mkdirSync(join(workRoot(), "_logs"), { recursive: true });
   const version = sh(`${shq(FNPM)} --version`, REPO_ROOT).stdout.trim();
-  const commit = sh("git rev-parse --short HEAD", REPO_ROOT).stdout.trim();
+  const headCommit = sh("git rev-parse --short HEAD", REPO_ROOT).stdout.trim();
+  const dirty = sh("git diff --quiet -- crates tests/e2e/*.ts tests/e2e/corpus.json", REPO_ROOT).status !== 0;
+  const commit = `${headCommit}${dirty ? "+dirty" : ""}`;
   const date = new Date().toISOString().slice(0, 10);
   const stem = args.out ?? join(E2E_DIR, "results", date);
   mkdirSync(dirname(stem), { recursive: true });
@@ -485,14 +501,17 @@ async function main(): Promise<void> {
         vsBun: x.diff.vsBun && { ...x.diff.vsBun, missing: trimList(x.diff.vsBun.missing), extra: trimList(x.diff.vsBun.extra) },
       },
     }));
-    writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, date, results: compact }, null, 1) + "\n");
-    writeFileSync(`${stem}.md`, report(results, version, commit, date) + "\n");
+    writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, date, results: compact }, (_key, value) => typeof value === "string" ? scrub(value) : value, 1) + "\n");
+    writeFileSync(`${stem}.md`, scrub(report(results, version, commit, date)) + "\n");
   }
   rmSync(join(workRoot(), "_fnpm"), { recursive: true, force: true });
   log(`summary: ${results.map((r) => `${r.name}=${r.status}`).join(" ")}`);
+  if (results.some((r) => r.status === "FAIL")) process.exitCode = 1;
 }
 
-main().catch((e) => {
-  log(String(e?.stack ?? e));
-  process.exit(1);
-});
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    log(String(e?.stack ?? e));
+    process.exit(1);
+  });
+}

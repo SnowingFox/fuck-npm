@@ -30,8 +30,9 @@ Checkouts go to `$FNPM_E2E_DIR` (default `~/.cache/fnpm-e2e`), never into the re
 | `bins` | per workspace dir: `node_modules/.bin` entries |
 | `verify` | verify command result |
 
-`packages` and `bins` are linker independent and are the primary comparison. `importers` reflects
-the PM's linker (hoisted vs isolated) and is compared only where fnpm uses the same layout.
+`packages` compares unique installed versions across layouts. Bin placement and importer entries
+reflect the PM's linker (hoisted vs isolated); bins and top-level placement are compared only
+where fnpm uses the same layout.
 
 ## fnpm runs
 
@@ -56,5 +57,7 @@ Per project, one at a time:
 A difference from the baseline that bun shows too is reported as "same as bun" (parity) instead
 of a failure; fnpm's package set is also diffed against bun's. Dependency lifecycle scripts are
 only listed: fnpm, like bun, runs them for trusted packages only. `fnpm.allow` (regexes) accepts
-other documented differences and `fnpm.known` marks a genuine incompatibility (status KNOWN).
+other documented differences. `fnpm.known` describes a genuine incompatibility; status KNOWN
+requires every failure to match a `fnpm.knownFailures` regex. An unexpected failure remains FAIL.
+The runner exits 1 if any project is FAIL. Results redact local checkout paths.
 Results: `tests/e2e/results/<date>.md` (and `.json`); logs in `$FNPM_E2E_DIR/_logs/<name>.fnpm.*`.

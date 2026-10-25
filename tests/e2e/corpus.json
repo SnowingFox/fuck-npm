@@ -122,7 +122,10 @@
       "verifyTimeoutSec": 600,
       "notes": "Six unitCases suites fail upstream on this machine with yarn's own install too (printer snapshots, BinCompileCache, LoaderRunner, ProfilingPlugin, css-data); they are excluded from verify.",
       "fnpm": {
-        "known": "bun parity: the hoisted tree puts ajv-keywords@5 at the top level next to ajv@6 (its ajv@8 peer stays nested under schema-utils), so 15 unitCases suites fail with \"Cannot find module ajv/dist/compile/codegen\". bun 1.4.4 builds the same tree from this yarn.lock."
+        "known": "bun parity: the hoisted tree puts ajv-keywords@5 at the top level next to ajv@6 (its ajv@8 peer stays nested under schema-utils), so 15 unitCases suites fail with \"Cannot find module ajv/dist/compile/codegen\". bun 1.4.4 builds the same tree from this yarn.lock.",
+        "knownFailures": [
+          "^verify exited 1:.*ajv/dist/compile/codegen"
+        ]
       }
     },
     {
@@ -141,10 +144,10 @@
         "esbuild"
       ],
       "install": "yarn install --immutable",
-      "verify": "yarn jest tests/format/js/arrow-function",
+      "verify": "yarn jest tests/format/js/arrow-function --maxWorkers=2",
       "baseline": "tests/e2e/baselines/prettier.json",
       "fnpm": {
-        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" jest tests/format/js/arrow-function"
+        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" jest tests/format/js/arrow-function --maxWorkers=2"
       },
       "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
     },
@@ -192,7 +195,10 @@
       "baseline": "tests/e2e/baselines/babel.json",
       "fnpm": {
         "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" gulp build-dev && PATH=\"$PWD/node_modules/.bin:$PATH\" jest packages/babel-parser",
-        "known": "bun parity: the yarn.lock migration is refused (the root pins the @babel/cli workspace to a registry package), and the fallback resolve fails on yarn catalogs in .yarnrc.yml (catalog: entries such as @cspotcode/source-map-support). bun 1.4.4 fails the same way."
+        "known": "bun parity: the yarn.lock migration is refused (the root pins the @babel/cli workspace to a registry package), and the fallback resolve fails on yarn catalogs in .yarnrc.yml (catalog: entries such as @cspotcode/source-map-support). bun 1.4.4 fails the same way.",
+        "knownFailures": [
+          "^install exited 1:.*catalog: has no entry"
+        ]
       },
       "verifyTimeoutSec": 600,
       "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
@@ -217,7 +223,10 @@
       "verify": "pnpm vitest run --project unit packages/shared packages/reactivity",
       "baseline": "tests/e2e/baselines/vue-core.json",
       "fnpm": {
-        "known": "blocked on fnpm x: the root preinstall is `npx only-allow pnpm`, which fnpm (like bun) runs as `fnpm x`; x/dlx return NOT_IMPLEMENTED on main (implemented on feat/cmds-exec). only-allow would then reject fnpm anyway, as it rejects bun."
+        "known": "blocked on fnpm x: the root preinstall is `npx only-allow pnpm`, which fnpm (like bun) runs as `fnpm x`; x/dlx return NOT_IMPLEMENTED on main (implemented on feat/cmds-exec). only-allow would then reject fnpm anyway, as it rejects bun.",
+        "knownFailures": [
+          "^install exited 1:.*fnpm x"
+        ]
       }
     },
     {
@@ -245,8 +254,12 @@
       "verify": "pnpm turbo --filter=@trpc/server build",
       "baseline": "tests/e2e/baselines/trpc.json",
       "fnpm": {
-        "known": "blocked on fnpm run through the JS CLI: a workspace postinstall runs npm-run-all, which calls `fnpm run`; on main the TS CLI needs the napi binding and its children's output is lost (fixed on feat/cmds-exec)."
-      }
+        "known": "blocked on fnpm run through the JS CLI: a workspace postinstall runs npm-run-all, which calls `fnpm run`; on main the TS CLI needs the napi binding and its children's output is lost (fixed on feat/cmds-exec).",
+        "knownFailures": [
+          "^install exited 1:.*fnpm run"
+        ]
+      },
+      "notes": "The latest fnpm run also exposed @nuxt/schema importing undeclared scule: global-store packages cannot see the project hidden hoist. This remains FAIL rather than a known fnpm run blocker."
     },
     {
       "name": "create-t3-turbo",
@@ -270,7 +283,8 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm -F @acme/validators -F @acme/db typecheck",
-      "baseline": "tests/e2e/baselines/create-t3-turbo.json"
+      "baseline": "tests/e2e/baselines/create-t3-turbo.json",
+      "notes": "The fnpm comparison still reports an extra @expo/metro-runtime@6.1.2 (the pnpm lock binds expo-router peer ^6.1.2 to 6.1.1) and a cold/warm instance-count difference. Verification passes; these remain FAIL."
     },
     {
       "name": "date-fns",
@@ -289,7 +303,10 @@
       "verify": "cd pkgs/core && pnpm vitest run --project main src/addDays src/format src/parse",
       "baseline": "tests/e2e/baselines/date-fns.json",
       "fnpm": {
-        "known": "bun parity: pnpm-lock.yaml resolves @jsr/* packages from npm.jsr.io, which pnpm uses by default for the @jsr scope. fnpm and bun 1.4.4 fetch them from the configured registry (404). Workaround: @jsr:registry=https://npm.jsr.io/ in .npmrc."
+        "known": "bun parity: pnpm-lock.yaml resolves @jsr/* packages from npm.jsr.io, which pnpm uses by default for the @jsr scope. fnpm and bun 1.4.4 fetch them from the configured registry (404). Workaround: @jsr:registry=https://npm.jsr.io/ in .npmrc.",
+        "knownFailures": [
+          "^install exited 1:.*@jsr/"
+        ]
       }
     },
     {
@@ -313,7 +330,10 @@
       "verify": "pnpm --filter @vitest/utils --filter @vitest/pretty-format build",
       "baseline": "tests/e2e/baselines/vitest.json",
       "fnpm": {
-        "known": "bun parity: two workspaces share the name @vitest/test-integration-dts-exact-optional-property; fnpm and bun 1.4.4 both refuse duplicate workspace names (pnpm allows them)."
+        "known": "bun parity: two workspaces share the name @vitest/test-integration-dts-exact-optional-property; fnpm and bun 1.4.4 both refuse duplicate workspace names (pnpm allows them).",
+        "knownFailures": [
+          "^install exited 1:.*Workspace name.*already exists"
+        ]
       }
     },
     {
@@ -331,7 +351,11 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm vp test --run --project main --coverage.enabled=false src/hono.test.ts",
-      "baseline": "tests/e2e/baselines/hono.json"
+      "baseline": "tests/e2e/baselines/hono.json",
+      "fnpm": {
+        "verify": "VP_SKIP_INSTALL=1 node node_modules/vite-plus/bin/vp test --run --project main --coverage.enabled=false src/hono.test.ts"
+      },
+      "notes": "fnpm verification sets VP_SKIP_INSTALL so Vite+ does not replace node_modules with a pnpm install."
     },
     {
       "name": "elysia",
@@ -366,7 +390,8 @@
       ],
       "install": "bun install --frozen-lockfile",
       "verify": "bun run build && bunx vitest run --silent=passed-only",
-      "baseline": "tests/e2e/baselines/t3-env.json"
+      "baseline": "tests/e2e/baselines/t3-env.json",
+      "notes": "The source bun.lock has older workspace versions, so install partially resolves it. The remaining fnpm differences involve locked ioredis@5.4.1 outside peer range ^5.4.2 and React 18 peer copies. Verification passes; these remain FAIL."
     },
     {
       "name": "opencode",

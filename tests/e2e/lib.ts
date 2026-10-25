@@ -40,8 +40,9 @@ export interface CorpusEntry {
   fnpm?: {
     /** Verify command when the project's own one cannot run on a tree it did not install. */
     verify?: string;
-    /** A documented genuine incompatibility: failures are reported as KNOWN instead of FAIL. */
+    /** A documented genuine incompatibility, restricted to knownFailures signatures. */
     known?: string;
+    knownFailures?: string[];
     /** Regexes of accepted baseline differences, each with its reason in `notes`. */
     allow?: { missing?: string[]; extra?: string[]; declared?: string[]; bins?: string[]; scripts?: string[] };
   };
