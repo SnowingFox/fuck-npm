@@ -76,7 +76,12 @@ fn parse_from(source: &Value, catalogs: &mut Catalogs) -> Result<bool> {
         found = true;
         if let Some(object) = named.as_object() {
             for (catalog, group) in object {
-                let entry = catalogs.named.entry(catalog.clone()).or_default();
+                // bun `get_or_put_group`: an empty group name is the default catalog.
+                let entry = if catalog.is_empty() {
+                    &mut catalogs.default
+                } else {
+                    catalogs.named.entry(catalog.clone()).or_default()
+                };
                 parse_group(group, entry)?;
             }
         }
@@ -151,6 +156,13 @@ mod tests {
         .unwrap();
         assert_eq!(lookup(&c, "", "a"), Some("3"));
         assert!(same_name("", "default") && same_name("x", "x") && !same_name("x", ""));
+        let c = parse_catalogs(
+            &json!({"workspaces": {"catalogs": {"": {"e": "4"}}}}),
+            &Catalogs::default(),
+        )
+        .unwrap();
+        assert_eq!(lookup(&c, "", "e"), Some("4"));
+        assert!(c.named.is_empty());
     }
 
     #[test]
