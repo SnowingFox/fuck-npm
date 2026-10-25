@@ -263,11 +263,17 @@ impl<'a> PatchFile<'a> {
         Ok(())
     }
 
-    /// Every path the patch reads or writes.
+    /// Every path the patch reads or writes, normalised the way the store indexes files
+    /// (`/`-separated, no empty or `.` components), so `./lib/a.js` matches `lib/a.js`.
     pub fn touched_paths(&self) -> HashSet<String> {
         let mut out = HashSet::new();
         let mut add = |p: &[u8]| {
-            out.insert(String::from_utf8_lossy(p).replace('\\', "/"));
+            let text = String::from_utf8_lossy(p);
+            let parts: Vec<&str> = text
+                .split(|c| c == '/' || (cfg!(windows) && c == '\\'))
+                .filter(|c| !c.is_empty() && *c != ".")
+                .collect();
+            out.insert(parts.join("/"));
         };
         for op in &self.ops {
             match op {

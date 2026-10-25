@@ -83,7 +83,8 @@ pub fn private_cache_dir(
             continue;
         }
         return Some(DlxDir {
-            path: root.join(tree_name),
+            // `Path::join` with an absolute name would replace the root; bun joins strings.
+            path: root.join(tree_name.trim_start_matches('/')),
             shared,
         });
     }
@@ -212,6 +213,26 @@ mod tests {
         });
         assert!(dots.starts_with("pkg@folder@"), "{dots}");
         assert!(!dots.contains(".."));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_tree_names_stay_in_the_private_root() {
+        let t = tempfile::tempdir().unwrap();
+        let cache = t.path().join("cache");
+        let name = tree_name(&TreeOptions {
+            name: "/etc",
+            version: "1.0.0",
+            version_tag: "npm",
+            bin_name: "etc",
+            ..Default::default()
+        });
+        let d = private_cache_dir(Some(&cache), t.path(), &name, true).unwrap();
+        assert!(
+            d.path.starts_with(cache.join(cache_root_name())),
+            "{:?}",
+            d.path
+        );
     }
 
     #[cfg(unix)]

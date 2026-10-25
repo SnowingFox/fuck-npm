@@ -1539,3 +1539,173 @@ fn perf_components() {
         eprintln!("ring sha256: {:.0} MiB/s", 40.0 / s.elapsed().as_secs_f64());
     }
 }
+
+fn count_blobs(store: &Store) -> usize {
+    std::fs::read_dir(store.files_dir())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| std::fs::read_dir(e.path()).unwrap().count())
+        .sum()
+}
+
+#[test]
+fn hostile_names_and_versions_stay_inside_pkgs() {
+    let (_t, store) = store();
+    let tgz = fixture("left-pad-1.3.0.tgz");
+    for (name, version) in [
+        ("evil", "1/../../../../escape"),
+        ("evil", "..\\..\\..\\escape"),
+        ("@s/../../x", "1.0.0"),
+        ("a:b", "1.0.0\0<>|?*\"\n"),
+    ] {
+        let key = key_for(name, version, &tgz);
+        let dir_name = key.dir_name();
+        assert!(
+            !dir_name.contains(['/', '\\', '\0', ':', '\n']),
+            "{dir_name:?}"
+        );
+        let dir = store.package_dir(&key);
+        assert_eq!(dir.parent().unwrap(), store.pkgs_dir());
+        let entry = store
+            .import_tarball_bytes(&key, &tgz, ImportOptions::default())
+            .unwrap();
+        assert!(entry.root.starts_with(store.pkgs_dir()));
+        assert!(store.get(&key).unwrap().is_some());
+    }
+    // Ordinary names keep their documented form.
+    let key = key_for("@types/node", "20.1.0+build.1", &tgz);
+    assert!(key.dir_name().starts_with("@types+node@20.1.0+build.1-"));
+    // Nothing was created next to `pkgs/`.
+    let mut top: Vec<String> = std::fs::read_dir(store.root())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    top.sort();
+    assert_eq!(top, ["files", "links", "pkgs", "tmp"]);
+}
+
+#[test]
+fn buffered_integrity_failure_wins_over_a_broken_archive() {
+    let (_t, store) = store();
+    let key = key_for("x", "1.0.0", b"the real tarball");
+    for body in [
+        &b"not a tarball at all, definitely not"[..],
+        &gzip(b"garbage")[..],
+    ] {
+        let err = store
+            .import_tarball_bytes(&key, body, ImportOptions::default())
+            .unwrap_err();
+        assert!(matches!(err, Error::Integrity { .. }), "{err}");
+        // With --no-verify the archive error is what is left.
+        let err = store
+            .import_tarball_bytes(&key, body, ImportOptions { skip_verify: true })
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidTarball { .. }), "{err}");
+    }
+    assert!(tmp_is_empty(&store));
+}
+
+fn pack_record(out: &mut Vec<u8>, kind: u8, path: &str, mode: u32, size: u64) {
+    out.push(kind);
+    out.extend_from_slice(&(path.len() as u32).to_le_bytes());
+    out.extend_from_slice(path.as_bytes());
+    out.extend_from_slice(&mode.to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes());
+}
+
+#[test]
+fn cache_unpack_package_shorter_than_its_integrity_record_is_refused() {
+    let (t, store) = store();
+    let (a, _) = import_fixture(&store, "left-pad", "1.3.0");
+    let sri = a.integrity.to_sri();
+    let mut pack = b"FNPMCACHEPACKv1\n".to_vec();
+    // The package claims an empty body, but its integrity record follows anyway.
+    pack_record(&mut pack, 1, &a.dir_name(), 0, 0);
+    pack_record(&mut pack, 6, "", 0, sri.len() as u64);
+    pack.extend_from_slice(sri.as_bytes());
+    pack_record(&mut pack, 0, "", 0, 0);
+    let p = t.path().join("short.pack");
+    std::fs::write(&p, &pack).unwrap();
+    // The package is already cached, which used to skip `end - pos` bytes and underflow.
+    for dry_run in [true, false] {
+        let err = crate::cache_pack::unpack(&store, &p, dry_run).unwrap_err();
+        assert!(matches!(err, Error::Refused { .. }), "{err}");
+    }
+}
+
+#[test]
+fn cache_unpack_dry_run_writes_nothing() {
+    let (t, store) = store();
+    let (a, _) = import_fixture(&store, "left-pad", "1.3.0");
+    let pack_path = t.path().join("cache.pack");
+    crate::cache_pack::pack(&store, std::slice::from_ref(&a), &pack_path, false).unwrap();
+    let other_dir = tempfile::tempdir().unwrap();
+    let other = Store::open_with_tuning(other_dir.path(), Tuning::default()).unwrap();
+    let dry = crate::cache_pack::unpack(&other, &pack_path, true).unwrap();
+    assert_eq!((dry.packages, dry.created), (1, 1));
+    assert!(dry.bytes > 0);
+    assert_eq!(count_blobs(&other), 0);
+    assert!(tmp_is_empty(&other));
+    assert!(other.get(&a).unwrap().is_none());
+    let real = crate::cache_pack::unpack(&other, &pack_path, false).unwrap();
+    assert_eq!(real.bytes, dry.bytes);
+    assert!(count_blobs(&other) > 0);
+}
+
+#[test]
+fn cache_unpack_file_and_directory_with_one_name_is_refused() {
+    let (t, store) = store();
+    let tgz = fixture("left-pad-1.3.0.tgz");
+    let key = key_for("left-pad", "1.3.0", &tgz);
+    let sri = key.integrity.to_sri();
+    for dry_run in [true, false] {
+        let mut body = Vec::new();
+        pack_record(&mut body, 6, "", 0, sri.len() as u64);
+        body.extend_from_slice(sri.as_bytes());
+        pack_record(&mut body, 2, "a", 0o644, 1);
+        body.push(b'x');
+        pack_record(&mut body, 2, "a/b", 0o644, 1);
+        body.push(b'y');
+        let name = key.dir_name();
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        hasher.update(name.as_bytes());
+        hasher.update(&body);
+        let mut sum = Vec::new();
+        pack_record(&mut sum, 5, "", 0, 8);
+        hasher.update(&sum);
+        let digest = hasher.digest();
+        body.extend_from_slice(&sum);
+        body.extend_from_slice(&digest.to_le_bytes());
+        let mut pack = b"FNPMCACHEPACKv1\n".to_vec();
+        pack_record(&mut pack, 1, &name, 0, body.len() as u64);
+        pack.extend_from_slice(&body);
+        pack_record(&mut pack, 0, "", 0, 0);
+        let p = t.path().join("conflict.pack");
+        std::fs::write(&p, &pack).unwrap();
+        let err = crate::cache_pack::unpack(&store, &p, dry_run).unwrap_err();
+        assert!(matches!(err, Error::Refused { .. }), "{err}");
+        assert!(store.get(&key).unwrap().is_none());
+        assert!(tmp_is_empty(&store));
+    }
+}
+
+#[test]
+fn patch_paths_with_dot_components_still_apply() {
+    let (_t, store) = store();
+    let (key, base) = import_fixture(&store, "left-pad", "1.3.0");
+    let original = std::fs::read_to_string(base.root.join("index.js")).unwrap();
+    let first = original.lines().next().unwrap();
+    let patch = format!(
+        "diff --git a/./index.js b/./index.js\n--- a/./index.js\n+++ b/./index.js\n@@ -1,1 +1,1 @@\n-{first}\n+// patched\n"
+    );
+    let patched = store.import_patched(&key, &base, &patch, 7).unwrap();
+    let text = std::fs::read_to_string(patched.entry.root.join("index.js")).unwrap();
+    assert!(text.starts_with("// patched\n"), "{text}");
+    // The blob behind the base package is untouched.
+    assert_eq!(
+        std::fs::read_to_string(base.root.join("index.js")).unwrap(),
+        original
+    );
+}

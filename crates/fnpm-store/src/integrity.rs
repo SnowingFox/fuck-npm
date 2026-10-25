@@ -18,7 +18,8 @@ const B64: GeneralPurpose = GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     GeneralPurposeConfig::new()
         .with_decode_padding_mode(DecodePaddingMode::RequireNone)
-        .with_decode_allow_trailing_bits(true),
+        // bun's decoder rejects a final symbol with bits set past the last whole byte.
+        .with_decode_allow_trailing_bits(false),
 );
 
 fn parse_entry(entry: &str) -> Option<Integrity> {
@@ -34,6 +35,10 @@ fn parse_entry(entry: &str) -> Option<Integrity> {
     } else {
         (HashAlgorithm::Sha512, entry.strip_prefix("sha512-")?)
     };
+    // bun's `Tag::parse`: an algorithm with nothing after its `-` is unknown.
+    if rest.is_empty() {
+        return None;
+    }
     let rest = rest.split_once('?').map_or(rest, |(v, _)| v);
     let rest = rest.trim_end_matches('=');
     let decoded = B64.decode(rest).ok()?;
@@ -186,6 +191,25 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode([7u8; 32])
         );
         assert_eq!(parse_sri(&long), None);
+    }
+
+    #[test]
+    fn empty_values_and_trailing_bits_follow_bun() {
+        // Nothing after the dash: unknown, so the shasum fallback applies.
+        assert_eq!(parse_sri("sha256-"), None);
+        assert_eq!(parse_sri("sha512-"), None);
+        let shasum = "3cd0599b099384b815c10f7fa7df0092b62d534f";
+        assert_eq!(
+            dist_integrity(Some("sha512-"), Some(shasum)).integrity,
+            parse_shasum(shasum).unwrap()
+        );
+        // Only padding: bun decodes an empty digest, zero-padded.
+        let zero = parse_sri("sha256-=").unwrap();
+        assert!(zero.digest().iter().all(|&b| b == 0));
+        // A final symbol with bits past the last byte is malformed, as is a lone symbol.
+        assert_eq!(parse_sri("sha1-AB"), None);
+        assert_eq!(parse_sri("sha1-AAAAA"), None);
+        assert!(parse_sri("sha1-AA").is_some());
     }
 
     #[test]

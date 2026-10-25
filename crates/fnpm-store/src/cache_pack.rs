@@ -379,14 +379,23 @@ pub fn unpack(store: &Store, pack_path: &Path, dry_run: bool) -> Result<UnpackSu
             .ok_or_else(|| refuse("invalid integrity", r.record, &name))?;
         let key = key_of(&name, integrity)
             .ok_or_else(|| refuse("invalid cache entry name", r.record, &name))?;
+        if r.pos > end {
+            return Err(refuse("record runs past end of package", r.record, &name));
+        }
 
         if store.get(&key)?.is_some() {
             summary.already_cached += 1;
             r.skip(end - r.pos)?;
             continue;
         }
-        let staging = store.new_staging()?;
+        // A dry run reads and verifies everything but writes nothing, not even blobs.
+        let staging = if dry_run {
+            None
+        } else {
+            Some(store.new_staging()?)
+        };
         let mut tracker = std::collections::HashSet::new();
+        let mut dirs = std::collections::HashSet::new();
         let mut files = Vec::new();
         let mut package_json = None;
         loop {
@@ -413,14 +422,28 @@ pub fn unpack(store: &Store, pack_path: &Path, dry_run: bool) -> Result<UnpackSu
             if fh.kind != KIND_FILE {
                 return Err(refuse("unknown kind of record", r.record, &fh.path));
             }
-            if !is_safe_relative_path(&fh.path) || !tracker.insert(fh.path.clone()) {
+            if !is_safe_relative_path(&fh.path)
+                || dirs.contains(fh.path.as_str())
+                || !tracker.insert(fh.path.clone())
+            {
                 return Err(refuse("unsafe path", r.record, &fh.path));
+            }
+            for (i, _) in fh.path.match_indices('/') {
+                let dir = &fh.path[..i];
+                if tracker.contains(dir) {
+                    return Err(refuse("unsafe path", r.record, &fh.path));
+                }
+                dirs.insert(dir.to_owned());
             }
             if fh.size > 1 << 32 {
                 return Err(refuse("file is too large", r.record, &fh.path));
             }
             let mut data = vec![0u8; fh.size as usize];
             r.exact(&mut data)?;
+            summary.bytes += fh.size;
+            let Some(staging) = staging.as_ref() else {
+                continue;
+            };
             if let Some(i) = fh.path.rfind('/') {
                 staging
                     .ensure_dir(&fh.path[..i])
@@ -441,8 +464,11 @@ pub fn unpack(store: &Store, pack_path: &Path, dry_run: bool) -> Result<UnpackSu
                         source,
                     })?,
             );
-            summary.bytes += fh.size;
         }
+        let Some(staging) = staging else {
+            summary.created += 1;
+            continue;
+        };
         staged.push(Staged {
             key,
             staging,
@@ -451,10 +477,6 @@ pub fn unpack(store: &Store, pack_path: &Path, dry_run: bool) -> Result<UnpackSu
                 package_json,
             },
         });
-    }
-    if dry_run {
-        summary.created = staged.len() as u32;
-        return Ok(summary);
     }
     for s in staged {
         let dest = store.package_dir(&s.key);

@@ -127,6 +127,19 @@ fn io_err(path: &Path) -> impl Fn(io::Error) -> Error + '_ {
     }
 }
 
+/// Appends `s` with the characters that could split or escape a path component replaced (see
+/// [`PackageKey::dir_name`]).
+fn push_component_safe(out: &mut String, s: &str) {
+    for c in s.chars() {
+        out.push(match c {
+            '/' | '\\' => '+',
+            ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        });
+    }
+}
+
 /// Identifies a package directory in the store.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PackageKey {
@@ -141,10 +154,20 @@ pub struct PackageKey {
 
 impl PackageKey {
     /// `pkgs/` directory name: `@scope+name@1.2.3-<first 16 hex of digest>`.
+    ///
+    /// The name and version come from registries, lockfiles and tarballs, so both are made
+    /// safe as one path component: `/` and `\` become `+`; NUL, control characters and the
+    /// characters Windows rejects in file names (`:*?"<>|`) become `_`. A version such as
+    /// `1/../../x` therefore cannot point outside `pkgs/`.
     pub fn dir_name(&self) -> String {
-        let name = self.name.replace('/', "+");
         let hex = self.integrity.to_hex();
-        format!("{name}@{}-{}", self.version, &hex[..16.min(hex.len())])
+        let mut out = String::with_capacity(self.name.len() + self.version.len() + 18);
+        push_component_safe(&mut out, &self.name);
+        out.push('@');
+        push_component_safe(&mut out, &self.version);
+        out.push('-');
+        out.push_str(&hex[..16.min(hex.len())]);
+        out
     }
 
     /// The directory of a patched copy: [`PackageKey::dir_name`] + `_patch_hash=<hex>` (bun's
@@ -453,6 +476,9 @@ impl Store {
     fn import_buffered(&self, target: Target, tgz: &[u8]) -> Result<(PackageKey, PackageEntry)> {
         let staging = self.new_staging()?;
         let (computed, built) = extract::hash_and_extract(&staging, target.hasher(), tgz);
+        // As bun's buffered `extract_tarball`, a body that fails its integrity check is
+        // reported as such even when it is also not a valid tarball.
+        target.check(computed.as_ref())?;
         let built = built.map_err(|e| extract::with_package(e, target.name()))?;
         self.finish_import(staging, target, computed, built)
     }

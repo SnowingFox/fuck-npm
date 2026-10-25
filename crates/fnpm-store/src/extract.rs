@@ -20,8 +20,15 @@ use crate::index::IndexedFile;
 use crate::tar::{EntryKind, TarEvent, TarParser};
 use crate::{Error, PackageKey, Result};
 
-/// Files at least this large are hashed and stored on the rayon pool in the buffered path.
+/// In the buffered path, a package with a file at least this large, or with at least
+/// [`PARALLEL_TOTAL_MIN`] bytes in all, has its files hashed and stored on the rayon pool.
 const PARALLEL_FILE_MIN: usize = 64 * 1024;
+/// See [`PARALLEL_FILE_MIN`].
+const PARALLEL_TOTAL_MIN: usize = 256 * 1024;
+/// Fewer files than this are always stored on the calling thread.
+const PARALLEL_MIN_FILES: usize = 2;
+/// Files per rayon task, so tiny files are not scheduled one by one.
+const PARALLEL_CHUNK: usize = 4;
 /// In the streaming path, files larger than this are written to disk while they arrive
 /// instead of being held in memory.
 const LARGE_FILE: u64 = 8 * 1024 * 1024;
@@ -55,22 +62,26 @@ impl Target {
         }
     }
 
+    /// Errors with [`Error::Integrity`] when the integrity is verified and `computed` differs.
+    pub(crate) fn check(&self, computed: Option<&Integrity>) -> Result<()> {
+        if let Self::Pinned { key, verify: true } = self
+            && let Some(actual) = computed
+            && *actual != key.integrity
+        {
+            return Err(Error::Integrity {
+                package: key.name.clone(),
+                expected: key.integrity.to_sri(),
+                actual: actual.to_sri(),
+            });
+        }
+        Ok(())
+    }
+
     /// The key the package is stored under, checking the integrity when asked to.
     pub(crate) fn resolve(self, computed: Option<Integrity>) -> Result<PackageKey> {
+        self.check(computed.as_ref())?;
         match self {
-            Self::Pinned { key, verify } => {
-                if verify
-                    && let Some(actual) = computed
-                    && actual != key.integrity
-                {
-                    return Err(Error::Integrity {
-                        package: key.name,
-                        expected: key.integrity.to_sri(),
-                        actual: actual.to_sri(),
-                    });
-                }
-                Ok(key)
-            }
+            Self::Pinned { key, .. } => Ok(key),
             Self::Unpinned { name, version } => {
                 let integrity = computed.expect("unpinned imports always hash");
                 Ok(PackageKey {
@@ -224,31 +235,20 @@ pub(crate) fn build_from_tar(staging: &Staging, tar: &[u8]) -> Result<Built> {
             .add_bytes(&f.path, f.mode, &f.data)
             .map_err(io_at(staging, &f.path))
     };
-    let (big, small): (Vec<&RawFile<'_>>, Vec<&RawFile<'_>>) = files
-        .iter()
-        .partition(|f| f.data.len() >= PARALLEL_FILE_MIN);
-    let mut records: Vec<IndexedFile> = Vec::with_capacity(files.len());
-    if big.len() > 1 {
-        let (big_records, small_records) = rayon::join(
-            || {
-                big.par_iter()
-                    .map(|f| store_one(f))
-                    .collect::<Result<Vec<_>>>()
-            },
-            || {
-                small
-                    .iter()
-                    .map(|f| store_one(f))
-                    .collect::<Result<Vec<_>>>()
-            },
-        );
-        records.extend(big_records?);
-        records.extend(small_records?);
+    // Hashing and linking are independent per file. Small packages stay on this thread (a
+    // rayon hand-off costs more than it saves); larger ones fan out over the pool.
+    let total: usize = files.iter().map(|f| f.data.len()).sum();
+    let records: Vec<IndexedFile> = if files.len() >= PARALLEL_MIN_FILES
+        && (total >= PARALLEL_TOTAL_MIN || files.iter().any(|f| f.data.len() >= PARALLEL_FILE_MIN))
+    {
+        files
+            .par_iter()
+            .with_min_len(PARALLEL_CHUNK)
+            .map(store_one)
+            .collect::<Result<Vec<_>>>()?
     } else {
-        for f in files.iter() {
-            records.push(store_one(f)?);
-        }
-    }
+        files.iter().map(store_one).collect::<Result<Vec<_>>>()?
+    };
     Ok(Built {
         files: records,
         package_json,
