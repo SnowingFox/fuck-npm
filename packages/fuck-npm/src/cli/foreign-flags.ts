@@ -114,7 +114,7 @@ export const IGNORED_FOREIGN_OPTIONS: ReadonlySet<string> = new Set([
 export const IGNORED_FOREIGN_PREFIXES: readonly string[] = ["config."];
 
 /** On `update` these select which dependencies to update, so nothing aliases to them. */
-const UPDATE_FILTERS = new Set(["--dev", "--production"]);
+export const UPDATE_FILTERS: ReadonlySet<string> = new Set(["--dev", "--production"]);
 
 type OwnFlags = { names: Set<string>; booleans: Set<string> };
 

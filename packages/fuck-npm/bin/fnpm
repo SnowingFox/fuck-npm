@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// Replaced by the native fnpm executable on install (scripts/postinstall.js).
+// Until then: run the native executable as a child, or the TS CLI. See lib/shim.cjs.
+require("../lib/shim.cjs").main("fnpm");

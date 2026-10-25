@@ -95,7 +95,7 @@ fnpm-registry     fnpm-store      fnpm-workspace
 | fnpm-scripts | types, config, workspace, lockfile | tokio (process) |
 | fnpm-core | all of the above | tokio, rayon, crossbeam-channel |
 | fnpm-napi | core, types | napi, napi-derive, mimalloc |
-| fnpm-cli | core, types | mimalloc, rustix; build script: serde_json (reads `cli-spec.json`) |
+| fnpm-cli | core, types, config | mimalloc, libmimalloc-sys, rustix, libc (`_exit`), tokio (signal), serde_json; build script: serde_json (reads `cli-spec.json`) |
 
 `fnpm-napi` and `fnpm-cli` are siblings: neither depends on the other, and neither contains
 package-manager logic. Both call `fnpm-core`.
@@ -1584,25 +1584,44 @@ small fixture 0.23 ms in process, about 10 µs per event batch.
 
 ## fnpm-cli
 
-**Status: planned** (decided 2026-10-25, `docs/DECISIONS.md`). The crate does not exist yet.
-
 **Responsibility.** The `fnpm` and `fnpm-lock` executables. For the hot commands it parses argv,
-calls `fnpm_core::install` in process, and renders progress and the summary itself. Everything
-else is handed to the TypeScript CLI by exec. It has no package-manager logic, and wherever it
-does something the TS CLI also does (parsing, validation, messages, output), the result must be
-byte-identical. The conformance suite runs against the native binary, so any divergence shows
-up as a failing test.
+calls `fnpm-core` in process, and renders progress and the summary itself. Everything else is
+handed to the TypeScript CLI by exec. It has no package-manager logic, and wherever it does
+something the TS CLI also does (parsing, validation, messages, output), the result must be
+byte-identical. Shared golden fixtures and the conformance suite catch any divergence.
+
+**Layout** (`crates/fnpm-cli`):
+
+| file | what |
+|---|---|
+| `cli-spec.json` | the command tree, generated from the TS registry (below); committed |
+| `build.rs` | turns the spec into `match` tables in `$OUT_DIR/spec.rs`; sets the startup link flags |
+| `src/spec.rs` | `FlagDef`, `LeafDef`, `BinDef` and the generated tables (`FNPM`, `FNPM_LOCK`, `VERSION`) |
+| `src/plan.rs` | dispatch (`route`), foreign-flag translation, runtime-flag stripping (`plan.ts`, `foreign-flags.ts`) |
+| `src/parse.rs` | unknown-flag rejection with owner hints, flag parsing (`plan.ts`, `parse-flags.ts`) |
+| `src/options.rs` | flag values to `InstallOptions`, bun's validation messages (`core/options.ts`) |
+| `src/install.rs` | the native commands: header, event sink, core call, summary, `--json`, errors |
+| `src/progress.rs`, `src/summary.rs`, `src/color.rs` | ports of `output/progress.ts`, `output/summary.ts` and picocolors |
+| `src/terminal.rs` | env, TTY state, streams (`Terminal`, the injectable seam like `CliRuntime`) |
+| `src/exec.rs` | locating node and the bundle, exec |
+| `src/bin/fnpm.rs`, `src/bin/fnpm-lock.rs` | `main`: allocator setup, then `fnpm_cli::main` (`fnpm_cli::main_lock` for `fnpm-lock`, which has no native commands and so never links the core: ~0.5 MB instead of ~11 MB) |
 
 **Dispatch.** Decided from argv alone, before any file is read:
 
 | invocation | handled by |
 |---|---|
-| `fnpm install` / `i`, `ci`, `add` / `a`, `remove` / `rm` / `r` / `uninstall`, `update` / `up` (including `-g`, `--filter`, foreign npm/yarn/pnpm flags) | native |
-| `fnpm --version` / `-v` with no other arguments | native (version compiled in; equals the npm package version) |
-| any of the above with `-h` / `--help`, or `update -i` / `--interactive` | node |
-| every other command (`outdated`, `why`, `pm …`, `run`, `x`, `publish`, …), `help`, `completions`, `--tree`, unknown commands | node |
+| `fnpm install` / `i`, `ci`, `add` / `a`, `remove` / `rm` / `r` / `uninstall` / `un`, `update` / `up` / `upgrade` (including `-g`, `--filter`, foreign npm/yarn/pnpm flags, flags before the command) | native |
+| `--version` / `-v` with no command, or on a native command | native (`VERSION` is the npm package version from the spec) |
+| a native command with `-h` / `--help` or `-t` / `--tree` | node |
+| `update -i` / `--interactive` | node, after the native side has validated the flags |
+| every other command (`outdated`, `why`, `pm …`, `run`, `x`, `publish`, …), `help`, `completions`, top-level aliases (`whoami`, `migrate`), unknown commands, no arguments | node |
 | every `fnpm-lock` invocation except `--version` | node |
-| a native command with an invalid flag or value | native: the error the TS CLI prints, from the same message templates |
+| argv that is not valid UTF-8 | node |
+| a native command with an invalid flag or value | native: the error the TS CLI prints, with its message and code |
+
+The root is walked like `planInvocation`: flags are stepped over (with the next token when the
+flag takes a value), so `fnpm --cwd app install` is native. Foreign flags are translated before
+`--help` / `--version` are looked for, exactly as in the TS CLI.
 
 "Node" means: exec `node <pkg>/dist/fnpm.js` (or `fnpm-lock.js`) with the original argv after the
 program name, unchanged. On Unix this is `execvp` (`std::os::unix::process::CommandExt::exec`),
@@ -1610,51 +1629,93 @@ so the node process takes over the pid, the terminal, signals and the exit statu
 launcher spawns node with inherited stdio, ignores console Ctrl-C itself
 (`SetConsoleCtrlHandler`) so the child handles it, and exits with the child's code.
 
-- **Finding node:** `FNPM_NODE` if set, else `node` on `PATH`. If none is found the launcher
-  prints `fnpm: '<cmd>' needs Node.js 20.19 or newer, and no 'node' was found on PATH` and exits 1.
-  The native commands never need Node.
-- **Finding the JS entry:** `FNPM_JS_ENTRY` if set (development), else
-  `<dir of realpath(current_exe)>/../dist/<bin>.js`, which is where the postinstall swap leaves the
-  binary relative to the bundle (see [packaging](#packaging-and-distribution)).
+- **Finding node:** `FNPM_NODE` if set, else `node` on `PATH`. If it cannot be started the
+  launcher prints `fnpm: '<cmd>' needs Node.js 20.19 or newer, and no 'node' was found on PATH`
+  (`… and FNPM_NODE (<path>) was not found` when the override is set; `<cmd>` is found by
+  walking the root like dispatch, stepping over flag values) and exits 1. The native commands
+  never need Node.
+- **Finding the JS entry:** `FNPM_JS_ENTRY` if set (for `fnpm-lock`: `FNPM_LOCK_JS_ENTRY`, else
+  `fnpm-lock.js` next to `FNPM_JS_ENTRY`), else `<dir of realpath(current_exe)>/../dist/<bin>.js`
+  (the postinstall layout, see [packaging](#packaging-and-distribution)), else
+  `<exe dir>/../../packages/fuck-npm/dist/<bin>.js` (a cargo build in this repository).
 - **Environment:** passed through untouched (including `NODE_OPTIONS`), plus
   `FNPM_LAUNCHER=<path of the native binary>` so the TS CLI can tell it was launched natively.
 
 **cli-spec.json.** The command tree and flags stay defined once, in
-`packages/fuck-npm/src/cli/trees/*.ts`. A build step in that package (`npm run build:spec`,
-planned) serialises the registry to `crates/fnpm-cli/cli-spec.json`: for both bins, every command
-node (names, aliases, hidden), its flags (long and short names, whether a value is taken, value
-enums, repeatable, negatable, defaults), flag conflicts, the foreign-flag translation and ignore
-tables (`foreign-flags.ts`), and the usage-error message templates. The file is committed, so
-`cargo build` never needs Node; a vitest test regenerates it and fails when the committed copy is
-stale. `crates/fnpm-cli/build.rs` reads it and generates static lookup tables into `OUT_DIR`
-(no JSON parsing at run time). The native parser only interprets the subtrees it dispatches
-natively; for anything else, "is it native" is all it has to answer.
+`packages/fuck-npm/src/cli/trees/*.ts`. `npm run build:spec` in that package
+(`scripts/build-spec.ts`, `scripts/cli-spec.ts`; needs Node with type stripping, 22.6+)
+serialises the registry to `crates/fnpm-cli/cli-spec.json`: the package version; one
+deduplicated flag table (key, raw spelling, long and short names, whether a value is taken,
+optional values, repeatable, hidden, negated `--no-` spellings, description); for both bins
+every command node (names, aliases, hidden, positionals with required/variadic, flag indexes,
+passthrough, foreign-flag mode, runtime-flag stripping, default child) plus the top-level
+aliases and global flags; the foreign-flag rewrite and ignore tables (`foreign-flags.ts`); and
+bun's ignored runtime flags. The file is committed, so `cargo build` never needs Node;
+`tests/unit/cli/cli-spec.test.ts` fails when the committed copy is stale. `build.rs` evaluates
+the TS helpers ahead of time per native leaf (`flagSpecsFor`, `allowedFlagNames`, `ownFlags`,
+`rewritesFor`, `flagOwners`) and emits them as `match` functions: no JSON at run time.
+Validation messages and defaults (`core/options.ts`) are ported in `src/options.rs` and pinned
+by the shared fixtures rather than templated in the spec.
 
 **Exit codes and errors.** The same as the TS CLI (`src/cli/runtime.ts`,
 `src/commands/install.ts`): 0 on success, 1 on any failure, including usage errors, core errors
 and an install with `failedCount > 0`. Usage errors print `error: <message>` and the
-`Run 'fnpm <cmd> --help' for detailed usage.` hint on stderr. Under `--json`, success prints
-`{ok: true, command, summary}` and failure prints `{ok: false, error: {code, message}}` on stdout,
-with codes from `src/errors.ts` and `fnpm_core::Error::code`. SIGINT during a native install
-cancels the pipeline, removes staging directories, leaves the previous `fnpm.lock` and state
-file untouched, and exits 130 (the TS CLI doesn't handle SIGINT yet and must be brought in
-line). A node child's status is passed through as is.
+`Run 'fnpm <cmd> --help' for detailed usage.` hint on stderr; core errors print the message
+only. Under `--json`, success prints `{ok, command, summary}` and failure prints
+`{ok: false, error: {code, message}}` on stdout, with codes from `src/errors.ts` and
+`fnpm_core::Error::code`. SIGINT (Ctrl-C) during a native install drops the pipeline future,
+erases the progress line and exits 130; staging cleanup is the core's (its drop guards); tasks
+already spawned on the runtime are not awaited. The TS CLI does not handle SIGINT yet. A node
+child's status is passed through as is.
 
-**Output.** A Rust port of `output/output.ts` (mode selection: json, rich on a TTY, plain when
-piped; colour from `NO_COLOR` / `FORCE_COLOR` / TTY via the same `colorEnabled` rules),
-`output/progress.ts` (one stderr line, redrawn at most every 50 ms, off for `--silent` / `--quiet` / `--no-progress`, `FNPM_PROGRESS=0` / `BUN_INSTALL_PROGRESS=0`,
-CI markers and non-TTY stderr; warnings printed above the line) and `output/summary.ts` (bun's
-summary, line for line, including `[12.34ms]` / `[1.23s]` elapsed formatting and the ASCII
-arrows without colour), plus the `fnpm <cmd> v<version>` header line on stderr. Events arrive through an
-in-process `EventSink`, so nothing is serialised to JSON. Shared golden fixtures (summary and
-event sequences with expected plain and coloured output) are checked by both vitest and
-`cargo test -p fnpm-cli`, so the two renderers can't drift.
+**Output.** Ports of `output/output.ts` (mode: json, rich when stdout is a TTY, plain
+otherwise; colour from `NO_COLOR` / `FORCE_COLOR` / `TERM=dumb` / TTY via the same
+`colorEnabled` rules), `output/progress.ts` (one stderr line, redrawn at most every 50 ms with a
+trailing redraw, truncated to the terminal width, off for `--silent` / `--quiet` /
+`--no-progress`, `FNPM_PROGRESS=0` / `BUN_INSTALL_PROGRESS=0`, CI markers and non-TTY stderr;
+warnings and errors printed above the line) and `output/summary.ts` (bun's summary, including
+`[12.34ms]` / `[1.23s]` with JavaScript's `toFixed` rounding and the ASCII arrows without
+colour), plus the `fnpm <cmd> v<version>` header on stderr. Escape sequences are picocolors',
+byte for byte. Events arrive through an in-process `EventSink` (`ProgressSink` with a timer
+thread for the trailing redraw, or `DiagnosticsSink`), so nothing is serialised to JSON;
+`--json` and `--silent` pass a `NoopSink`. The progress state machine (`progress::Renderer`)
+takes time as an argument so tests drive it with a manual clock, like the TS tests.
 
-**Threading.** `main` builds `fnpm_core::runtime()` only on the native path; the exec path does
-no allocation-heavy work and touches no runtime. mimalloc is the global allocator.
+**Shared fixtures** (`crates/fnpm-cli/tests/fixtures/*.json`): `cli-cases.json` (argv, env, TTY
+state, scripted core events, summary or core error → exit code, stdout, stderr and the exact
+`InstallOptions` sent to the core), `summary.json` and `progress.json` (renderer inputs and
+output). Inputs are edited by hand; `expected` is written from the TS CLI by
+`UPDATE_NATIVE_FIXTURES=1 npx vitest run tests/unit/cli/native-fixtures.test.ts`, which
+otherwise checks the TS side, and `cargo test -p fnpm-cli` checks the native side against the
+same bytes. `cli-fuzz.json` is differential fuzzing: `tests/unit/cli/native-fuzz.test.ts` builds
+800 seeded random invocations of the native commands from `cli-spec.json` (every flag spelling,
+short clusters, foreign and runtime flags, typos, other commands' flags, `--`, TTY and colour
+environments) and stores the TS planner's route plus the TS CLI's exit code, output and
+`InstallOptions`; the native side must agree on every case.
 
-**Perf.** See [startup budget](#startup-budget). Process start to dispatch decision < 0.5 ms;
-`--version` < 1 ms.
+**Threading.** No tokio runtime on the version, usage-error, exec and no-op paths. The launcher
+calls `fnpm_core::prepare_install` (options, project, configuration and the no-op fast path,
+synchronously), answers a no-op from `PreparedInstall::noop` and builds `fnpm_core::runtime()`
+only when there is work, for `PreparedInstall::run`. mimalloc is the global allocator.
+
+**Startup.** Process start dominates `--version` and the no-op, so the executables are built
+for it:
+- On linux-gnu, `build.rs` links them non-PIE and lazily bound (`-no-pie -z lazy`, bins only),
+  as bun's executable is: no ~14k relative relocations, no eager symbol binding.
+  `FNPM_CLI_PIE=1` keeps the toolchain defaults.
+- mimalloc's eager arena commit is turned off from a load-time constructor (`.init_array`),
+  before Rust's runtime allocates: with overcommit it commits the 1 GiB arena with
+  `MADV_HUGEPAGE`, and the first allocation faults in a zeroed 2 MiB page.
+  `MIMALLOC_ARENA_EAGER_COMMIT` still overrides.
+- The process ends with `_exit` after flushing stdout (`fnpm_cli::exit`): the only `atexit`
+  handler is mimalloc's `mi_process_done`, which force-collects every heap
+  (`madvise(MADV_DONTNEED)` over all touched pages) just before the kernel unmaps them anyway.
+- `fnpm-lock` calls `main_lock`, which never references the core: ~0.5 MB instead of ~11 MB.
+
+Measured on the Linux baseline machine (`hyperfine -N`, small fixture, local mirror):
+`fnpm --version` 1.5 ms (bun 1.7-1.8 ms, a Rust hello world 1.0-1.1 ms), `fnpm-lock --version`
+1.3 ms; no-op install 2.0 ms (bun 6.6 ms). Exec to node adds nothing measurable over running node
+directly.
 
 ## napi JS API and the event schema
 
@@ -1776,7 +1837,7 @@ Status: planned (P6 in `docs/ROADMAP.md`). The shape follows bun's npm distribut
 
 | package | contents |
 |---|---|
-| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm` and `bin/fnpm-lock` (JS shims as published), `install.js` (postinstall), `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
+| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm` and `bin/fnpm-lock` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
 | `@fuck-npm/binding` | the loader (`index.js`, `index.d.ts`) that finds `fnpm.<triple>.node` |
 | `@fuck-npm/binding-<triple>` | `fnpm.<triple>.node`, plus the native `fnpm` and `fnpm-lock` executables (`.exe` on Windows); `os` / `cpu` / `libc` set so package managers install only the matching one |
 
@@ -1784,18 +1845,30 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
 `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
 `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
 
-- **Postinstall swap.** `install.js` resolves the platform package, runs its `fnpm --version`
-  and checks it matches, then replaces `bin/fnpm` and `bin/fnpm-lock` in the `fuck-npm` package
-  with hardlinks to (or copies of) the native executables. Package managers point
+- **Postinstall swap.** `scripts/postinstall.js` (modelled on bun's
+  `packages/bun-release/src/npm/install.ts`) resolves the platform package (from `fuck-npm`,
+  then from `@fuck-npm/binding`, the only package an isolated layout lets see it); if it is
+  missing (`--no-optional`) it `npm install`s it into a temp dir and moves it under
+  `fuck-npm/node_modules`, and failing that downloads the tarball from the registry
+  (`npm_config_registry`) and checks it against the packument's integrity. It then runs each
+  executable's `--version`, requires the package version, and replaces `bin/fnpm` and
+  `bin/fnpm-lock` with hardlinks to (or copies of) the executables: link or copy to a temp name,
+  then rename, so a store-backed file is never written in place. Package managers point
   `node_modules/.bin/fnpm` (and global bins) at `bin/fnpm`, so after the swap invoking `fnpm`
   starts the native binary directly, with no Node and no wrapper. The native binary finds the
-  bundle at `../dist/` relative to itself.
-- **Shim fallback.** If postinstall didn't run (`--ignore-scripts`, or pnpm/bun not trusting
-  the package), `bin/fnpm` is still the published JS shim. It resolves the platform package and
-  runs the native binary as a child with inherited stdio, forwarding the exit code and signals;
-  if there is no binary for the platform, it imports `dist/fnpm.js` and runs in process through
-  napi. Either way the CLI behaves the same, only with Node's startup added. `fnpm doctor`
-  reports when the shim is in use and how to fix it.
+  bundle at `../dist/` relative to itself. The swap is skipped on Windows (below), under pnpm
+  and yarn berry (their `.bin` entries are scripts that run the target with node, decided when
+  the bin was linked, before postinstall), in a development checkout (not under
+  `node_modules`) and with `FNPM_SKIP_NATIVE_SWAP=1`. A platform package installed at our
+  version without the executables is not installed again. It never fails the install; on any
+  problem the shim stays.
+- **Shim fallback.** If the swap did not happen, `bin/fnpm` is still the published JS shim
+  (`lib/shim.cjs`, CommonJS, Node built-ins only). It resolves the platform package and runs
+  the native binary as a child with inherited stdio, `FNPM_JS_ENTRY` pointing at its own bundle,
+  signals forwarded, and the child's exit status (or signal) passed through; if there is no
+  binary for the platform, or it cannot be executed, it imports `dist/fnpm.js` and runs in
+  process through napi. Either way the CLI behaves the same, only with Node's startup added.
+  `fnpm doctor` reports when the shim is in use and how to fix it.
 - **Windows.** npm's `cmd-shim` writes `.bin/fnpm.cmd` before postinstall runs and bakes in the
   interpreter from the shebang of whatever `bin/fnpm` is at that moment. bun publishes a
   shebang-less placeholder for this reason. The Windows layout (placeholder vs JS shim, and

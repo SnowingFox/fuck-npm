@@ -19,7 +19,7 @@ describe("formatElapsed", () => {
 });
 
 describe("formatInstallSummary", () => {
-  test("added, updated and removed direct dependencies, then the count", () => {
+  test("added and updated direct dependencies, then the count (bun lists no removals on install)", () => {
     const text = render(
       emptySummary({
         added: [{ name: "react", version: "18.3.1", availableVersion: "19.0.0" }],
@@ -38,12 +38,35 @@ describe("formatInstallSummary", () => {
         "",
         "+ react@18.3.1 (v19.0.0 available)",
         "↑ zod 3.22.0 → 3.23.8",
-        "- left-pad",
         "",
         "12 packages installed [432.10ms]",
         "Removed: 1",
       ].join("\n"),
     );
+  });
+
+  test("add lists each request once, after the + rows (bun's tree printer)", () => {
+    const text = render(
+      emptySummary({
+        added: [
+          { name: "react", version: "18.3.1" },
+          { name: "loose-envify", version: "1.4.0" },
+        ],
+        requested: [{ name: "react", version: "18.3.1", bins: [] }],
+        installedCount: 2,
+        elapsedMs: 5,
+      }),
+      "add",
+      pc,
+    );
+    expect(text).toBe(
+      ["", "+ loose-envify@1.4.0", "", "installed react@18.3.1", "", "2 packages installed [5.00ms]"].join("\n"),
+    );
+  });
+
+  test("remove lists the removed names right above the count, failures after it", () => {
+    const text = render(emptySummary({ removed: ["lodash"], removedCount: 1, failedCount: 1, elapsedMs: 3 }), "remove", pc);
+    expect(text).toBe(["", "- lodash", "1 package removed [3.00ms]", "Failed to install 1 package"].join("\n"));
   });
 
   test("without colour the arrows fall back to ASCII", () => {
