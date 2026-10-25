@@ -4,6 +4,7 @@
 //! See `docs/ARCHITECTURE.md#fnpm-lockfile`.
 
 pub mod formats;
+pub mod migration;
 pub mod sidecar;
 pub mod tree;
 

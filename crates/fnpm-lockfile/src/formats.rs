@@ -18,49 +18,14 @@ pub mod fnpm {
     }
 }
 
-pub mod bun_text {
-    use fnpm_types::LockGraph;
+/// `bun.lock` (lockfileVersion 0-3 text, bun `lockfile/bun.lock.rs`).
+pub mod bun_text;
 
-    use crate::Result;
+/// `bun.lockb` (bun `lockfile/bun.lockb.rs`, `Buffers.rs`). Read-only.
+pub mod bun_binary;
 
-    /// `bun.lock` (lockfileVersion 0-2 text, bun `lockfile/bun.lock.rs`).
-    pub fn parse(_bytes: &[u8]) -> Result<LockGraph> {
-        todo!()
-    }
-
-    pub fn serialize(_graph: &LockGraph) -> String {
-        todo!()
-    }
-}
-
-pub mod bun_binary {
-    use fnpm_types::LockGraph;
-
-    use crate::Result;
-
-    /// `bun.lockb` (bun `lockfile/bun.lockb.rs`, `Buffers.rs`). Read-only.
-    pub fn parse(_bytes: &[u8]) -> Result<LockGraph> {
-        todo!()
-    }
-}
-
-pub mod npm {
-    use fnpm_types::LockGraph;
-    use fnpm_workspace::Workspace;
-
-    use crate::Result;
-
-    /// package-lock.json / npm-shrinkwrap.json v1-v3 (bun `migration/npm_lock.rs`). Workspace
-    /// entries (`link: true`) map to workspace resolutions.
-    pub fn parse(_bytes: &[u8], _workspace: &Workspace) -> Result<LockGraph> {
-        todo!()
-    }
-
-    /// lockfileVersion 3.
-    pub fn serialize(_graph: &LockGraph) -> Result<String> {
-        todo!()
-    }
-}
+/// package-lock.json / npm-shrinkwrap.json (bun `migration/npm_lock.rs`).
+pub mod npm;
 
 pub mod yarn_v1 {
     use fnpm_types::LockGraph;

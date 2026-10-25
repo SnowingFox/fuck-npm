@@ -486,6 +486,7 @@ dependencies = [
  "fnpm-semver",
  "fnpm-types",
  "fnpm-workspace",
+ "globset",
  "memchr",
  "rkyv",
  "serde",
