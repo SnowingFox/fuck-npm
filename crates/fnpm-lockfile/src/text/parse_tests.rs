@@ -367,3 +367,22 @@ fn lockfile_version_0_lists_workspace_dependencies_under_packages() {
     );
     assert!(text.contains("    \"packages/pkg1\": {\n      \"name\": \"pkg1\",\n      \"dependencies\": {\n        \"a\": \"1.0.0\",\n      },\n    },\n"), "{text}");
 }
+
+#[test]
+fn npm_versions_are_read_as_bun_parses_them() {
+    // bun's `Version::parse` skips a leading `v` and `=`, and the writer prints the
+    // parsed version, so the tarball URL and the next save use `1.0.0`.
+    for written in ["=1.0.0", "v1.0.0", "=v1.0.0"] {
+        let src = no_deps_lock(1, "", "").replace("no-deps@1.0.0", &format!("no-deps@{written}"));
+        let (g, _) = parse(&src).unwrap();
+        let p = g.packages.iter().find(|p| p.name == "no-deps").unwrap();
+        assert_eq!(p.resolution.npm_version(), Some("1.0.0"), "{written}");
+        assert_eq!(p.version, "1.0.0", "{written}");
+        let out = crate::text::write::write(&g, crate::text::Dialect::Bun).text;
+        assert!(out.contains("[\"no-deps@1.0.0\""), "{written}: {out}");
+    }
+    assert!(
+        err(&no_deps_lock(1, "", "").replace("no-deps@1.0.0", "no-deps@v"))
+            .contains("Unexpected resolution")
+    );
+}

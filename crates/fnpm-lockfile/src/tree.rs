@@ -612,8 +612,9 @@ impl<'a, 'g> Builder<'a, 'g> {
                             continue;
                         }
                     }
+                    // A name that is not one folder (empty, `..`, `a/../b`, ...) would be
+                    // installed outside its `node_modules`; bun aborts, fnpm leaves it out.
                     if pkg_id != INVALID
-                        && !dependency.name.is_empty()
                         && !fnpm_types::name::is_safe_install_folder_name(dependency.name)
                     {
                         continue;

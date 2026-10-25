@@ -438,3 +438,6 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod lib_tests;
+
+#[cfg(test)]
+mod fuzz_tests;

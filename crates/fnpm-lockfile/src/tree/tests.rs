@@ -360,3 +360,43 @@ fn parent_paths() {
     assert_eq!(parent_path("x/b@1"), None);
     assert_eq!(parent_path("./ws/a"), Some("./ws"));
 }
+
+#[test]
+fn names_that_are_not_one_folder_are_never_placed() {
+    let mut g = root();
+    let ok = npm(&mut g, "ok", "1.0.0");
+    for (i, name) in [
+        "",
+        ".",
+        "..",
+        "../evil",
+        "a/../../b",
+        "@s/..",
+        "a\\b",
+        "c:d",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let p = npm(&mut g, &format!("p{i}"), "1.0.0");
+        edge(
+            &mut g,
+            PackageId::ROOT,
+            name,
+            "1.0.0",
+            Behavior::PROD,
+            Some(p),
+        );
+        edge(&mut g, ok, name, "1.0.0", Behavior::PROD, Some(p));
+    }
+    edge(
+        &mut g,
+        PackageId::ROOT,
+        "ok",
+        "1.0.0",
+        Behavior::PROD,
+        Some(ok),
+    );
+    let t = hoist(&g, &all());
+    assert_eq!(keys(&t), ["ok"]);
+}

@@ -275,9 +275,22 @@ fn resolution_from_text(s: &str) -> Option<Resolution> {
                 integrity: None,
             }
         }),
-        SpecTag::Npm => semver::is_version(s).then(|| Resolution::npm(s, None)),
+        SpecTag::Npm => {
+            // bun keeps the parsed version, so `=1.0.0` and `v1.0.0` are written `1.0.0`.
+            let v = canonical_version(s);
+            semver::is_version(v).then(|| Resolution::npm(v, None))
+        }
         _ => None,
     }
+}
+
+/// A resolved version without what bun's `Version::parse` skips: leading whitespace, `v`
+/// and `=`, and trailing whitespace.
+fn canonical_version(s: &str) -> &str {
+    s.trim_start_matches(|c: char| {
+        matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0B' | '\x0C' | 'v' | '=')
+    })
+    .trim_end_matches([' ', '\t', '\n', '\r', '\x0B', '\x0C'])
 }
 
 /// bun's `RowEvidence`: how good a binding found by the path walk is. Larger is better.
