@@ -1495,23 +1495,92 @@ the runtime.
 **Responsibility.** The cdylib loaded by `@fuck-npm/binding`. Converts JS values to
 `fnpm_core` options with serde, runs the core on its runtime, delivers batched events through
 a `ThreadsafeFunction`, and rejects promises with `error.code = fnpm_core::Error::code()`.
-Sets mimalloc as the global allocator. No logic of its own.
+Sets mimalloc as the global allocator. No package-manager logic of its own.
 
-**API** (`crates/fnpm-napi/src/lib.rs`):
+**API** (`crates/fnpm-napi/src/lib.rs`; the JS view is `packages/fuck-npm-binding/index.d.ts`):
 
 ```rust
 #[napi] pub fn version() -> String;
-#[napi] pub async fn install(options: serde_json::Value,
-                             on_events: Option<ThreadsafeFunction<serde_json::Value>>) -> napi::Result<serde_json::Value>;
-#[napi] pub async fn invoke(request: serde_json::Value,
-                            on_events: Option<ThreadsafeFunction<serde_json::Value>>) -> napi::Result<serde_json::Value>;
+#[napi] pub fn install<'env>(env: &'env Env, options: serde_json::Value,
+                             on_events: Option<EventsFn>) -> napi::Result<Object<'env>>;   // Promise<InstallSummary>
+#[napi] pub fn invoke<'env>(env: &'env Env, request: serde_json::Value,
+                            on_events: Option<EventsFn>) -> napi::Result<Object<'env>>;    // Promise<CoreResult>
+type EventsFn = ThreadsafeFunction<Value, Unknown<'static>, Value, Status, /* callee handled */ true>;
 ```
 
-`install` deserialises `InstallOptions` (unknown fields ignored), builds a `BatchingSink`
-whose deliver closure calls `on_events` with a JSON array (non-blocking mode; the callback is
-`(err, events)` because the TSFN is callee-handled), or a `NoopSink` when `on_events` is
-absent, then returns `InstallSummary` as JSON. Built with `napi build --platform` from
-`packages/fuck-npm-binding` (binary name `fnpm`, targets listed in its package.json).
+**Call flow.**
+
+1. On the JS thread: create a promise (`Env::create_deferred`), convert the payload to JSON
+   and deserialise it (`InstallOptions` / `CoreRequest`, unknown fields ignored). Integral
+   doubles become integers first (napi-rs only does so up to `u32::MAX`, which would break
+   `minimumReleaseAgeMs` beyond 49 days). Neither function throws: a payload that does not
+   convert or deserialise (`undefined`, functions, symbols, `NaN`, wrong types), a relative
+   or missing `cwd` (the core would otherwise use the Node process's directory), and an
+   `onEvents` that is not a function all reject right away with `USAGE`
+   (`invalid install options: <reason>`), without touching the runtime.
+2. Spawn the work on `fnpm_core::runtime()`. The functions are not napi `async fn`s on
+   purpose: those run on napi-rs's own tokio runtime, which would mean a second thread pool
+   and a hop between runtimes. For the same reason the `napi` crate is built without
+   `tokio_rt`, which would start that runtime (a thread per CPU) when the addon loads.
+3. With `onEvents`, the sink is a `BatchingSink` whose deliver closure serialises the batch
+   to a JSON array and calls the TSFN non-blocking (unbounded queue) as `(null, events)`.
+   fnpm-napi runs the 50 ms flush timer itself rather than `BatchingSink::start`: that
+   guard aborts the timer task and flushes at once, so a timer flush still running on
+   another worker could deliver after the final batch, or after the listener closed. Here
+   the final flush waits until the timer task has stopped. Without `onEvents` the sink is
+   `NoopSink` and no event is built.
+4. Every batch is sent with a return-value callback that releases an ack once the JS
+   callback has returned. The promise settles through a different Node queue, so before
+   settling the task waits until every ack is back (`listener::Listener::close`), then drops
+   the TSFN, so it no longer keeps the event loop alive. The last progress batch therefore
+   always arrives before the summary.
+5. Settle on the JS thread: resolve with the result as JSON, or reject with an `Error`
+   created there with `code` and `message` set (the rejection is that exact object).
+
+**Errors and panics.** Codes are `fnpm_core::Error::code()` (`NOT_IMPLEMENTED` for commands of
+a later parity phase). A panic in the core (in
+`runtime()` or the spawned work) is caught and rejects with `CORE_ERROR` and
+`internal error in the fnpm core: <panic message>`; the runtime keeps running. This needs
+unwinding, so the addon is built with the `release-napi` profile (`release` with
+`panic = "unwind"`); the native executables keep `panic = "abort"`. If `onEvents` throws,
+the exception is raised as an uncaught exception (like an `EventEmitter` listener's), later
+batches are still delivered, and the promise still settles.
+
+**Build.** `npm run build:native -w @fuck-npm/binding` (`napi build --platform --profile
+release-napi`, `@napi-rs/cli` pinned) writes `fnpm.<triple>.node` and the generated
+`native.d.ts` (not committed) into `packages/fuck-npm-binding`. `build:native:test` is a
+debug build with the cargo feature `testing`, which adds `__testDeliver` and
+`__testRejectNow`: they drive the delivery, ack and rejection plumbing on a private runtime,
+independent of what the core does, and `__testEmit`, which emits events through the same
+`run` path and batching sink as `install`. `.github/workflows/napi.yml` builds all eight targets
+(glibc with `--use-napi-cross`, linked against glibc 2.17; musl with cargo-zigbuild and
+`-mevex512` for libdeflate's AVX-512 code under zig; on musl mimalloc uses local-dynamic TLS,
+since an initial-exec TLS model crashes Node while it dlopens the addon), runs `cargo test`, clippy and
+the vitest suite on Linux x64/arm64, macOS arm64 and Windows x64, and loads every release
+build on its own platform (musl ones in Alpine) to run `tests/smoke.cjs`: a `USAGE`
+rejection, an empty-project install with events, and the no-op fast path.
+
+**Tests.** `cargo test -p fnpm-napi`: payload parsing (camelCase, unknown fields, wrong
+types, enum values, integral doubles, absolute `cwd`), error-code mapping, panic payloads,
+and ack accounting with concurrent producers and a slow consumer. `npm test -w
+@fuck-npm/binding` (vitest, loads the built addon): loader triples, the not-found report and
+that an installed copy never loads development builds, no threads started by loading,
+version, `USAGE` rejections instead of exceptions for every malformed payload, `cwd` and
+callback, event batches in order and all before settling (also before a rejection, with 2000
+batches, and through the batching sink while its timer flushes), progress coalescing, a
+throwing listener, the process exiting once the promise settles, panics as `CORE_ERROR`, and
+real installs against an in-memory registry (`tests/helpers/registry.mjs`): `add` with events
+then the no-op fast path and `pm ls`, `NOT_FOUND`, `NO_MATCHING_VERSION`, `FROZEN_LOCKFILE`,
+`INVALID_PACKAGE_JSON`, and concurrent installs in one process.
+`packages/fuck-npm/tests/unit/core/native.test.ts` runs the CLI's `Core` (`loadCore`) over the
+same build: options the CLI builds for every install flag deserialize in Rust, events reach
+the sink, and rejections become `CoreError` with the core's code.
+
+**Perf.** `npm run bench -w @fuck-npm/binding` measures load time, a sync call, a rejected
+payload, an empty async round trip, 1/100/1000 event batches, and a no-op install of an empty
+project (the core's fast path end to end). With the `release-napi` build on the Linux baseline
+machine: load about 2 ms (`dlopen`) / 4 ms (`require` of `index.js`), no-op install of the
+small fixture 0.23 ms in process, about 10 µs per event batch.
 
 ## fnpm-cli
 
@@ -1596,8 +1665,9 @@ The JS surface is `packages/fuck-npm-binding/index.d.ts`; the CLI-side types are
 export function version(): string;
 export function install(options: InstallOptions, onEvents?: (err: Error | null, events: CoreEvent[]) => void): Promise<InstallSummary>;
 export function invoke(request: CoreRequest, onEvents?: (err: Error | null, events: CoreEvent[]) => void): Promise<CoreResult>;
-// Rejections: Error with `code` in FROZEN_LOCKFILE | NO_MATCHING_VERSION | NOT_FOUND | INTEGRITY | NETWORK |
-//             SCRIPT_FAILED | INVALID_PACKAGE_JSON | USAGE | CORE_ERROR
+// Never throws. Rejections: Error with `code` in FROZEN_LOCKFILE | NO_MATCHING_VERSION | NOT_FOUND |
+//             INTEGRITY | NETWORK | SCRIPT_FAILED | INVALID_PACKAGE_JSON | USAGE | NOT_IMPLEMENTED | CORE_ERROR
+// `cwd` (in options and request) must be absolute.
 ```
 
 Events (`fnpm_types::event::Event`, serde `tag = "type"`, camelCase fields), delivered as
@@ -1663,10 +1733,13 @@ passed under `--json` / `--silent`. Tests: vitest with injected fakes.
 `/usr/bin/ldd`, then `process.report`) and loads, in order: `NAPI_RS_NATIVE_LIBRARY_PATH`,
 `fnpm.<triple>.node` next to it, `fnpm.<triple>.node` in `crates/fnpm-napi`, the
 `@fuck-npm/binding-<triple>` platform package, then raw cargo output in
-`target/{release,debug}` (development);
+`$CARGO_TARGET_DIR` or `target/{release-napi,release,debug}` (development). The
+`crates/` and `target/` candidates only apply in the repository checkout: in an installed
+copy `../../` is the user's `node_modules`, where a dependency named `target` or `crates`
+could plant a library that every fnpm process would load, scripts allowed or not.
 `index.d.ts` is the contract above. Platform packages are napi-rs standard prebuilt packages
-built in CI (`napi build --platform --release`); they also carry the native executables (see
-[packaging](#packaging-and-distribution)).
+built in CI (`napi build --platform --profile release-napi`); they also carry the native
+executables (see [packaging](#packaging-and-distribution)).
 
 ## bench
 

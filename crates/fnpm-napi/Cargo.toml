@@ -6,17 +6,31 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Extra `__test*` exports used by packages/fuck-npm-binding's vitest suite. Never enabled
+# for release builds.
+testing = []
 
 [dependencies]
 napi.workspace = true
 napi-derive.workspace = true
 fnpm-core.workspace = true
 fnpm-types.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
 mimalloc.workspace = true
 
-[lib]
-crate-type = ["cdylib"]
+# On musl, an initial-exec TLS model in a dlopen'ed library crashes Node while loading it
+# (musl reserves no static TLS for dlopen); mimalloc must use local-dynamic TLS there.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { workspace = true, features = ["local_dynamic_tls"] }
 
 [build-dependencies]
 napi-build.workspace = true

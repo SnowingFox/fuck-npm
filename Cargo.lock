@@ -629,11 +629,14 @@ version = "0.1.0"
 dependencies = [
  "fnpm-core",
  "fnpm-types",
+ "futures-util",
  "mimalloc",
  "napi",
  "napi-build",
  "napi-derive",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1462,7 +1465,6 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]

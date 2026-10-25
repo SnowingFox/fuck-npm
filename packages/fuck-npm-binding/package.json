@@ -26,12 +26,16 @@
     ]
   },
   "scripts": {
-    "build:native": "napi build --platform --release --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts",
+    "build:native": "napi build --platform --profile release-napi --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts",
     "build:native:debug": "napi build --platform --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts",
+    "build:native:test": "napi build --platform --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js --dts native.d.ts --features testing",
+    "test": "vitest run",
+    "bench": "node bench/overhead.mjs",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm"
   },
   "devDependencies": {
-    "@napi-rs/cli": "3.10.9"
+    "@napi-rs/cli": "3.10.9",
+    "vitest": "^4.1.12"
   }
 }
