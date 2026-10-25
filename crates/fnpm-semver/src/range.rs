@@ -656,9 +656,19 @@ impl Range {
         }
     }
 
-    /// Whether some alternative has no comparator, i.e. every release satisfies the range.
+    /// Whether every release satisfies the range: some alternative has no comparator (`""`,
+    /// `latest`) or is a lone `>=0.0.0` (`*`, `x`, `>=0`).
     pub fn is_any(&self) -> bool {
-        self.sets.iter().any(Vec::is_empty)
+        self.sets.iter().any(|set| match set.as_slice() {
+            [] => true,
+            [
+                Comparator {
+                    op: Op::Gte,
+                    version,
+                },
+            ] => version.is_zero() && !version.is_prerelease(),
+            _ => false,
+        })
     }
 
     /// bun `Group::is_empty`: the parser found no comparator at all (`""`, `latest`).
@@ -787,9 +797,14 @@ impl Range {
 }
 
 impl fmt::Display for Range {
-    /// The normalized form: comparators joined by a space, alternatives by ` || `, an empty
-    /// set as `*`, an exact comparator as `=x.y.z`.
+    /// The normalized form: comparators joined by a space, alternatives by ` || `, an exact
+    /// comparator as `=x.y.z`. A range with no comparator at all prints as `""` and an empty
+    /// set among others as `*`, so the text parses back to a range that behaves the same
+    /// (`""` and `*` differ for [`crate::pick_best`]).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.has_no_comparators() {
+            return Ok(());
+        }
         for (i, set) in self.sets.iter().enumerate() {
             if i > 0 {
                 f.write_str(" || ")?;

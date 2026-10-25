@@ -44,9 +44,11 @@ pub fn max_satisfying_sorted<'a>(
 /// bun `PackageManifest::find_best_version` over `items` sorted ascending by version: the
 /// version `bun install` picks for `range`.
 ///
-/// 1. An exact range returns that version if it exists, deprecated or not.
-/// 2. `latest` wins when it is not deprecated, satisfies the range, and either the range has no
-///    prerelease or its first comparator is exactly `latest`.
+/// 1. An exact range returns that version if it exists, deprecated or not (the prerelease must
+///    be spelled the same; build metadata is ignored).
+/// 2. `latest` wins when it is not deprecated, satisfies the range (or the range has no
+///    comparator at all, like `""`), and either the range has no prerelease or its first
+///    comparator is exactly `latest`.
 /// 3. Otherwise the highest satisfying release, then (only when the range names a prerelease)
 ///    the highest satisfying prerelease.
 /// 4. A deprecated version is only returned when every match is deprecated.
@@ -62,7 +64,7 @@ where
     D: Fn(&T) -> bool,
 {
     if let Some(exact) = range.as_exact() {
-        return find_exact(items, &version_of, exact);
+        return find_by_version(items, &version_of, exact);
     }
     let has_pre = range.has_prerelease();
     if let Some(latest) = latest {
@@ -74,9 +76,14 @@ where
                 .first()
                 .and_then(|s| s.first())
                 .map_or(&zero, |c| &c.version);
-            first == v
+            bun_order_is_equal(first, v)
         };
-        if !is_deprecated(latest) && range.satisfies(v) && (!has_pre || first_is_latest()) {
+        // A range with no comparator (`""`, `latest`) takes `latest` even when it is a
+        // prerelease, which `satisfies` alone would refuse.
+        if !is_deprecated(latest)
+            && (range.has_no_comparators() || range.satisfies(v))
+            && (!has_pre || first_is_latest())
+        {
             return Some(latest);
         }
     }
@@ -107,6 +114,25 @@ pub fn best_version<'a>(
     latest: Option<&'a Version>,
 ) -> Option<&'a Version> {
     pick_best(versions, |v| v, range, latest, |_| false)
+}
+
+/// bun `Version::order(..) == Equal`: same precedence, and between releases the same build
+/// metadata (between prereleases bun ignores the build).
+fn bun_order_is_equal(a: &Version, b: &Version) -> bool {
+    a.eq_precedence(b) && (a.is_prerelease() || a.build == b.build)
+}
+
+/// bun `PackageManifest::find_by_version`: the first item that is `exact` by `Version::eql`,
+/// i.e. the same `major.minor.patch` and prerelease text, whatever the build metadata.
+fn find_by_version<'a, T, V>(items: &'a [T], version_of: V, exact: &Version) -> Option<&'a T>
+where
+    V: Fn(&T) -> &Version,
+{
+    let start = items.partition_point(|it| version_of(it).cmp_precedence(exact).is_lt());
+    items[start..]
+        .iter()
+        .take_while(|it| version_of(it).eq_precedence(exact))
+        .find(|it| version_of(it).pre == exact.pre)
 }
 
 /// The last item whose version has the same precedence as `exact`.

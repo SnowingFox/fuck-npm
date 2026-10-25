@@ -37,13 +37,19 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// `Bun.semver.satisfies(version, range)`: parse both and test. A version that is not exactly
 /// one version (see [`Version::parse_loose`]) or non-ASCII input is `false`; a range of only
-/// unknown words (`latest`) matches every release, as in bun.
+/// unknown words (`latest`) matches every release, as in bun. Against an exact range the
+/// prerelease must be written the same way (`1.0.0-01` does not satisfy `1.0.0-1`), as in bun.
 pub fn satisfies(version: &str, range: &str) -> bool {
     if !version.is_ascii() || !range.is_ascii() {
         return false;
     }
     match (Version::parse_loose(version), Range::parse(range)) {
-        (Ok(v), Ok(r)) => r.satisfies(&v),
+        // bun compares an exact range with `Version::eql`: the prerelease must be spelled the
+        // same (`1.0.0-01` is not `1.0.0-1`), and build metadata is ignored.
+        (Ok(v), Ok(r)) => match r.as_exact() {
+            Some(exact) => v.same_core(exact) && v.pre == exact.pre,
+            None => r.satisfies(&v),
+        },
         _ => false,
     }
 }

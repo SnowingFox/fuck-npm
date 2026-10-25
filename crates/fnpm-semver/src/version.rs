@@ -628,15 +628,15 @@ impl Ord for Version {
         self.cmp_precedence(other)
             .then_with(|| self.build.as_bytes().cmp(other.build.as_bytes()))
             .then_with(|| {
-                // Same precedence but different spelling (`01` vs `1`): keep `Ord` consistent
-                // with `Eq`.
+                // Same precedence but different spelling (`01` vs `1`, or a hand-built
+                // `AlphaNumeric("1")` vs `Numeric(1)`): keep `Ord` consistent with `Eq`.
                 if self.pre == other.pre {
                     Ordering::Equal
                 } else {
-                    self.pre
-                        .iter()
-                        .map(ToString::to_string)
-                        .cmp(other.pre.iter().map(ToString::to_string))
+                    let key = |id: &Identifier| {
+                        (id.to_string(), matches!(id, Identifier::AlphaNumeric(_)))
+                    };
+                    self.pre.iter().map(key).cmp(other.pre.iter().map(key))
                 }
             })
     }

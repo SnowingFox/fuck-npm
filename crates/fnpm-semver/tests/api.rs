@@ -398,8 +398,8 @@ fn range_desugaring() {
         ("1.2", "<1.3.0-0 >=1.2.0"),
         ("1.x", "<2.0.0-0 >=1.0.0"),
         ("*", ">=0.0.0"),
-        ("", "*"),
-        ("latest", "*"),
+        ("", ""),
+        ("latest", ""),
         ("1.2.3", "=1.2.3"),
         ("=v1.2.3", "=1.2.3"),
         ("1 - 2", ">=1.0.0 <3.0.0-0"),
@@ -418,8 +418,9 @@ fn range_desugaring() {
     ];
     for (input, want) in cases {
         assert_eq!(r(input).to_string(), want, "{input:?}");
-        // The printed form parses back to the same range (an empty set prints as `*`).
-        if !r(input).is_any() {
+        // The printed form parses back to the same range (an empty set among others prints
+        // as `*`).
+        if !r(input).is_any() || r(input).has_no_comparators() {
             assert_eq!(r(&r(input).to_string()), r(input), "{input:?}");
         }
     }
@@ -932,4 +933,112 @@ fn errors_display() {
         Error::InvalidRange("x".into()).to_string(),
         "invalid range \"x\""
     );
+}
+
+/// `Bun.semver.satisfies` compares an exact range with `Version::eql`.
+#[test]
+fn satisfies_exact_like_bun() {
+    assert!(!satisfies("1.0.0-01", "1.0.0-1"));
+    assert!(!satisfies("1.0.0-1", "=1.0.0-01"));
+    assert!(satisfies("1.0.0-01", "1.0.0-01"));
+    assert!(satisfies("1.0.0-01", ">=1.0.0-1"));
+    assert!(satisfies("1.0.0+b", "1.0.0+c"));
+    assert!(satisfies("1.0.0-rc.1+b", "=1.0.0-rc.1"));
+    assert!(!satisfies("1.0.0-rc.1", "1.0.0"));
+    // `Range::satisfies` itself keeps precedence semantics, like bun's `Group::satisfies`.
+    assert!(r("1.0.0-1").satisfies(&v("1.0.0-01")));
+}
+
+/// A range without spaces used to rescan the rest of the input for every prerelease tag.
+#[test]
+fn long_range_without_spaces_parses_in_linear_time() {
+    for pattern in ["1.0.0-a||", "^1.0.0-a||", "1.0.0rc||", "1.0.0+b||"] {
+        let text = pattern.repeat(40_000);
+        let started = std::time::Instant::now();
+        let range = r(&text);
+        assert_eq!(range.sets.len(), 40_000, "{pattern:?}");
+        // Quadratic scanning took over 10 s here even in release builds.
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{pattern:?} took {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+/// bun `find_best_version` details: an empty range takes a prerelease `latest`, `latest` is
+/// compared with bun `order`, and the exact fast path is `find_by_version`.
+#[test]
+fn pick_best_edge_cases_like_bun() {
+    let list = items(&[("1.0.0", false), ("2.0.0-beta.1", false)]);
+    let latest = Some("2.0.0-beta.1");
+    assert_eq!(pick(&list, "", latest).as_deref(), Some("2.0.0-beta.1"));
+    assert_eq!(
+        pick(&list, "latest", latest).as_deref(),
+        Some("2.0.0-beta.1")
+    );
+    // `*` is `>=0.0.0`, which a prerelease does not satisfy.
+    assert_eq!(pick(&list, "*", latest).as_deref(), Some("1.0.0"));
+    assert_eq!(pick(&list, "", None).as_deref(), Some("1.0.0"));
+    // A deprecated `latest` is still skipped.
+    let deprecated = items(&[("1.0.0", false), ("2.0.0-beta.1", true)]);
+    assert_eq!(pick(&deprecated, "", latest).as_deref(), Some("1.0.0"));
+
+    // Between prereleases bun's `order` ignores build metadata.
+    let list = items(&[("1.0.0-beta+abc", false), ("2.0.0", false)]);
+    assert_eq!(
+        pick(&list, ">=1.0.0-beta", Some("1.0.0-beta+abc")).as_deref(),
+        Some("1.0.0-beta+abc")
+    );
+
+    // The exact fast path wants the same prerelease text and takes the first build.
+    let list = items(&[
+        ("1.0.0-1", false),
+        ("1.0.0-01", false),
+        ("1.0.0+a", false),
+        ("1.0.0+b", false),
+    ]);
+    assert_eq!(pick(&list, "1.0.0-01", None).as_deref(), Some("1.0.0-01"));
+    assert_eq!(pick(&list, "1.0.0-1", None).as_deref(), Some("1.0.0-1"));
+    assert_eq!(pick(&list, "1.0.0", None).as_deref(), Some("1.0.0+a"));
+    assert_eq!(pick(&list, "1.0.0-2", None), None);
+}
+
+#[test]
+fn ord_agrees_with_eq_for_hand_built_identifiers() {
+    let numeric = Version {
+        pre: vec![Identifier::Numeric(1)],
+        ..Version::new(1, 0, 0)
+    };
+    let text = Version {
+        pre: vec![Identifier::AlphaNumeric("1".into())],
+        ..Version::new(1, 0, 0)
+    };
+    assert_ne!(numeric, text);
+    assert_ne!(numeric.cmp(&text), Ordering::Equal);
+    assert_eq!(numeric.cmp(&text), text.cmp(&numeric).reverse());
+    assert!(numeric.eq_precedence(&text));
+}
+
+#[test]
+fn is_any_and_display_round_trip() {
+    for any in ["", "latest", "*", "x", ">=0", ">=0.0.0", "1 || *"] {
+        assert!(r(any).is_any(), "{any:?}");
+    }
+    for not_any in [">=0.0.0-0", "^1", "<1", ">=0.0.1", "1.x"] {
+        assert!(!r(not_any).is_any(), "{not_any:?}");
+    }
+    // `""` and `*` pick differently, so each must survive printing and serde.
+    for text in ["", "*", "latest"] {
+        let range = r(text);
+        assert_eq!(r(&range.to_string()), range, "{text:?}");
+        let json = serde_json::to_string(&range).unwrap();
+        let back: Range = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.has_no_comparators(),
+            range.has_no_comparators(),
+            "{text:?}"
+        );
+    }
+    assert_eq!(Range::any().to_string(), "");
 }

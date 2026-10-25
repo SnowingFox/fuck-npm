@@ -284,17 +284,15 @@ pub(crate) fn scan_tag(input: &[u8], implicit_pre: bool) -> (RawTag<'_>, usize) 
         Build,
     }
 
-    let mut build_count = 0u32;
-    let mut pre_count = u32::from(implicit_pre);
-    for &c in input {
-        match c {
-            b' ' => break,
-            b'+' => build_count += 1,
-            b'-' => pre_count += 1,
-            _ => {}
-        }
-    }
-    if build_count == 0 && pre_count == 0 {
+    // bun counts every `-` and `+` up to the next space only to test for zero. Stopping at the
+    // first one keeps a range without spaces (`1.0.0-a||1.0.0-b||...`) linear instead of
+    // rescanning the rest of the input for every tag.
+    let has_tag = implicit_pre
+        || input
+            .iter()
+            .take_while(|c| **c != b' ')
+            .any(|c| matches!(c, b'+' | b'-'));
+    if !has_tag {
         return (RawTag::default(), 0);
     }
 
