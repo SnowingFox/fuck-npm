@@ -420,6 +420,17 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &mut graph,
     );
 
+    let kind = fnpm_linker::choose_linker(
+        config.linker.fixed().or(graph.node_linker),
+        graph.config_version,
+        graph.has_workspaces(),
+        lock.migrated && lock.format == Some(Format::Npm),
+        &root,
+    );
+    if kind == NodeLinker::Isolated && (changed || lock.migrated || !edits.is_empty()) {
+        lock::normalize_bindings(&mut graph, &ws)?;
+    }
+
     let (added, updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
     let requested = summary::requested(&graph, &resolved_requests, &config.platform);
     let mut summary = InstallSummary {

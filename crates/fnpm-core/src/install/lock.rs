@@ -435,3 +435,109 @@ pub(crate) fn write_back(
     }
     Ok(reports)
 }
+
+/// Match the bindings a saved text lockfile will load while retaining ids and metadata used
+/// by in-flight fetches and command results. The isolated linker consumes peer bindings
+/// directly, so using the pre-write graph would make cold and warm layouts differ.
+pub(crate) fn normalize_bindings(graph: &mut LockGraph, ws: &Workspace) -> Result<()> {
+    let bytes = fnpm_lockfile::serialize(Format::Fnpm, graph)?;
+    let loaded = fnpm_lockfile::parse(Format::Fnpm, &bytes, ws)?;
+    let ids: std::collections::HashMap<String, fnpm_types::PackageId> = graph
+        .packages
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.key(), fnpm_types::PackageId(i as u32)))
+        .collect();
+    let loaded_ids: Vec<_> = loaded
+        .packages
+        .iter()
+        .map(|p| ids.get(&p.key()).copied())
+        .collect();
+    let packages: std::collections::HashMap<_, _> =
+        loaded.packages.iter().map(|p| (p.key(), p)).collect();
+    for p in &mut graph.packages {
+        let Some(before) = packages.get(&p.key()) else {
+            continue;
+        };
+        for e in &mut p.dependencies {
+            e.target = before
+                .dependencies
+                .iter()
+                .find(|old| old.name == e.name && old.behavior.group() == e.behavior.group())
+                .and_then(|old| old.target)
+                .and_then(|id| loaded_ids[id.index()]);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fnpm_types::{Behavior, DepEdge, Package, PackageId, Resolution};
+    use serde_json::json;
+
+    #[test]
+    fn normalization_uses_text_bindings_without_replacing_package_metadata_or_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            json!({
+                "name": "app", "dependencies": {"plugin": "1.0.0", "provider": "1.0.0"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let ws = Workspace::load(dir.path()).unwrap();
+        let mut graph = LockGraph::new(Package::new("app", "", Resolution::Root));
+        let extra = graph.push(Package::new(
+            "extra",
+            "1.0.0",
+            Resolution::npm("1.0.0", None),
+        ));
+        let plugin = graph.push(Package::new(
+            "plugin",
+            "1.0.0",
+            Resolution::npm("1.0.0", None),
+        ));
+        let provider = graph.push(Package::new(
+            "provider",
+            "1.0.0",
+            Resolution::npm("1.0.0", None),
+        ));
+        for (owner, name, behavior, target) in [
+            (PackageId::ROOT, "plugin", Behavior::PROD, Some(plugin)),
+            (PackageId::ROOT, "provider", Behavior::PROD, Some(provider)),
+            (provider, "extra", Behavior::PROD, Some(extra)),
+            (plugin, "extra", Behavior::PEER | Behavior::OPTIONAL, None),
+        ] {
+            let mut edge = DepEdge::new(name, "1.0.0", behavior);
+            edge.target = target;
+            graph.packages[owner.index()].dependencies.push(edge);
+        }
+        graph.packages[plugin.index()].meta.license = Some("MIT".into());
+        assert!(
+            graph.packages[plugin.index()]
+                .dependency("extra")
+                .unwrap()
+                .target
+                .is_none()
+        );
+        normalize_bindings(&mut graph, &ws).unwrap();
+        assert_eq!(
+            graph.packages[plugin.index()]
+                .dependency("extra")
+                .unwrap()
+                .target,
+            Some(extra)
+        );
+        assert_eq!(
+            graph.packages[plugin.index()].meta.license.as_deref(),
+            Some("MIT")
+        );
+        assert_eq!(graph.packages[extra.index()].name, "extra");
+        let before = graph.clone();
+        normalize_bindings(&mut graph, &ws).unwrap();
+        assert_eq!(graph, before);
+    }
+}

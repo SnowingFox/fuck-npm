@@ -812,6 +812,18 @@ async fn tarball_url_dependency_is_not_downloaded_again_when_warm() {
         assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
         assert_eq!(reg.tarball_requests(), 0, "store hit: {:?}", reg.seen());
     }
+    let packed = p
+        .invoke(&["pm", "cache", "pack"], &["tarball.pack"], json!({}))
+        .await
+        .unwrap();
+    assert_eq!(packed.exit_code, 0, "{:?}", packed.lines);
+    assert_eq!(packed.data.as_ref().unwrap()["packages"], 1);
+    assert_eq!(packed.data.as_ref().unwrap()["missing"], 0);
+    let verified = p
+        .invoke(&["lock", "verify"], &[], json!({ "integrity": true }))
+        .await
+        .unwrap();
+    assert_eq!(verified.exit_code, 0, "{:?}", verified.lines);
 
     // The same through an npm migration, which knows the version.
     let reg = Registry::start(&basic()).await;
@@ -869,7 +881,8 @@ async fn failing_optional_script_deletes_the_package_and_succeeds() {
             ),
         ])
         .await;
-        for linker in ["hoisted", "isolated"] {
+        for (linker, global_store) in [("hoisted", false), ("isolated", false), ("isolated", true)]
+        {
             let p = Project::new(
                 &reg,
                 json!({
@@ -879,7 +892,10 @@ async fn failing_optional_script_deletes_the_package_and_succeeds() {
                     "scripts": { "postinstall": format!("test ! -e node_modules/{name} && test ! -L node_modules/{name} && test ! -L node_modules/.bin/native-opt") }
                 }),
             );
-            p.write("fnpm.toml", &format!("[install]\nlinker = \"{linker}\"\n"));
+            p.write(
+                "fnpm.toml",
+                &format!("[install]\nlinker = \"{linker}\"\nglobalStore = {global_store}\n"),
+            );
             let s = p.install().await;
             assert_eq!(s.failed_count, 0, "{linker}: {s:?}");
             assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
@@ -1031,5 +1047,40 @@ async fn unused_explicit_trust_never_enables_default_scripts_on_reinstall() {
             !exists(&p.path("node_modules/esbuild/ran.txt")),
             "frozen={frozen}"
         );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_default_keeps_hidden_hoisted_modules_visible_to_esm() {
+    let mut plugin = Pkg::new("plugin", "1.0.0");
+    plugin.files.push((
+        "probe.mjs".into(),
+        "import extra from 'extra'; if (extra !== 'extra@1.0.0') process.exit(1);".into(),
+    ));
+    let reg = Registry::start(&[
+        plugin,
+        Pkg::new("provider", "1.0.0").dep("extra", "1.0.0"),
+        Pkg::new("extra", "1.0.0"),
+    ])
+    .await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "plugin": "1.0.0", "provider": "1.0.0" },
+            "scripts": { "postinstall": "node node_modules/plugin/probe.mjs" }
+        }),
+    );
+    p.write("fnpm.toml", "[install]\nlinker = \"isolated\"\n");
+    p.install().await;
+    let real = std::fs::canonicalize(p.path("node_modules/plugin")).unwrap();
+    assert!(
+        real.starts_with(&p.dir),
+        "default package stays in the project: {real:?}"
+    );
+    for frozen in [false, true] {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.frozen_lockfile = frozen;
+        p.run(opts).await.unwrap();
     }
 }

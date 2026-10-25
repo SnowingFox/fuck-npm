@@ -253,13 +253,7 @@
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm turbo --filter=@trpc/server build",
       "baseline": "tests/e2e/baselines/trpc.json",
-      "fnpm": {
-        "known": "blocked on fnpm run through the JS CLI: a workspace postinstall runs npm-run-all, which calls `fnpm run`; on main the TS CLI needs the napi binding and its children's output is lost (fixed on feat/cmds-exec).",
-        "knownFailures": [
-          "^install exited 1:.*fnpm run"
-        ]
-      },
-      "notes": "The latest fnpm run also exposed @nuxt/schema importing undeclared scule: global-store packages cannot see the project hidden hoist. This remains FAIL rather than a known fnpm run blocker."
+      "notes": "Review fixed hidden-hoist visibility by keeping the global virtual store opt-in. Saved-text peer bindings now produce the same cold, warm and frozen isolated layout; install and verification pass. Extra versions relative to Bun remain listed in the result."
     },
     {
       "name": "create-t3-turbo",
@@ -284,7 +278,7 @@
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm -F @acme/validators -F @acme/db typecheck",
       "baseline": "tests/e2e/baselines/create-t3-turbo.json",
-      "notes": "The fnpm comparison still reports an extra @expo/metro-runtime@6.1.2 (the pnpm lock binds expo-router peer ^6.1.2 to 6.1.1) and a cold/warm instance-count difference. Verification passes; these remain FAIL."
+      "notes": "Review preserves locked peer copies outside their declared ranges on unrelated workspace changes and normalizes isolated bindings before linking. The extra Expo version and cold/warm drift are resolved; install, verification and reinstall checks pass. Extra versions relative to Bun remain listed in the result."
     },
     {
       "name": "date-fns",
@@ -355,7 +349,7 @@
       "fnpm": {
         "verify": "VP_SKIP_INSTALL=1 node node_modules/vite-plus/bin/vp test --run --project main --coverage.enabled=false src/hono.test.ts"
       },
-      "notes": "fnpm verification sets VP_SKIP_INSTALL so Vite+ does not replace node_modules with a pnpm install."
+      "notes": "fnpm verification sets VP_SKIP_INSTALL so Vite+ does not replace node_modules with a pnpm install. In the review run Bun rejects this pnpm lockfile for a missing linked workspace folder and resolves newer versions; fnpm migrates the lockfile and keeps its pinned versions, so the Bun package-set comparison differs."
     },
     {
       "name": "elysia",
@@ -391,7 +385,7 @@
       "install": "bun install --frozen-lockfile",
       "verify": "bun run build && bunx vitest run --silent=passed-only",
       "baseline": "tests/e2e/baselines/t3-env.json",
-      "notes": "The source bun.lock has older workspace versions, so install partially resolves it. The remaining fnpm differences involve locked ioredis@5.4.1 outside peer range ^5.4.2 and React 18 peer copies. Verification passes; these remain FAIL."
+      "notes": "The source bun.lock has older workspace versions, so install partially resolves it. Review preserves locked ioredis@5.4.1 and React 18 peer copies across unrelated workspace version changes. Install, verification and reinstall checks pass with the same package set as Bun."
     },
     {
       "name": "opencode",

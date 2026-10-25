@@ -561,3 +561,28 @@ async fn frozen_accepts_unused_trust_still_recorded_in_an_in_memory_graph() {
             .changed
     );
 }
+
+#[tokio::test]
+async fn workspace_version_changes_keep_locked_peer_copies_even_outside_their_ranges() {
+    let h = Harness::new();
+    h.registry
+        .add("plugin", &[("1.0.0", json!({"peerDependencies": {"host": "^1.1", "extra": "^1.1"}, "peerDependenciesMeta": {"extra": {"optional": true}}}))])
+        .add("host", &[("1.0.0", no_deps()), ("1.1.0", no_deps())])
+        .add("extra", &[("1.0.0", no_deps()), ("1.1.0", no_deps())]);
+    let ws = workspace(
+        json!({"dependencies": {"plugin": "1.0.0", "host": "1.0.0", "extra": "1.0.0"}}),
+        &[("packages/w", json!({"name": "w", "version": "1.0.0"}))],
+    );
+    let mut locked = h.install(&ws).await.graph;
+    locked
+        .root_mut()
+        .dependencies
+        .retain(|e| e.name != "host" && e.name != "extra");
+    let changed = workspace(
+        json!({"dependencies": {"plugin": "1.0.0"}}),
+        &[("packages/w", json!({"name": "w", "version": "1.0.1"}))],
+    );
+    let out = h.run(&changed, Some(&locked), Mode::Normal).await.unwrap();
+    assert_eq!(versions(&out.graph, "host"), ["1.0.0"]);
+    assert_eq!(versions(&out.graph, "extra"), ["1.0.0"]);
+}

@@ -100,8 +100,8 @@ The registry is forced on every tool with both the CLI flag and env (`npm_config
 `BUN_CONFIG_REGISTRY`, `YARN_REGISTRY`, `FNPM_REGISTRY`).
 
 hyperfine runs with `--shell=none` and its working directory set to the project, so no shell
-startup is included in the timings. While fnpm runs through `node`, its numbers include Node
-startup (about 47 ms on the baseline machine).
+startup is included in the timings. fnpm uses `FNPM_BIN` when set, otherwise the native release
+launcher when available. The fallback through `node` includes Node startup in its timings.
 
 ## Registry mirror
 
@@ -140,6 +140,14 @@ raw hyperfine times for every run, machine info, the tool versions, and the disk
 Markdown has one table per fixture with mean ± σ and the ratio to the fastest tool in that row,
 a min/max/runs breakdown, and the disk table. Absolute paths are stripped so the files can be
 committed.
+
+The review rerun in `results/2026-10-25-linux-x64.json` replaces only the small/medium
+fnpm and Bun rows (six scenarios, five measured runs and one warmup, plus disk). Other rows
+are from earlier invocations. Its fnpm binary SHA-256 was
+`c31a62a0fbba38adf6e18b8701c48a46db4dff9453c640499b40638895b0b3c9`.
+These hoisted fixtures were measured before the later isolated-binding normalization and
+no-op state-version bump; the corpus records its own binary hash. The strict gate fails
+7 of 12 small/medium comparisons. No-op wins do not establish a general speed or disk win.
 
 ## Gate
 

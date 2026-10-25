@@ -41,6 +41,10 @@ cargo build --release -p fnpm-cli                  # the runner uses target/rele
 FNPM_E2E_DIR=/somewhere/outside/repo node tests/e2e/fnpm.ts [--only a,b] [--skip a,b] [--skip-verify] [--no-bun]
 ```
 
+The runner copies the native executable into a private temporary directory for the run and records
+its SHA-256 as `binarySha256` in the JSON result. Rebuilding the original executable cannot change
+the binary used by later projects or lifecycle children in that run.
+
 Per project, one at a time:
 
 1. bun (the parity target) installs the pristine checkout with `--ignore-scripts`, for reference;
@@ -55,8 +59,10 @@ Per project, one at a time:
    which must reproduce the same snapshot and leave `fnpm.lock` unchanged.
 
 A difference from the baseline that bun shows too is reported as "same as bun" (parity) instead
-of a failure; fnpm's package set is also diffed against bun's. Dependency lifecycle scripts are
-only listed: fnpm, like bun, runs them for trusted packages only. `fnpm.allow` (regexes) accepts
+of a failure; fnpm's package set is also diffed against bun's. The JSON `vsBun.ok` is true only
+when those package sets match; a baseline-compatible PASS can still list additional versions
+relative to Bun. Dependency lifecycle scripts are only listed: fnpm, like bun, runs them for
+trusted packages only. `fnpm.allow` (regexes) accepts
 other documented differences. `fnpm.known` describes a genuine incompatibility; status KNOWN
 requires every failure to match a `fnpm.knownFailures` regex. An unexpected failure remains FAIL.
 The runner exits 1 if any project is FAIL. Results redact local checkout paths.

@@ -336,7 +336,9 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
     return !ok;
   };
   if (bunSnap) {
-    res.diff.vsBun = { bun: BUN_VERSION, ok: true, packages: bunSnap.packages.length, missing: setDiff(bunSnap.packages, snap.packages), extra: setDiff(snap.packages, bunSnap.packages) };
+    const missing = setDiff(bunSnap.packages, snap.packages);
+    const extra = setDiff(snap.packages, bunSnap.packages);
+    res.diff.vsBun = { bun: BUN_VERSION, ok: !missing.length && !extra.length, packages: bunSnap.packages.length, missing, extra };
   }
   res.diff.missing = setDiff(base.packages, snap.packages);
   res.diff.extra = setDiff(snap.packages, base.packages);

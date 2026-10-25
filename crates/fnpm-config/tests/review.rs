@@ -197,3 +197,21 @@ fn dotenv_with_many_keys_keeps_first_file_value_and_last_in_file() {
     assert_eq!(env.get("K19999"), Some("v19999"));
     assert_eq!(env.get("PRE"), Some("proc"));
 }
+
+#[test]
+fn global_store_is_opt_in_and_environment_overrides_the_file() {
+    let fx = Fx::new(&[]);
+    assert!(!fx.load().global_store);
+    for key in ["FNPM_GLOBAL_STORE", "BUN_INSTALL_GLOBAL_STORE"] {
+        assert!(
+            fx.load_with(&[(key, "1")], CliOverrides::default())
+                .global_store
+        );
+    }
+    let fx = Fx::new(&[("project/fnpm.toml", &bunfig("globalStore = true"))]);
+    assert!(fx.load().global_store);
+    assert!(
+        !fx.load_with(&[("FNPM_GLOBAL_STORE", "0")], CliOverrides::default())
+            .global_store
+    );
+}

@@ -17,7 +17,7 @@ pub const STATE_FILE: &str = "node_modules/.fnpm/.state/state";
 /// The state file of fnpm versions before `.state/` (deleted with the current one).
 const LEGACY_STATE_FILE: &str = "node_modules/.fnpm/state";
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 4;
+pub const STATE_VERSION: u32 = 5;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

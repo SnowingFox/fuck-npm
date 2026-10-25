@@ -859,7 +859,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         .map(|l| validate_excludes(l, &mut warnings))
         .unwrap_or_default();
     let mut linker = m.linker.unwrap_or_default();
-    let mut global_store = m.global_store.unwrap_or(true);
+    let mut global_store = m.global_store.unwrap_or(false);
     let mut backend = m.backend;
     let mut log_level = m.log_level.unwrap_or_default();
 
