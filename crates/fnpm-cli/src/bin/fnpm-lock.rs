@@ -4,5 +4,5 @@
 fnpm_cli::native_allocator!();
 
 fn main() {
-    std::process::exit(fnpm_cli::main(fnpm_cli::Bin::FnpmLock));
+    std::process::exit(fnpm_cli::main_lock());
 }

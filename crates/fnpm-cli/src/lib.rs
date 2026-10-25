@@ -147,21 +147,45 @@ fn run_route(
 }
 
 /// The whole program: route, run natively or exec node. Returns the exit status.
+///
+/// `fnpm-lock` has no native commands, so its executable calls [`main_lock`] directly and
+/// never links the core.
 pub fn main(bin: Bin) -> i32 {
+    if bin == Bin::FnpmLock {
+        return main_lock();
+    }
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let route = route_args(bin, &args);
     if let Route::Version = route {
-        // No environment snapshot and no terminal probing for the one invocation scripts loop on.
-        use std::io::Write;
-        let mut out = std::io::stdout().lock();
-        let _ = out
-            .write_all(VERSION.as_bytes())
-            .and_then(|()| out.write_all(b"\n"))
-            .and_then(|()| out.flush());
-        return 0;
+        return print_version();
     }
     match run_route(bin, route, Terminal::from_process, &NativeCore) {
         Some(code) => code,
         None => exec::run_node(bin.def().name, &args, &Env::from_process()),
     }
+}
+
+/// `fnpm-lock`: answers `--version`, execs the TS CLI for everything else. References
+/// nothing of `fnpm-core`, so the `fnpm-lock` executable stays small.
+pub fn main_lock() -> i32 {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    match route_args(Bin::FnpmLock, &args) {
+        Route::Version => print_version(),
+        // There are no native `fnpm-lock` commands; anything else is Node's.
+        Route::Node | Route::Native(_) => {
+            exec::run_node(FNPM_LOCK.name, &args, &Env::from_process())
+        }
+    }
+}
+
+/// `--version`: no environment snapshot and no terminal probing for the one invocation
+/// scripts loop on.
+fn print_version() -> i32 {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let _ = out
+        .write_all(VERSION.as_bytes())
+        .and_then(|()| out.write_all(b"\n"))
+        .and_then(|()| out.flush());
+    0
 }

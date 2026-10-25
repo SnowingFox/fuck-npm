@@ -1431,7 +1431,7 @@ byte-identical. Shared golden fixtures and the conformance suite catch any diver
 | `src/progress.rs`, `src/summary.rs`, `src/color.rs` | ports of `output/progress.ts`, `output/summary.ts` and picocolors |
 | `src/terminal.rs` | env, TTY state, streams (`Terminal`, the injectable seam like `CliRuntime`) |
 | `src/exec.rs` | locating node and the bundle, exec |
-| `src/bin/fnpm.rs`, `src/bin/fnpm-lock.rs` | `main`: allocator setup, then `fnpm_cli::main` |
+| `src/bin/fnpm.rs`, `src/bin/fnpm-lock.rs` | `main`: allocator setup, then `fnpm_cli::main` (`fnpm_cli::main_lock` for `fnpm-lock`, which has no native commands and so never links the core: ~0.5 MB instead of ~11 MB) |
 
 **Dispatch.** Decided from argv alone, before any file is read:
 
@@ -1663,8 +1663,9 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
 `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
 
 - **Postinstall swap.** `scripts/postinstall.js` (modelled on bun's
-  `packages/bun-release/src/npm/install.ts`) resolves the platform package; if it is missing
-  (`--no-optional`) it `npm install`s it into a temp dir and moves it under
+  `packages/bun-release/src/npm/install.ts`) resolves the platform package (from `fuck-npm`,
+  then from `@fuck-npm/binding`, the only package an isolated layout lets see it); if it is
+  missing (`--no-optional`) it `npm install`s it into a temp dir and moves it under
   `fuck-npm/node_modules`, and failing that downloads the tarball from the registry
   (`npm_config_registry`) and checks it against the packument's integrity. It then runs each
   executable's `--version`, requires the package version, and replaces `bin/fnpm` and
@@ -1675,7 +1676,8 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
   bundle at `../dist/` relative to itself. The swap is skipped on Windows (below), under pnpm
   and yarn berry (their `.bin` entries are scripts that run the target with node, decided when
   the bin was linked, before postinstall), in a development checkout (not under
-  `node_modules`) and with `FNPM_SKIP_NATIVE_SWAP=1`. It never fails the install; on any
+  `node_modules`) and with `FNPM_SKIP_NATIVE_SWAP=1`. A platform package installed at our
+  version without the executables is not installed again. It never fails the install; on any
   problem the shim stays.
 - **Shim fallback.** If the swap did not happen, `bin/fnpm` is still the published JS shim
   (`lib/shim.cjs`, CommonJS, Node built-ins only). It resolves the platform package and runs
