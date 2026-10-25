@@ -311,8 +311,19 @@ impl Inner {
     /// `{api}/repos/{owner}/{repo}/tarball/{sha}`; an empty repo (a `https://github.com/...` URL
     /// that names none) leaves out its slash, like bun.
     pub fn github_tarball_url(&self, owner: &str, repo: &str, sha: &str) -> String {
+        // bun.lock records the archive's root directory as its resolved tag.
+        let prefix = format!("{owner}-{repo}-");
+        let reference = sha
+            .strip_prefix(&prefix)
+            .filter(|suffix| {
+                (7..=64).contains(&suffix.len()) && suffix.bytes().all(|b| b.is_ascii_hexdigit())
+            })
+            .unwrap_or(sha);
         let sep = if repo.is_empty() { "" } else { "/" };
-        format!("{}/repos/{owner}/{repo}{sep}tarball/{sha}", self.github_api)
+        format!(
+            "{}/repos/{owner}/{repo}{sep}tarball/{reference}",
+            self.github_api
+        )
     }
 }
 
