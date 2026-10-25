@@ -597,6 +597,7 @@ dependencies = [
  "fnpm-semver",
  "fnpm-types",
  "fnpm-workspace",
+ "globset",
  "memchr",
  "mimalloc",
  "rkyv",

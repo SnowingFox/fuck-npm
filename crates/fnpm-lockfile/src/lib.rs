@@ -13,6 +13,7 @@ mod semver;
 mod text;
 
 pub mod formats;
+pub mod migration;
 pub mod hash;
 pub mod print;
 pub mod sidecar;

@@ -19,6 +19,7 @@ sonic-rs.workspace = true
 rkyv.workspace = true
 xxhash-rust.workspace = true
 memchr.workspace = true
+globset.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
 
