@@ -161,8 +161,8 @@ pub fn parse_release_age(value: Option<&str>) -> Result<Option<u64>, CliError> {
     }
     let factor = unit_seconds(&unit.to_ascii_lowercase()).ok_or_else(fail)?;
     let seconds: f64 = number.parse().map_err(|_| fail())?;
-    // Math.round: halves round towards +infinity.
-    let ms = (seconds * factor * 1000.0 + 0.5).floor();
+    // Math.round; the value is never negative, where it agrees with `f64::round`.
+    let ms = (seconds * factor * 1000.0).round();
     Ok(if ms == 0.0 { None } else { Some(ms as u64) })
 }
 

@@ -63,30 +63,6 @@ pub fn route_args(bin: Bin, args: &[OsString]) -> Route {
     plan::route(bin.def(), &strings)
 }
 
-/// Run `bin` with `args` against `terminal` and `core`; returns the exit status, or `None`
-/// when the TS CLI has to take over.
-pub fn run_with(
-    bin: Bin,
-    args: &[OsString],
-    terminal: impl FnOnce() -> Terminal,
-    core: &dyn Core,
-) -> Option<i32> {
-    match route_args(bin, args) {
-        Route::Node => None,
-        Route::Version => {
-            let terminal = terminal();
-            terminal.stdout.write(&format!("{VERSION}\n"));
-            Some(0)
-        }
-        Route::Native(invocation) => {
-            match install::run(&invocation, bin.def(), &terminal(), core) {
-                Outcome::Exit(code) => Some(code),
-                Outcome::Node => None,
-            }
-        }
-    }
-}
-
 /// mimalloc's `arena_eager_commit` option (the same index in mimalloc v2 and v3).
 const MI_OPTION_ARENA_EAGER_COMMIT: std::ffi::c_int = 4;
 
@@ -138,11 +114,44 @@ macro_rules! native_allocator {
     };
 }
 
+/// Run `bin` with `args` against `terminal` and `core`; returns the exit status, or `None`
+/// when the TS CLI has to take over.
+pub fn run_with(
+    bin: Bin,
+    args: &[OsString],
+    terminal: impl FnOnce() -> Terminal,
+    core: &dyn Core,
+) -> Option<i32> {
+    run_route(bin, route_args(bin, args), terminal, core)
+}
+
+fn run_route(
+    bin: Bin,
+    route: Route,
+    terminal: impl FnOnce() -> Terminal,
+    core: &dyn Core,
+) -> Option<i32> {
+    match route {
+        Route::Node => None,
+        Route::Version => {
+            terminal().stdout.write(&format!("{VERSION}\n"));
+            Some(0)
+        }
+        Route::Native(invocation) => {
+            match install::run(&invocation, bin.def(), &terminal(), core) {
+                Outcome::Exit(code) => Some(code),
+                Outcome::Node => None,
+            }
+        }
+    }
+}
+
 /// The whole program: route, run natively or exec node. Returns the exit status.
 pub fn main(bin: Bin) -> i32 {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-    // The version path writes directly: no environment snapshot, no terminal probing.
-    if let Route::Version = route_args(bin, &args) {
+    let route = route_args(bin, &args);
+    if let Route::Version = route {
+        // No environment snapshot and no terminal probing for the one invocation scripts loop on.
         use std::io::Write;
         let mut out = std::io::stdout().lock();
         let _ = out
@@ -151,7 +160,7 @@ pub fn main(bin: Bin) -> i32 {
             .and_then(|()| out.flush());
         return 0;
     }
-    match run_with(bin, &args, Terminal::from_process, &NativeCore) {
+    match run_route(bin, route, Terminal::from_process, &NativeCore) {
         Some(code) => code,
         None => exec::run_node(bin.def().name, &args, &Env::from_process()),
     }
