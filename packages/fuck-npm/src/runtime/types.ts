@@ -52,6 +52,8 @@ export type CliRuntime = {
   loadCore: () => Promise<Core>;
   /** Load the prompt implementation. Called only on interactive paths. */
   prompts: () => Promise<PromptPort>;
+  /** Raw key input for the `update -i` picker; stdin when absent. */
+  keys?: () => AsyncIterable<Uint8Array | string>;
 };
 
 export type CliRuntimeOverrides = Partial<CliRuntime>;

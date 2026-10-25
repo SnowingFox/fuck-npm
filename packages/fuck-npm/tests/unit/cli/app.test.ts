@@ -213,13 +213,60 @@ describe("update --interactive", () => {
           },
         }),
       },
-      prompts: { multiselect: async () => ["react"] as never },
+      // The first row (react) is under the cursor: Space selects it, Enter confirms.
+      keys: " \r",
     });
 
     expect(await bed.run(["update", "-i", "--latest"])).toBe(0);
 
     expect(bed.core.requests[0]?.command).toEqual(["outdated"]);
-    expect(bed.core.installs[0]?.packages).toEqual(["react@19.0.0"]);
+    expect(bed.core.requests[1]?.command).toEqual(["pm", "update-interactive-apply"]);
+    expect(bed.core.requests[1]?.options.choices).toEqual([{ name: "react", version: "19.0.0", inRange: false }]);
+    expect(bed.core.installs[0]?.packages).toEqual(["react"]);
+    expect(bed.core.installs[0]?.latest).toBe(false);
+  });
+
+  test("a then Enter selects every row; --dry-run prints the moves", async () => {
+    const bed = testBed({
+      stdinIsTTY: true,
+      core: {
+        invoke: () => ({
+          exitCode: 0,
+          data: {
+            packages: [
+              { name: "zod", current: "3.22.0", update: "3.23.8", latest: "3.23.8", dependencyType: "devDependencies" },
+              { name: "react", current: "18.2.0", update: "18.3.1", latest: "19.0.0", dependencyType: "dependencies" },
+            ],
+          },
+        }),
+      },
+      keys: "a\r",
+    });
+
+    expect(await bed.run(["update", "-i", "--dry-run"])).toBe(0);
+    const out = plain(bed.stdout.text());
+    expect(out).toContain("Selected 2 packages to update");
+    expect(out).toContain("^ react 18.2.0 -> 18.3.1");
+    expect(out).toContain("^ zod 3.22.0 -> 3.23.8");
+    expect(out).toContain("2 packages would be updated");
+    expect(bed.core.installs).toEqual([]);
+  });
+
+  test("Ctrl+C cancels", async () => {
+    const bed = testBed({
+      stdinIsTTY: true,
+      core: {
+        invoke: () => ({
+          exitCode: 0,
+          data: { packages: [{ name: "a", current: "1.0.0", update: "1.0.1", latest: "1.0.1", dependencyType: "dependencies" }] },
+        }),
+      },
+      keys: "\x03",
+    });
+
+    expect(await bed.run(["update", "-i"])).toBe(1);
+    expect(plain(bed.stdout.text())).toContain("Cancelled");
+    expect(bed.core.installs).toEqual([]);
   });
 });
 

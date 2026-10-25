@@ -18,6 +18,7 @@ mod outdated;
 mod scan;
 mod scripts;
 mod table;
+mod update_interactive;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -272,6 +273,8 @@ pub async fn dispatch(
             Err(not_implemented(&path))
         }
         ["pm", "scan"] => scan::scan(&cx),
+        // Internal: the package.json edits of `fnpm update -i` (the TS CLI draws the picker).
+        ["pm", "update-interactive-apply"] => update_interactive::apply(&cx),
         ["x" | "dlx"] => x_command(&cx, false).await,
         ["create"] => x_command(&cx, true).await,
         _ => Err(Error::UnknownCommand(command)),
