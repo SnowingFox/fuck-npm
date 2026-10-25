@@ -1,0 +1,17 @@
+{
+  "name": "patches-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.2",
+    "is-number": "^7.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "mime-types": "2.1.33",
+      "negotiator@>0.6.0": "0.6.2"
+    },
+    "patchedDependencies": {
+      "express@4.18.2": "patches/express@4.18.2.patch"
+    }
+  }
+}

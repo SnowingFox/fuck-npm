@@ -1,0 +1,9 @@
+{
+  "name": "peer-deps-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "@angular/animations": "^17.0.0",
+    "@angular/common": "^17.0.0",
+    "@angular/core": "^17.0.0"
+  }
+}

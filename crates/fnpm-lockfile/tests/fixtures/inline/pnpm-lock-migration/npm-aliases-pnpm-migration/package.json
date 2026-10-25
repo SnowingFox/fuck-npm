@@ -1,0 +1,7 @@
+{
+  "name": "alias-test",
+  "dependencies": {
+    "my-react": "npm:react@^17.0.0",
+    "my-lodash": "npm:lodash@latest"
+  }
+}

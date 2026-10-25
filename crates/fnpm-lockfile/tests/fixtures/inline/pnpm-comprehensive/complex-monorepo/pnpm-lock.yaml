@@ -1,0 +1,282 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+  .:
+    devDependencies:
+      prettier:
+        specifier: ^3.1.1
+        version: 3.1.1
+      turbo:
+        specifier: ^1.11.2
+        version: 1.11.2
+
+  apps/api:
+    dependencies:
+      '@company/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.5
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.3.1
+      express:
+        specifier: ^4.18.2
+        version: 4.18.2
+    devDependencies:
+      '@company/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/cors':
+        specifier: ^2.8.17
+        version: 2.8.17
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.21
+      nodemon:
+        specifier: ^3.0.2
+        version: 3.0.2
+
+  apps/web:
+    dependencies:
+      '@company/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@company/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+      next:
+        specifier: ^14.0.4
+        version: 14.0.4(react-dom@18.2.0)(react@18.2.0)
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.2.0(react@18.2.0)
+    devDependencies:
+      '@company/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^20.10.8
+        version: 20.10.8
+      '@types/react':
+        specifier: ^18.2.47
+        version: 18.2.47
+      typescript:
+        specifier: ^5.3.3
+        version: 5.3.3
+
+  packages/config:
+    devDependencies:
+      '@company/utils':
+        specifier: workspace:*
+        version: link:../utils
+
+  packages/ui:
+    dependencies:
+      '@radix-ui/react-dialog':
+        specifier: ^1.0.5
+        version: 1.0.5(react-dom@18.2.0)(react@18.2.0)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.0
+      clsx:
+        specifier: ^2.1.0
+        version: 2.1.0
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.47
+        version: 18.2.47
+
+  packages/utils:
+    dependencies:
+      date-fns:
+        specifier: ^3.2.0
+        version: 3.2.0
+      zod:
+        specifier: ^3.22.4
+        version: 3.22.4
+
+  tools/cli:
+    dependencies:
+      '@company/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+      chalk:
+        specifier: ^5.3.0
+        version: 5.3.0
+      commander:
+        specifier: ^11.1.0
+        version: 11.1.0
+
+packages:
+  prettier@3.1.1:
+    resolution: {integrity: sha512-prettier==}
+    engines: {node: '>=14'}
+    hasBin: true
+
+  turbo@1.11.2:
+    resolution: {integrity: sha512-turbo==}
+    hasBin: true
+
+  cors@2.8.5:
+    resolution: {integrity: sha512-cors==}
+    engines: {node: '>= 0.10'}
+
+  dotenv@16.3.1:
+    resolution: {integrity: sha512-dotenv==}
+    engines: {node: '>=12'}
+
+  express@4.18.2:
+    resolution: {integrity: sha512-express==}
+    engines: {node: '>= 0.10.0'}
+
+  '@types/cors@2.8.17':
+    resolution: {integrity: sha512-types-cors==}
+
+  '@types/express@4.17.21':
+    resolution: {integrity: sha512-types-express==}
+
+  nodemon@3.0.2:
+    resolution: {integrity: sha512-nodemon==}
+    engines: {node: '>=10'}
+    hasBin: true
+
+  next@14.0.4:
+    resolution: {integrity: sha512-next==}
+    engines: {node: '>=18.17.0'}
+    hasBin: true
+    peerDependencies:
+      react: '^18.2.0'
+      react-dom: '^18.2.0'
+
+  react@18.2.0:
+    resolution: {integrity: sha512-react==}
+    engines: {node: '>=0.10.0'}
+
+  react-dom@18.2.0:
+    resolution: {integrity: sha512-react-dom==}
+    peerDependencies:
+      react: ^18.2.0
+
+  '@types/node@20.10.8':
+    resolution: {integrity: sha512-types-node==}
+
+  '@types/react@18.2.47':
+    resolution: {integrity: sha512-types-react==}
+
+  typescript@5.3.3:
+    resolution: {integrity: sha512-typescript==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  '@radix-ui/react-dialog@1.0.5':
+    resolution: {integrity: sha512-radix-dialog==}
+    peerDependencies:
+      react: ^16.8 || ^17.0 || ^18.0
+      react-dom: ^16.8 || ^17.0 || ^18.0
+
+  class-variance-authority@0.7.0:
+    resolution: {integrity: sha512-cva==}
+
+  clsx@2.1.0:
+    resolution: {integrity: sha512-clsx==}
+    engines: {node: '>=6'}
+
+  date-fns@3.2.0:
+    resolution: {integrity: sha512-date-fns==}
+
+  zod@3.22.4:
+    resolution: {integrity: sha512-zod==}
+
+  chalk@5.3.0:
+    resolution: {integrity: sha512-chalk==}
+    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
+
+  commander@11.1.0:
+    resolution: {integrity: sha512-commander==}
+    engines: {node: '>=16'}
+
+  loose-envify@1.4.0:
+    resolution: {integrity: sha512-loose==}
+    hasBin: true
+
+  js-tokens@4.0.0:
+    resolution: {integrity: sha512-tokens==}
+
+  scheduler@0.23.0:
+    resolution: {integrity: sha512-scheduler==}
+
+snapshots:
+  prettier@3.1.1: {}
+
+  turbo@1.11.2: {}
+
+  cors@2.8.5: {}
+
+  dotenv@16.3.1: {}
+
+  express@4.18.2: {}
+
+  '@types/cors@2.8.17': {}
+
+  '@types/express@4.17.21': {}
+
+  nodemon@3.0.2: {}
+
+  next@14.0.4(react-dom@18.2.0)(react@18.2.0):
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+
+  react@18.2.0:
+    dependencies:
+      loose-envify: 1.4.0
+
+  react-dom@18.2.0(react@18.2.0):
+    dependencies:
+      react: 18.2.0
+      scheduler: 0.23.0
+
+  '@types/node@20.10.8': {}
+
+  '@types/react@18.2.47': {}
+
+  typescript@5.3.3: {}
+
+  '@radix-ui/react-dialog@1.0.5(react-dom@18.2.0)(react@18.2.0)':
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+
+  class-variance-authority@0.7.0: {}
+
+  clsx@2.1.0: {}
+
+  date-fns@3.2.0: {}
+
+  zod@3.22.4: {}
+
+  chalk@5.3.0: {}
+
+  commander@11.1.0: {}
+
+  loose-envify@1.4.0:
+    dependencies:
+      js-tokens: 4.0.0
+
+  js-tokens@4.0.0: {}
+
+  scheduler@0.23.0:
+    dependencies:
+      loose-envify: 1.4.0

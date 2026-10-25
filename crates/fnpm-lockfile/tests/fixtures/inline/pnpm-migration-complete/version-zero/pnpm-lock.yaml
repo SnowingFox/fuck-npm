@@ -1,0 +1,15 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      package-with-zero:
+        specifier: 0.0.0
+        version: 0.0.0
+
+packages:
+  package-with-zero@0.0.0:
+    resolution: {integrity: sha512-zero==}
+
+snapshots:
+  package-with-zero@0.0.0: {}

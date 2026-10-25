@@ -1,0 +1,50 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      '@workspace/shared':
+        specifier: workspace:*
+        version: link:packages/shared
+      '@workspace/utils':
+        specifier: workspace:^
+        version: link:packages/utils
+
+  packages/shared:
+    dependencies:
+      lodash:
+        specifier: ^4.17.21
+        version: 4.17.21
+      '@workspace/utils':
+        specifier: workspace:*
+        version: link:../utils
+
+  packages/utils:
+    dependencies:
+      axios:
+        specifier: ^1.6.0
+        version: 1.6.7
+
+  apps/web:
+    dependencies:
+      '@workspace/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+
+packages:
+  lodash@4.17.21:
+    resolution: {integrity: sha512-lodash==}
+
+  axios@1.6.7:
+    resolution: {integrity: sha512-axios==}
+
+  react@18.2.0:
+    resolution: {integrity: sha512-react==}
+
+snapshots:
+  lodash@4.17.21: {}
+  axios@1.6.7: {}
+  react@18.2.0: {}

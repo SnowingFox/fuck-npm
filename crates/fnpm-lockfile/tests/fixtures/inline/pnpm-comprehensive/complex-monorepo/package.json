@@ -1,0 +1,14 @@
+{
+  "name": "monorepo-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tools/*"
+  ],
+  "devDependencies": {
+    "turbo": "^1.11.2",
+    "prettier": "^3.1.1"
+  }
+}

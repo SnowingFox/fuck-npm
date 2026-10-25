@@ -1,0 +1,16 @@
+{
+  "name": "@company/ui",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^18.2.0",
+    "@radix-ui/react-dialog": "^1.0.5",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.47"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0"
+  }
+}

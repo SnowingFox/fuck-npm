@@ -1,0 +1,54 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      package-a:
+        specifier: ^1.0.0
+        version: 1.0.0
+      package-b:
+        specifier: ^1.0.0
+        version: 1.0.0
+      my-lodash:
+        specifier: npm:lodash@^4.17.20
+        version: lodash@4.17.20
+      lodash:
+        specifier: ^4.17.21
+        version: 4.17.21
+
+packages:
+  package-a@1.0.0:
+    resolution: {integrity: sha512-packageA==}
+    dependencies:
+      shared-dep: 2.0.0
+
+  package-b@1.0.0:
+    resolution: {integrity: sha512-packageB==}
+    dependencies:
+      shared-dep: 3.0.0
+
+  shared-dep@2.0.0:
+    resolution: {integrity: sha512-shared2==}
+
+  shared-dep@3.0.0:
+    resolution: {integrity: sha512-shared3==}
+
+  lodash@4.17.20:
+    resolution: {integrity: sha512-lodash20==}
+
+  lodash@4.17.21:
+    resolution: {integrity: sha512-lodash21==}
+
+snapshots:
+  package-a@1.0.0:
+    dependencies:
+      shared-dep: 2.0.0
+
+  package-b@1.0.0:
+    dependencies:
+      shared-dep: 3.0.0
+
+  shared-dep@2.0.0: {}
+  shared-dep@3.0.0: {}
+  lodash@4.17.20: {}
+  lodash@4.17.21: {}

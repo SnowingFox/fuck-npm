@@ -1,0 +1,50 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+      typescript:
+        specifier: ^4.0.0
+        version: 4.9.5
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.3.3
+      eslint:
+        specifier: ^8.56.0
+        version: 8.56.0
+    optionalDependencies:
+      fsevents:
+        specifier: ^2.3.3
+        version: 2.3.3
+
+packages:
+  react@18.2.0:
+    resolution: {integrity: sha512-react==}
+
+  typescript@4.9.5:
+    resolution: {integrity: sha512-ts4==}
+
+  typescript@5.3.3:
+    resolution: {integrity: sha512-ts5==}
+
+  eslint@8.56.0:
+    resolution: {integrity: sha512-eslint==}
+
+  fsevents@2.3.3:
+    resolution: {integrity: sha512-fsevents==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
+    requiresBuild: true
+    optional: true
+
+snapshots:
+  react@18.2.0: {}
+  typescript@4.9.5: {}
+  typescript@5.3.3: {}
+  eslint@8.56.0: {}
+  fsevents@2.3.3:
+    optional: true

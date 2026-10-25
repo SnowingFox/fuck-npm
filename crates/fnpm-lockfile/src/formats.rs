@@ -62,48 +62,7 @@ pub mod npm {
     }
 }
 
-pub mod yarn_v1 {
-    use fnpm_types::LockGraph;
-    use fnpm_workspace::Workspace;
-
-    use crate::Result;
-
-    /// bun `yarn.rs`.
-    pub fn parse(_bytes: &[u8], _workspace: &Workspace) -> Result<LockGraph> {
-        todo!()
-    }
-
-    pub fn serialize(_graph: &LockGraph) -> String {
-        todo!()
-    }
-}
-
-pub mod yarn_berry {
-    use fnpm_types::LockGraph;
-    use fnpm_workspace::Workspace;
-
-    use crate::Result;
-
-    /// bun `yarn_berry.rs` (+ builtin package extensions). Read-only.
-    pub fn parse(_bytes: &[u8], _workspace: &Workspace) -> Result<LockGraph> {
-        todo!()
-    }
-}
-
-pub mod pnpm {
-    use fnpm_types::LockGraph;
-    use fnpm_workspace::Workspace;
-
-    use crate::Result;
-
-    /// pnpm-lock.yaml v5.4 / v6 / v9 (bun `pnpm.rs`), including catalogs, overrides,
-    /// patchedDependencies and onlyBuiltDependencies from the lockfile settings.
-    pub fn parse(_bytes: &[u8], _workspace: &Workspace) -> Result<LockGraph> {
-        todo!()
-    }
-
-    /// lockfileVersion 9.0.
-    pub fn serialize(_graph: &LockGraph) -> Result<String> {
-        todo!()
-    }
-}
+pub mod foreign;
+pub mod pnpm;
+pub mod yarn_berry;
+pub mod yarn_v1;

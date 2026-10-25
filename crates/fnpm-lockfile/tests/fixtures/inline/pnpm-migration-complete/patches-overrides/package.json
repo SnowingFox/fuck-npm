@@ -1,0 +1,1 @@
+{"name":"patches-test","dependencies":{"lodash":"^4.17.21"},"pnpm":{"patchedDependencies":{"lodash@4.17.21":"patches/lodash@4.17.21.patch"},"overrides":{"axios":"1.6.0"}}}

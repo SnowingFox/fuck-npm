@@ -1,0 +1,30 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      config:
+        specifier: file:./shared/config
+        version: hi2@file:shared/config
+      local-pkg:
+        specifier: file:./local-pkg
+        version: hi@file:local-pkg
+
+packages:
+
+  hi2@file:shared/config:
+    resolution: {directory: shared/config, type: directory}
+
+  hi@file:local-pkg:
+    resolution: {directory: local-pkg, type: directory}
+
+snapshots:
+
+  hi2@file:shared/config: {}
+
+  hi@file:local-pkg: {}

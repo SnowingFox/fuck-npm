@@ -1,0 +1,32 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      is-number:
+        specifier: ^2.0.0
+        version: 2.0.0
+      left-pad:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  is-number@2.0.0:
+    resolution: {integrity: sha512-BUFNwemjM+kyrOa4KeXh4B3ay3Sh7HnmxWp+uRrGMJXuzc8vp/MsCyPX08NxfZvWWy0pOTj6tkJ3kgTqUUkN3w==}
+    engines: {node: '>=0.12.0'}
+
+  left-pad@1.0.0:
+    resolution: {integrity: sha512-+4x+fPUv96e+piHW2kG7BY7sTzd1MfANrsWt1zvG+91BjS+/aOvQSzqrsL9kYgPnwBqN/COQOCKxc9f2jPPwOw==}
+    deprecated: use String.prototype.padStart()
+
+snapshots:
+
+  is-number@2.0.0: {}
+
+  left-pad@1.0.0: {}

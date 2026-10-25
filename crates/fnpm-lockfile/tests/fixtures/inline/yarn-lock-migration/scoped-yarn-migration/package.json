@@ -1,0 +1,8 @@
+{
+  "name": "scoped-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "@babel/core": "^7.23.7",
+    "babel-loader": "^9.1.3"
+  }
+}
