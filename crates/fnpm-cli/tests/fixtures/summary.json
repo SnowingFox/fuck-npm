@@ -37,7 +37,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[2m[0.00ms]\u001b[22m done\n"
+      "expected": "\n\u001b[2m[0.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "empty (colors=True, arrows=False)",
@@ -56,7 +56,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[2m[0.00ms]\u001b[22m done\n"
+      "expected": "\n\u001b[2m[0.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "added and updated (colors=False, arrows=False)",
@@ -372,7 +372,7 @@
       },
       "colors": false,
       "arrows": false,
-      "expected": "\n- lodash\n- left-pad\n\n2 packages removed [8.00ms]\n"
+      "expected": "\n- lodash\n- left-pad\n2 packages removed [8.00ms]\n"
     },
     {
       "name": "removed (colors=True, arrows=True)",
@@ -394,7 +394,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\n\u001b[32m2\u001b[39m packages removed \u001b[2m[8.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[8.00ms]\u001b[22m\n"
     },
     {
       "name": "removed (colors=True, arrows=False)",
@@ -416,7 +416,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\n\u001b[32m2\u001b[39m packages removed \u001b[2m[8.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[8.00ms]\u001b[22m\n"
     },
     {
       "name": "removed one (colors=False, arrows=False)",
@@ -437,7 +437,7 @@
       },
       "colors": false,
       "arrows": false,
-      "expected": "\n- lodash\n\n1 package removed [8.00ms]\n"
+      "expected": "\n- lodash\n1 package removed [8.00ms]\n"
     },
     {
       "name": "removed one (colors=True, arrows=True)",
@@ -458,7 +458,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\n\u001b[32m1\u001b[39m package removed \u001b[2m[8.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[8.00ms]\u001b[22m\n"
     },
     {
       "name": "removed one (colors=True, arrows=False)",
@@ -479,7 +479,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\n\u001b[32m1\u001b[39m package removed \u001b[2m[8.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[8.00ms]\u001b[22m\n"
     },
     {
       "name": "installed and removed (colors=False, arrows=False)",
@@ -693,7 +693,7 @@
       },
       "colors": false,
       "arrows": false,
-      "expected": "\nFailed to install 1 package\n3 packages installed [10.00ms]\n"
+      "expected": "\n3 packages installed [10.00ms]\nFailed to install 1 package\n"
     },
     {
       "name": "failed (colors=True, arrows=True)",
@@ -712,7 +712,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31mFailed to install 1 package\u001b[39m\n\u001b[32m3\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
     },
     {
       "name": "failed (colors=True, arrows=False)",
@@ -731,7 +731,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31mFailed to install 1 package\u001b[39m\n\u001b[32m3\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
     },
     {
       "name": "failed many (colors=False, arrows=False)",
@@ -769,7 +769,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31mFailed to install 3 packages\u001b[39m\n\u001b[2m[10.00ms]\u001b[22m done\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[10.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "failed many (colors=True, arrows=False)",
@@ -788,7 +788,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31mFailed to install 3 packages\u001b[39m\n\u001b[2m[10.00ms]\u001b[22m done\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[10.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "blocked (colors=False, arrows=False)",
@@ -826,7 +826,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\nBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked (colors=True, arrows=False)",
@@ -845,7 +845,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\nBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked many (colors=False, arrows=False)",
@@ -883,7 +883,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\nBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked many (colors=True, arrows=False)",
@@ -902,7 +902,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\nBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[10.00ms]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "add requested (colors=False, arrows=False)",
@@ -952,7 +952,7 @@
       },
       "colors": false,
       "arrows": false,
-      "expected": "\ninstalled typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver\ninstalled zod@3.23.8\ninstalled alias@npm:real-pkg@1.0.0\nskipped fsevents@2.3.3 (unsupported platform)\n\n+ typescript@5.9.3\n\n4 packages installed [55.00ms]\n"
+      "expected": "\ninstalled typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver\ninstalled zod@3.23.8\ninstalled alias@npm:real-pkg@1.0.0\nskipped fsevents@2.3.3 (unsupported platform)\n\n4 packages installed [55.00ms]\n"
     },
     {
       "name": "add requested (colors=True, arrows=True)",
@@ -1002,7 +1002,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript@5.9.3\u001b[22m with binaries:\n  \u001b[2m-\u001b[22m \u001b[1mtsc\u001b[22m\n  \u001b[2m-\u001b[22m \u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias@npm:real-pkg@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m fsevents@2.3.3 \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m+\u001b[39m typescript\u001b[2m@5.9.3\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[55.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript@5.9.3\u001b[22m with binaries:\n  \u001b[2m-\u001b[22m \u001b[1mtsc\u001b[22m\n  \u001b[2m-\u001b[22m \u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias@npm:real-pkg@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m fsevents@2.3.3 \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[55.00ms]\u001b[22m\n"
     },
     {
       "name": "add requested (colors=True, arrows=False)",
@@ -1052,7 +1052,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript@5.9.3\u001b[22m with binaries:\n  \u001b[2m-\u001b[22m \u001b[1mtsc\u001b[22m\n  \u001b[2m-\u001b[22m \u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias@npm:real-pkg@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m fsevents@2.3.3 \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m+\u001b[39m typescript\u001b[2m@5.9.3\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[55.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript@5.9.3\u001b[22m with binaries:\n  \u001b[2m-\u001b[22m \u001b[1mtsc\u001b[22m\n  \u001b[2m-\u001b[22m \u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias@npm:real-pkg@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m fsevents@2.3.3 \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[55.00ms]\u001b[22m\n"
     },
     {
       "name": "add count uses requested (colors=False, arrows=False)",
@@ -1173,7 +1173,7 @@
       },
       "colors": false,
       "arrows": false,
-      "expected": "\ninstalled react@18.3.1\n\n^ react 18.2.0 -> 18.3.1\n\n1 package installed [5.00ms]\n"
+      "expected": "\n^ react 18.2.0 -> 18.3.1\n\ninstalled react@18.3.1\n\n1 package installed [5.00ms]\n"
     },
     {
       "name": "update requested (colors=True, arrows=True)",
@@ -1204,7 +1204,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[36m↑\u001b[39m react \u001b[2m18.2.0\u001b[22m → 18.3.1\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[5.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[36m↑\u001b[39m react \u001b[2m18.2.0\u001b[22m → 18.3.1\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[5.00ms]\u001b[22m\n"
     },
     {
       "name": "update requested (colors=True, arrows=False)",
@@ -1235,7 +1235,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[36m^\u001b[39m react \u001b[2m18.2.0\u001b[22m -> 18.3.1\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[5.00ms]\u001b[22m\n"
+      "expected": "\n\u001b[36m^\u001b[39m react \u001b[2m18.2.0\u001b[22m -> 18.3.1\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[5.00ms]\u001b[22m\n"
     },
     {
       "name": "install ignores requested (colors=False, arrows=False)",
@@ -1383,6 +1383,471 @@
       "colors": true,
       "arrows": false,
       "expected": "\n\u001b[32m+\u001b[39m weird\u001b[22mname\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[1.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "add lists a request once (colors=False, arrows=False)",
+      "command": "add",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          },
+          {
+            "name": "loose-envify",
+            "version": "1.4.0"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 3,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\n+ loose-envify@1.4.0\n\ninstalled react@18.3.1\n\n3 packages installed [7.00ms]\n"
+    },
+    {
+      "name": "add lists a request once (colors=True, arrows=True)",
+      "command": "add",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          },
+          {
+            "name": "loose-envify",
+            "version": "1.4.0"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 3,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\n\u001b[32m+\u001b[39m loose-envify\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[7.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "add lists a request once (colors=True, arrows=False)",
+      "command": "add",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          },
+          {
+            "name": "loose-envify",
+            "version": "1.4.0"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 3,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\n\u001b[32m+\u001b[39m loose-envify\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[7.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "install keeps every + row (colors=False, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 1,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\n+ react@18.3.1\n\n1 package installed [7.00ms]\n"
+    },
+    {
+      "name": "install keeps every + row (colors=True, arrows=True)",
+      "command": "install",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 1,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\n\u001b[32m+\u001b[39m react\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[7.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "install keeps every + row (colors=True, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [
+          {
+            "name": "react",
+            "version": "18.3.1"
+          }
+        ],
+        "updated": [],
+        "removed": [],
+        "requested": [
+          {
+            "name": "react",
+            "version": "18.3.1",
+            "bins": []
+          }
+        ],
+        "installedCount": 1,
+        "removedCount": 0,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 7,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\n\u001b[32m+\u001b[39m react\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[7.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "install that removed packages (colors=False, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "left-pad"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\n1 package removed [4.00ms]\n"
+    },
+    {
+      "name": "install that removed packages (colors=True, arrows=True)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "left-pad"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[4.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "install that removed packages (colors=True, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "left-pad"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[4.00ms]\u001b[22m\n"
+    },
+    {
+      "name": "remove that also installed (colors=False, arrows=False)",
+      "command": "remove",
+      "summary": {
+        "added": [
+          {
+            "name": "b",
+            "version": "2.0.0"
+          }
+        ],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 1,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 2,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\n+ b@2.0.0\n\n1 package installed [4.00ms]\n\nBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\nRemoved: 1\n"
+    },
+    {
+      "name": "remove that also installed (colors=True, arrows=True)",
+      "command": "remove",
+      "summary": {
+        "added": [
+          {
+            "name": "b",
+            "version": "2.0.0"
+          }
+        ],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 1,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 2,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\n\u001b[32m+\u001b[39m b\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[4.00ms]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
+    },
+    {
+      "name": "remove that also installed (colors=True, arrows=False)",
+      "command": "remove",
+      "summary": {
+        "added": [
+          {
+            "name": "b",
+            "version": "2.0.0"
+          }
+        ],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 1,
+        "removedCount": 1,
+        "failedCount": 0,
+        "blockedScripts": 2,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\n\u001b[32m+\u001b[39m b\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[4.00ms]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
+    },
+    {
+      "name": "failed after removals (colors=False, arrows=False)",
+      "command": "remove",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 2,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\n- a\n1 package removed [4.00ms]\nFailed to install 2 packages\n"
+    },
+    {
+      "name": "failed after removals (colors=True, arrows=True)",
+      "command": "remove",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 2,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[4.00ms]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
+    },
+    {
+      "name": "failed after removals (colors=True, arrows=False)",
+      "command": "remove",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [
+          "a"
+        ],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 1,
+        "failedCount": 2,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[4.00ms]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
+    },
+    {
+      "name": "noop with failures (colors=False, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 0,
+        "failedCount": 1,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false,
+        "checked": {
+          "installs": 3,
+          "packages": 3
+        }
+      },
+      "colors": false,
+      "arrows": false,
+      "expected": "\nFailed to install 1 package\n[4.00ms] done\n"
+    },
+    {
+      "name": "noop with failures (colors=True, arrows=True)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 0,
+        "failedCount": 1,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false,
+        "checked": {
+          "installs": 3,
+          "packages": 3
+        }
+      },
+      "colors": true,
+      "arrows": true,
+      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[4.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
+    },
+    {
+      "name": "noop with failures (colors=True, arrows=False)",
+      "command": "install",
+      "summary": {
+        "added": [],
+        "updated": [],
+        "removed": [],
+        "requested": [],
+        "installedCount": 0,
+        "removedCount": 0,
+        "failedCount": 1,
+        "blockedScripts": 0,
+        "elapsedMs": 4,
+        "noop": false,
+        "checked": {
+          "installs": 3,
+          "packages": 3
+        }
+      },
+      "colors": true,
+      "arrows": false,
+      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[4.00ms]\u001b[22m \u001b[2mdone\u001b[22m\n"
     }
   ]
 }

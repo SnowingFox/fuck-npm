@@ -6807,7 +6807,7 @@
       },
       "expected": {
         "exit": 1,
-        "stdout": "\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\nFailed to install 2 packages\n2 packages installed [12.00ms]\n",
+        "stdout": "\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\nFailed to install 2 packages\n",
         "stderr": "fnpm install v0.0.1\n",
         "install": {
           "cwd": "/work/app",
@@ -7033,7 +7033,7 @@
       },
       "expected": {
         "exit": 0,
-        "stdout": "\ninstalled typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver\n\n+ typescript@5.9.3\n\n1 package installed [12.00ms]\n",
+        "stdout": "\ninstalled typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver\n\n1 package installed [12.00ms]\n",
         "stderr": "fnpm add v0.0.1\n",
         "install": {
           "cwd": "/work/app",
