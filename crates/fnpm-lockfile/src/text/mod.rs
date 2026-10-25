@@ -105,3 +105,9 @@ mod tests {
 
 #[cfg(test)]
 mod roundtrip_tests;
+
+#[cfg(test)]
+mod parse_tests;
+
+#[cfg(test)]
+mod write_tests;

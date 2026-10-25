@@ -18,6 +18,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{Error, Result};
 
+/// The sidecar's path relative to the project directory.
 pub const SIDECAR: &str = "node_modules/.fnpm/lock.bin";
 
 const MAGIC: &[u8; 8] = b"FNPMLCK\0";
@@ -557,6 +558,18 @@ pub fn load(project_dir: &Path, lock_hash: u64) -> Option<LockGraph> {
     decode(&bytes, lock_hash)
 }
 
+/// The sidecar exists with this key and image version (only the header is read).
+pub fn is_fresh(project_dir: &Path, lock_hash: u64) -> bool {
+    use std::io::Read as _;
+    let mut header = [0u8; HEADER];
+    std::fs::File::open(project_dir.join(SIDECAR))
+        .and_then(|mut f| f.read_exact(&mut header))
+        .is_ok()
+        && &header[..8] == MAGIC
+        && header[8..12] == IMAGE_VERSION.to_le_bytes()
+        && header[16..24] == lock_hash.to_le_bytes()
+}
+
 /// Writes the sidecar atomically, creating `node_modules/.fnpm` if needed.
 pub fn save(project_dir: &Path, lock_hash: u64, graph: &LockGraph) -> Result<()> {
     let path = project_dir.join(SIDECAR);
@@ -649,7 +662,9 @@ mod tests {
     fn save_and_load_files() {
         let dir = tempfile::tempdir().unwrap();
         let g = sample();
+        assert!(!is_fresh(dir.path(), 7));
         save(dir.path(), 7, &g).unwrap();
+        assert!(is_fresh(dir.path(), 7) && !is_fresh(dir.path(), 8));
         assert_eq!(load(dir.path(), 7), Some(g));
         assert!(load(dir.path(), 8).is_none());
     }

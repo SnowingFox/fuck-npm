@@ -19,6 +19,7 @@ use crate::flat::{Flat, INVALID, VTag};
 /// A directory `node_modules/<...>/node_modules/<name>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeNode {
+    /// The package installed in this directory.
     pub package: PackageId,
     /// The folder name (the edge alias).
     pub name: String,
@@ -31,12 +32,14 @@ pub struct TreeNode {
 /// Every installed directory. Node order: by depth, then path; ids are indices.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tree {
+    /// The directories.
     pub nodes: Vec<TreeNode>,
     /// Workspaces get their own `node_modules` for deps that conflict with the root's.
     /// `(workspace package id, node ids directly under it)`.
     pub workspace_roots: Vec<(PackageId, Vec<u32>)>,
 }
 
+/// What an install places.
 #[derive(Debug, Clone)]
 pub struct HoistOptions {
     /// Which edges are installed (`--omit`, `--production`).

@@ -106,6 +106,9 @@ fn parse_dependencies(obj: &Node<'_>, bundled: Option<(&str, &HashSet<&str>)>) -
                 return Err(ParseError::at(row.value.pos, "Expected a string"));
             };
             let name: &str = &row.key;
+            if !valid_dependency(name, version) {
+                return Err(ParseError::at(row.value.pos, "Invalid dependency version"));
+            }
             let mut b = behavior;
             if behavior == Behavior::PEER && optional_peers.contains(name) {
                 b |= Behavior::OPTIONAL;
@@ -126,6 +129,33 @@ fn parse_dependencies(obj: &Node<'_>, bundled: Option<(&str, &HashSet<&str>)>) -
         }
     }
     Ok(out)
+}
+
+/// bun `dependency::parse` succeeds (only folder, tarball, git and GitHub specifiers can fail).
+fn valid_dependency(name: &str, literal: &str) -> bool {
+    match infer_tag(fnpm_types::spec::trim_literal(literal)) {
+        SpecTag::Npm
+        | SpecTag::DistTag
+        | SpecTag::Workspace
+        | SpecTag::Catalog
+        | SpecTag::Symlink => true,
+        _ => fnpm_types::DependencySpec::parse(name, literal).is_ok(),
+    }
+}
+
+/// bun `OverrideMap::lockfile_range` + `is_selector_range`: a selector's range must be an
+/// npm range (a target's may also be `catalog:` or an `npm:` alias).
+fn valid_selector_range(name: &str, range: &str, is_target: bool) -> bool {
+    if range.is_empty() {
+        return true;
+    }
+    let spec = crate::flat::Spec::parse(range);
+    let _ = name;
+    match spec.tag {
+        crate::flat::VTag::Npm => is_target || !spec.is_alias,
+        crate::flat::VTag::Catalog => is_target,
+        _ => false,
+    }
 }
 
 fn parse_bin(info: &Node<'_>) -> Bin {
@@ -464,7 +494,7 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
                 return Err(ParseError::at(r.key_pos, "Expected a non-empty string"));
             }
             if let Some(value) = r.value.as_str() {
-                if value.is_empty() {
+                if !valid_dependency(&r.key, value) {
                     return Err(ParseError::at(r.value.pos, "Invalid override version"));
                 }
                 overrides.push(OverrideRule {
@@ -492,9 +522,6 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
                 let Some(value) = c.value.as_str() else {
                     return Err(ParseError::at(c.value.pos, "Expected a string"));
                 };
-                if value.is_empty() {
-                    return Err(ParseError::at(c.value.pos, "Invalid override version"));
-                }
                 let selector = if c.key == "." {
                     OverrideSelector {
                         parent: None,
@@ -509,6 +536,15 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
                         target,
                     }
                 };
+                let target_ok =
+                    valid_selector_range(&selector.target.name, &selector.target.range, true);
+                let parent_ok = selector
+                    .parent
+                    .as_ref()
+                    .is_none_or(|p| valid_selector_range(&p.name, &p.range, false));
+                if !parent_ok || !target_ok || !valid_dependency(&selector.target.name, value) {
+                    return Err(ParseError::at(c.value.pos, "Invalid override version"));
+                }
                 overrides.push(OverrideRule {
                     selector,
                     value: value.to_owned(),
@@ -518,31 +554,29 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
     }
 
     let mut catalogs = fnpm_types::Catalogs::default();
-    let parse_catalog = |rows: &[Row<'_>],
-                         out: &mut std::collections::BTreeMap<String, String>,
-                         err: &str|
-     -> PResult<()> {
-        for r in rows {
-            if r.key.is_empty() {
-                return Err(ParseError::at(
-                    r.key_pos,
-                    format!("{err}: Expected a non-empty string"),
-                ));
+    let parse_catalog =
+        |rows: &[Row<'_>], out: &mut std::collections::BTreeMap<String, String>| -> PResult<()> {
+            for r in rows {
+                if r.key.is_empty() {
+                    return Err(ParseError::at(r.key_pos, "Expected a non-empty string"));
+                }
+                let Some(v) = r.value.as_str() else {
+                    return Err(ParseError::at(r.value.pos, "Expected a string"));
+                };
+                if !valid_dependency(&r.key, v) {
+                    return Err(ParseError::at(r.value.pos, "Invalid catalog version"));
+                }
+                if out.insert(r.key.to_string(), v.to_owned()).is_some() {
+                    return Err(ParseError::at(r.key_pos, "Duplicate catalog entry"));
+                }
             }
-            let Some(v) = r.value.as_str() else {
-                return Err(ParseError::at(r.value.pos, "Expected a string"));
-            };
-            if out.insert(r.key.to_string(), v.to_owned()).is_some() {
-                return Err(ParseError::at(r.key_pos, "Duplicate catalog entry"));
-            }
-        }
-        Ok(())
-    };
+            Ok(())
+        };
     if let Some(c) = root.get("catalog") {
         let Some(rows) = c.as_object() else {
             return Err(ParseError::at(c.pos, "Expected an object"));
         };
-        parse_catalog(rows, &mut catalogs.default, "catalog")?;
+        parse_catalog(rows, &mut catalogs.default)?;
     }
     if let Some(c) = root.get("catalogs") {
         let Some(rows) = c.as_object() else {
@@ -556,7 +590,7 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
                 return Err(ParseError::at(r.value.pos, "Expected an object"));
             };
             let group = catalogs.named.entry(r.key.to_string()).or_default();
-            parse_catalog(entries, group, "catalogs")?;
+            parse_catalog(entries, group)?;
         }
     }
 
@@ -571,7 +605,17 @@ pub(crate) fn parse(src: &str, opts: ParseOptions<'_>) -> PResult<Parsed> {
     // The last row of each name, in first-seen order.
     let mut member_rows: Vec<&Row<'_>> = Vec::new();
     let mut member_index: HashMap<&str, usize> = HashMap::default();
+    let mut seen_paths: HashSet<&str> = HashSet::default();
     for r in objects(ws) {
+        if !seen_paths.insert(&r.key) {
+            warnings.push(ParseError::at(
+                r.key_pos,
+                format!(
+                    "Duplicate key \"{}\" in object literal",
+                    escape_control(&r.key)
+                ),
+            ));
+        }
         if !r.value.is_object() {
             return Err(ParseError::at(r.value.pos, "Expected an object"));
         }

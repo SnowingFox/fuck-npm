@@ -154,6 +154,70 @@ fn checked_in_lockfiles_round_trip() {
     );
 }
 
+/// A resolver builds its graph in its own order. The written lockfile must not depend on it:
+/// shuffle the arena (root stays first) and every edge list, then write again.
+fn shuffled(g: &fnpm_types::LockGraph, seed: u64) -> fnpm_types::LockGraph {
+    use fnpm_types::PackageId;
+    let n = g.packages.len();
+    let mut state = seed | 1;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut order: Vec<usize> = (1..n).collect();
+    for i in (1..order.len()).rev() {
+        let j = (next() % (i as u64 + 1)) as usize;
+        order.swap(i, j);
+    }
+    order.insert(0, 0);
+    let mut new_id = vec![0u32; n];
+    for (new, &old) in order.iter().enumerate() {
+        new_id[old] = new as u32;
+    }
+    let mut out = g.clone();
+    out.packages = order.iter().map(|&old| g.packages[old].clone()).collect();
+    for p in &mut out.packages {
+        for e in &mut p.dependencies {
+            e.target = e.target.map(|t| PackageId(new_id[t.index()]));
+        }
+        p.dependencies.reverse();
+    }
+    for id in out.workspaces.values_mut() {
+        *id = PackageId(new_id[id.index()]);
+    }
+    out
+}
+
+#[test]
+fn output_does_not_depend_on_arena_order() {
+    for name in [
+        "bench-monorepo.lock",
+        "bench-medium.lock",
+        "integration-next-pages.lock",
+    ] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bun-lock/files")
+            .join(name);
+        let src = std::fs::read_to_string(path).unwrap();
+        let (g, _) =
+            crate::text_parse(src.as_bytes(), "bun.lock", &ParseOptions::default()).unwrap();
+        g.validate().unwrap();
+        let want = super::write::write(&g, Dialect::Bun).text;
+        for seed in [1, 7, 42] {
+            let s = shuffled(&g, seed);
+            s.validate().unwrap();
+            let got = super::write::write(&s, Dialect::Bun).text;
+            assert!(
+                got == want,
+                "{name} seed {seed}: {}",
+                first_diff(&want, &got)
+            );
+        }
+    }
+}
+
 /// `FNPM_LOCK_IN=<bun.lock> FNPM_LOCK_OUT=<path> cargo test -p fnpm-lockfile --lib rewrite_env -- --ignored`
 /// rewrites a lockfile, for comparing with what bun writes.
 #[test]

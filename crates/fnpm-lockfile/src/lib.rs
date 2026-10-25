@@ -31,13 +31,26 @@ pub use hash::{meta_hash, meta_hash_input};
 /// Any error of this crate.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A lockfile that does not parse. `message` starts with `line:column:` for text formats.
     #[error("{path}: {message}")]
-    Parse { path: PathBuf, message: String },
+    Parse {
+        /// The file (or its name).
+        path: PathBuf,
+        /// What is wrong, in bun's wording.
+        message: String,
+    },
+    /// The format is read-only (bun.lockb, yarn berry).
     #[error("{format:?} lockfiles cannot be written")]
-    Unsupported { format: Format },
+    Unsupported {
+        /// The format that was asked for.
+        format: Format,
+    },
+    /// Reading or writing a file failed.
     #[error("{path}: {source}")]
     Io {
+        /// The file.
         path: PathBuf,
+        /// The OS error.
         #[source]
         source: std::io::Error,
     },
@@ -52,8 +65,10 @@ pub enum Error {
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// This crate's result type.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// The lockfile's file name.
 pub const FNPM_LOCK: &str = "fnpm.lock";
 
 /// The text lockfile version a freshly resolved graph should carry
@@ -62,15 +77,22 @@ pub const FNPM_LOCK: &str = "fnpm.lock";
 /// A loaded lockfile keeps its version (v0 is written as v1).
 pub const TEXT_LOCKFILE_VERSION_CURRENT: u32 = 3;
 
+/// A lockfile format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
+    /// `fnpm.lock`.
     Fnpm,
+    /// `bun.lock` (text).
     BunText,
+    /// `bun.lockb` (binary, read-only).
     BunBinary,
     /// package-lock.json or npm-shrinkwrap.json.
     Npm,
+    /// yarn.lock v1.
     YarnV1,
+    /// yarn.lock from yarn 2+ (read-only).
     YarnBerry,
+    /// pnpm-lock.yaml.
     Pnpm,
 }
 
@@ -181,8 +203,11 @@ pub(crate) fn text_parse(
 /// The result of [`load`].
 #[derive(Debug, Clone)]
 pub struct Loaded {
+    /// The resolved graph.
     pub graph: LockGraph,
+    /// The format of the file it came from.
     pub format: Format,
+    /// The file it came from.
     pub path: PathBuf,
     /// Not fnpm.lock: the graph came from another tool and the file is left in place.
     pub migrated: bool,
@@ -198,6 +223,7 @@ pub struct Loaded {
 pub struct LoadOptions {
     /// `install.lockfile.path`: read this file instead of searching `dir`.
     pub lockfile_path: Option<PathBuf>,
+    /// Registry information for the text reader.
     pub parse: ParseOptions,
     /// Skip the sidecar (always parse the text).
     pub no_sidecar: bool,
@@ -352,9 +378,26 @@ pub fn save(dir: &Path, graph: &LockGraph) -> Result<u64> {
     if !unchanged {
         write_atomic(&path, text.as_bytes())?;
     }
-    // The sidecar is a cache: failing to write it never fails the save.
-    let _ = sidecar::save(dir, hash, graph);
+    // The sidecar caches what loading the file gives (bindings and hoisting re-derived the
+    // way a reload derives them), so a warm load and a cold one never differ. It is a cache:
+    // failing to write it never fails the save.
+    if (!unchanged || !sidecar::is_fresh(dir, hash))
+        && let Ok((loaded, _)) = text_parse(text.as_bytes(), FNPM_LOCK, &ParseOptions::default())
+    {
+        let _ = sidecar::save(dir, hash, &loaded);
+    }
     Ok(hash)
+}
+
+/// Writes `yarn.lock` v1 next to the lockfile (`--yarn`, `install.lockfile.print = "yarn"`),
+/// skipping the write when the bytes are unchanged.
+pub fn save_yarn(dir: &Path, graph: &LockGraph, opts: &print::YarnOptions) -> Result<()> {
+    let text = print::yarn_v1(graph, opts);
+    let path = dir.join("yarn.lock");
+    if read(&path)?.is_some_and(|old| old == text.as_bytes()) {
+        return Ok(());
+    }
+    write_atomic(&path, text.as_bytes())
 }
 
 /// Writes `bytes` to `path` through a temporary file in the same directory and a rename.
@@ -392,3 +435,6 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         }
     })
 }
+
+#[cfg(test)]
+mod lib_tests;
