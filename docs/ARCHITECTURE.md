@@ -107,8 +107,8 @@ both lockfile serialisation and the hoisted linker need it.
 
 ## Threading model
 
-- **One tokio runtime per process** (`fnpm_core::runtime()`, multi-thread, `min(cpus, 8)`
-  workers). Network I/O, timers, child processes and the orchestration of the pipeline run
+- **One tokio runtime per process** (`fnpm_core::runtime()`, multi-thread, `fnpm_core::io_threads()`
+  workers: `FNPM_IO_THREADS`, else `min(cpus, 4)`). Network I/O, timers, child processes and the orchestration of the pipeline run
   here. The napi `async fn`s and the native launcher's `install` run on it.
 - **The global rayon pool** for CPU work: manifest JSON parsing, gunzip + untar + hashing,
   hoisting, lockfile parsing and printing, workspace globbing. Never block a tokio worker on
@@ -1290,20 +1290,32 @@ Tests: `bun-install-lifecycle-scripts.test.ts`, `bun-install-native-binlink.test
 unrelated packages.
 ## fnpm-core
 
+**Status: implemented** (`cargo test -p fnpm-core`: 21 unit, 24 install, 13 command, 1 perf
+test, all against an in-process axum registry serving fixture packuments and tarballs).
+
 **Responsibility.** The orchestrator and the only crate `fnpm-napi` and `fnpm-cli` call. Owns the
 runtime, wires crates into the [install pipeline](#install-pipeline), implements every other
 command, batches events, writes summaries, and owns the no-op fast path state file.
 
-**API** (`crates/fnpm-core/src/{lib,options,commands,events,fast_path}.rs`):
+**API** (`crates/fnpm-core/src/{lib,options,events,fast_path,project,spec}.rs`, `install/`,
+`commands/`, `fetch.rs`):
 
 ```rust
 pub enum Error { Config(..), Workspace(..), Registry(..), Store(..), Resolve(..), Lockfile(..), Link(..),
-                 Scripts(..), Usage { message }, UnknownCommand(Vec<String>) }
-impl Error { pub fn code(&self) -> &'static str; }
+                 Scripts(..), Io { path, source }, Usage { message }, UnknownCommand(Vec<String>),
+                 Fetch { package, message, code }, NotImplemented { command } }
+impl Error { pub fn code(&self) -> &'static str; pub fn usage(msg) -> Self; }
 pub fn version() -> &'static str;
+pub fn io_threads() -> usize;                       // FNPM_IO_THREADS, else min(cpus, 4)
 pub fn runtime() -> &'static tokio::runtime::Runtime;
+pub fn config_hash(config: &Config) -> u64;          // the fast path's config key
+pub fn prepare_install(opts: InstallOptions, env: Env) -> Result<PreparedInstall>;   // sync, no runtime
+impl PreparedInstall { pub fn noop(&self) -> Option<&InstallSummary>; pub fn warnings(&self) -> &[String];
+                       pub async fn run(self, events: Arc<dyn EventSink>) -> Result<InstallSummary>; }
 pub async fn install(opts: InstallOptions, events: Arc<dyn EventSink>) -> Result<InstallSummary>;
+pub async fn install_with_env(opts, events, env: Env) -> Result<InstallSummary>;
 pub async fn invoke(request: CoreRequest, events: Arc<dyn EventSink>) -> Result<CoreResult>;
+pub async fn invoke_with_env(request, events, env: Env) -> Result<CoreResult>;
 
 pub mod options {   // serde mirrors of packages/fuck-npm/src/core/types.ts (camelCase)
     pub struct PmOptions { pub cwd, pub config, pub yarn, pub production, pub save, pub ca, pub cafile, pub dry_run,
@@ -1311,7 +1323,7 @@ pub mod options {   // serde mirrors of packages/fuck-npm/src/core/types.ts (cam
         pub verify, pub offline, pub prefer_offline, pub ignore_scripts, pub trust, pub global, pub env_file,
         pub no_env_file, pub backend, pub registry, pub concurrent_scripts, pub network_concurrency,
         pub save_text_lockfile, pub omit, pub lockfile_only, pub linker, pub minimum_release_age_ms,
-        pub minimum_release_age_excludes, pub cpu, pub os, pub libc, pub ca_store }
+        pub minimum_release_age_excludes, pub cpu, pub os, pub libc, pub ca_store }   // Default = CLI defaults
     impl PmOptions { pub fn to_cli_overrides(&self) -> fnpm_config::CliOverrides; }
     pub enum InstallCommand { Install, Add, Remove, Update }
     pub struct InstallOptions { #[serde(flatten)] pub pm: PmOptions, pub command, pub packages: Vec<String>,
@@ -1322,69 +1334,134 @@ pub mod options {   // serde mirrors of packages/fuck-npm/src/core/types.ts (cam
     pub struct CoreResult { pub exit_code: i32, pub data: Option<Value>, pub lines: Option<Vec<String>> }
 }
 pub mod events { pub const FLUSH_INTERVAL: Duration;   // 50 ms
-    pub struct BatchingSink; // new(deliver), flush(), start() -> FlushGuard; impl EventSink }
+    pub struct BatchingSink; // new(deliver), flush(), start() -> FlushGuard (final flush on drop); impl EventSink }
 pub mod fast_path { pub const STATE_FILE: &str; pub struct State { .. }; pub enum Check { Noop { packages }, Changed(Option<State>) };
-    pub fn check(project: &Path, config_hash: u64) -> Check; pub fn write(project: &Path, s: &State) -> io::Result<()>; }
-pub mod commands { pub async fn dispatch(req: CoreRequest, events: Arc<dyn EventSink>) -> Result<CoreResult>; }
+    pub fn check(project: &Path, config_hash: u64) -> Check; pub fn write(project: &Path, s: &State) -> io::Result<()>;
+    pub fn read(..); pub fn remove(..); pub fn manifest_entry(..); pub fn dir_identity(..); }
+pub mod project { pub struct Project { cwd, root_dir, config: Arc<Config>, env }; /* load, workspace, client, store */ }
+pub mod spec { pub struct Positional; pub fn added_literal(..); pub fn updated_literal(..); pub fn keeps_declared_range(..); }
+pub mod commands { pub async fn dispatch(req, events, env) -> Result<CoreResult>; pub struct OutdatedEntry; }
 ```
 
-**Commands** (`request.command` path -> module), each returning `CoreResult` with `data`
-(the `--json` payload) and pre-rendered `lines` for human output:
+**Install pipeline as implemented.** `prepare_install` (sync): options, project root
+(`Workspace::find_root`; `add` in an empty directory and `-g` write `{}` first), `Config::load`,
+fast path. `PreparedInstall::run`: workspace, lockfile (`install/lock.rs`: fnpm.lock through the
+sidecar, else bun.lock / bun.lockb, else `npm-shrinkwrap.json`, `package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml` in bun's order, each failure a warning and the next tried; with
+none, pnpm-workspace.yaml settings), the migration's package.json write-back applied in memory
+and written with `PackageJsonEditor` when the lockfile is saved, then the command plan
+(`install/plan.rs`), the resolve with `Resolved::Package` streamed to `Fetcher::ensure` (one
+tokio task per package: store hit, else `RegistryClient::tarball` -> `Store::import_tarball`,
+or git checkout / local tarball / folder import), then `Linker::link` on a blocking thread whose
+`PackageSource::wait` blocks on the package's fetch slot (overlap), global bins for `-g`,
+integrity backfill from the imports, save (package.json edits, lockfile, yarn.lock with
+`--yarn`), `Store::set_project_packages` and sidecar caching on a blocking task, trusted
+lifecycle scripts (`plan_install` + `run_dag`, `blockedScripts`), then the state file. The
+graph the linker sees is normalised (`link_view`): one `WORKSPACE | PROD` membership edge per
+member on the root and plain root edges to members; hoisted `workspace_roots` nodes are made
+top-level (`plan_layout`). A failed optional package is dropped and linking retried; a failed
+required one reports the fetch's own code (`Error::Fetch`). `FNPM_TIMING=1` prints phase times.
 
-| path | does | bun source (`runtime/cli/`) |
+**Command semantics.** `add`: bun's `UpdateRequest` parsing (`spec::Positional`), group
+precedence and move-to-group, saved literal `^<v>` for tags / bare names / bare `npm:` aliases
+(`<v>` with `-E`), ranges kept as typed, `workspace:*` for members, `--only-missing`, `--catalog`
+(entry in `workspaces.catalog(s)` or the root's, reference `catalog:` / `catalog:<name>`),
+`--filter` (explicit-root selection) or the member containing `cwd`, `-g` into the global dir
+with bins in the global bin dir, `--trust` (adds `trustedDependencies`, runs scripts).
+Positionals without a name (git, tarball, folder) are resolved once more under the package's
+own name. `remove`: every group, `-g` unlinks global bins first. `update`: re-resolves direct
+dependencies (all, names, `*` globs; `-r` / `--filter`; `--dev` / `--production` /
+`--no-optional` groups; `--depth 0` and named updates keep transitive locks), rewrites
+package.json with bun's `updated_version_literal` rules, `--latest` moves to the dist-tag.
+`ci` / `--frozen-lockfile`: `Mode::Frozen`, no saves. `--lockfile-only`: resolve and save only;
+`--dry-run`: nothing written; `--no-save`: no package.json or lockfile, no state file;
+`--production` / `--omit`: linker `include` and no streaming of omitted packages; `--force`:
+re-resolve without the previous graph and relink. `install --analyze` is `NOT_IMPLEMENTED`.
+
+**Commands** (`request.command` path -> module), each returning `CoreResult` with `data`
+(the `--json` payload) and pre-rendered `lines` (ASCII tables unless `options.color`):
+
+| path | does | module |
 |---|---|---|
-| `outdated` | table of current/update/latest per workspace | `outdated_command.rs` |
-| `why <pat>` | dependency chains to matching packages | `why_command.rs` |
-| `ls` | tree (`--all`, `--depth`) | `package_manager_command.rs` (ls) |
-| `info <pkg>` / `pm view` | registry metadata | `pm_view_command.rs` |
-| `dedupe` | re-resolve preferring shared versions | `dedupe_command.rs`, `install/dedupe.rs` |
-| `prune` | remove extraneous packages | `prune_command.rs` |
-| `link` / `unlink` | register / consume global links (`~/.fnpm/global/links`) | `link_command.rs`, `unlink_command.rs` |
-| `patch` / `patch-commit` | prepare an editable copy, write `patches/*.patch` | `patch_command.rs`, `patch_commit_command.rs`, `install/patch_install.rs` |
-| `audit` (+ `fix`) | bulk advisory endpoint | `audit_command.rs`, `install/audit_fix.rs` |
-| `pack` / `publish` | deterministic tarball; publish with OTP/provenance rules | `pack_command.rs`, `publish_command.rs` |
-| `run` / `exec` / `x` / `create` | scripts and bins; `x` installs into `cache/dlx` | `run_command.rs`, `exec_command.rs`, `bunx_command.rs`, `create_command.rs` |
-| `init` | new package.json | `init_command.rs` |
-| `cache` (`rm`, `prune`, `pack`, `unpack`) | manifest cache and store maintenance | `pm_cache_prune_command.rs`, `install/cache_pack.rs` |
-| `store` (`path`, `status`, `prune`) | fnpm store | (fnpm) |
-| `pkg` (`get`, `set`, `delete`, `fix`) | package.json edits | `pm_pkg_command.rs` |
-| `pm …` | bin, ls, hash, cache, trust, untrusted, default-trusted, version, licenses, whoami, scan, diff, fetch, migrate | `package_manager_command.rs`, `pm_*_command.rs`, `scan_command.rs` |
-| `doctor` | store filesystem, backend support, registry reachability, config dump | (fnpm) |
-| `whoami` | registry user | `package_manager_command.rs` |
-| `migrate` / `lock migrate` | write fnpm.lock from a foreign lockfile | `install/migration.rs` |
-| `lock export|verify|diff|why|dedupe|audit|print` | `fnpm-lock` toolkit | (fnpm) |
+| `outdated` | current / update / latest per selected workspace (`--filter`, `-r`, name globs, catalog grouping, `minimumReleaseAge` `*`); `data.packages` feeds `update -i` | `commands/outdated.rs` |
+| `why`, `pm why`, `lock why` | dependent chains (`--top`, `--depth`, `*deduped`, `*circular`) | `commands/inspect.rs` |
+| `ls`, `pm ls` | `<cwd> node_modules (N installed)` and the tree (`--all`, `--depth`, names) | `commands/inspect.rs` |
+| `info` / `pm view` | packument summary, version by tag / range, property paths | `commands/info.rs` |
+| `whoami`, `pm whoami` | `RegistryClient::whoami` | `commands/info.rs` |
+| `audit`, `lock audit` | bulk advisories, `--audit-level`, `--ignore`; exit 1 on findings | `commands/info.rs` |
+| `link` / `unlink` | register in `<global>/links/<name>` and `<global>/node_modules/<name>` (+ bins); `link <name>` installs `link:<name>` | `commands/link.rs` |
+| `prune` | `fnpm_linker::prune` plan / execute (`--check`) | `commands/maintenance.rs` |
+| `dedupe`, `lock dedupe` | `fnpm_resolver::dedupe`, save, relink (`--check`, `--dry-run`) | `commands/maintenance.rs` |
+| `migrate`, `pm migrate`, `lock migrate` | foreign lockfile -> fnpm.lock + write-back (`--from`, `--force`, `--dry-run`) | `commands/maintenance.rs` |
+| `lock export` | `fnpm_lockfile::serialize` to npm / yarn / pnpm / bun (`--to`, `-o`, `--dry-run`) | `commands/maintenance.rs` |
+| `lock verify`, `lock diff`, `lock print` | out-of-sync + integrity checks; diff of paths or git revisions; text or `--yarn` | `commands/inspect.rs` |
+| `run`, `exec` | `fnpm_scripts::run` (pre/post, `--if-present`), `--filter` / `--workspaces` in dependency order, `--parallel` / `--sequential` | `commands/scripts.rs` |
+| `pm untrusted`, `pm trust`, `pm default-trusted` | `fnpm_scripts::pm` over the installed layout | `commands/scripts.rs` |
+| `init`, `pm pkg get/set/delete/fix`, `pm version` | package.json via `PackageJsonEditor`; version bump with lifecycle scripts and git tag | `commands/files.rs` |
+| `pm cache [path]/rm/prune/pack/unpack`, `store path/status/prune`, `pm fetch`, `pm bin`, `pm hash*`, `pm licenses`, `doctor` | store / cache maintenance and diagnostics | `commands/maintenance.rs`, `inspect.rs` |
+| `patch`, `patch-commit`, `pack`, `publish`, `x`/`dlx`, `create`, `pm pack/diff/scan`, `audit fix` | P4: `Error::NotImplemented` (`NOT_IMPLEMENTED`) | `commands/mod.rs` |
 
 **Fast path state** (`node_modules/.fnpm/state`, JSON): `version`, `fnpmVersion`,
 `lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs, xxh3]` per
-package.json), `configHash` (xxh3 of the install-relevant config: linker, backend, omit,
-platform, registry URLs, ignoreScripts, production, globalStore), `nodeModules`
-(`[dev, ino, mtimeNs]`), `linker`, `packages`. `check` returns `Noop` only if every field
-matches; a package.json whose size and mtime match is not read. Written last, after a fully
-successful install; deleted at the start of any install that will modify `node_modules`.
+package.json, plus `pnpm-workspace.yaml` when present; a new one invalidates), `configHash`
+(`config_hash`: linker, backend, omit, platform, registry and scope URLs, ignoreScripts,
+production, globalStore, hoist patterns, store dir, verify), `nodeModules` (`[dev, ino,
+mtimeNs]`, taken after `.fnpm` exists and background deletes finished), `linker`, `packages`.
+`check` returns `Noop` only if every field matches; a package.json whose size and mtime match is
+not read. Deleted at the start of any install that will modify `node_modules`, written last,
+and not written after `--filter`, `--no-save` with changes, or a failure.
 
-**Summary.** `InstallSummary` (fnpm-types) is filled exactly as bun prints: `added` for new
-direct dependencies, `updated` for changed direct ones, `requested` for add/update targets
-with their bins, `installedCount`, `removedCount`, `checked` for no-op, `failedCount`,
-`blockedScripts`, `elapsedMs`. The CLI renders it.
+**Parsed-lockfile cache.** Besides `node_modules/.fnpm/lock.bin`, a copy keyed by project path
+lives in `<cache>/lockfile-sidecars/<xxh3>.bin` (same format and hash check), so an install
+after `rm -rf node_modules` skips the text parse and links the copy back.
 
-**Threading.** `install`/`invoke` run on `runtime()`. The pipeline is one async function that
-spawns: the resolver task, a fetch task per package (bounded by the registry semaphore), the
-link job on the linker pool, and the script runner. A `crossbeam-channel` or tokio
-`watch` per package implements `PackageSource::wait`.
+**Summary.** `InstallSummary` (fnpm-types) is filled as bun prints it: `added` / `updated` /
+`removed` from the direct dependencies of the root and workspaces before and after,
+`requested` for add/update targets with their bins (and `skipped` for platform mismatches),
+`installedCount` / `removedCount` from the link report, `checked` for no-op, `failedCount`
+(optional packages dropped), `blockedScripts`, `elapsedMs`.
+
+**Threading.** `runtime()` has `io_threads()` workers (network and orchestration only; CPU
+work runs on rayon: extraction in the store, the linker's own pool). The resolver streams on
+an unbounded channel to a consumer task; fetch slots are a `parking_lot` mutex + condvar
+(link threads) + `tokio::sync::Notify` (async waiters).
 
 **Errors.** `Error::code` values are part of the CLI contract: `FROZEN_LOCKFILE`,
 `NO_MATCHING_VERSION`, `NOT_FOUND`, `INTEGRITY`, `NETWORK`, `SCRIPT_FAILED`,
-`INVALID_PACKAGE_JSON`, `USAGE`, `CORE_ERROR`. Add codes, do not rename them.
+`INVALID_PACKAGE_JSON`, `USAGE`, `NOT_IMPLEMENTED`, `CORE_ERROR`. Add codes, do not rename
+them.
 
 **Bun sources.** `install/PackageManager/install_with_manager.rs` (pipeline, summary at
 1264-1530), `install/PackageManager/updatePackageJSONAndInstall.rs`,
-`install/PackageManager/add_remove_with_filter.rs`, `install/PackageManager/security_scanner.rs`,
-`runtime/cli/install_command.rs`, and the command files in the table.
+`install/PackageManager/{UpdateRequest,PackageJSONEditor,add_catalog,add_remove_with_filter,package_json_write_back}.rs`,
+`runtime/cli/install_command.rs`, and the command files: `outdated_command.rs`,
+`why_command.rs`, `package_manager_command.rs`, `pm_view_command.rs`, `audit_command.rs`,
+`link_command.rs`, `unlink_command.rs`, `prune_command.rs`, `dedupe_command.rs`,
+`run_command.rs`, `exec_command.rs`, `pm_pkg_command.rs`, `pm_version_command.rs`,
+`pm_trusted_command.rs`.
 
-**Perf.** No-op install end to end through the native launcher (process start, argv, config,
-fast path, summary) must beat bun on every fixture; on the small fixture that is < 7.2 ms on the
-Linux baseline machine, and the target is < 3 ms. Event batching costs < 1% CPU on a cold
-install. See [startup budget](#startup-budget).
+**Perf.** Measured 2026-10-25 on the Linux baseline machine against the verdaccio mirror with
+`examples/install.rs` (the core behind a minimal native `main`, mimalloc, release profile),
+interleaved with bun 1.4.4, medians:
+
+| fixture | scenario | bun | fnpm-core |
+|---|---|---:|---:|
+| small | noop | 7.1 ms | 3.8 ms |
+| small | warm | 22.6 ms | 27.5 ms |
+| small | ci | 23.3 ms | 28.8 ms |
+| small | add | 9.2 ms | 17.1 ms |
+| small | cold-lockfile | 115.7 ms | 145.9 ms |
+| medium | noop | 11.0 ms | 3.9 ms |
+| medium | warm | 121.1 ms | 124.9 ms |
+| medium | ci | 124.9 ms | 122.6 ms |
+| medium | cold-lockfile | 1.25 s | 1.81 s |
+
+In-process (`tests/perf.rs`, 150 packages, release): no-op 0.13 ms, `fast_path::check`
+0.006 ms. Where the remaining time goes: the binary starts in 2.8 ms vs bun's 1.5 ms; `link`
+(hard links into fresh directories by absolute path) is ~18 ms of the small warm install; a
+cold import writes every file as a BLAKE3 CAS blob plus a link, and add re-resolves through the
+engine (~4 ms) and re-parses the saved lockfile for the sidecar. The no-op target (< 7.2 ms
+small) is met without starting the runtime.
 
 ## fnpm-napi
 
