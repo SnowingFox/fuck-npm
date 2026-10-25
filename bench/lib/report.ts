@@ -28,6 +28,9 @@ export interface DiskResult extends DiskReport {
 
 export interface Results {
   generatedAt: string;
+  /** Source revision and exact executable used by this invocation. */
+  sourceCommit?: string;
+  binarySha256?: string;
   registry: string;
   machine: {
     os: string;
@@ -91,6 +94,8 @@ export function renderMarkdown(res: Results): string {
   out.push(`# Install benchmark: ${res.generatedAt.slice(0, 10)} ${m.platform}-${m.arch}`, "");
   out.push(`- Machine: ${m.cpu}, ${m.cores} cores, ${m.memoryGiB} GiB RAM, ${m.os}, filesystem ${m.filesystem}`);
   out.push(`- Node ${m.node}, ${m.hyperfine}`);
+  if (res.sourceCommit) out.push(`- Source revision: ${res.sourceCommit}`);
+  if (res.binarySha256) out.push(`- Native fnpm SHA-256: ${res.binarySha256}`);
   out.push(`- Registry: local verdaccio mirror (${res.registry}), pre-warmed`);
   const tools = Object.keys(res.tools).sort(byOrder(TOOL_ORDER));
   out.push(`- Tools: ${tools.map((t) => `${t} ${res.tools[t]}`).join(", ")}`);

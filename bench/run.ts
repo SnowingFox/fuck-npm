@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { arch, cpus, homedir, platform, release, totalmem, type } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fsUsedBytes, measure, type DiskReport } from "./lib/disk.ts";
 import { renderMarkdown, type Results, type ScenarioResult, type DiskResult } from "./lib/report.ts";
@@ -281,6 +281,7 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       fixtures: { type: "string" },
+      out: { type: "string" },
       tools: { type: "string" },
       scenarios: { type: "string" },
       runs: { type: "string", default: "5" },
@@ -294,7 +295,7 @@ async function main(): Promise<void> {
   });
   if (values.help) {
     console.log(
-      "usage: node bench/run.ts [--fixtures a,b] [--tools a,b] [--scenarios a,b] [--runs N] [--warmup N] [--no-disk] [--regen-lockfiles] [--add spec]\n" +
+      "usage: node bench/run.ts [--fixtures a,b] [--tools a,b] [--scenarios a,b] [--runs N] [--warmup N] [--no-disk] [--regen-lockfiles] [--add spec] [--out results-stem]\n" +
         `fixtures:  ${fixtureNames().join(", ")}\ntools:     ${TOOL_NAMES.join(", ")}\nscenarios: ${SCENARIOS.join(", ")}`,
     );
     return;
@@ -329,13 +330,16 @@ async function main(): Promise<void> {
 
   const update: Results = {
     generatedAt: new Date().toISOString(),
+    sourceCommit: run(["git", "rev-parse", "HEAD"], { cwd: REPO_ROOT }).stdout.trim() +
+      (run(["git", "diff", "--quiet", "--", "crates", "Cargo.toml", "Cargo.lock", "bench"], { cwd: REPO_ROOT }).status === 0 ? "" : "+dirty"),
+    binarySha256: fnpmNative() ? createHash("sha256").update(readFileSync(fnpmNative()!)).digest("hex") : undefined,
     registry,
     machine: machineInfo(),
     tools: versions,
     results: [],
     disk: [],
   };
-  const base = resultsPath();
+  const base = values.out ? resolve(values.out) : resultsPath();
   const flush = () => {
     ensureDir(RESULTS_DIR);
     const merged = mergeResults(base, update);

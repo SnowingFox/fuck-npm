@@ -43,7 +43,7 @@
           ]
         }
       },
-      "notes": "cpu-features (optional, node-gyp) is deleted after its install script fails: fnpm's node-gyp shim runs `fnpm x node-gyp`, NOT_IMPLEMENTED on main. npm builds it with its bundled node-gyp."
+      "notes": "cpu-features is an optional native dependency. Its recorded fnpm install script failed and the package was removed; npm built it with its bundled node-gyp. Execution support is now integrated, so the next corpus run records the current outcome."
     },
     {
       "name": "socket-io",

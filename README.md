@@ -235,9 +235,8 @@ Deliverables and exit criteria: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [x] **P0 Foundations:** crate contracts and `fnpm-types`, the CLI with the full command tree,
   test registry plus 101 ported bun test files, benchmark harness and baselines
-- [ ] **P1 First install (in progress):** 11 core crates (built and reviewed on branches,
-  merge pending), then the `fnpm-core` install pipeline, napi, the `fnpm-cli` native launcher,
-  conformance and benchmark gate
+- [ ] **P1 First install (in progress):** core crates, install pipeline, napi and native
+  launcher integrated; conformance and benchmark gates remain open
 - [ ] **P2 Workspaces and policy:** isolated layout and global virtual store, `--filter`,
   catalogs, overrides, patches, trusted scripts, security scanner
 - [ ] **P3 Migrations and `fnpm-lock`:** first-run migration from every lockfile, the

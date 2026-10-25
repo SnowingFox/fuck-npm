@@ -29,6 +29,7 @@ launcher (`crates/fnpm-cli`, what users run after the postinstall swap): `FNPM_B
 | `--tools` | all | `fnpm,bun,pnpm,npm,yarn` |
 | `--scenarios` | all | `cold,cold-lockfile,warm,noop,add,ci` |
 | `--runs` | 5 | hyperfine `--runs` |
+| `--out` | dated results stem | separate output stem for an integration or review run |
 | `--warmup` | 1 | hyperfine `--warmup` |
 | `--no-disk` | | skip the disk measurement |
 | `--regen-lockfiles` | | regenerate each tool's lockfile even if the fixture is unchanged |
@@ -136,7 +137,8 @@ After the timed scenarios, each (tool, fixture) gets two extra installs:
 
 `bench/results/<date>-<os>-<arch>.{json,md}`. Multiple invocations on the same day merge into
 the same file (a re-run replaces the matching fixture/tool/scenario entries). The JSON has the
-raw hyperfine times for every run, machine info, the tool versions, and the disk numbers. The
+raw hyperfine times for every run, machine info, the tool versions, the source revision,
+the native fnpm SHA-256, and the disk numbers. The
 Markdown has one table per fixture with mean ± σ and the ratio to the fastest tool in that row,
 a min/max/runs breakdown, and the disk table. Absolute paths are stripped so the files can be
 committed.
