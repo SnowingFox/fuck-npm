@@ -143,6 +143,7 @@ pub(crate) struct Engine<'a> {
     pub prev_by_name: HashMap<String, Vec<PackageId>>,
     pub prev_by_key: HashMap<String, PackageId>,
     pub prev_versions: Vec<Option<Version>>,
+    pub prev_non_peer_targets: HashSet<PackageId>,
     pub imported: HashMap<PackageId, PackageId>,
 
     pub queue: VecDeque<Row>,
@@ -293,6 +294,7 @@ impl<'a> Engine<'a> {
             prev_by_name: HashMap::new(),
             prev_by_key: HashMap::new(),
             prev_versions: Vec::new(),
+            prev_non_peer_targets: HashSet::new(),
             imported: HashMap::new(),
             queue: VecDeque::new(),
             deferred_peers: Vec::new(),
@@ -342,6 +344,16 @@ impl<'a> Engine<'a> {
         let Some(prev) = self.prev else { return };
         self.prev_overrides = OverrideSet::new(&prev.overrides);
         self.prev_versions = prev.packages.iter().map(package_version).collect();
+        self.prev_non_peer_targets = prev
+            .packages
+            .iter()
+            .flat_map(|p| {
+                p.dependencies
+                    .iter()
+                    .filter(|e| !e.behavior.is_peer())
+                    .filter_map(|e| e.target)
+            })
+            .collect();
         for (i, p) in prev.packages.iter().enumerate() {
             let id = PackageId(i as u32);
             self.prev_by_key.entry(p.key()).or_insert(id);

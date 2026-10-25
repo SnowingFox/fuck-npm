@@ -137,7 +137,7 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
     if extensions != prev.package_extensions {
         out.push("packageExtensions changed".into());
     }
-    let patched: BTreeMap<String, String> = root
+    let mut patched: BTreeMap<String, String> = root
         .get("patchedDependencies")
         .and_then(Value::as_object)
         .map(|o| {
@@ -151,6 +151,20 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
         .iter()
         .map(|(k, v)| (k.clone(), v.path.clone()))
         .collect();
+    // The text lockfile only records trust and patches for packages present in its tree.
+    // Ignore declarations the writer omitted, as bun does on a frozen reinstall.
+    let patch_keys: std::collections::BTreeSet<String> = prev
+        .packages
+        .iter()
+        .map(|p| {
+            if matches!(p.resolution, fnpm_types::Resolution::Workspace { .. }) {
+                format!("{}@{}", p.name, p.version)
+            } else {
+                p.key()
+            }
+        })
+        .collect();
+    patched.retain(|key, _| patch_keys.contains(key) || prev_patched.contains_key(key));
     if patched != prev_patched {
         out.push("patchedDependencies changed".into());
     }
@@ -166,6 +180,35 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
         trusted
             .get_or_insert_with(Default::default)
             .extend(only.iter().cloned());
+    }
+    if let Some(names) = &mut trusted
+        && !names.is_empty()
+    {
+        let mut present: std::collections::BTreeSet<&str> = prev
+            .packages
+            .iter()
+            .skip(1)
+            .map(|p| p.name.as_str())
+            .collect();
+        if let Some(recorded) = &prev.trusted_dependencies {
+            present.extend(recorded.iter().map(String::as_str));
+        }
+        for p in &prev.packages {
+            for e in &p.dependencies {
+                if e.target.is_some_and(|t| {
+                    !matches!(
+                        prev.packages[t.index()].resolution,
+                        fnpm_types::Resolution::Npm { .. }
+                    )
+                }) {
+                    present.insert(&e.name);
+                }
+            }
+        }
+        names.retain(|name| present.contains(name.as_str()));
+        if names.is_empty() {
+            trusted = None;
+        }
     }
     if trusted != prev.trusted_dependencies {
         out.push("trustedDependencies changed".into());

@@ -386,3 +386,33 @@ fn npm_versions_are_read_as_bun_parses_them() {
             .contains("Unexpected resolution")
     );
 }
+
+#[test]
+fn a_peer_provided_by_the_root_stays_bound_to_the_root() {
+    let src = r#"{
+      "lockfileVersion": 1,
+      "workspaces": {
+        "": {"name": "host", "dependencies": {"plugin": "1.0.0"}},
+        "packages/adapter": {"name": "adapter", "version": "1.0.0", "devDependencies": {"host": "workspace:*"}, "peerDependencies": {"host": "^1"}}
+      },
+      "packages": {
+        "host": ["host@root:", {}],
+        "plugin": ["plugin@1.0.0", "", {"peerDependencies": {"host": "^1"}}, ""],
+        "unused/host": ["host@1.0.0", "", {}, ""],
+        "adapter": ["adapter@workspace:packages/adapter"]
+      }
+    }"#;
+    let (graph, _) = parse(src).unwrap();
+    let plugin = graph.by_name("plugin").next().unwrap();
+    let adapter = graph.workspaces["packages/adapter"];
+    assert_eq!(
+        graph.packages[plugin.index()]
+            .dependency("host")
+            .unwrap()
+            .target,
+        Some(PackageId::ROOT)
+    );
+    for edge in &graph.packages[adapter.index()].dependencies {
+        assert_eq!(edge.target, Some(PackageId::ROOT));
+    }
+}

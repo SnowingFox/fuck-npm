@@ -22,8 +22,8 @@ use crate::{Error, Result};
 pub const SIDECAR: &str = "node_modules/.fnpm/lock.bin";
 
 const MAGIC: &[u8; 8] = b"FNPMLCK\0";
-/// Bump when the mirror types change.
-const IMAGE_VERSION: u32 = 1;
+/// Bump when mirror types or cached binding semantics change.
+const IMAGE_VERSION: u32 = 2;
 const HEADER: usize = 24;
 
 #[derive(Archive, Serialize, Deserialize)]

@@ -273,7 +273,25 @@ impl Engine<'_> {
 
     pub(crate) fn bind(&mut self, row: Row) -> Result<Step> {
         let edge = self.edge(row).clone();
-        if edge.target.is_some() || edge.behavior.is_optional_peer() {
+        if edge.target.is_some() {
+            return Ok(Step::Done);
+        }
+        if edge.behavior.is_optional_peer() {
+            // Migrations can lock optional peers without an explicit provider. Keep that
+            // binding, but do not restore a provider the project just removed.
+            let locked = self.st[row.pkg.index()].prev.and_then(|id| {
+                self.prev?.packages[id.index()]
+                    .dependencies
+                    .iter()
+                    .find(|e| e.name == edge.name && e.behavior.is_optional_peer())?
+                    .target
+            });
+            if locked.is_some_and(|id| !self.prev_non_peer_targets.contains(&id))
+                && let Ok(Some(asked)) = self.asked(row, &edge)
+                && let Some(target) = self.reuse_previous(row, &edge, &asked)
+            {
+                self.set_target(row, target);
+            }
             return Ok(Step::Done);
         }
         let asked = match self.asked(row, &edge) {
@@ -296,7 +314,9 @@ impl Engine<'_> {
             };
             return self.fail(row, &edge, err);
         }
-        if let Some(target) = self.reuse_previous(row, &edge, &asked) {
+        if !edge.behavior.is_peer()
+            && let Some(target) = self.reuse_previous(row, &edge, &asked)
+        {
             self.set_target(row, target);
             return Ok(Step::Done);
         }

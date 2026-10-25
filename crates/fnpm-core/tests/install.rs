@@ -944,3 +944,43 @@ async fn isolated_workspace_links_the_workspaces_it_depends_on() {
         std::fs::remove_dir_all(p.path("packages/b/node_modules")).unwrap();
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_reinstall_accepts_unused_trust_and_patch_entries_omitted_by_the_lockfile() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "a": "1.0.0" },
+            "trustedDependencies": ["a", "not-installed"],
+            "patchedDependencies": { "not-installed@1.0.0": "unused.patch" }
+        }),
+    );
+    p.write("unused.patch", "unused patch\n");
+    p.install().await;
+    let lock_before = p.read("fnpm.lock");
+    assert!(!lock_before.contains("not-installed"), "{lock_before}");
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.frozen_lockfile = true;
+    let (summary, _) = p.run(opts).await.unwrap();
+    assert_eq!(summary.failed_count, 0);
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+    assert_eq!(reg.manifest_requests(), 0);
+
+    let mut manifest: serde_json::Value = serde_json::from_str(&p.read("package.json")).unwrap();
+    manifest["trustedDependencies"] = json!(["not-installed"]);
+    p.write("package.json", &manifest.to_string());
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.frozen_lockfile = true;
+    assert_eq!(
+        p.run(opts.clone()).await.unwrap_err().code(),
+        "FROZEN_LOCKFILE"
+    );
+    manifest["trustedDependencies"] = json!(["a", "not-installed"]);
+    manifest["patchedDependencies"]["a@1.0.0"] = json!("unused.patch");
+    p.write("package.json", &manifest.to_string());
+    assert_eq!(p.run(opts).await.unwrap_err().code(), "FROZEN_LOCKFILE");
+}

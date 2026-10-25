@@ -322,7 +322,9 @@ impl Engine<'_> {
         name: &str,
         range: Option<&Range>,
     ) -> Option<PackageId> {
-        if let Some(id) = self.package_satisfying(name, range, &|_, _, _| true) {
+        if let Some(id) = self.package_satisfying(name, range, &|this, candidate, _| {
+            !this.would_revive_leftover(row, candidate)
+        }) {
             return Some(id);
         }
         if self.overrides.has_rule_for(name) {

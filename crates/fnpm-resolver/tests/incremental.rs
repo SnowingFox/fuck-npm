@@ -489,3 +489,75 @@ async fn an_invalid_previous_graph_is_ignored() {
     );
     out.graph.validate().unwrap();
 }
+
+#[tokio::test]
+async fn partial_resolve_keeps_a_locked_optional_peer_without_installing_a_new_one() {
+    let h = Harness::new();
+    h.registry
+        .add("plugin", &[("1.0.0", json!({"peerDependencies": {"extra": "^1"}, "peerDependenciesMeta": {"extra": {"optional": true}}}))])
+        .add("extra", &[("1.0.0", no_deps())]);
+    let ws = workspace(
+        json!({"dependencies": {"plugin": "1.0.0", "extra": "1.0.0"}}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    let next = workspace(json!({"dependencies": {"plugin": "1.0.0"}}), &[]);
+    let removed = h.run(&next, Some(&first), Mode::Normal).await.unwrap();
+    assert!(
+        versions(&removed.graph, "extra").is_empty(),
+        "removed provider stays removed"
+    );
+
+    // A foreign lockfile may already install an optional peer with no non-peer provider.
+    let mut locked = first;
+    locked.root_mut().dependencies.retain(|e| e.name != "extra");
+    let out = h.run(&next, Some(&locked), Mode::Normal).await.unwrap();
+    assert_eq!(versions(&out.graph, "extra"), ["1.0.0"]);
+    let changed = workspace(
+        json!({"dependencies": {"plugin": "1.0.0"}, "trustedDependencies": []}),
+        &[],
+    );
+    let out = h.run(&changed, Some(&locked), Mode::Normal).await.unwrap();
+    assert_eq!(versions(&out.graph, "extra"), ["1.0.0"]);
+}
+
+#[tokio::test]
+async fn partial_resolve_prefers_the_current_peer_provider_to_the_locked_peer_target() {
+    let h = Harness::new();
+    h.registry
+        .add(
+            "plugin",
+            &[("1.0.0", json!({"peerDependencies": {"host": "*"}}))],
+        )
+        .add("host", &[("1.0.0", no_deps()), ("2.0.0", no_deps())]);
+    let ws = workspace(
+        json!({"dependencies": {"plugin": "1.0.0", "host": "2.0.0"}}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    let changed = workspace(
+        json!({"dependencies": {"plugin": "1.0.0", "host": "1.0.0"}}),
+        &[],
+    );
+    let out = h.run(&changed, Some(&first), Mode::Normal).await.unwrap();
+    let plugin = id_of(&out.graph, "plugin", "1.0.0");
+    assert_eq!(peer(&out.graph, plugin, "host").unwrap().version, "1.0.0");
+    assert_eq!(versions(&out.graph, "host"), ["1.0.0"]);
+}
+
+#[tokio::test]
+async fn frozen_accepts_unused_trust_still_recorded_in_an_in_memory_graph() {
+    let h = Harness::new();
+    h.registry.add("a", &[("1.0.0", no_deps())]);
+    let ws = workspace(
+        json!({"dependencies": {"a": "1.0.0"}, "trustedDependencies": ["unused"]}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    assert!(
+        !h.run(&ws, Some(&first), Mode::Frozen)
+            .await
+            .unwrap()
+            .changed
+    );
+}
