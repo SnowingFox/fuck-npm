@@ -232,13 +232,13 @@ fn desugar(op: &str, p: &Partial, out: &mut Vec<Comparator>) {
             let Some(ma) = ma else { return };
             let min = p.min();
             let upper = if ma > 0 || mi.is_none() {
-                pre0(ma + 1, 0, 0)
+                pre0(ma.saturating_add(1), 0, 0)
             } else {
                 let mi = mi.unwrap_or(0);
                 if mi > 0 || pa.is_none() {
-                    pre0(0, mi + 1, 0)
+                    pre0(0, mi.saturating_add(1), 0)
                 } else {
-                    pre0(0, 0, pa.unwrap_or(0) + 1)
+                    pre0(0, 0, pa.unwrap_or(0).saturating_add(1))
                 }
             };
             out.push(cmp(Op::Gte, min));
@@ -250,8 +250,8 @@ fn desugar(op: &str, p: &Partial, out: &mut Vec<Comparator>) {
             out.push(cmp(
                 Op::Lt,
                 match mi {
-                    None => pre0(ma + 1, 0, 0),
-                    Some(mi) => pre0(ma, mi + 1, 0),
+                    None => pre0(ma.saturating_add(1), 0, 0),
+                    Some(mi) => pre0(ma, mi.saturating_add(1), 0),
                 },
             ));
         }
@@ -259,19 +259,21 @@ fn desugar(op: &str, p: &Partial, out: &mut Vec<Comparator>) {
             (None, _, _) => {}
             (Some(ma), None, _) => {
                 out.push(cmp(Op::Gte, Version::new(ma, 0, 0)));
-                out.push(cmp(Op::Lt, pre0(ma + 1, 0, 0)));
+                out.push(cmp(Op::Lt, pre0(ma.saturating_add(1), 0, 0)));
             }
             (Some(ma), Some(mi), None) => {
                 out.push(cmp(Op::Gte, Version::new(ma, mi, 0)));
-                out.push(cmp(Op::Lt, pre0(ma, mi + 1, 0)));
+                out.push(cmp(Op::Lt, pre0(ma, mi.saturating_add(1), 0)));
             }
             _ => out.push(cmp(Op::Eq, p.min())),
         },
         ">" => match (ma, mi, pa) {
             // `>*` matches nothing
             (None, _, _) => out.push(cmp(Op::Lt, pre0(0, 0, 0))),
-            (Some(ma), None, _) => out.push(cmp(Op::Gte, Version::new(ma + 1, 0, 0))),
-            (Some(ma), Some(mi), None) => out.push(cmp(Op::Gte, Version::new(ma, mi + 1, 0))),
+            (Some(ma), None, _) => out.push(cmp(Op::Gte, Version::new(ma.saturating_add(1), 0, 0))),
+            (Some(ma), Some(mi), None) => {
+                out.push(cmp(Op::Gte, Version::new(ma, mi.saturating_add(1), 0)))
+            }
             _ => out.push(cmp(Op::Gt, p.min())),
         },
         ">=" => {
@@ -290,8 +292,8 @@ fn desugar(op: &str, p: &Partial, out: &mut Vec<Comparator>) {
         },
         "<=" => match (ma, mi, pa) {
             (None, _, _) => {}
-            (Some(ma), None, _) => out.push(cmp(Op::Lt, pre0(ma + 1, 0, 0))),
-            (Some(ma), Some(mi), None) => out.push(cmp(Op::Lt, pre0(ma, mi + 1, 0))),
+            (Some(ma), None, _) => out.push(cmp(Op::Lt, pre0(ma.saturating_add(1), 0, 0))),
+            (Some(ma), Some(mi), None) => out.push(cmp(Op::Lt, pre0(ma, mi.saturating_add(1), 0))),
             _ => out.push(cmp(Op::Lte, p.min())),
         },
         _ => {}
@@ -457,5 +459,29 @@ mod tests {
         assert!(Range::parse(">=0.0.0").unwrap().is_star());
         assert!(!Range::parse("^1").unwrap().is_star());
         assert!(Range::parse("git+https://x").is_none());
+    }
+}
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::*;
+
+    /// The largest numbers must not overflow when a range's upper bound is built.
+    #[test]
+    fn max_numbers_saturate() {
+        let max = u64::MAX;
+        for range in [
+            format!("^{max}"),
+            format!("~{max}"),
+            format!("{max}"),
+            format!("{max}.{max}"),
+            format!("~{max}.{max}"),
+            format!("^0.{max}"),
+            format!("^0.0.{max}"),
+            format!(">{max}"),
+            format!("<={max}.{max}"),
+        ] {
+            assert!(Range::parse(&range).is_some(), "{range}");
+        }
     }
 }

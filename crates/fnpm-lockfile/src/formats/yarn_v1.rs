@@ -468,7 +468,7 @@ fn entry_resolution(
             return Ok(Resolution::Github {
                 owner: owner.to_owned(),
                 repo: repo.to_owned(),
-                committish: commit[..commit.len().min(7)].to_owned(),
+                committish: short_commit(commit).to_owned(),
                 resolved_commit: commit.clone(),
                 integrity,
             });
@@ -523,6 +523,15 @@ fn entry_resolution(
         tarball_url,
         integrity,
     })
+}
+
+/// The first 7 bytes of a commit (bun's abbreviated committish), cut at a character boundary.
+fn short_commit(commit: &str) -> &str {
+    let mut end = commit.len().min(7);
+    while !commit.is_char_boundary(end) {
+        end -= 1;
+    }
+    &commit[..end]
 }
 
 enum Bound {
@@ -871,13 +880,19 @@ pub fn serialize(graph: &LockGraph) -> String {
                 .then_with(|| edge(a).literal.cmp(&edge(b).literal))
         });
     }
+    let versions: Vec<String> = graph
+        .packages
+        .iter()
+        .map(|p| p.resolution.to_string())
+        .collect();
     let mut order: Vec<usize> = (1..n).collect();
-    order.sort_by(|&a, &b| {
+    order.sort_unstable_by(|&a, &b| {
         let (pa, pb) = (&graph.packages[a], &graph.packages[b]);
         pa.name
             .cmp(&pb.name)
             .then_with(|| pa.resolution.tag().cmp(&pb.resolution.tag()))
-            .then_with(|| pa.resolution.to_string().cmp(&pb.resolution.to_string()))
+            .then_with(|| versions[a].cmp(&versions[b]))
+            .then(a.cmp(&b))
     });
 
     let mut keys: Vec<String> = order.iter().map(|&i| graph.packages[i].key()).collect();
@@ -891,7 +906,7 @@ pub fn serialize(graph: &LockGraph) -> String {
 
     for &i in &order {
         let p = &graph.packages[i];
-        let version = p.resolution.to_string();
+        let version = &versions[i];
         out.push('\n');
         let mut written: Vec<(&str, &str)> = Vec::new();
         for &r in &requested[i] {
@@ -917,7 +932,7 @@ pub fn serialize(graph: &LockGraph) -> String {
             out.push('@');
             if as_.is_empty() {
                 out.push('^');
-                out.push_str(&version);
+                out.push_str(version);
             } else if needs_quote {
                 out.push_str(&json_inner(as_));
             } else {
@@ -932,7 +947,7 @@ pub fn serialize(graph: &LockGraph) -> String {
             out.push_str(&json_string(&p.key()));
         }
         out.push_str(":\n");
-        out.push_str(&format!("  version {}\n", json_string(&version)));
+        out.push_str(&format!("  version {}\n", json_string(version)));
         out.push_str(&format!("  resolved {}\n", json_string(&resolved_url(p))));
         if let Some(integrity) = p.resolution.integrity() {
             out.push_str(&format!("  integrity {}\n", integrity.to_sri()));

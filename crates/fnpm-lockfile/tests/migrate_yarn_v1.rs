@@ -481,3 +481,32 @@ fn export_format() {
   integrity sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
     );
 }
+
+/// A commit that is not ASCII must not split a character when it is abbreviated.
+#[test]
+fn git_commit_with_non_ascii_characters() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"r","dependencies":{"x":"git+https://github.com/o/x.git#ééééé"}}"#,
+    )
+    .unwrap();
+    let lock = "# yarn lockfile v1\n\n\"x@git+https://github.com/o/x.git#ééééé\":\n  version \"1.0.0\"\n  resolved \"git+https://github.com/o/x.git#ééééé\"\n";
+    let ws = common::workspace(dir.path());
+    let files = common::ScopedFiles(dir.path().to_path_buf());
+    let m =
+        fnpm_lockfile::formats::yarn_v1::migrate(lock.as_bytes(), &ws, &common::options(&files))
+            .unwrap();
+    let x = m.graph.packages.iter().find(|p| p.name == "x").unwrap();
+    match &x.resolution {
+        fnpm_types::Resolution::Github {
+            committish,
+            resolved_commit,
+            ..
+        } => {
+            assert_eq!(committish, "ééé");
+            assert_eq!(resolved_commit, "ééééé");
+        }
+        other => panic!("{other:?}"),
+    }
+}

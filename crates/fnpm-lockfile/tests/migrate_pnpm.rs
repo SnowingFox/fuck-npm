@@ -943,3 +943,85 @@ snapshots:
 ";
     assert_eq!(text, expected);
 }
+
+fn workspace_config(
+    dir: &Path,
+) -> (
+    Option<fnpm_lockfile::formats::foreign::PackageJsonWriteBack>,
+    Vec<String>,
+) {
+    let ws = workspace(dir);
+    let files = ScopedFiles(dir.to_path_buf());
+    pnpm::migrate_workspace_config(&ws, &options(&files))
+}
+
+/// bun `migrate_pnpm_workspace_config`: no pnpm-lock.yaml, but pnpm-workspace.yaml settings
+/// still move into package.json.
+#[test]
+fn workspace_config_without_lockfile() {
+    let root_json = json!({
+        "name": "root",
+        "pnpm": { "overrides": { "foo": "1.0.0" }, "onlyBuiltDependencies": ["esbuild"] }
+    });
+    let dir = project(&[
+        ("package.json", root_json.to_string()),
+        (
+            "pnpm-workspace.yaml",
+            "packages:\n  - packages/*\ncatalog:\n  react: ^18.0.0\nonlyBuiltDependencies:\n  - sharp\n".into(),
+        ),
+    ]);
+    let (edit, warnings) = workspace_config(dir.path());
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let edit = edit.expect("an edit");
+    assert_eq!(edit.path, "");
+    let mut after = root_json.clone();
+    edit.apply_to(&mut after);
+    assert_eq!(
+        after["workspaces"],
+        json!({ "packages": ["packages/*"], "catalog": { "react": "^18.0.0" } })
+    );
+    assert_eq!(after["overrides"], json!({ "foo": "1.0.0" }));
+    assert_eq!(after["trustedDependencies"], json!(["esbuild", "sharp"]));
+    assert_eq!(
+        edit.changes,
+        [
+            "copied pnpm.overrides to overrides",
+            "copied pnpm-workspace.yaml to workspaces",
+            "copied pnpm.onlyBuiltDependencies to trustedDependencies",
+            "copied pnpm-workspace.yaml onlyBuiltDependencies to trustedDependencies",
+        ]
+    );
+}
+
+#[test]
+fn workspace_config_skipped_when_already_migrated_or_absent() {
+    // a root with `workspaces` was migrated already
+    let dir = project(&[
+        (
+            "package.json",
+            json!({ "name": "root", "workspaces": ["a"] }).to_string(),
+        ),
+        ("pnpm-workspace.yaml", "packages:\n  - packages/*\n".into()),
+    ]);
+    assert!(workspace_config(dir.path()).0.is_none());
+    // no pnpm-workspace.yaml: `package.json#pnpm` is left alone, as bun does
+    let dir = project(&[(
+        "package.json",
+        json!({ "name": "root", "pnpm": { "overrides": { "foo": "1" } } }).to_string(),
+    )]);
+    assert!(workspace_config(dir.path()).0.is_none());
+    // a broken pnpm-workspace.yaml warns and still copies `package.json#pnpm`
+    let dir = project(&[
+        (
+            "package.json",
+            json!({ "name": "root", "pnpm": { "overrides": { "foo": "1" } } }).to_string(),
+        ),
+        ("pnpm-workspace.yaml", "packages: [\n".into()),
+    ]);
+    let (edit, warnings) = workspace_config(dir.path());
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(
+        edit.unwrap().changes,
+        ["copied pnpm.overrides to overrides"]
+    );
+}

@@ -209,7 +209,8 @@ fn plain_kind(text: &str) -> Kind {
 /// Parses every document of a YAML stream. An empty stream gives no documents.
 pub(crate) fn parse_documents(src: &str) -> Result<Vec<Node>, String> {
     let mut parser = Parser::new_from_str(src);
-    let mut anchors: HashMap<usize, Node> = HashMap::new();
+    let mut anchors: HashMap<usize, (Node, usize)> = HashMap::new();
+    let mut budget = MAX_ALIAS_NODES;
     let mut documents = Vec::new();
     loop {
         let (event, _) = parser.next_token().map_err(|e| e.to_string())?;
@@ -224,7 +225,7 @@ pub(crate) fn parse_documents(src: &str) -> Result<Vec<Node>, String> {
                     });
                     continue;
                 }
-                documents.push(build(event, &mut parser, &mut anchors, 0)?);
+                documents.push(build(event, &mut parser, &mut anchors, &mut budget, 0)?);
             }
             _ => {}
         }
@@ -249,10 +250,29 @@ fn next_event(parser: &mut Events<'_>) -> Result<Event, String> {
         .map_err(|e| e.to_string())
 }
 
+/// How many nodes aliases may copy in all. An alias is a copy of its anchor, so nested aliases
+/// grow exponentially ("billion laughs"); neither yarn nor pnpm writes aliases at all.
+const MAX_ALIAS_NODES: usize = 1 << 20;
+
+/// The number of nodes in `node`.
+fn node_count(node: &Node) -> usize {
+    match node {
+        Node::Scalar { .. } => 1,
+        Node::Seq(items) => 1 + items.iter().map(node_count).sum::<usize>(),
+        Node::Map(entries) => {
+            1 + entries
+                .iter()
+                .map(|(k, v)| node_count(k) + node_count(v))
+                .sum::<usize>()
+        }
+    }
+}
+
 fn build(
     event: Event,
     parser: &mut Events<'_>,
-    anchors: &mut HashMap<usize, Node>,
+    anchors: &mut HashMap<usize, (Node, usize)>,
+    budget: &mut usize,
     depth: usize,
 ) -> Result<Node, String> {
     if depth > MAX_DEPTH {
@@ -273,7 +293,7 @@ fn build(
             loop {
                 match next_event(parser)? {
                     Event::SequenceEnd => break,
-                    event => items.push(build(event, parser, anchors, depth + 1)?),
+                    event => items.push(build(event, parser, anchors, budget, depth + 1)?),
                 }
             }
             (Node::Seq(items), anchor)
@@ -284,9 +304,9 @@ fn build(
                 match next_event(parser)? {
                     Event::MappingEnd => break,
                     event => {
-                        let key = build(event, parser, anchors, depth + 1)?;
+                        let key = build(event, parser, anchors, budget, depth + 1)?;
                         let value_event = next_event(parser)?;
-                        let value = build(value_event, parser, anchors, depth + 1)?;
+                        let value = build(value_event, parser, anchors, budget, depth + 1)?;
                         entries.push((key, value));
                     }
                 }
@@ -294,15 +314,19 @@ fn build(
             (Node::Map(entries), anchor)
         }
         Event::Alias(id) => {
-            return anchors
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| "YAML alias refers to an unknown or enclosing anchor".into());
+            let Some((node, count)) = anchors.get(&id) else {
+                return Err("YAML alias refers to an unknown or enclosing anchor".into());
+            };
+            *budget = budget
+                .checked_sub(*count)
+                .ok_or("YAML aliases expand to too many nodes")?;
+            return Ok(node.clone());
         }
         other => return Err(format!("unexpected YAML event {other:?}")),
     };
     if anchor > 0 {
-        anchors.insert(anchor, node.clone());
+        let count = node_count(&node);
+        anchors.insert(anchor, (node.clone(), count));
     }
     Ok(node)
 }
@@ -392,6 +416,21 @@ fn needs_quotes(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alias_expansion_is_bounded() {
+        let mut src = String::from("a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n");
+        for level in 1..10 {
+            let prev = format!("*a{}", level - 1);
+            let items = [prev.as_str(); 10].join(", ");
+            src.push_str(&format!("a{level}: &a{level} [{items}]\n"));
+        }
+        let err = parse_last(&src).unwrap_err();
+        assert!(err.contains("too many nodes"), "{err}");
+        // a few aliases are fine
+        let doc = parse_last("a: &x {k: v}\nb: *x\nc: *x\n").unwrap();
+        assert_eq!(doc.get("c").unwrap().get_str("k"), Some("v"));
+    }
 
     #[test]
     fn keeps_scalar_text() {

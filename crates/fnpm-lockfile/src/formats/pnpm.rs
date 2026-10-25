@@ -1190,6 +1190,36 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
     })
 }
 
+/// The package.json edits for a project that has a pnpm-workspace.yaml but no pnpm-lock.yaml to
+/// migrate (bun `migrate_pnpm_workspace_config`, which runs when no lockfile was loaded):
+/// pnpm-workspace.yaml's `packages`, catalogs, overrides, patchedDependencies, packageExtensions
+/// and onlyBuiltDependencies, and `package.json#pnpm`, copied to the fields fnpm reads. `None`
+/// when there is no pnpm-workspace.yaml, when the root already has `workspaces` (it was migrated
+/// before), or when nothing changes. Returns the warnings too. Apply only when the lockfile is
+/// saved.
+pub fn migrate_workspace_config(
+    ws: &Workspace,
+    options: &MigrateOptions<'_>,
+) -> (Option<PackageJsonWriteBack>, Vec<String>) {
+    let mut warnings = Vec::new();
+    if ws.root.raw.get("workspaces").is_some() {
+        return (None, warnings);
+    }
+    let Some(text) = options.files.read(&ws.root_dir.join(WORKSPACE_FILE)) else {
+        return (None, warnings);
+    };
+    // Like bun, a pnpm-workspace.yaml that does not parse still lets `package.json#pnpm` through.
+    let workspace_yaml = match yaml::parse_last(&text) {
+        Ok(node) => Some((text, node)),
+        Err(e) => {
+            warnings.push(format!("{WORKSPACE_FILE}: {e}"));
+            None
+        }
+    };
+    let edit = root_write_back(&ws.root.raw, workspace_yaml.as_ref(), &[], &mut warnings);
+    (edit, warnings)
+}
+
 fn npm_version(resolution: &Resolution) -> String {
     resolution.npm_version().unwrap_or_default().to_owned()
 }
