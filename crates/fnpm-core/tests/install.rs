@@ -1678,3 +1678,37 @@ async fn isolated_default_keeps_hidden_hoisted_modules_visible_to_esm() {
         p.run(opts).await.unwrap();
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_peer_add_updates_manifest_and_lockfile_when_peers_are_omitted() {
+    let reg = Registry::start(&basic()).await;
+    for linker in ["hoisted", "isolated"] {
+        for filtered in [false, true] {
+            let p = Project::new(
+                &reg,
+                json!({ "name": "root", "dependencies": { "tool": "1.0.0" } }),
+            );
+            p.write(
+                "bunfig.toml",
+                &format!("[install]\nlinker = \"{linker}\"\n"),
+            );
+            p.install().await;
+            let mut add = p.opts(InstallCommand::Add, &["tool@1.0.0"]);
+            add.group = Some(DependencyGroup::Peer);
+            add.pm.omit = vec!["peer".into()];
+            if filtered {
+                add.filter = vec!["root".into()];
+            }
+            p.run(add).await.unwrap();
+            let manifest = p.json("package.json");
+            assert!(manifest.get("dependencies").is_none());
+            assert_eq!(manifest["peerDependencies"]["tool"], "1.0.0");
+            assert!(!exists(&p.path("node_modules/tool")));
+            assert!(!exists(&p.path("node_modules/.bin/tool")));
+            let mut frozen = p.opts(InstallCommand::Install, &[]);
+            frozen.pm.omit = vec!["peer".into()];
+            frozen.pm.frozen_lockfile = true;
+            p.run(frozen).await.unwrap();
+        }
+    }
+}

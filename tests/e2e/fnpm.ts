@@ -236,6 +236,7 @@ function tailOf(file: string, n = 3): string {
     // Jest can print an expected Error from a snapshot before the actual missing-module
     // diagnostic. Preserve the concrete cause for narrow known-failure signatures.
     const firstError = lines.find((l) => /Cannot find (?:module|package)/.test(l))
+      ?? lines.find((l) => /Use "pnpm install" for installation in this project\./.test(l))
       ?? lines.find((l) => /\bError:|\berror:|ERR!/.test(l));
     const tail = lines.slice(-n).join(" | ");
     return [firstError && !tail.includes(firstError) ? firstError : "", tail].filter(Boolean).join(" | ").slice(0, 600);

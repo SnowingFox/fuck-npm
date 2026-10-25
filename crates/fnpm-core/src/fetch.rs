@@ -259,12 +259,8 @@ impl Fetcher {
                     Ok(f) => f.key,
                     Err(_) => continue,
                 },
-                None => match p.resolution.integrity() {
-                    Some(integrity) => PackageKey {
-                        name: p.name.clone(),
-                        version: p.version.clone(),
-                        integrity: *integrity,
-                    },
+                None => match store_key(p) {
+                    Some(key) => key,
                     None => continue,
                 },
             };

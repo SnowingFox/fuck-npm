@@ -760,7 +760,11 @@ impl Engine<'_> {
                 self.set_target(row, target);
                 return Ok(Step::Done);
             }
-            if !self.cfg.auto_install_peers {
+            // An explicit add still resolves its requested version so the manifest and
+            // lockfile can be updated when --omit=peer disables automatic peer installs.
+            if !self.cfg.auto_install_peers
+                && !self.requested_rows.contains_key(&(row.pkg, row.edge))
+            {
                 return Ok(Step::Done);
             }
         }

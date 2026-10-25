@@ -492,7 +492,7 @@ async fn link_registers_and_installs() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn audit_store_cache_doctor_and_not_implemented() {
+async fn audit_store_cache_doctor_and_scanner_configuration() {
     let reg = Registry::start(&pkgs()).await;
     let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
     p.install().await;
@@ -545,8 +545,14 @@ async fn audit_store_cache_doctor_and_not_implemented() {
     let r = p.invoke(&["doctor"], &[], json!({})).await.unwrap();
     assert_eq!(r.exit_code, 0, "{:?}", r.lines);
 
-    let err = p.invoke(&["pm", "scan"], &[], json!({})).await.unwrap_err();
-    assert_eq!(err.code(), "NOT_IMPLEMENTED");
+    let scan = p.invoke(&["pm", "scan"], &[], json!({})).await.unwrap();
+    assert_eq!(scan.exit_code, 1);
+    assert!(
+        scan.lines
+            .unwrap()
+            .iter()
+            .any(|line| line.contains("configure a security scanner"))
+    );
     let err = p.invoke(&["frobnicate"], &[], json!({})).await.unwrap_err();
     assert_eq!(err.code(), "USAGE");
 }

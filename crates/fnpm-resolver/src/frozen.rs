@@ -188,13 +188,7 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
     let patch_keys: std::collections::BTreeSet<String> = prev
         .packages
         .iter()
-        .map(|p| {
-            if matches!(p.resolution, fnpm_types::Resolution::Workspace { .. }) {
-                format!("{}@{}", p.name, p.version)
-            } else {
-                p.key()
-            }
-        })
+        .map(fnpm_types::Package::patch_key)
         .collect();
     patched.retain(|key, _| patch_keys.contains(key) || prev_patched.contains_key(key));
     if patched != prev_patched {

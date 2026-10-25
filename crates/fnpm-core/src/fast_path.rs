@@ -330,6 +330,14 @@ mod tests {
             "hoisted"
         ));
         std::fs::create_dir(p.path().join("node_modules/new-entry")).unwrap();
+        // Some filesystems coarsen directory mtimes; make the observed mutation deterministic.
+        let modules = std::fs::File::open(p.path().join("node_modules")).unwrap();
+        modules
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            )
+            .unwrap();
         assert!(!layout_intact(
             p.path(),
             &meta,
