@@ -257,6 +257,8 @@ struct PendingEdge {
 struct Migrator<'a> {
     entries: Vec<(&'a str, &'a Obj<'a>)>,
     workspaces: Option<Vec<(String, (String, String))>>,
+    /// Workspace path to its position in `workspaces`.
+    workspace_index: migration::FastMap<String, usize>,
     index: migration::FastMap<&'a str, u32>,
     link_entries: Vec<bool>,
     shadowed: Vec<bool>,
@@ -271,6 +273,9 @@ struct Migrator<'a> {
     /// Entries without integrity whose tarball is under neither the configured registry nor
     /// the default one.
     unverifiable: Vec<u32>,
+    /// The packages those entries were migrated to, including folders inside a dependent
+    /// (bun finds those by their empty URL).
+    unverifiable_ids: Vec<PackageId>,
     patched: Vec<String>,
     options: &'a MigrateOptions,
     lockfile_name: &'a str,
@@ -337,9 +342,14 @@ impl<'a> Migrator<'a> {
         lockfile_name: &'a str,
     ) -> Result<Self> {
         let n = entries.len();
+        let mut workspace_index: migration::FastMap<String, usize> = Default::default();
+        for (i, (path, _)) in workspaces.iter().flatten().enumerate() {
+            workspace_index.entry(path.clone()).or_insert(i);
+        }
         let mut this = Self {
             entries,
             workspaces,
+            workspace_index,
             index: migration::FastMap::with_capacity_and_hasher(n, Default::default()),
             link_entries: vec![false; n],
             shadowed: vec![false; n],
@@ -350,6 +360,7 @@ impl<'a> Migrator<'a> {
             graph: LockGraph::new(Package::new("", "", Resolution::Root)),
             dedupe: migration::FastMap::with_capacity_and_hasher(n, Default::default()),
             unverifiable: Vec::new(),
+            unverifiable_ids: Vec::new(),
             patched: Vec::new(),
             options,
             lockfile_name,
@@ -369,11 +380,8 @@ impl<'a> Migrator<'a> {
     }
 
     fn workspace_entry(&self, key: &str) -> Option<&(String, String)> {
-        self.workspaces
-            .as_ref()?
-            .iter()
-            .find(|(path, _)| path == key)
-            .map(|(_, v)| v)
+        let i = *self.workspace_index.get(key)?;
+        self.workspaces.as_ref()?.get(i).map(|(_, v)| v)
     }
 
     fn build_index(&mut self) -> Result<()> {
@@ -409,9 +417,9 @@ impl<'a> Migrator<'a> {
         self.warn_unreachable();
 
         let mut missing: Vec<PackageId> = self
-            .unverifiable
+            .unverifiable_ids
             .iter()
-            .filter_map(|&j| self.entry_ids[j as usize])
+            .copied()
             .filter(|id| {
                 self.graph.packages[id.index()]
                     .resolution
@@ -536,6 +544,7 @@ impl<'a> Migrator<'a> {
         if let Some(integrity) = integrity {
             resolution.set_integrity(integrity);
         }
+        let mut unverifiable = false;
         if let Resolution::Npm { tarball_url, .. } = &mut resolution
             && let Some(url) = tarball_url.as_deref()
         {
@@ -546,6 +555,7 @@ impl<'a> Migrator<'a> {
                 // copy is downloaded instead.
                 *tarball_url = None;
                 self.unverifiable.push(j);
+                unverifiable = true;
             } else if under_default {
                 *tarball_url = None;
             }
@@ -565,6 +575,9 @@ impl<'a> Migrator<'a> {
             }
             if folder.is_none() {
                 self.entry_ids[j as usize] = Some(existing);
+            }
+            if unverifiable {
+                self.unverifiable_ids.push(existing);
             }
             self.shadow(j);
             return Ok(existing);
@@ -603,6 +616,9 @@ impl<'a> Migrator<'a> {
             }
         }
         let id = self.graph.push(package);
+        if unverifiable {
+            self.unverifiable_ids.push(id);
+        }
         self.dedupe.insert(identity, id);
         self.queue.push((j, Some(id)));
         // `build_or_get` keeps handing other dependents the build of the entry's own key.
@@ -824,7 +840,12 @@ impl<'a> Migrator<'a> {
         );
         let is_folder = matches!(res, Resolution::Folder { .. });
 
-        let mut edges: Vec<PendingEdge> = Vec::new();
+        let declared: usize = GROUPS
+            .iter()
+            .filter_map(|(group, _)| pkg.get(group).and_then(Json::as_object))
+            .map(|deps| deps.len())
+            .sum();
+        let mut edges: Vec<PendingEdge> = Vec::with_capacity(declared);
         if j == 0 {
             self.link_workspaces(&mut edges)?;
         }
@@ -1378,7 +1399,9 @@ fn write_remote_info(entry: &mut Map<String, Value>, package: &Package, registry
             resolved_commit,
             ..
         } => Some(format!(
-            "git+ssh://git@github.com/{owner}/{repo}.git#{resolved_commit}"
+            "git+ssh://git@github.com/{owner}/{repo}.git#{}",
+            // A graph read from bun.lock(b) holds bun's `owner-repo-commit` tag.
+            super::bun_text::resolved_commit(resolved_commit)
         )),
         Resolution::RemoteTarball { url, .. } => Some(url.clone()),
         Resolution::LocalTarball { path, .. } => Some(format!("file:{path}")),

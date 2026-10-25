@@ -4,6 +4,7 @@
 mod bun_binary;
 mod bun_text;
 mod fixtures;
+mod fuzz;
 mod helpers;
 mod npm;
 mod support;

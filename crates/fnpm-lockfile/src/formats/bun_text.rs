@@ -149,6 +149,20 @@ fn resolution_from_text(res: &str, semver: &dyn Semver) -> Option<Resolution> {
     }
 }
 
+/// bun `ConfigVersion::from_expr`: 0 and 1 are themselves, a larger integer is clamped to the
+/// newest version, anything else is invalid.
+fn config_version(v: f64) -> Option<ConfigVersion> {
+    if v == 0.0 {
+        Some(ConfigVersion::V0)
+    } else if v == 1.0 {
+        Some(ConfigVersion::V1)
+    } else if v.trunc() == v && v > f64::from(u8::from(ConfigVersion::CURRENT)) {
+        Some(ConfigVersion::CURRENT)
+    } else {
+        None
+    }
+}
+
 /// bun requires major, minor and patch in a resolved version.
 fn is_full_version(v: &str) -> bool {
     let core = v.split(['-', '+']).next().unwrap_or("");
@@ -416,12 +430,11 @@ impl<'a> Parser<'a> {
         };
         let version = match root.get("lockfileVersion") {
             None => return Err(err("Missing lockfile version")),
-            Some(Json::Number(n)) => {
-                match n.parse::<u64>().ok().filter(|v| *v <= u64::from(u32::MAX)) {
-                    Some(v) => v as u32,
-                    None => return Err(err("Invalid lockfile version")),
-                }
-            }
+            // Any number with an integral value, as bun reads it (`1.0` and `1e0` are 1).
+            Some(Json::Number(n)) => match n.parse::<f64>() {
+                Ok(v) if (0.0..=f64::from(u32::MAX)).contains(&v) && v.fract() == 0.0 => v as u32,
+                _ => return Err(err("Invalid lockfile version")),
+            },
             Some(_) => return Err(err("Invalid lockfile version")),
         };
         if version > CURRENT_VERSION {
@@ -434,8 +447,8 @@ impl<'a> Parser<'a> {
         graph.lockfile_version = version;
         graph.config_version = match root.get("configVersion") {
             None => ConfigVersion::V0,
-            Some(Json::Number(n)) => match n.parse::<u64>().ok() {
-                Some(v) => ConfigVersion::try_from(v.min(255) as u8).unwrap_or(ConfigVersion::V1),
+            Some(Json::Number(n)) => match n.parse::<f64>().ok().and_then(config_version) {
+                Some(v) => v,
                 None => return Err(err("Invalid \"configVersion\". Expected a number")),
             },
             Some(_) => return Err(err("Invalid \"configVersion\". Expected a number")),

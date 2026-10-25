@@ -420,8 +420,8 @@ pub fn parse(bytes: &[u8]) -> Result<LockGraph> {
     }
 
     // The buffers.
-    let _trees = s.array(20, 1)?;
-    let _hoisted = s.array(4, 4)?;
+    let trees_raw = s.array(20, 1)?;
+    let hoisted_raw = s.array(4, 4)?;
     let resolutions_raw = s.array(4, 4)?;
     let deps_raw = s.array(DEPENDENCY_SIZE, 1)?;
     let extern_strings = s.array(16, 8)?;
@@ -439,6 +439,7 @@ pub fn parse(bytes: &[u8]) -> Result<LockGraph> {
     if resolutions.len() != deps.len() || bin_map_end > extern_strings.len() / 16 {
         return Err(invalid());
     }
+    check_trees(trees_raw, hoisted_raw, &resolutions, &deps, count)?;
     for (id, dep) in resolutions.iter_mut().zip(&deps) {
         if *id as usize >= count && *id != INVALID_ID {
             // Writers before v0.6.11 left the id of a peer they did not resolve uninitialized.
@@ -610,7 +611,131 @@ pub fn parse(bytes: &[u8]) -> Result<LockGraph> {
 
     read_sections(&mut s, total, wide, string_bytes, &mut graph)?;
     super::npm::finish_graph(&mut graph);
+    // bun keeps one package per (name, resolution); a file that breaks that is corrupt.
+    graph
+        .validate()
+        .map_err(|e| err(format!("InvalidLockfile: {e}")))?;
     Ok(graph)
+}
+
+/// A `node_modules` folder of the stored hoisted tree (bun `Tree::External`).
+struct TreeRow {
+    id: u32,
+    dependency_id: u32,
+    parent: u32,
+    off: u32,
+    len: u32,
+}
+
+const TREE_INVALID_ID: u32 = u32::MAX;
+const ROOT_DEP_ID: u32 = INVALID_ID - 1;
+
+/// bun `Buffers::load` (the legacy tree conversion) and `ids_and_windows_are_in_range`: the
+/// stored hoisted tree is not used to bind dependencies, but bun rejects a lockfile whose tree
+/// is out of range, cyclic or names an unsafe folder, and so does fnpm.
+fn check_trees(
+    trees_raw: &[u8],
+    hoisted_raw: &[u8],
+    resolutions: &[u32],
+    deps: &[Dep],
+    packages_len: usize,
+) -> Result<()> {
+    let mut trees: Vec<TreeRow> = trees_raw
+        .as_chunks::<20>()
+        .0
+        .iter()
+        .map(|t| TreeRow {
+            id: u32_at(t, 0),
+            dependency_id: u32_at(t, 4),
+            parent: u32_at(t, 8),
+            off: u32_at(t, 12),
+            len: u32_at(t, 16),
+        })
+        .collect();
+    let mut hoisted: Vec<u32> = hoisted_raw
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+
+    // Writers before v0.5.7 stored package ids where dependency ids belong: each mention of a
+    // package is the next dependency that resolves to it.
+    if trees
+        .first()
+        .is_some_and(|t| t.dependency_id != ROOT_DEP_ID)
+    {
+        let mut first = vec![INVALID_ID; packages_len];
+        let mut next = vec![INVALID_ID; resolutions.len()];
+        for (dependency_id, &package_id) in resolutions.iter().enumerate().rev() {
+            if let Some(head) = first.get_mut(package_id as usize) {
+                next[dependency_id] = *head;
+                *head = dependency_id as u32;
+            }
+        }
+        let take = |heads: &mut [u32], id: &mut u32| -> Result<()> {
+            if *id == 0 {
+                *id = ROOT_DEP_ID;
+            } else if *id != INVALID_ID {
+                let head = heads
+                    .get_mut(*id as usize)
+                    .filter(|head| **head != INVALID_ID)
+                    .ok_or_else(|| err("LockfileIsMissingResolutionData"))?;
+                *id = *head;
+                *head = next[*id as usize];
+            }
+            Ok(())
+        };
+        let mut heads = first.clone();
+        for tree in &mut trees {
+            take(&mut heads, &mut tree.dependency_id)?;
+        }
+        for id in &mut hoisted {
+            take(&mut first, id)?;
+        }
+        // Those writers also left unused slots and gave the root no id.
+        let mut kept = 0u32;
+        let new_ids: Vec<u32> = trees
+            .iter()
+            .map(|tree| {
+                let id = kept;
+                kept += u32::from(tree.id != TREE_INVALID_ID);
+                id
+            })
+            .collect();
+        trees.retain(|tree| tree.id != TREE_INVALID_ID);
+        for tree in &mut trees {
+            for id in [&mut tree.id, &mut tree.parent] {
+                if *id != TREE_INVALID_ID {
+                    *id = *new_ids.get(*id as usize).ok_or_else(invalid)?;
+                }
+            }
+        }
+        if let Some(root) = trees.first_mut() {
+            root.dependency_id = ROOT_DEP_ID;
+        }
+    }
+
+    let fits = |off: u32, len: u32, buffer_len: usize| off as usize + len as usize <= buffer_len;
+    let hoisted_ok = hoisted.iter().all(|&id| {
+        deps.get(id as usize)
+            .is_some_and(|row| fnpm_types::name::is_safe_install_folder_name(&row.name))
+    });
+    // A tree follows its parent, which rules out cycles.
+    let trees_ok = trees.iter().enumerate().all(|(position, tree)| {
+        tree.id as usize == position
+            && fits(tree.off, tree.len, hoisted.len())
+            && if position == 0 {
+                tree.parent == TREE_INVALID_ID
+            } else {
+                (tree.parent as usize) < position && (tree.dependency_id as usize) < deps.len()
+            }
+    });
+    if hoisted_ok && trees_ok {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
 }
 
 fn u64s(array: &[u8]) -> Vec<u64> {

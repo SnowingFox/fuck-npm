@@ -411,3 +411,23 @@ fn version_0_workspace_rows() {
     assert!(w.dependency("x").is_some_and(|e| e.target.is_none()));
     assert!(g.workspaces.contains_key("w"));
 }
+
+#[test]
+fn integral_float_versions_are_numbers() {
+    // bun reads the JSON number, so `1.0` and `1e0` are 1.
+    let p = parse(r#"{ "lockfileVersion": 1.0, "configVersion": 1e0, "workspaces": { "": {} } }"#)
+        .unwrap();
+    assert_eq!(p.version, 1);
+    assert_eq!(p.graph.config_version, ConfigVersion::V1);
+    let p = parse(r#"{ "lockfileVersion": 2e0, "configVersion": 3.0, "workspaces": { "": {} } }"#)
+        .unwrap();
+    assert_eq!(p.version, 2);
+    assert_eq!(p.graph.config_version, ConfigVersion::CURRENT);
+    for bad in ["0.5", "-1", "1.5"] {
+        let text = format!(
+            r#"{{ "lockfileVersion": 1, "configVersion": {bad}, "workspaces": {{ "": {{}} }} }}"#
+        );
+        assert!(parse(&text).is_err(), "configVersion {bad}");
+    }
+    assert!(parse(r#"{ "lockfileVersion": -1, "workspaces": { "": {} } }"#).is_err());
+}

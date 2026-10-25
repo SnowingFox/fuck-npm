@@ -648,6 +648,9 @@ fn glob_members(root: &Path, patterns: &[String]) -> Vec<MemberRow> {
     let mut include = globset::GlobSetBuilder::new();
     let mut exclude = globset::GlobSetBuilder::new();
     let mut prefixes: BTreeSet<String> = BTreeSet::new();
+    // How deep a match can be: `None` once a pattern has `**` (or braces), so the walk stops early for
+    // the usual `packages/*`.
+    let mut max_depth: Option<usize> = Some(0);
     for pattern in patterns {
         let (negated, pattern) = match pattern.strip_prefix('!') {
             Some(p) => (true, normalize(p)),
@@ -664,6 +667,12 @@ fn glob_members(root: &Path, patterns: &[String]) -> Vec<MemberRow> {
             continue;
         }
         include.add(glob);
+        max_depth = match max_depth {
+            Some(depth) if !pattern.contains("**") && !pattern.contains('{') => {
+                Some(depth.max(pattern.split('/').count()))
+            }
+            _ => None,
+        };
         let prefix: Vec<&str> = pattern
             .split('/')
             .take_while(|c| !c.contains(['*', '?', '[', '{']))
@@ -698,6 +707,14 @@ fn glob_members(root: &Path, patterns: &[String]) -> Vec<MemberRow> {
                     .to_owned();
                 found.insert(rel.clone(), (rel.clone(), name.to_owned(), version));
             }
+        }
+        let depth = if rel.is_empty() {
+            0
+        } else {
+            rel.split('/').count()
+        };
+        if max_depth.is_some_and(|max| depth >= max) {
+            continue;
         }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;

@@ -318,3 +318,73 @@ fn catalog_row_with_plain_literal_loads() {
     assert!(g.root().dependencies.iter().any(|e| e.literal == "cat"));
     let _ = PackageId::ROOT;
 }
+
+/// The `[start, end)` payload of the six buffers after the package table (trees, hoisted
+/// dependencies, resolutions, dependencies, external strings, string bytes).
+fn buffers(lockb: &[u8]) -> Vec<(usize, usize)> {
+    let u64_at = |at: usize| u64::from_le_bytes(lockb[at..at + 8].try_into().unwrap()) as usize;
+    let l = layout(lockb);
+    let begin = u64_at(110);
+    let mut pos = begin + (8 + 8 + l.resolution_size + 8 + 8 + 88 + 20 + 49) * l.count;
+    (0..6)
+        .map(|_| {
+            let (start, end) = (u64_at(pos), u64_at(pos + 8));
+            pos = end;
+            (start, end)
+        })
+        .collect()
+}
+
+#[test]
+fn rejects_corrupt_hoisted_trees() {
+    let Some(base) = fixture("bun.lockb.bin-linking") else {
+        return;
+    };
+    assert!(bun_binary::parse(&base).is_ok());
+    let b = buffers(&base);
+    let (trees, hoisted, deps) = (b[0], b[1], b[3]);
+    assert!(trees.1 - trees.0 >= 20 && hoisted.1 > hoisted.0, "{b:?}");
+    let set_u32 = |lockb: &mut Vec<u8>, at: usize, v: u32| {
+        lockb[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    };
+
+    // The root tree with a parent.
+    let mut lockb = base.clone();
+    set_u32(&mut lockb, trees.0 + 8, 0);
+    assert!(bun_binary::parse(&lockb).is_err());
+    // A tree whose hoisted window runs past the list.
+    let mut lockb = base.clone();
+    set_u32(&mut lockb, trees.0 + 16, u32::MAX / 2);
+    assert!(bun_binary::parse(&lockb).is_err());
+    // A hoisted dependency id past the dependency list.
+    let mut lockb = base.clone();
+    set_u32(&mut lockb, hoisted.0, u32::MAX - 7);
+    assert!(bun_binary::parse(&lockb).is_err());
+    // A hoisted dependency whose folder name climbs out of node_modules.
+    let first = u32::from_le_bytes(base[hoisted.0..hoisted.0 + 4].try_into().unwrap()) as usize;
+    let mut lockb = base.clone();
+    let row = deps.0 + first * 26;
+    lockb[row..row + 8].copy_from_slice(b"../x\0\0\0\0");
+    assert!(bun_binary::parse(&lockb).is_err());
+}
+
+#[test]
+fn rejects_duplicate_packages() {
+    let Some(base) = fixture("bun.lockb.bin-linking") else {
+        return;
+    };
+    let l = layout(&base);
+    assert!(l.count >= 3);
+    let u64_at = |at: usize| u64::from_le_bytes(base[at..at + 8].try_into().unwrap()) as usize;
+    let names = u64_at(110);
+    let mut lockb = base.clone();
+    // Package 2 becomes a copy of package 1 (name and resolution).
+    lockb.copy_within(names + 8..names + 16, names + 16);
+    let r = l.resolution;
+    lockb.copy_within(
+        r + l.resolution_size..r + 2 * l.resolution_size,
+        r + 2 * l.resolution_size,
+    );
+    let e = bun_binary::parse(&lockb).unwrap_err().to_string();
+    assert!(e.contains("InvalidLockfile"), "{e}");
+}

@@ -528,3 +528,108 @@ fn exports_lockfile_version_3() {
         super::support::normalize(&graph)
     );
 }
+
+/// A graph read from bun.lock holds bun's `owner-repo-commit` tag; npm's `resolved` needs the
+/// commit.
+#[test]
+fn exports_github_commit_from_bun_tag() {
+    let commit = "3754568bfd43a841d2d72d7fb54598635aea8fa4";
+    let bytes = lock(json!({
+        "": { "dependencies": { "gh": "github:substack/minimist" } },
+        "node_modules/gh": { "version": "1.2.0", "resolved": format!("git+ssh://git@github.com/substack/minimist.git#{commit}") }
+    }));
+    let (mut graph, _, locations) = npm::migrate_with_locations(
+        &bytes,
+        &empty_workspace(),
+        &MigrateOptions::default(),
+        "package-lock.json",
+        None,
+    )
+    .unwrap();
+    let tree = tree_from_npm_locations(&graph, &locations);
+    let resolved = |graph: &LockGraph| {
+        let out = npm::serialize_with_tree(graph, &tree, fnpm_config::DEFAULT_REGISTRY).unwrap();
+        let doc: Value = serde_json::from_str(&out).unwrap();
+        doc["packages"]["node_modules/gh"]["resolved"].clone()
+    };
+    let expected = format!("git+ssh://git@github.com/substack/minimist.git#{commit}");
+    assert_eq!(resolved(&graph), json!(expected));
+    let gh = graph.packages.iter_mut().find(|p| p.name == "gh").unwrap();
+    let Resolution::Github {
+        resolved_commit, ..
+    } = &mut gh.resolution
+    else {
+        panic!("{:?}", gh.resolution);
+    };
+    *resolved_commit = "substack-minimist-3754568".into();
+    assert_eq!(
+        resolved(&graph),
+        json!("git+ssh://git@github.com/substack/minimist.git#3754568")
+    );
+}
+
+/// The workspace lookup by path: a lockfile with many workspaces binds each by its own path.
+#[test]
+fn many_workspaces_bind_by_path() {
+    let members: Vec<(String, Value)> = (0..50)
+        .map(|i| {
+            (
+                format!("packages/p{i}"),
+                json!({ "name": format!("p{i}"), "version": "1.0.0" }),
+            )
+        })
+        .collect();
+    let refs: Vec<(&str, Value)> = members
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.clone()))
+        .collect();
+    let ws = workspace(
+        json!({ "name": "root", "workspaces": ["packages/*"] }),
+        &refs,
+    );
+    let mut packages = serde_json::Map::new();
+    packages.insert(
+        "".into(),
+        json!({ "name": "root", "workspaces": ["packages/*"] }),
+    );
+    for i in 0..50 {
+        packages.insert(
+            format!("packages/p{i}"),
+            json!({ "name": format!("p{i}"), "version": "1.0.0" }),
+        );
+        packages.insert(
+            format!("node_modules/p{i}"),
+            json!({ "resolved": format!("packages/p{i}"), "link": true }),
+        );
+    }
+    let (graph, _) = npm::migrate(
+        &lock(Value::Object(packages)),
+        &ws,
+        &MigrateOptions::default(),
+        "package-lock.json",
+        None,
+    )
+    .unwrap();
+    assert_eq!(graph.workspaces.len(), 51);
+    for i in [0, 17, 49] {
+        let id = graph.workspaces[&format!("packages/p{i}")];
+        assert_eq!(graph.packages[id.index()].name, format!("p{i}"));
+    }
+}
+
+/// A package built for a folder inside a registry dependent is not the entry's own build, but
+/// still needs its integrity from the registry when its tarball cannot be verified.
+#[test]
+fn unverifiable_folder_in_dependent_needs_integrity() {
+    let (g, report) = migrate(json!({
+        "": { "dependencies": { "x": "1" } },
+        "node_modules/x": { "version": "1.0.0", "integrity": SHA, "dependencies": { "y": "1" } },
+        "node_modules/x/node_modules/y": { "resolved": "node_modules/x/sub/y", "link": true },
+        "node_modules/x/sub/y": { "name": "y", "version": "1.0.0", "resolved": "https://mirror.example/y/-/y-1.0.0.tgz" }
+    }));
+    let x = find(&g, "x");
+    let y = target(&g, x, "y").expect("y is bound");
+    let y_id = x.dependency("y").and_then(|e| e.target).unwrap();
+    assert!(y.resolution.integrity().is_none());
+    assert_eq!(report.missing_integrity, vec![y_id]);
+}
