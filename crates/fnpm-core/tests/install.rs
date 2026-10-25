@@ -856,36 +856,43 @@ async fn tarball_url_dependency_is_not_downloaded_again_when_warm() {
 /// toolchain, made `fnpm install` exit 1).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn failing_optional_script_deletes_the_package_and_succeeds() {
-    let reg = Registry::start(&[
-        Pkg::new("native-opt", "1.0.0")
-            .script("install", "exit 1")
-            .bin("native-opt", "bin.js"),
-        Pkg::new("host", "1.0.0").optional("native-opt", "1.0.0"),
-    ])
-    .await;
-    for linker in ["hoisted", "isolated"] {
-        let p = Project::new(
-            &reg,
-            json!({
-                "dependencies": { "host": "1.0.0" },
-                "optionalDependencies": { "native-opt": "1.0.0" },
-                "trustedDependencies": ["native-opt"],
-                "scripts": { "postinstall": "test ! -e node_modules/native-opt && test ! -L node_modules/native-opt && test ! -L node_modules/.bin/native-opt" }
-            }),
-        );
-        p.write("fnpm.toml", &format!("[install]\nlinker = \"{linker}\"\n"));
-        let s = p.install().await;
-        assert_eq!(s.failed_count, 0, "{linker}: {s:?}");
-        assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
-        assert!(
-            !exists(&p.path("node_modules/native-opt")),
-            "{linker}: deleted like bun"
-        );
-        assert!(std::fs::symlink_metadata(p.path("node_modules/.bin/native-opt")).is_err());
-        assert!(
-            p.read("fnpm.lock").contains("native-opt@1.0.0"),
-            "still locked"
-        );
+    for name in ["native-opt", "@scope/native-opt"] {
+        let reg = Registry::start(&[
+            Pkg::new(name, "1.0.0")
+                .script("install", "exit 1")
+                .bin("native-opt", "bin.js"),
+            Pkg::new("host", "1.0.0").optional(name, "1.0.0").script(
+                "postinstall",
+                &format!(
+                    "test ! -e ../{name} && test ! -L ../{name} && test ! -L ../.bin/native-opt"
+                ),
+            ),
+        ])
+        .await;
+        for linker in ["hoisted", "isolated"] {
+            let p = Project::new(
+                &reg,
+                json!({
+                    "dependencies": { "host": "1.0.0" },
+                    "optionalDependencies": { name: "1.0.0" },
+                    "trustedDependencies": [name, "host"],
+                    "scripts": { "postinstall": format!("test ! -e node_modules/{name} && test ! -L node_modules/{name} && test ! -L node_modules/.bin/native-opt") }
+                }),
+            );
+            p.write("fnpm.toml", &format!("[install]\nlinker = \"{linker}\"\n"));
+            let s = p.install().await;
+            assert_eq!(s.failed_count, 0, "{linker}: {s:?}");
+            assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
+            assert!(
+                !exists(&p.path(&format!("node_modules/{name}"))),
+                "{linker}: deleted like bun"
+            );
+            assert!(std::fs::symlink_metadata(p.path("node_modules/.bin/native-opt")).is_err());
+            assert!(
+                p.read("fnpm.lock").contains(&format!("{name}@1.0.0")),
+                "still locked"
+            );
+        }
     }
 }
 

@@ -1235,6 +1235,21 @@ async fn run_scripts(
         else {
             return Ok(());
         };
+        // Global bin links point through the root alias rather than an isolated store path.
+        if config.global {
+            for edge in graph
+                .root()
+                .dependencies
+                .iter()
+                .filter(|e| e.target == Some(id))
+            {
+                fnpm_linker::bins::unlink_bins(
+                    &root.join("node_modules").join(&edge.name),
+                    &config.global_bin_dir,
+                )
+                .map_err(std::io::Error::other)?;
+            }
+        }
         // A hoisted package can have several physical copies. Remove every copy and every
         // bin link into it before releasing parent and root lifecycle scripts.
         for (_, dir) in linked
