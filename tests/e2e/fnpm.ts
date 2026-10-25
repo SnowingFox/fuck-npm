@@ -230,7 +230,10 @@ function scrub(s: string): string {
 function tailOf(file: string, n = 3): string {
   try {
     const lines = readFileSync(file, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-    const firstError = lines.find((l) => /Cannot find|\bError:|\berror:|ERR!/.test(l));
+    // Jest can print an expected Error from a snapshot before the actual missing-module
+    // diagnostic. Preserve the concrete cause for narrow known-failure signatures.
+    const firstError = lines.find((l) => /Cannot find (?:module|package)/.test(l))
+      ?? lines.find((l) => /\bError:|\berror:|ERR!/.test(l));
     const tail = lines.slice(-n).join(" | ");
     return [firstError && !tail.includes(firstError) ? firstError : "", tail].filter(Boolean).join(" | ").slice(0, 600);
   } catch {
