@@ -1,0 +1,27 @@
+{
+ "name": "clipanion",
+ "repo": "arcanis/clipanion",
+ "commit": "434b5a6e0063c58b5e2f0a62498a7de0b308308f",
+ "pm": "yarn-berry",
+ "pmVersion": "4.4.1",
+ "node": "v24.22.1",
+ "registry": "local-mirror",
+ "install": {
+  "command": "yarn install",
+  "ok": false,
+  "exitCode": 1,
+  "ms": 19430
+ },
+ "scriptsRan": [],
+ "verify": null,
+ "counts": {
+  "packages": 0,
+  "instances": 0,
+  "importers": 0
+ },
+ "packages": [],
+ "instances": 0,
+ "importers": {},
+ "bins": {},
+ "installScripts": []
+}

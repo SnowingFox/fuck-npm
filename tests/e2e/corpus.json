@@ -1,0 +1,376 @@
+{
+  "$comment": "Real-world e2e corpus. Run: node tests/e2e/run.ts (see tests/e2e/README.md).",
+  "projects": [
+    {
+      "name": "marked",
+      "repo": "markedjs/marked",
+      "commit": "4b7b5b2d1e05d24c85ac2c2fa96bbfe6952e6770",
+      "pm": "npm",
+      "lockfile": "package-lock.json",
+      "lockfileFormat": "npm-v3",
+      "workspace": false,
+      "features": [
+        "single-package",
+        "esbuild"
+      ],
+      "install": "npm ci --no-audit --no-fund",
+      "verify": "npm run build:esbuild && node --test test/unit/*.test.js",
+      "baseline": "tests/e2e/baselines/marked.json"
+    },
+    {
+      "name": "uptime-kuma",
+      "repo": "louislam/uptime-kuma",
+      "commit": "add209e29b948a8455156fbb2a2fec327288be79",
+      "pm": "npm",
+      "lockfile": "package-lock.json",
+      "lockfileFormat": "npm-v3",
+      "workspace": false,
+      "features": [
+        "overrides",
+        "aliases",
+        "native:sqlite3",
+        "native:better-sqlite3",
+        "vite-plugins",
+        "postinstall"
+      ],
+      "install": "npm ci --no-audit --no-fund",
+      "verify": "npm run build",
+      "baseline": "tests/e2e/baselines/uptime-kuma.json"
+    },
+    {
+      "name": "socket-io",
+      "repo": "socketio/socket.io",
+      "commit": "1eaa582d3b453e3e6f522300ed05b10da0a0799b",
+      "pm": "npm",
+      "lockfile": "package-lock.json",
+      "lockfileFormat": "npm-v3",
+      "workspace": true,
+      "features": [
+        "workspaces:npm",
+        "git-deps",
+        "aliases",
+        "overrides"
+      ],
+      "install": "npm ci --no-audit --no-fund",
+      "verify": "npm test --workspace=socket.io-parser",
+      "baseline": "tests/e2e/baselines/socket-io.json"
+    },
+    {
+      "name": "mocha",
+      "repo": "mochajs/mocha",
+      "commit": "cb21a4eba550da665fb2c3fa1ce021777a191e23",
+      "pm": "npm",
+      "lockfile": "package-lock.json",
+      "lockfileFormat": "npm-v3",
+      "workspace": false,
+      "features": [
+        "overrides",
+        "aliases",
+        "@swc/core",
+        "eslint-configs"
+      ],
+      "install": "npm ci --no-audit --no-fund",
+      "verify": "npm run build && npm run -s test-node:unit",
+      "baseline": "tests/e2e/baselines/mocha.json"
+    },
+    {
+      "name": "excalidraw",
+      "repo": "excalidraw/excalidraw",
+      "commit": "b7de45e88111f5680ae4bb3c3f3541c7d3b279fe",
+      "pm": "yarn-classic",
+      "pmPinned": "yarn@1.22.22",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-v1",
+      "workspace": true,
+      "features": [
+        "workspaces:yarn",
+        "resolutions",
+        "aliases",
+        "react",
+        "vite-plugins",
+        "@parcel/watcher"
+      ],
+      "install": "yarn install --frozen-lockfile --non-interactive",
+      "verify": "yarn test:typecheck",
+      "baseline": "tests/e2e/baselines/excalidraw.json"
+    },
+    {
+      "name": "webpack",
+      "repo": "webpack/webpack",
+      "commit": "669012dfc912167fa3b13cff233f8f0fa9755aef",
+      "pm": "yarn-classic",
+      "pmPinned": "yarn@1.22.22",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-v1",
+      "workspace": false,
+      "features": [
+        "single-package",
+        "eslint-configs",
+        "postinstall"
+      ],
+      "install": "yarn install --frozen-lockfile --non-interactive",
+      "verify": "yarn jest test/unitCases",
+      "baseline": "tests/e2e/baselines/webpack.json"
+    },
+    {
+      "name": "prettier",
+      "repo": "prettier/prettier",
+      "commit": "7664e36875350ad0f309287391858de19ed13eb7",
+      "pm": "yarn-berry",
+      "pmPinned": "yarn@4.18.1",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-berry-v8",
+      "workspace": false,
+      "features": [
+        "nodeLinker:node-modules",
+        "resolutions",
+        "aliases",
+        "esbuild"
+      ],
+      "install": "yarn install --immutable",
+      "verify": "yarn jest tests/format/js/arrows",
+      "baseline": "tests/e2e/baselines/prettier.json"
+    },
+    {
+      "name": "jest",
+      "repo": "jestjs/jest",
+      "commit": "61050e9323e742539dc2360236671110e37329e6",
+      "pm": "yarn-berry",
+      "pmPinned": "yarn@4.18.0",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-berry-v8",
+      "workspace": true,
+      "features": [
+        "workspaces:yarn",
+        "nodeLinker:node-modules",
+        "patch-protocol",
+        "resolutions",
+        "aliases",
+        "node-gyp"
+      ],
+      "install": "yarn install --immutable",
+      "verify": "yarn build:js",
+      "baseline": "tests/e2e/baselines/jest.json"
+    },
+    {
+      "name": "babel",
+      "repo": "babel/babel",
+      "commit": "3491849951beeacacbad8d28d4d08363b12d736b",
+      "pm": "yarn-berry",
+      "pmPinned": "yarn@4.17.0",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-berry-v8",
+      "workspace": true,
+      "features": [
+        "workspaces:yarn",
+        "nodeLinker:node-modules",
+        "postinstall"
+      ],
+      "install": "yarn install --immutable",
+      "verify": "yarn jest packages/babel-parser",
+      "baseline": "tests/e2e/baselines/babel.json"
+    },
+    {
+      "name": "clipanion",
+      "repo": "arcanis/clipanion",
+      "commit": "434b5a6e0063c58b5e2f0a62498a7de0b308308f",
+      "pm": "yarn-berry",
+      "pmPinned": "yarn@4.4.1",
+      "lockfile": "yarn.lock",
+      "lockfileFormat": "yarn-berry-v8",
+      "workspace": false,
+      "features": [
+        "pnp-migration",
+        "single-package"
+      ],
+      "install": "yarn install",
+      "env": {
+        "YARN_NODE_LINKER": "node-modules"
+      },
+      "verify": "yarn jest",
+      "baseline": "tests/e2e/baselines/clipanion.json",
+      "notes": "Project uses PnP; the baseline is the node-modules linker (YARN_NODE_LINKER) from the same yarn.lock."
+    },
+    {
+      "name": "vue-core",
+      "repo": "vuejs/core",
+      "commit": "0ff253bfba3ee8d3d65448bd44ad890fd01b0ecd",
+      "pm": "pnpm",
+      "pmPinned": "pnpm@12.11.2",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9-multidoc",
+      "workspace": true,
+      "features": [
+        "workspaces:pnpm",
+        "catalogs",
+        "esbuild",
+        "@swc/core",
+        "vite-plugins"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm vitest run --project unit packages/shared packages/reactivity",
+      "baseline": "tests/e2e/baselines/vue-core.json"
+    },
+    {
+      "name": "trpc",
+      "repo": "trpc/trpc",
+      "commit": "8d09833c76791b2ea7270af174fdab9f1408aeb8",
+      "pm": "pnpm",
+      "pmPinned": "pnpm@12.4.1",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9-multidoc",
+      "workspace": true,
+      "features": [
+        "workspaces:pnpm",
+        "turborepo",
+        "catalogs",
+        "patched-deps",
+        "overrides",
+        "aliases",
+        "react",
+        "next",
+        "native:sharp",
+        "native:better-sqlite3"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm turbo --filter=@trpc/server build",
+      "baseline": "tests/e2e/baselines/trpc.json"
+    },
+    {
+      "name": "create-t3-turbo",
+      "repo": "t3-oss/create-t3-turbo",
+      "commit": "8f945b7bb3bfb3ca8358d48b1ff0214079bc11ee",
+      "pm": "pnpm",
+      "pmPinned": "pnpm@10.19.0",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9",
+      "workspace": true,
+      "features": [
+        "workspaces:pnpm",
+        "turborepo",
+        "catalogs",
+        "overrides",
+        "react",
+        "next",
+        "expo",
+        "native:sharp",
+        "postinstall"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm -F @acme/validators -F @acme/db typecheck",
+      "baseline": "tests/e2e/baselines/create-t3-turbo.json"
+    },
+    {
+      "name": "date-fns",
+      "repo": "date-fns/date-fns",
+      "commit": "a9739fb3e5384a810e90d7376446f6d84ecc5029",
+      "pm": "pnpm",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9",
+      "workspace": false,
+      "features": [
+        "jsr-tarballs",
+        "@swc/core",
+        "esbuild"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm vitest run src/addDays src/format src/parse",
+      "baseline": "tests/e2e/baselines/date-fns.json"
+    },
+    {
+      "name": "vitest",
+      "repo": "vitest-dev/vitest",
+      "commit": "867a5e41c30167a936a7ba27ad95b47529952c88",
+      "pm": "pnpm",
+      "pmPinned": "pnpm@11.28.6",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9",
+      "workspace": true,
+      "features": [
+        "workspaces:pnpm",
+        "catalogs",
+        "patched-deps",
+        "aliases",
+        "vite-plugins",
+        "native:sharp"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm --filter @vitest/utils --filter @vitest/pretty-format build",
+      "baseline": "tests/e2e/baselines/vitest.json"
+    },
+    {
+      "name": "hono",
+      "repo": "honojs/hono",
+      "commit": "bac5c4a8bcd76b165428ce757e1185753c7935bd",
+      "pm": "pnpm",
+      "pmPinned": "pnpm@12.6.0",
+      "lockfile": "pnpm-lock.yaml",
+      "lockfileFormat": "pnpm-v9-multidoc",
+      "workspace": true,
+      "features": [
+        "workspaces:pnpm",
+        "native:sharp"
+      ],
+      "install": "pnpm install --frozen-lockfile",
+      "verify": "pnpm vp test --run --project node src/hono.test.ts",
+      "baseline": "tests/e2e/baselines/hono.json"
+    },
+    {
+      "name": "elysia",
+      "repo": "elysiajs/elysia",
+      "commit": "e037eca710e7ad193be09cc6615ab0dbe54af914",
+      "pm": "bun",
+      "lockfile": "bun.lock",
+      "lockfileFormat": "bun-text-v1",
+      "workspace": false,
+      "features": [
+        "overrides",
+        "single-package",
+        "esbuild"
+      ],
+      "install": "bun install --frozen-lockfile",
+      "verify": "bun test test/core",
+      "baseline": "tests/e2e/baselines/elysia.json"
+    },
+    {
+      "name": "t3-env",
+      "repo": "t3-oss/t3-env",
+      "commit": "7d26a645904a8fa8712c16f31a4737a80e7066fd",
+      "pm": "bun",
+      "pmPinned": "bun@1.3.1",
+      "lockfile": "bun.lock",
+      "lockfileFormat": "bun-text-v1",
+      "workspace": true,
+      "features": [
+        "workspaces:bun",
+        "turborepo",
+        "catalogs"
+      ],
+      "install": "bun install --frozen-lockfile",
+      "verify": "bun run build && bunx vitest run --silent=passed-only",
+      "baseline": "tests/e2e/baselines/t3-env.json"
+    },
+    {
+      "name": "opencode",
+      "repo": "anomalyco/opencode",
+      "commit": "7a83c69fe12f021ec5b8ad10a1171e6d01d99289",
+      "pm": "bun",
+      "pmPinned": "bun@1.4.4",
+      "lockfile": "bun.lock",
+      "lockfileFormat": "bun-text-v1",
+      "workspace": true,
+      "features": [
+        "workspaces:bun",
+        "catalogs",
+        "patched-deps",
+        "git-deps",
+        "turborepo",
+        "postinstall",
+        "react"
+      ],
+      "install": "bun install --frozen-lockfile",
+      "verify": "bun turbo typecheck --filter=@opencode-ai/util",
+      "baseline": "tests/e2e/baselines/opencode.json"
+    }
+  ]
+}
