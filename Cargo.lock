@@ -656,6 +656,7 @@ dependencies = [
 name = "fnpm-resolver"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "fnpm-config",
  "fnpm-registry",
  "fnpm-semver",
@@ -663,12 +664,14 @@ dependencies = [
  "fnpm-types",
  "fnpm-workspace",
  "futures-util",
+ "mimalloc",
  "parking_lot",
  "rayon",
  "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
+ "xxhash-rust",
 ]
 
 [[package]]
