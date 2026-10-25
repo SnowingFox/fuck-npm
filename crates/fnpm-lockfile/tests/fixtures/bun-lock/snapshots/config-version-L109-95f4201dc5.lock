@@ -1,0 +1,20 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "new-proj",
+    },
+    "packages/pkg1": {
+      "name": "pkg1",
+      "dependencies": {
+        "dep": "file:../../dep",
+      },
+    },
+  },
+  "packages": {
+    "pkg1": ["pkg1@workspace:packages/pkg1"],
+
+    "pkg1/dep": ["dep@file:dep", {}],
+  }
+}

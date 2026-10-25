@@ -1,0 +1,32 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "peer-deps-test",
+      "dependencies": {
+        "@angular/animations": "^17.0.0",
+        "@angular/common": "^17.0.0",
+        "@angular/core": "^17.0.0",
+      },
+      "optionalDependencies": {
+        "rxjs": "^6.5.3 || ^7.4.0",
+        "tslib": "^2.3.0",
+        "zone.js": "~0.14.0",
+      },
+    },
+  },
+  "packages": {
+    "@angular/animations": ["@angular/animations@17.0.8", "", { "dependencies": { "tslib": "2.6.2" }, "peerDependencies": { "@angular/core": "17.0.8" } }, ""],
+
+    "@angular/common": ["@angular/common@17.0.8", "", { "dependencies": { "tslib": "2.6.2" }, "peerDependencies": { "@angular/core": "17.0.8", "rxjs": "^6.5.3 || ^7.4.0" } }, ""],
+
+    "@angular/core": ["@angular/core@17.0.8", "", { "dependencies": { "tslib": "2.6.2" }, "peerDependencies": { "rxjs": "^6.5.3 || ^7.4.0", "zone.js": "~0.14.0" } }, ""],
+
+    "rxjs": ["rxjs@7.8.1", "", { "dependencies": { "tslib": "2.6.2" } }, "sha512-rxjsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "tslib": ["tslib@2.6.2", "", {}, ""],
+
+    "zone.js": ["zone.js@0.14.2", "", {}, "sha512-zoneAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+  }
+}

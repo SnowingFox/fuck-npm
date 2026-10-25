@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "catalog-file-dep",
+      "dependencies": {
+        "x": "catalog:",
+      },
+    },
+  },
+  "catalog": {
+    "x": "file:../x2",
+  },
+  "packages": {
+    "x": ["x@file:../x2", {}],
+  }
+}

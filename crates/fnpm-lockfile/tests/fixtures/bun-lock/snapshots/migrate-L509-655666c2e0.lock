@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "pkg",
+      "dependencies": {
+        "dep-1": "file:dep-1",
+      },
+    },
+  },
+  "packages": {
+    "dep-1": ["dep-1@file:dep-1", {}],
+  }
+}

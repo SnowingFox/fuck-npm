@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "extraneous-test",
+    },
+    "packages/pkg0": {
+      "name": "pkg0",
+    },
+  },
+  "packages": {
+    "pkg0": ["pkg0@workspace:packages/pkg0"],
+  }
+}

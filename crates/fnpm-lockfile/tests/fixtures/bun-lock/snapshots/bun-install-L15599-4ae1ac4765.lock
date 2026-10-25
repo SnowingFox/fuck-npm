@@ -1,0 +1,24 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "my-app",
+      "dependencies": {
+        "lib": "file:./vendor/lib",
+        "shared": "file:./vendor/shared",
+      },
+    },
+  },
+  "packages": {
+    "lib": ["lib@file:vendor/lib", { "dependencies": { "shared": "file:../shared" } }],
+
+    "shared": ["shared@file:vendor/shared", { "dependencies": { "nested": "file:../nested" } }],
+
+    "lib/shared": ["shared@file:vendor/shared", { "dependencies": { "nested": "file:../nested" } }],
+
+    "shared/nested": ["nested@file:vendor/nested", {}],
+
+    "lib/shared/nested": ["nested@file:vendor/nested", {}],
+  }
+}

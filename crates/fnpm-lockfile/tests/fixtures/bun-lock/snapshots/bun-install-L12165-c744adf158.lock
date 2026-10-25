@@ -1,0 +1,19 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "foo",
+      "dependencies": {
+        "pkg-one": "workspace:*",
+      },
+    },
+    "packages/pkg1": {
+      "name": "pkg-one",
+      "version": "1.0.0",
+    },
+  },
+  "packages": {
+    "pkg-one": ["pkg-one@workspace:packages/pkg1"],
+  }
+}

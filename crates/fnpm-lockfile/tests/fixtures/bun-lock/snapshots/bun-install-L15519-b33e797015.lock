@@ -1,0 +1,22 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "my-app",
+      "dependencies": {
+        "a": "file:./packages/a",
+        "b": "file:./packages/b",
+      },
+    },
+  },
+  "packages": {
+    "a": ["a@file:packages/a", { "dependencies": { "b": "file:../b" } }],
+
+    "b": ["b@file:packages/b", { "dependencies": { "a": "file:../a" } }],
+
+    "a/b": ["b@file:packages/b", { "dependencies": { "a": "file:../a" } }],
+
+    "b/a": ["a@file:packages/a", { "dependencies": { "b": "file:../b" } }],
+  }
+}

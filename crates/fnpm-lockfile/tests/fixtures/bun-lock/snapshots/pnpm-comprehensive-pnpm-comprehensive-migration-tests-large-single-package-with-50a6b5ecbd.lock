@@ -1,0 +1,94 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "large-app",
+      "dependencies": {
+        "@emotion/react": "^11.11.3",
+        "@emotion/styled": "^11.11.0",
+        "@experimental/super-long-scoped-package-name-with-many-words": "0.0.0-experimental-abcdef123456-20250812-build.9876543210",
+        "@tanstack/react-query": "^5.17.9",
+        "axios": "^1.6.5",
+        "date-fns": "^3.2.0",
+        "express": "^4.18.2",
+        "lodash": "^4.17.21",
+        "next": "^14.0.4",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "some-very-long-package-name-that-is-really-really-long": "1.2.3-beta.4.5.6.7.8.9.10.11.12.13.14.15.16.17.18.19.20",
+        "zod": "^3.22.4",
+      },
+      "devDependencies": {
+        "@types/node": "^20.10.8",
+        "@types/react": "^18.2.47",
+        "eslint": "^8.56.0",
+        "prettier": "^3.1.1",
+        "typescript": "^5.3.3",
+        "vitest": "^1.1.3",
+      },
+      "optionalDependencies": {
+        "fsevents": "^2.3.3",
+      },
+      "peerDependencies": {
+        "react-native": ">=0.72.0",
+      },
+      "optionalPeers": [
+        "react-native",
+      ],
+    },
+  },
+  "packages": {
+    "@emotion/react": ["@emotion/react@11.11.3", "", { "peerDependencies": { "react": ">=16.8.0" } }, ""],
+
+    "@emotion/styled": ["@emotion/styled@11.11.0", "", { "peerDependencies": { "@emotion/react": "^11.0.0", "react": ">=16.8.0" } }, ""],
+
+    "@experimental/super-long-scoped-package-name-with-many-words": ["@experimental/super-long-scoped-package-name-with-many-words@0.0.0-experimental-abcdef123456-20250812-build.9876543210", "", {}, "sha512-experimentalAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "@tanstack/react-query": ["@tanstack/react-query@5.17.9", "", { "peerDependencies": { "react": ">=18.0.0" } }, "sha512-tanstackAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "@types/node": ["@types/node@20.10.8", "", {}, ""],
+
+    "@types/react": ["@types/react@18.2.47", "", {}, ""],
+
+    "accepts": ["accepts@1.3.8", "", { "dependencies": { "mime-types": "2.1.35", "negotiator": "0.6.3" } }, "sha512-acceptsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "axios": ["axios@1.6.5", "", {}, ""],
+
+    "date-fns": ["date-fns@3.2.0", "", {}, ""],
+
+    "eslint": ["eslint@8.56.0", "", { "bin": { "eslint": "bin/eslint.js" } }, ""],
+
+    "express": ["express@4.18.2", "", { "dependencies": { "accepts": "1.3.8" } }, "sha512-expressAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, "sha512-fseventsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "js-tokens": ["js-tokens@4.0.0", "", {}, ""],
+
+    "lodash": ["lodash@4.17.21", "", {}, ""],
+
+    "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "4.0.0" }, "bin": { "loose-envify": "cli.js" } }, ""],
+
+    "mime-types": ["mime-types@2.1.35", "", {}, ""],
+
+    "negotiator": ["negotiator@0.6.3", "", {}, ""],
+
+    "next": ["next@14.0.4", "", { "peerDependencies": { "react": "^18.2.0", "react-dom": "^18.2.0" }, "bin": { "next": "dist/bin/next" } }, "sha512-nextAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "prettier": ["prettier@3.1.1", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-prettierAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "react": ["react@18.2.0", "", { "dependencies": { "loose-envify": "1.4.0" } }, ""],
+
+    "react-dom": ["react-dom@18.2.0", "", { "dependencies": { "scheduler": "0.23.0" }, "peerDependencies": { "react": "^18.2.0" } }, ""],
+
+    "scheduler": ["scheduler@0.23.0", "", { "dependencies": { "loose-envify": "1.4.0" } }, ""],
+
+    "some-very-long-package-name-that-is-really-really-long": ["some-very-long-package-name-that-is-really-really-long@1.2.3-beta.4.5.6.7.8.9.10.11.12.13.14.15.16.17.18.19.20", "", {}, ""],
+
+    "typescript": ["typescript@5.3.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, ""],
+
+    "vitest": ["vitest@1.1.3", "", { "bin": { "vitest": "vitest.mjs" } }, ""],
+
+    "zod": ["zod@3.22.4", "", {}, ""],
+  }
+}
