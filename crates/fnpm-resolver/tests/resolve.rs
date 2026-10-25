@@ -494,6 +494,43 @@ async fn bundled_dependencies_are_not_fetched_separately() {
 }
 
 #[tokio::test]
+async fn a_bundled_package_shared_by_a_regular_dependency_is_streamed() {
+    // `host` bundles `inner`; `zz` (resolved after host's bundled edge) asks for the same
+    // version, so the copy stops being bundle-only and must be fetched on its own.
+    let h = Harness::new();
+    h.registry
+        .add(
+            "host",
+            &[(
+                "1.0.0",
+                json!({"dependencies": {"inner": "^1"}, "bundleDependencies": ["inner"]}),
+            )],
+        )
+        .add("zz", &[("1.0.0", json!({"dependencies": {"inner": "^1"}}))])
+        .add(
+            "inner",
+            &[("1.0.0", json!({"dependencies": {"leaf": "1"}}))],
+        )
+        .add("leaf", &[("1.0.0", no_deps())]);
+    let ws = workspace(
+        json!({"dependencies": {"host": "1.0.0", "zz": "1.0.0"}}),
+        &[],
+    );
+    let (out, events) = h
+        .run_full(&ws, None, Mode::Normal, vec![], vec![])
+        .await
+        .unwrap();
+    let inner = id_of(&out.graph, "inner", "1.0.0");
+    assert!(!out.graph.packages[inner.index()].meta.bundled);
+    let mut streamed: Vec<String> = events
+        .iter()
+        .map(|Resolved::Package { name, .. }| name.clone())
+        .collect();
+    streamed.sort();
+    assert_eq!(streamed, ["host", "inner", "leaf", "zz"]);
+}
+
+#[tokio::test]
 async fn streams_each_storable_package_once() {
     let h = Harness::new();
     h.registry

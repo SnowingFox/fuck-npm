@@ -51,6 +51,96 @@ pub(crate) fn version_every_peer_accepts<'m>(
     best.map(|(_, p)| p)
 }
 
+/// Reusable state for the per-name provider searches of [`Engine::compute_askers`]: generation
+/// stamps instead of a fresh `Vec<bool>` (or a whole-graph traversal) per name.
+struct Search {
+    provider: Vec<u32>,
+    visited: Vec<u32>,
+    provider_gen: u32,
+    visit_gen: u32,
+    stack: Vec<PackageId>,
+}
+
+impl Search {
+    fn new(n: usize) -> Self {
+        Self {
+            provider: vec![0; n],
+            visited: vec![0; n],
+            provider_gen: 0,
+            visit_gen: 0,
+            stack: Vec::new(),
+        }
+    }
+
+    fn set_providers(&mut self, ids: &[PackageId]) {
+        self.provider_gen += 1;
+        for id in ids {
+            self.provider[id.index()] = self.provider_gen;
+        }
+    }
+
+    fn is_provider(&self, id: PackageId) -> bool {
+        self.provider[id.index()] == self.provider_gen
+    }
+
+    fn start(&mut self, from: PackageId) {
+        self.visit_gen += 1;
+        self.stack.clear();
+        self.stack.push(from);
+        self.visited[from.index()] = self.visit_gen;
+    }
+
+    /// `id` is reached from a project through non-peer edges without passing a provider (the
+    /// forward walk from the projects that stops at providers, done backwards from `id`).
+    fn reached_without_provider(
+        &mut self,
+        id: PackageId,
+        parents: &[Vec<(PackageId, bool)>],
+        st: &[super::PState],
+    ) -> bool {
+        if self.is_provider(id) {
+            return false;
+        }
+        self.start(id);
+        while let Some(at) = self.stack.pop() {
+            if st[at.index()].kind == Kind::Project {
+                return true;
+            }
+            for &(parent, is_peer) in &parents[at.index()] {
+                if !is_peer
+                    && self.visited[parent.index()] != self.visit_gen
+                    && !self.is_provider(parent)
+                {
+                    self.visited[parent.index()] = self.visit_gen;
+                    self.stack.push(parent);
+                }
+            }
+        }
+        false
+    }
+
+    /// `id` is a provider or below one through non-peer edges.
+    fn below_provider(&mut self, id: PackageId, parents: &[Vec<(PackageId, bool)>]) -> bool {
+        if self.is_provider(id) {
+            return true;
+        }
+        self.start(id);
+        while let Some(at) = self.stack.pop() {
+            for &(parent, is_peer) in &parents[at.index()] {
+                if is_peer || self.visited[parent.index()] == self.visit_gen {
+                    continue;
+                }
+                if self.is_provider(parent) {
+                    return true;
+                }
+                self.visited[parent.index()] = self.visit_gen;
+                self.stack.push(parent);
+            }
+        }
+        false
+    }
+}
+
 impl Engine<'_> {
     fn is_project(&self, id: PackageId) -> bool {
         self.st[id.index()].kind == Kind::Project
@@ -67,23 +157,6 @@ impl Engine<'_> {
             })
             .filter_map(|e| e.target)
             .find(|t| self.graph.packages[t.index()].name == name)
-    }
-
-    /// bun `peer_provider`: does `owner` provide `name` to what is below it?
-    fn provides(&self, owner: PackageId, name: &str) -> bool {
-        let is_project = self.is_project(owner);
-        self.graph.packages[owner.index()]
-            .dependencies
-            .iter()
-            .any(|e| {
-                e.name == name
-                    && if e.behavior.is_peer() {
-                        is_project && !e.behavior.is_optional_peer()
-                    } else {
-                        e.target
-                            .is_some_and(|t| self.graph.packages[t.index()].name == name)
-                    }
-            })
     }
 
     fn project_ids(&self) -> Vec<PackageId> {
@@ -113,94 +186,76 @@ impl Engine<'_> {
     }
 
     fn compute_askers(&mut self) {
+        self.ensure_parents();
         let known = self.reachable_without_peers();
-        let mut grouped: HashMap<String, Vec<(Row, PackageId)>> = HashMap::new();
+        let mut grouped: HashMap<String, Vec<Row>> = HashMap::new();
         for (i, p) in self.graph.packages.iter().enumerate() {
             if !known[i] {
                 continue;
             }
             for (j, e) in p.dependencies.iter().enumerate() {
                 if e.behavior.is_peer() && !e.behavior.is_optional_peer() {
-                    let owner = PackageId(i as u32);
-                    grouped.entry(e.name.clone()).or_default().push((
-                        Row {
-                            pkg: owner,
-                            edge: j as u32,
-                            install_peer: true,
-                        },
-                        owner,
-                    ));
+                    grouped.entry(e.name.clone()).or_default().push(Row {
+                        pkg: PackageId(i as u32),
+                        edge: j as u32,
+                        install_peer: true,
+                    });
                 }
             }
         }
+        grouped.retain(|_, rows| rows.len() >= 2);
         let mut askers = Askers::default();
-        for (name, rows) in grouped {
-            if rows.len() < 2 {
-                continue;
+        if grouped.is_empty() {
+            self.peer_askers = Some(askers);
+            return;
+        }
+        // Providers of every name that matters, found in one pass over the edges (bun
+        // `peer_provider`), instead of one pass per name.
+        let mut providers: HashMap<&str, Vec<PackageId>> =
+            grouped.keys().map(|n| (n.as_str(), Vec::new())).collect();
+        for (i, p) in self.graph.packages.iter().enumerate() {
+            let id = PackageId(i as u32);
+            let is_project = self.is_project(id);
+            for e in &p.dependencies {
+                let Some(list) = providers.get_mut(e.name.as_str()) else {
+                    continue;
+                };
+                let provides = if e.behavior.is_peer() {
+                    is_project && !e.behavior.is_optional_peer()
+                } else {
+                    e.target
+                        .is_some_and(|t| self.graph.packages[t.index()].name == e.name)
+                };
+                if provides && list.last() != Some(&id) {
+                    list.push(id);
+                }
             }
-            let nowhere = self.packages_without_provider(&name);
-            let somewhere = self.reached_without_provider(&name);
-            let kept: Vec<(Row, PackageId, bool)> = rows
-                .into_iter()
-                .filter(|(_, owner)| {
-                    self.st[owner.index()].kind == Kind::Registry && somewhere[owner.index()]
-                })
-                .map(|(row, owner)| (row, owner, nowhere[owner.index()]))
-                .collect();
+        }
+        let owned;
+        let parents: &[Vec<(PackageId, bool)>] = match &self.parents {
+            Some(p) => p,
+            None => {
+                owned = self.build_parents();
+                &owned
+            }
+        };
+        let mut search = Search::new(self.graph.len());
+        for (name, rows) in &grouped {
+            search.set_providers(&providers[name.as_str()]);
+            let mut kept: Vec<(Row, PackageId, bool)> = Vec::new();
+            for row in rows {
+                if self.st[row.pkg.index()].kind == Kind::Registry
+                    && search.reached_without_provider(row.pkg, parents, &self.st)
+                {
+                    let nowhere = !search.below_provider(row.pkg, parents);
+                    kept.push((*row, row.pkg, nowhere));
+                }
+            }
             if !kept.is_empty() {
-                askers.by_name.insert(name, kept);
+                askers.by_name.insert(name.clone(), kept);
             }
         }
         self.peer_askers = Some(askers);
-    }
-
-    /// Packages that are neither a provider of `name` nor below one.
-    fn packages_without_provider(&self, name: &str) -> Vec<bool> {
-        let mut provided = vec![false; self.graph.len()];
-        let mut stack: Vec<PackageId> = self
-            .graph
-            .ids()
-            .filter(|&id| self.provides(id, name))
-            .collect();
-        for id in &stack {
-            provided[id.index()] = true;
-        }
-        while let Some(id) = stack.pop() {
-            for e in &self.graph.packages[id.index()].dependencies {
-                if let Some(t) = e.target
-                    && !e.behavior.is_peer()
-                    && !std::mem::replace(&mut provided[t.index()], true)
-                {
-                    stack.push(t);
-                }
-            }
-        }
-        provided.iter().map(|p| !p).collect()
-    }
-
-    /// Packages reachable from the projects without passing a provider of `name`.
-    fn reached_without_provider(&self, name: &str) -> Vec<bool> {
-        let mut seen = vec![false; self.graph.len()];
-        let mut reached = vec![false; self.graph.len()];
-        let mut stack = self.project_ids();
-        for id in &stack {
-            seen[id.index()] = true;
-        }
-        while let Some(id) = stack.pop() {
-            if self.provides(id, name) {
-                continue;
-            }
-            reached[id.index()] = true;
-            for e in &self.graph.packages[id.index()].dependencies {
-                if let Some(t) = e.target
-                    && !e.behavior.is_peer()
-                    && !std::mem::replace(&mut seen[t.index()], true)
-                {
-                    stack.push(t);
-                }
-            }
-        }
-        reached
     }
 
     /// The effective npm ranges of the packages that have to agree with `row` on `name`; empty
@@ -310,6 +365,11 @@ impl Engine<'_> {
             return false;
         }
         let any_holder = !self.is_project(row.pkg);
+        if let Some(parents) = &self.parents {
+            return !parents[id.index()]
+                .iter()
+                .any(|&(owner, is_peer)| any_holder || owner == PackageId::ROOT || !is_peer);
+        }
         !self.graph.packages.iter().enumerate().any(|(owner, p)| {
             p.dependencies.iter().any(|e| {
                 e.target == Some(id) && (any_holder || owner == 0 || !e.behavior.is_peer())
@@ -324,15 +384,19 @@ impl Engine<'_> {
         if let Some(own) = self.named(owner, name, false) {
             return Some(own);
         }
-        let n = self.graph.len();
-        let mut parents_of: Vec<Vec<(PackageId, bool)>> = vec![Vec::new(); n];
-        for (i, p) in self.graph.packages.iter().enumerate() {
-            for e in &p.dependencies {
-                if let Some(t) = e.target {
-                    parents_of[t.index()].push((PackageId(i as u32), e.behavior.is_peer()));
-                }
-            }
+        // Only a package called `name` can be the answer: without one, skip walking every
+        // ancestor (optional peers that nobody installs would make this quadratic).
+        if !self.by_name.contains_key(name) && self.graph.root().name != name {
+            return None;
         }
+        let owned;
+        let parents_of: &[Vec<(PackageId, bool)>] = match &self.parents {
+            Some(p) => p,
+            None => {
+                owned = self.build_parents();
+                &owned
+            }
+        };
         let mut seen: HashSet<PackageId> = HashSet::from([owner]);
         let mut level: HashSet<PackageId> = HashSet::from([owner]);
         loop {
@@ -409,17 +473,29 @@ impl Engine<'_> {
         name: &str,
         range: Option<&Range>,
     ) -> Option<PackageId> {
-        let mut target: Option<PackageId> = None;
-        let mut any = false;
-        for (i, p) in self.graph.packages.iter().enumerate() {
-            if !p
-                .dependencies
+        let mut dependents: Vec<PackageId> = match &self.parents {
+            Some(parents) => parents[row.pkg.index()]
                 .iter()
-                .any(|e| e.target == Some(row.pkg) && !e.behavior.is_peer())
-            {
-                continue;
-            }
-            any = true;
+                .filter(|(_, is_peer)| !is_peer)
+                .map(|(owner, _)| *owner)
+                .collect(),
+            None => self
+                .graph
+                .ids()
+                .filter(|&id| {
+                    self.graph.packages[id.index()]
+                        .dependencies
+                        .iter()
+                        .any(|e| e.target == Some(row.pkg) && !e.behavior.is_peer())
+                })
+                .collect(),
+        };
+        dependents.sort_unstable();
+        dependents.dedup();
+        let any = !dependents.is_empty();
+        let mut target: Option<PackageId> = None;
+        for owner in dependents {
+            let p = &self.graph.packages[owner.index()];
             let alias = p.dependencies.iter().find(|e| {
                 e.name == name
                     && !e.behavior.is_peer()
@@ -429,7 +505,6 @@ impl Engine<'_> {
                         Ok(DependencySpec::Npm { is_alias: true, .. })
                     )
             })?;
-            let _ = i;
             target = target.or(alias.target);
         }
         if !any {
@@ -521,6 +596,7 @@ impl Engine<'_> {
                 .then_with(|| (a.pkg, a.edge).cmp(&(b.pkg, b.edge)))
         });
         batch.dedup();
+        self.ensure_parents();
         self.in_peer_pass = true;
         self.peer_askers = None;
         for mut row in batch {

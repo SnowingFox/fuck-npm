@@ -1,7 +1,6 @@
 //! After the queue drains: optional peers, peer warnings, collapsing appended duplicates,
 //! dropping unreachable packages and assembling the output.
 
-use fnpm_semver::Range;
 use fnpm_types::{PackageId, Resolution};
 
 use super::{Engine, EngineOutput, Kind, Row};
@@ -11,6 +10,7 @@ impl Engine<'_> {
     /// Optional peers are never installed; they bind to what the declarer or the packages above
     /// it provide, and stay unresolved otherwise.
     fn bind_optional_peers(&mut self) {
+        self.ensure_parents();
         for i in 0..self.graph.len() {
             let pkg = PackageId(i as u32);
             for j in 0..self.graph.packages[i].dependencies.len() {
@@ -26,6 +26,9 @@ impl Engine<'_> {
                 };
                 if let Some(t) = self.peer_provided_from_above(&name, row) {
                     self.graph.packages[i].dependencies[j].target = Some(t);
+                    if let Some(parents) = &mut self.parents {
+                        parents[t.index()].push((pkg, true));
+                    }
                 }
             }
         }
@@ -92,8 +95,34 @@ impl Engine<'_> {
         self.warnings.extend(warnings);
     }
 
+    /// Streams every package the fetch phase needs that was not streamed while resolving: a
+    /// package first reached inside a bundle and later shared by a regular dependency (bun
+    /// `get_package_id_outside_bundles` turns it into a regular package), or anything whose
+    /// fetch state only became known at the end. Without this the fetcher would never hear of it.
+    fn emit_missed(&self, map: &[Option<PackageId>]) {
+        let Some(tx) = &self.tx else { return };
+        let mut emitted = vec![false; self.graph.len()];
+        for (old, new) in map.iter().enumerate() {
+            if let Some(new) = new
+                && self.st[old].emitted
+            {
+                emitted[new.index()] = true;
+            }
+        }
+        for (i, keep) in crate::frozen::needed(&self.graph, self.cfg)
+            .into_iter()
+            .enumerate()
+        {
+            let p = &self.graph.packages[i];
+            if keep && !emitted[i] && p.resolution.is_storable() && !p.meta.bundled {
+                let _ = tx.send(crate::Resolved::of(PackageId(i as u32), p));
+            }
+        }
+    }
+
     pub(crate) fn finish(mut self) -> Result<EngineOutput> {
         self.bind_optional_peers();
+        self.parents = None;
         let loaded: Vec<bool> = self
             .st
             .iter()
@@ -129,6 +158,7 @@ impl Engine<'_> {
                 );
         }
         self.graph.sort_dependencies();
+        self.emit_missed(&map);
         let requests: Vec<_> = std::mem::take(&mut self.requests)
             .into_iter()
             .zip(&self.request_targets)
@@ -138,7 +168,6 @@ impl Engine<'_> {
         warnings.extend(std::mem::take(&mut self.kept_patched));
         let mut seen = std::collections::HashSet::new();
         warnings.retain(|w| seen.insert(w.clone()));
-        let _ = Range::any();
         Ok(EngineOutput {
             graph: self.graph,
             requests,

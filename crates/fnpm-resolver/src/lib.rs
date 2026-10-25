@@ -320,7 +320,7 @@ impl Resolver {
             if !changes.is_empty() {
                 return Err(Error::FrozenLockfile { changes });
             }
-            return Ok(self.unchanged(prev, tx, events, warnings));
+            return self.unchanged(workspace, prev, tx, events, warnings);
         }
 
         if mode == Mode::Normal
@@ -330,7 +330,7 @@ impl Resolver {
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
         {
-            return Ok(self.unchanged(prev, tx, events, warnings));
+            return self.unchanged(workspace, prev, tx, events, warnings);
         }
 
         let hints = if previous.is_none() {
@@ -378,14 +378,22 @@ impl Resolver {
         })
     }
 
+    /// The previous graph as the result. The lockfile records patch paths only, so the patch
+    /// hashes (part of the patched packages' store keys) are computed from the files as they
+    /// are now; a missing patch file fails here like it does on a full resolve.
     fn unchanged(
         &self,
+        workspace: &Workspace,
         prev: &LockGraph,
         tx: Option<mpsc::UnboundedSender<Resolved>>,
         events: &dyn EventSink,
         warnings: Vec<String>,
-    ) -> ResolveOutput {
-        frozen::emit_all(prev, &self.config, tx.as_ref());
+    ) -> Result<ResolveOutput> {
+        let mut graph = prev.clone();
+        for (key, patch) in &mut graph.patched_dependencies {
+            patch.hash = Some(engine::patch_hash(&workspace.root_dir, key, &patch.path)?);
+        }
+        frozen::emit_all(&graph, &self.config, tx.as_ref());
         if events.enabled() {
             let n = prev.len() as u32;
             events.emit(Event::Resolve {
@@ -394,11 +402,11 @@ impl Resolver {
                 name: None,
             });
         }
-        ResolveOutput {
-            graph: prev.clone(),
+        Ok(ResolveOutput {
+            graph,
             changed: false,
             requests: Vec::new(),
             warnings,
-        }
+        })
     }
 }

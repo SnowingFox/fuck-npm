@@ -248,11 +248,15 @@ impl RegistrySource {
         url: &str,
         sha: &str,
     ) -> fnpm_registry::Result<FetchedPackage> {
+        static CHECKOUTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        // One directory per checkout: two dependencies on the same commit (`#main` and `#<sha>`)
+        // are fetched concurrently and must not delete each other's work.
+        let n = CHECKOUTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dest = self
             .config
             .cache_dir
             .join("tmp")
-            .join(format!("git-{sha}-{}", std::process::id()));
+            .join(format!("git-{sha}-{}-{n}", std::process::id()));
         let _ = tokio::fs::remove_dir_all(&dest).await;
         fnpm_registry::git::checkout(
             &self.config.cache_dir,
@@ -265,21 +269,27 @@ impl RegistrySource {
         let result = async {
             let text = tokio::fs::read_to_string(dest.join("package.json")).await?;
             let manifest = parse_package_json(&text, &request.name)?;
-            let integrity = fnpm_store::Store::pack_integrity(&dest).ok();
-            if let (Some(store), Some(name), Some(integrity)) =
-                (self.store(), manifest.name.clone(), integrity)
-            {
-                let key = fnpm_store::PackageKey {
-                    name,
-                    version: manifest.version.clone().unwrap_or_default(),
+            // Hashing and importing the checkout is blocking filesystem work.
+            let (this, dir) = (self.clone(), dest.clone());
+            tokio::task::spawn_blocking(move || {
+                let integrity = fnpm_store::Store::pack_integrity(&dir).ok();
+                if let (Some(store), Some(name), Some(integrity)) =
+                    (this.store(), manifest.name.clone(), integrity)
+                {
+                    let key = fnpm_store::PackageKey {
+                        name,
+                        version: manifest.version.clone().unwrap_or_default(),
+                        integrity,
+                    };
+                    let _ = store.import_directory(&key, &dir);
+                }
+                FetchedPackage {
+                    manifest,
                     integrity,
-                };
-                let _ = store.import_directory(&key, &dest);
-            }
-            Ok(FetchedPackage {
-                manifest,
-                integrity,
+                }
             })
+            .await
+            .map_err(|e| io_error(e.to_string()))
         }
         .await;
         let _ = tokio::fs::remove_dir_all(&dest).await;

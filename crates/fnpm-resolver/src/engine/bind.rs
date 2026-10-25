@@ -113,6 +113,20 @@ pub(crate) fn path_escapes(target: &str) -> bool {
     false
 }
 
+/// A resolved commit must be a full SHA-1 or SHA-256 object name: it ends up in the lockfile, in
+/// download URLs and in checkout paths, so a remote answering with anything else (`../x`, a
+/// branch name, an empty line) is an error rather than something to interpolate.
+pub(crate) fn checked_commit(sha: String, origin: &str) -> fnpm_registry::Result<String> {
+    if matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(sha)
+    } else {
+        Err(fnpm_registry::Error::Git(format!(
+            "{origin}: \"{}\" is not a commit",
+            sha.escape_debug()
+        )))
+    }
+}
+
 /// What a candidate lookup can return: a package already in the new graph, or one in the
 /// previous graph that is imported when chosen.
 #[derive(Debug, Clone, Copy)]
@@ -351,7 +365,7 @@ impl Engine<'_> {
     fn prev_effective_literal(&self, prev_owner: &Package, edge: &DepEdge) -> Option<String> {
         let prev = self.prev?;
         let declared = DependencySpec::parse(&edge.name, &edge.literal).ok()?;
-        let set = crate::overrides::OverrideSet::new(&prev.overrides);
+        let set = &self.prev_overrides;
         let version = super::package_version(prev_owner);
         let owner = Owner {
             name: &prev_owner.name,
@@ -907,8 +921,7 @@ impl Engine<'_> {
                 return Ok(Step::Done);
             }
         }
-        let chosen = chosen.clone();
-        let id = self.create_npm_package(row, edge, &name, &manifest, &chosen);
+        let id = self.create_npm_package(row, edge, &name, chosen);
         if let Some(r) = &range
             && r.as_exact().is_some()
         {
@@ -923,14 +936,12 @@ impl Engine<'_> {
         row: Row,
         edge: &DepEdge,
         name: &str,
-        manifest: &PackageManifest,
         vm: &fnpm_registry::VersionManifest,
     ) -> PackageId {
         let version = vm.version.to_string();
         let default_url = self.manifests.default_tarball_url(name, &version);
         let tarball = (!vm.dist.tarball.is_empty() && vm.dist.tarball != default_url)
             .then(|| vm.dist.tarball.clone());
-        let _ = manifest;
         let mut package = local::package_from_manifest(name, vm, tarball);
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
@@ -1422,7 +1433,8 @@ impl Engine<'_> {
                         None,
                     ),
                     RemoteKind::Git { url, committish } => {
-                        let sha = fetcher.resolve_git(&url, &committish).await?;
+                        let sha =
+                            checked_commit(fetcher.resolve_git(&url, &committish).await?, &url)?;
                         let subdir = committish.path.clone();
                         (
                             Resolution::Git {
@@ -1448,6 +1460,7 @@ impl Engine<'_> {
                                 committish.reference.as_deref().unwrap_or(""),
                             )
                             .await?;
+                        let sha = checked_commit(sha, &format!("github:{owner}/{repo}"))?;
                         (
                             Resolution::Github {
                                 owner,
@@ -1581,5 +1594,20 @@ mod tests {
         assert!(path_escapes("a/../../b"));
         assert!(!path_escapes("./a/../b"));
         assert!(!path_escapes("lib"));
+    }
+
+    #[test]
+    fn commits_must_be_object_names() {
+        assert!(checked_commit("a".repeat(40), "o").is_ok());
+        assert!(checked_commit("B".repeat(64), "o").is_ok());
+        for bad in [
+            "",
+            "main",
+            "../../etc",
+            &"a".repeat(39),
+            &format!("{}/", "a".repeat(39)),
+        ] {
+            assert!(checked_commit(bad.to_owned(), "o").is_err(), "{bad}");
+        }
     }
 }

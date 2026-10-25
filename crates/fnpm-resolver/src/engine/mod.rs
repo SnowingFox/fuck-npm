@@ -162,6 +162,8 @@ pub(crate) struct Engine<'a> {
     pub manifest_ordered: HashSet<String>,
 
     pub overrides: OverrideSet,
+    /// The previous graph's rules, to tell whether an edge still means what it meant.
+    pub prev_overrides: OverrideSet,
     pub extension_rules: Vec<ExtensionRule>,
     pub gate: Option<(u64, ReleaseAgeExcludes)>,
     pub now_ms: u64,
@@ -172,6 +174,9 @@ pub(crate) struct Engine<'a> {
     pub kept_patched: Vec<String>,
     pub warnings: Vec<String>,
     pub peer_askers: Option<peers::Askers>,
+    /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
+    /// kept up to date by [`Engine::set_target`] / [`Engine::add_package`] from then on.
+    pub parents: Option<Vec<Vec<(PackageId, bool)>>>,
     pub progress: u32,
 }
 
@@ -195,6 +200,21 @@ pub(crate) struct EngineOutput {
     pub requests: Vec<(Request, PackageId)>,
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
+}
+
+/// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A
+/// missing or unreadable file is an error: the install must fail before anything is linked.
+pub(crate) fn patch_hash(root_dir: &Path, key: &str, path: &str) -> Result<String> {
+    match std::fs::read(root_dir.join(path)) {
+        Ok(bytes) => {
+            Ok(fnpm_types::Integrity::compute(fnpm_types::HashAlgorithm::Sha256, &bytes).to_hex())
+        }
+        Err(e) => Err(Error::PatchFile {
+            key: key.to_owned(),
+            path: path.to_owned(),
+            message: format!("Couldn't find patch file: {e}"),
+        }),
+    }
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -289,6 +309,7 @@ impl<'a> Engine<'a> {
             manifest_order: Vec::new(),
             manifest_ordered: HashSet::new(),
             overrides: OverrideSet::new(&[]),
+            prev_overrides: OverrideSet::new(&[]),
             extension_rules: Vec::new(),
             gate,
             now_ms: now_ms(),
@@ -299,6 +320,7 @@ impl<'a> Engine<'a> {
             kept_patched: Vec::new(),
             warnings: Vec::new(),
             peer_askers: None,
+            parents: None,
             progress: 0,
         };
         if engine.gate.is_some() {
@@ -318,6 +340,7 @@ impl<'a> Engine<'a> {
 
     fn index_previous(&mut self) {
         let Some(prev) = self.prev else { return };
+        self.prev_overrides = OverrideSet::new(&prev.overrides);
         self.prev_versions = prev.packages.iter().map(package_version).collect();
         for (i, p) in prev.packages.iter().enumerate() {
             let id = PackageId(i as u32);
@@ -388,20 +411,7 @@ impl<'a> Engine<'a> {
                 ));
                 continue;
             }
-            let file = self.ws.root_dir.join(path);
-            let hash = match std::fs::read(&file) {
-                Ok(bytes) => {
-                    fnpm_types::Integrity::compute(fnpm_types::HashAlgorithm::Sha256, &bytes)
-                        .to_hex()
-                }
-                Err(e) => {
-                    return Err(Error::PatchFile {
-                        key: key.clone(),
-                        path: path.to_owned(),
-                        message: format!("Couldn't find patch file: {e}"),
-                    });
-                }
-            };
+            let hash = patch_hash(&self.ws.root_dir, key, path)?;
             out.insert(
                 key.clone(),
                 PatchedDependency {
@@ -604,6 +614,9 @@ impl<'a> Engine<'a> {
         let is_npm = matches!(package.resolution, Resolution::Npm { .. });
         let id = self.graph.push(package);
         self.st.push(state);
+        if let Some(parents) = &mut self.parents {
+            parents.push(Vec::new());
+        }
         self.by_key.insert(key, id);
         if is_npm {
             let st = &self.st;
@@ -624,6 +637,9 @@ impl<'a> Engine<'a> {
             edge.behavior |= Behavior::WORKSPACE;
         }
         let behavior = edge.behavior;
+        if let Some(parents) = &mut self.parents {
+            parents[target.index()].push((row.pkg, behavior.is_peer()));
+        }
         if let Some(&i) = self.requested_rows.get(&(row.pkg, row.edge)) {
             self.request_targets[i] = Some(target);
         }
@@ -650,6 +666,26 @@ impl<'a> Engine<'a> {
         let p = &self.graph.packages[target.index()];
         p.platform
             .matches_for_edge(&self.cfg.platform, behavior.is_optional())
+    }
+
+    /// The reverse edges of the current graph.
+    pub(crate) fn build_parents(&self) -> Vec<Vec<(PackageId, bool)>> {
+        let mut parents: Vec<Vec<(PackageId, bool)>> = vec![Vec::new(); self.graph.len()];
+        for (i, p) in self.graph.packages.iter().enumerate() {
+            for e in &p.dependencies {
+                if let Some(t) = e.target {
+                    parents[t.index()].push((PackageId(i as u32), e.behavior.is_peer()));
+                }
+            }
+        }
+        parents
+    }
+
+    /// Builds the reverse-edge index once; [`Engine::set_target`] maintains it afterwards.
+    pub(crate) fn ensure_parents(&mut self) {
+        if self.parents.is_none() {
+            self.parents = Some(self.build_parents());
+        }
     }
 
     /// `id` is reachable through required edges: failures below it are fatal again.

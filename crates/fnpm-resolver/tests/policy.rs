@@ -278,6 +278,50 @@ async fn patched_dependencies_are_recorded_with_hashes_and_pinned() {
 }
 
 #[tokio::test]
+async fn unchanged_installs_hash_patch_files_as_they_are_now() {
+    // fnpm.lock stores only the patch path: the no-op and frozen paths must still hand the
+    // linker the hash of the current file, and fail when it is gone.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("patches")).unwrap();
+    let file = dir.path().join("patches/x@1.0.0.patch");
+    std::fs::write(&file, "one\n").unwrap();
+    let h = Harness::new();
+    h.registry.add("x", &[("1.0.0", no_deps())]);
+    let ws = workspace_at(
+        dir.path().to_path_buf(),
+        json!({"dependencies": {"x": "1.0.0"}, "patchedDependencies": {"x@1.0.0": "patches/x@1.0.0.patch"}}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    let first_hash = first.patched_dependencies["x@1.0.0"].hash.clone().unwrap();
+    let mut locked = first.clone();
+    locked.patched_dependencies.get_mut("x@1.0.0").unwrap().hash = None;
+    let out = h.run(&ws, Some(&locked), Mode::Normal).await.unwrap();
+    assert!(!out.changed);
+    assert_eq!(
+        out.graph.patched_dependencies["x@1.0.0"].hash.as_deref(),
+        Some(first_hash.as_str())
+    );
+    std::fs::write(&file, "two\n").unwrap();
+    for mode in [Mode::Normal, Mode::Frozen] {
+        let out = h.run(&ws, Some(&locked), mode).await.unwrap();
+        let hash = out.graph.patched_dependencies["x@1.0.0"]
+            .hash
+            .clone()
+            .unwrap();
+        assert_ne!(hash, first_hash);
+        assert_eq!(hash.len(), 64);
+    }
+    std::fs::remove_file(&file).unwrap();
+    for mode in [Mode::Normal, Mode::Frozen] {
+        assert!(matches!(
+            h.run(&ws, Some(&locked), mode).await,
+            Err(Error::PatchFile { key, .. }) if key == "x@1.0.0"
+        ));
+    }
+}
+
+#[tokio::test]
 async fn a_missing_patch_file_fails_before_linking() {
     let dir = tempfile::tempdir().unwrap();
     let h = Harness::new();

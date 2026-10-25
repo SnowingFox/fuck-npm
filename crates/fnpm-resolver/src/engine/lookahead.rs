@@ -135,7 +135,6 @@ impl Engine<'_> {
         let Some(vm) = pick::find_for_dependency(&manifest, wanted, gate.as_ref()).ok() else {
             return;
         };
-        let vm = vm.clone();
         let optional_peers: Vec<&String> = vm
             .peer_dependencies_meta
             .iter()

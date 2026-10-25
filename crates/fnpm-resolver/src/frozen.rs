@@ -20,12 +20,26 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
     } else {
         format!(" in {workspace}")
     };
-    let mut names: Vec<&str> = now.iter().chain(before).map(|e| e.name.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
-    for name in names {
-        let a: Vec<&DepEdge> = now.iter().filter(|e| e.name == name).collect();
-        let b: Vec<&DepEdge> = before.iter().filter(|e| e.name == name).collect();
+    // Both sides sorted by name (stable, so same-name edges keep their order), then walked
+    // together: linear in the number of edges rather than names x edges.
+    fn by_name(edges: &[DepEdge]) -> Vec<&DepEdge> {
+        let mut v: Vec<&DepEdge> = edges.iter().collect();
+        v.sort_by(|x, y| x.name.cmp(&y.name));
+        v
+    }
+    let (now, before) = (by_name(now), by_name(before));
+    let (mut i, mut j) = (0, 0);
+    while i < now.len() || j < before.len() {
+        let name = match (now.get(i), before.get(j)) {
+            (Some(x), Some(y)) => x.name.as_str().min(y.name.as_str()),
+            (Some(x), None) => x.name.as_str(),
+            (None, Some(y)) => y.name.as_str(),
+            (None, None) => break,
+        };
+        let i_end = i + now[i..].iter().take_while(|e| e.name == name).count();
+        let j_end = j + before[j..].iter().take_while(|e| e.name == name).count();
+        let (a, b) = (&now[i..i_end], &before[j..j_end]);
+        (i, j) = (i_end, j_end);
         let message = match (a.is_empty(), b.is_empty()) {
             (false, true) => Some("was added".to_owned()),
             (true, false) => Some("was removed".to_owned()),
@@ -35,14 +49,13 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
                     g.sort();
                     g
                 };
-                if groups(&a) != groups(&b) {
+                if groups(a) != groups(b) {
                     Some("is in different dependency groups".to_owned())
-                } else if let Some((x, y)) = a.iter().zip(&b).find(|(x, y)| x.literal != y.literal)
-                {
+                } else if let Some((x, y)) = a.iter().zip(b).find(|(x, y)| x.literal != y.literal) {
                     Some(format!("changed from {} to {}", y.literal, x.literal))
                 } else if a
                     .iter()
-                    .zip(&b)
+                    .zip(b)
                     .any(|(x, y)| x.behavior.is_optional_peer() != y.behavior.is_optional_peer())
                 {
                     Some("changed in peerDependenciesMeta".to_owned())
