@@ -158,6 +158,20 @@ describe.runIf(unix)("bin shim", () => {
     expect(out).toContain("got-term");
   });
 
+  test("finds the platform package through @fuck-npm/binding in an isolated layout", () => {
+    const { root, pkg } = layout();
+    // pnpm-style: the platform package is only visible to @fuck-npm/binding, its dependent.
+    const store = join(root, "node_modules", ".store", "binding", "node_modules", "@fuck-npm");
+    mkdirSync(join(store, "binding"), { recursive: true });
+    writeFileSync(join(store, "binding", "package.json"), JSON.stringify({ name: "@fuck-npm/binding", version: VERSION }));
+    installPlatformPackage(join(store, `binding-${ABI}`));
+    mkdirSync(join(pkg, "node_modules", "@fuck-npm"), { recursive: true });
+    symlinkSync(join(store, "binding"), join(pkg, "node_modules", "@fuck-npm", "binding"));
+    const result = runShim(pkg, "fnpm", ["install"]);
+    expect(result.stdout.startsWith("native:fnpm\ninstall\n")).toBe(true);
+    expect(result.status).toBe(3);
+  });
+
   test("falls back to the TS CLI when the executable cannot run", () => {
     const { pkg, platformDir } = layout();
     installPlatformPackage(platformDir);
@@ -229,6 +243,37 @@ describe.runIf(unix)("postinstall swap", () => {
     const status = await postinstall({ root: pkg, env: NPM_ENV, abi: ABI, npm: "/nonexistent/npm" });
     expect(status).toMatch(/^kept shim: .*reports 9\.9\.9, expected /);
     expect(readFileSync(join(pkg, "bin", "fnpm"), "utf8")).toBe(shim);
+  });
+
+  test("does not reinstall a platform package that ships no executables", async () => {
+    const { root, pkg, platformDir } = layout();
+    installPlatformPackage(platformDir);
+    for (const bin of ["fnpm", "fnpm-lock"]) rmSync(join(platformDir, bin));
+    const marker = join(root, "npm-ran");
+    const npm = join(root, "fake-npm");
+    writeFileSync(npm, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`);
+    chmodSync(npm, 0o755);
+    let fetched = 0;
+    const fetchImpl = (async () => {
+      fetched += 1;
+      throw new Error("no network in this test");
+    }) as unknown as typeof fetch;
+    const status = await postinstall({ root: pkg, env: NPM_ENV, abi: ABI, npm, fetchImpl });
+    expect(status).toMatch(/^kept shim: /);
+    expect(fetched).toBe(0);
+    expect(() => statSync(marker)).toThrow();
+  });
+
+  test("swaps from a platform package that only @fuck-npm/binding can see", async () => {
+    const { root, pkg } = layout();
+    const store = join(root, "node_modules", ".store", "binding", "node_modules", "@fuck-npm");
+    mkdirSync(join(store, "binding"), { recursive: true });
+    writeFileSync(join(store, "binding", "package.json"), JSON.stringify({ name: "@fuck-npm/binding", version: VERSION }));
+    installPlatformPackage(join(store, `binding-${ABI}`));
+    mkdirSync(join(pkg, "node_modules", "@fuck-npm"), { recursive: true });
+    symlinkSync(join(store, "binding"), join(pkg, "node_modules", "@fuck-npm", "binding"));
+    expect(await postinstall({ root: pkg, env: NPM_ENV, abi: ABI, npm: "/nonexistent/npm" })).toBe("swapped");
+    expect(statSync(join(pkg, "bin", "fnpm")).ino).toBe(statSync(join(store, `binding-${ABI}`, "fnpm")).ino);
   });
 
   test("never throws, and leaves a skipped install alone", async () => {

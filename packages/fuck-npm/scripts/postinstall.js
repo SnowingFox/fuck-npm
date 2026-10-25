@@ -34,6 +34,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -218,11 +219,27 @@ export async function downloadFromRegistry(name, version, root, { env = process.
   return written.length > 1;
 }
 
+/** The version an installed platform package declares, or null. */
+function installedVersion(dir) {
+  try {
+    return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).version ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Find the platform executable for `bin`, installing the platform package if needed. */
 async function resolveExecutables(abi, version, root, options) {
   const name = `${native.PLATFORM_PACKAGE_PREFIX}${abi}`;
-  const find = () => native.findNativeExecutable("fnpm", { abi, paths: [root] });
+  const find = () => native.findNativeExecutable("fnpm", { abi, root });
   if (find()) return true;
+  const installed = native.platformPackageDir(abi, root);
+  if (installed && installedVersion(installed) === version) {
+    // Installed at our version without the executables: installing it again changes nothing,
+    // and would cost an npm run and a download on every install.
+    debug(`${name}@${version} has no native executables`);
+    return false;
+  }
   debug(`${name} is not installed; trying npm`);
   if (installWithNpm(name, version, root, options) && find()) return true;
   debug(`npm could not install ${name}; downloading it`);
@@ -248,7 +265,7 @@ export async function postinstall({ root = native.PACKAGE_ROOT, env = process.en
     if (!(await resolveExecutables(abi, version, root, options))) {
       return `kept shim: ${native.PLATFORM_PACKAGE_PREFIX}${abi}@${version} is not available`;
     }
-    const executables = native.BINS.map((bin) => [bin, native.findNativeExecutable(bin, { abi, paths: [root] })]);
+    const executables = native.BINS.map((bin) => [bin, native.findNativeExecutable(bin, { abi, root })]);
     for (const [bin, exe] of executables) {
       if (!exe) return `kept shim: the platform package has no ${bin} executable`;
       const reported = nativeVersion(exe);

@@ -57,22 +57,41 @@ function executableName(bin, platform = process.platform) {
   return platform === 'win32' ? `${bin}.exe` : bin;
 }
 
+function resolveFrom(request, base) {
+  try {
+    return require.resolve(request, { paths: [base] });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Directory of the installed platform package, or null. Resolved from `root`
+ * (hoisted and nested layouts), then from `@fuck-npm/binding`, which also
+ * depends on it: isolated layouts (pnpm, `linker = "isolated"`) only expose a
+ * package to its dependents.
+ */
+function platformPackageDir(abi, root = PACKAGE_ROOT) {
+  const request = `${PLATFORM_PACKAGE_PREFIX}${abi}/package.json`;
+  let manifest = resolveFrom(request, root);
+  if (!manifest) {
+    const binding = resolveFrom('@fuck-npm/binding/package.json', root);
+    manifest = binding && resolveFrom(request, dirname(binding));
+  }
+  return manifest ? dirname(manifest) : null;
+}
+
 /**
  * Path of the native executable `bin` inside the installed platform package,
  * or null. Resolved from this package, so it finds the copy the package
- * manager installed for us (hoisted or nested).
+ * manager installed for us.
  */
 function findNativeExecutable(bin, options = {}) {
   const abi = options.abi !== undefined ? options.abi : platformArchAbi();
   if (!abi) return null;
-  const paths = options.paths || [PACKAGE_ROOT];
-  let manifest;
-  try {
-    manifest = require.resolve(`${PLATFORM_PACKAGE_PREFIX}${abi}/package.json`, { paths });
-  } catch {
-    return null;
-  }
-  const exe = join(dirname(manifest), executableName(bin, options.platform));
+  const dir = platformPackageDir(abi, options.root || PACKAGE_ROOT);
+  if (!dir) return null;
+  const exe = join(dir, executableName(bin, options.platform));
   return existsSync(exe) ? exe : null;
 }
 
@@ -96,4 +115,5 @@ module.exports = {
   jsEntry,
   packageVersion,
   platformArchAbi,
+  platformPackageDir,
 };
