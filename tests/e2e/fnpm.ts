@@ -9,6 +9,10 @@
 //   4. no-op re-run, warm re-install (node_modules removed) and frozen re-install
 //      (`--frozen-lockfile`), each of which must leave the same tree and lockfile
 //
+// Before fnpm, bun (the parity target) installs the same pristine checkout (--ignore-scripts).
+// A difference from the baseline that bun shows too is reported as bun parity rather than a
+// failure; fnpm's own package set is also diffed against bun's. --no-bun skips this.
+//
 //   node tests/e2e/fnpm.ts                     every project
 //   node tests/e2e/fnpm.ts --only vue-core     subset (--skip a,b to leave some out)
 //   node tests/e2e/fnpm.ts --skip-verify       no verify step
@@ -41,11 +45,13 @@ const { values: args } = parseArgs({
     only: { type: "string" },
     skip: { type: "string" },
     "skip-verify": { type: "boolean", default: false },
+    "no-bun": { type: "boolean", default: false },
     out: { type: "string" },
   },
 });
 
 const FNPM = resolve(process.env.FNPM_BIN || join(REPO_ROOT, "target", "release", "fnpm"));
+const BUN_VERSION = args["no-bun"] ? "" : sh("bun --version", REPO_ROOT, process.env, 30).stdout.trim();
 const INSTALL_TIMEOUT_SEC = 1800;
 
 type Status = "PASS" | "FAIL" | "KNOWN";
@@ -66,6 +72,10 @@ interface Diff {
   hoisting: { compared: number; differ: number; sample: string[] };
   bins: { missing: string[]; extra: string[] };
   scripts: { baselineOnly: string[]; fnpmOnly: string[] };
+  /** Baseline differences bun shows too (accepted as parity). */
+  sameAsBun: string[];
+  /** fnpm's package set against bun's for the same lockfile. */
+  vsBun: { bun: string; ok: boolean; packages: number; missing: string[]; extra: string[] } | null;
 }
 
 interface Result {
@@ -103,7 +113,16 @@ async function mirrorUp(url: string): Promise<boolean> {
 }
 
 function emptyDiff(): Diff {
-  return { missing: [], extra: [], declared: [], hoisting: { compared: 0, differ: 0, sample: [] }, bins: { missing: [], extra: [] }, scripts: { baselineOnly: [], fnpmOnly: [] } };
+  return {
+    missing: [],
+    extra: [],
+    declared: [],
+    hoisting: { compared: 0, differ: 0, sample: [] },
+    bins: { missing: [], extra: [] },
+    scripts: { baselineOnly: [], fnpmOnly: [] },
+    sameAsBun: [],
+    vsBun: null,
+  };
 }
 
 function env(entry: CorpusEntry, mirror: string, store: string): NodeJS.ProcessEnv {
@@ -241,8 +260,6 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
     return finish();
   }
 
-  log(`${entry.name}: checkout`);
-  checkout(entry, dir);
   rmSync(store, { recursive: true, force: true });
   mkdirSync(store, { recursive: true });
   const e = env(entry, mirror, store);
@@ -251,6 +268,21 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
     rmSync(p, { force: true });
     return p;
   };
+
+  // 0. bun on the same pristine checkout: the parity reference for differences from the baseline
+  let bunSnap: Snapshot | null = null;
+  if (BUN_VERSION) {
+    log(`${entry.name}: bun ${BUN_VERSION} install (reference)`);
+    checkout(entry, dir);
+    const bunLog = logOf("bun");
+    const b = runStep("bun install --ignore-scripts", dir, { ...e, BUN_INSTALL_CACHE_DIR: join(store, "bun-cache") }, INSTALL_TIMEOUT_SEC, bunLog);
+    if (b.ok) bunSnap = snapshot(dir);
+    else res.warnings.push(`bun ${BUN_VERSION} could not install this lockfile (exit ${b.exitCode}: ${tailOf(bunLog, 2)})`);
+    log(`${entry.name}: bun exit=${b.exitCode} ${(b.ms / 1000).toFixed(1)}s`);
+  }
+
+  log(`${entry.name}: checkout`);
+  checkout(entry, dir);
   const scriptLog = join(logs, `${entry.name}.fnpm.scripts.jsonl`);
   rmSync(scriptLog, { force: true });
   const installEnv = { ...e, FNPM_E2E_SCRIPT_LOG: scriptLog, NODE_OPTIONS: `${e.NODE_OPTIONS ?? ""} --require ${join(E2E_DIR, "script-logger.cjs")}`.trim() };
@@ -270,13 +302,21 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
   const snap = snapshot(dir);
   res.fnpm = { packages: snap.packages.length, instances: snap.instances, layout: layoutOf(dir) };
 
-  // 2. compare with the baseline
+  // 2. compare with the baseline; what bun does the same way is parity, not a failure
   const allow = entry.fnpm?.allow ?? {};
   const allowed = (id: string, pats: string[] | undefined) => (pats ?? []).some((p) => new RegExp(p).test(id));
+  const bunSet = new Set(bunSnap?.packages ?? []);
+  const asBun = (what: string, ok: boolean) => {
+    if (ok) res.diff.sameAsBun.push(what);
+    return !ok;
+  };
+  if (bunSnap) {
+    res.diff.vsBun = { bun: BUN_VERSION, ok: true, packages: bunSnap.packages.length, missing: setDiff(bunSnap.packages, snap.packages), extra: setDiff(snap.packages, bunSnap.packages) };
+  }
   res.diff.missing = setDiff(base.packages, snap.packages);
   res.diff.extra = setDiff(snap.packages, base.packages);
-  const missing = res.diff.missing.filter((id) => !allowed(id, allow.missing));
-  const extra = res.diff.extra.filter((id) => !allowed(id, allow.extra));
+  const missing = res.diff.missing.filter((id) => !allowed(id, allow.missing) && asBun(`not installed: ${id}`, bunSnap !== null && !bunSet.has(id)));
+  const extra = res.diff.extra.filter((id) => !allowed(id, allow.extra) && asBun(`installed, not in baseline: ${id}`, bunSet.has(id)));
   if (missing.length) fail(`${missing.length} baseline packages not installed: ${head(missing, 10)}`);
   if (extra.length) fail(`${extra.length} packages not in the baseline: ${head(extra, 10)}`);
 
@@ -284,7 +324,9 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
     for (const n of declared(dir, imp)) {
       const want = effective(base.importers, imp, n);
       const got = effective(snap.importers, imp, n);
-      if (want !== got && !allowed(`${imp}:${n}`, allow.declared)) res.diff.declared.push(`${imp}: ${n} baseline=${want ?? "-"} fnpm=${got ?? "-"}`);
+      if (want === got || allowed(`${imp}:${n}`, allow.declared)) continue;
+      const what = `${imp}: ${n} baseline=${want ?? "-"} fnpm=${got ?? "-"}`;
+      if (asBun(what, bunSnap !== null && effective(bunSnap.importers, imp, n) === got)) res.diff.declared.push(what);
     }
   }
   if (res.diff.declared.length) fail(`${res.diff.declared.length} declared dependencies resolve differently: ${head(res.diff.declared, 6)}`);
@@ -301,7 +343,11 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
       res.diff.bins.missing.push(...setDiff(base.bins[imp], snap.bins[imp] ?? []).map((b) => `${imp}:${b}`));
       res.diff.bins.extra.push(...setDiff(snap.bins[imp] ?? [], base.bins[imp]).map((b) => `${imp}:${b}`));
     }
-    const binMissing = res.diff.bins.missing.filter((b) => !allowed(b, allow.bins));
+    const bunBins = (b: string) => {
+      const i = b.indexOf(":");
+      return bunSnap !== null && !(bunSnap.bins[b.slice(0, i)] ?? []).includes(b.slice(i + 1));
+    };
+    const binMissing = res.diff.bins.missing.filter((b) => !allowed(b, allow.bins) && asBun(`.bin missing: ${b}`, bunBins(b)));
     if (binMissing.length) fail(`${binMissing.length} .bin entries missing: ${head(binMissing, 10)}`);
   } else {
     res.warnings.push(`layouts differ (baseline ${baseIsolated ? "isolated" : "hoisted"}, fnpm ${res.fnpm.layout}); hoisting and .bin not compared`);
@@ -381,9 +427,12 @@ function report(results: Result[], fnpmVersion: string, commit: string, date: st
     for (const w of r.warnings) lines.push(`- note: ${w}`);
     if (r.diff.hoisting.differ) lines.push(`- hoisting sample (baseline vs fnpm): ${r.diff.hoisting.sample.slice(0, 8).join("; ")}`);
     if (r.diff.bins.extra.length) lines.push(`- extra .bin entries: ${head(r.diff.bins.extra, 10)}`);
+    if (r.diff.sameAsBun.length) lines.push(`- same as bun (parity, not a failure): ${head(r.diff.sameAsBun, 12)}`);
+    const vb = r.diff.vsBun;
+    if (vb) lines.push(vb.missing.length || vb.extra.length ? `- vs bun ${vb.bun} (${vb.packages} packages): fnpm lacks [${head(vb.missing, 8)}], fnpm adds [${head(vb.extra, 8)}]` : `- package set identical to bun ${vb.bun}`);
     const sc = r.diff.scripts;
     if (sc.baselineOnly.length || sc.fnpmOnly.length) lines.push(`- lifecycle scripts: baseline only [${head(sc.baselineOnly, 8)}]; fnpm only [${head(sc.fnpmOnly, 8)}]`);
-    if (!r.failures.length && !r.warnings.length) lines.push("- identical package set, declared dependencies, top level, .bin and re-installs");
+    if (!r.failures.length && !r.warnings.length && !r.diff.sameAsBun.length) lines.push("- identical package set, declared dependencies, top level, .bin and re-installs");
     lines.push("");
   }
   return lines.join("\n");
@@ -425,7 +474,17 @@ async function main(): Promise<void> {
     }
     log(`${entry.name}: ${r.status}${r.failures.length ? `\n    ${r.failures.join("\n    ")}` : ""}`);
     results.push(r);
-    const compact = results.map((x) => ({ ...x, diff: { ...x.diff, missing: trimList(x.diff.missing), extra: trimList(x.diff.extra), declared: trimList(x.diff.declared) } }));
+    const compact = results.map((x) => ({
+      ...x,
+      diff: {
+        ...x.diff,
+        missing: trimList(x.diff.missing),
+        extra: trimList(x.diff.extra),
+        declared: trimList(x.diff.declared),
+        sameAsBun: trimList(x.diff.sameAsBun),
+        vsBun: x.diff.vsBun && { ...x.diff.vsBun, missing: trimList(x.diff.vsBun.missing), extra: trimList(x.diff.vsBun.extra) },
+      },
+    }));
     writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, date, results: compact }, null, 1) + "\n");
     writeFileSync(`${stem}.md`, report(results, version, commit, date) + "\n");
   }

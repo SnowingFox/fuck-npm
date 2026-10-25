@@ -416,13 +416,8 @@ pub(crate) fn licenses(cx: &Ctx) -> Result<CoreResult> {
     let store = project.store()?;
     let mut by_license: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for p in graph.packages.iter().skip(1) {
-        let Some(integrity) = p.resolution.integrity() else {
+        let Some(key) = crate::fetch::store_key(p) else {
             continue;
-        };
-        let key = fnpm_store::PackageKey {
-            name: p.name.clone(),
-            version: p.version.clone(),
-            integrity: *integrity,
         };
         let license = p.meta.license.clone().or_else(|| {
             let entry = store.get(&key).ok().flatten()?;
@@ -469,13 +464,8 @@ pub(crate) fn verify(cx: &Ctx) -> Result<CoreResult> {
     if cx.flag("integrity") {
         let store = project.store()?;
         for p in graph.packages.iter().skip(1) {
-            let Some(integrity) = p.resolution.integrity() else {
+            let Some(key) = crate::fetch::store_key(p) else {
                 continue;
-            };
-            let key = fnpm_store::PackageKey {
-                name: p.name.clone(),
-                version: p.version.clone(),
-                integrity: *integrity,
             };
             match store.get(&key) {
                 Ok(Some(entry)) => {

@@ -783,3 +783,65 @@ async fn dependencies_of_another_platforms_package_are_not_downloaded() {
     assert_eq!(s.installed_count, 1, "{s:?}");
     assert_eq!(downloaded(&reg), Vec::<String>::new(), "from the lockfile");
 }
+
+/// A tarball-URL dependency is keyed in the store by name and integrity alone: the version
+/// is known after a resolve or an npm migration but not after reading fnpm.lock back (bun's
+/// format has none for URL resolutions), so a warm install must find the same entry
+/// (real-world: marked's `marked-repo` GitHub tarball was downloaded again on every warm install).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tarball_url_dependency_is_not_downloaded_again_when_warm() {
+    let reg = Registry::start(&basic()).await;
+    let url = reg.tarball_url("b", "1.2.0");
+    let p = Project::new(&reg, json!({ "dependencies": { "repo": url } }));
+    p.install().await;
+    assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+    assert!(
+        p.read("fnpm.lock").contains(&format!("b@{url}")),
+        "{}",
+        p.read("fnpm.lock")
+    );
+    for _ in 0..2 {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        reg.clear_seen();
+        p.install().await;
+        assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+        assert_eq!(reg.tarball_requests(), 0, "store hit: {:?}", reg.seen());
+    }
+
+    // The same through an npm migration, which knows the version.
+    let reg = Registry::start(&basic()).await;
+    let url = reg.tarball_url("b", "1.2.0");
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "repo": url } }),
+    );
+    let lock = json!({
+        "name": "app",
+        "lockfileVersion": 3,
+        "requires": true,
+        "packages": {
+            "": { "name": "app", "dependencies": { "repo": url } },
+            "node_modules/repo": {
+                "name": "b",
+                "version": "1.2.0",
+                "resolved": url,
+                "integrity": reg.integrity("b", "1.2.0")
+            }
+        }
+    });
+    p.write(
+        "package-lock.json",
+        &serde_json::to_string_pretty(&lock).unwrap(),
+    );
+    p.install().await;
+    assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    p.install().await;
+    assert_eq!(
+        reg.tarball_requests(),
+        0,
+        "store hit after migration: {:?}",
+        reg.seen()
+    );
+}

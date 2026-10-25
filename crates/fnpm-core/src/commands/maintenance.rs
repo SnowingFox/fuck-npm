@@ -320,13 +320,7 @@ pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
                 Some(g) => g
                     .packages
                     .iter()
-                    .filter_map(|p| {
-                        Some(fnpm_store::PackageKey {
-                            name: p.name.clone(),
-                            version: p.version.clone(),
-                            integrity: *p.resolution.integrity()?,
-                        })
-                    })
+                    .filter_map(crate::fetch::store_key)
                     .collect(),
                 None => Vec::new(),
             };

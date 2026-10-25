@@ -152,6 +152,27 @@ pub(crate) struct Fetcher {
     inner: Arc<Inner>,
 }
 
+/// The version in a package's store key. Only registry packages have one every graph source
+/// agrees on. fnpm.lock (bun's format) records none for tarball, git and folder resolutions,
+/// while a resolve or a migrated npm lockfile knows it, so keying those by version would miss
+/// the store entry on the next install from fnpm.lock and download them again.
+pub(crate) fn store_key_version<'a>(resolution: &Resolution, version: &'a str) -> &'a str {
+    if matches!(resolution, Resolution::Npm { .. }) {
+        version
+    } else {
+        ""
+    }
+}
+
+/// The store key of a graph package with a known integrity.
+pub(crate) fn store_key(p: &Package) -> Option<PackageKey> {
+    Some(PackageKey {
+        name: p.name.clone(),
+        version: store_key_version(&p.resolution, &p.version).to_owned(),
+        integrity: *p.resolution.integrity()?,
+    })
+}
+
 /// Whether a resolution has content the store holds (registry, git, tarballs, folders).
 pub(crate) fn needs_content(resolution: &Resolution) -> bool {
     resolution.is_storable() || matches!(resolution, Resolution::Folder { .. })
@@ -299,6 +320,7 @@ async fn blocking<T: Send + 'static>(
 }
 
 async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resolution) -> Outcome {
+    let version = store_key_version(res, version);
     match res {
         Resolution::Npm {
             tarball_url,
