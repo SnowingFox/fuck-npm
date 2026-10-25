@@ -112,7 +112,7 @@ const pnpm: Tool = {
   install: (ctx) => [...pnpmArgv()!, "install", ...pnpmFlags(ctx)],
   frozen: (ctx) => [...pnpmArgv()!, "install", "--frozen-lockfile", ...pnpmFlags(ctx)],
   add: (ctx) => [...pnpmArgv()!, "add", ctx.addSpec, ...(ctx.workspaces ? ["-w"] : []), ...pnpmFlags(ctx)],
-  extraFiles: (ctx, fixtureDir) => {
+  extraFiles: (ctx, fixtureDir): Record<string, string> => {
     if (!ctx.workspaces) return {};
     const pkg = JSON.parse(readFileSync(join(fixtureDir, "package.json"), "utf8"));
     const globs: string[] = Array.isArray(pkg.workspaces) ? pkg.workspaces : pkg.workspaces?.packages ?? [];
