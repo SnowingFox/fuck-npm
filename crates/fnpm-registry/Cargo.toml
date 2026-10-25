@@ -12,7 +12,7 @@ fnpm-types.workspace = true
 fnpm-semver.workspace = true
 fnpm-config.workspace = true
 tokio.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["gzip", "brotli", "deflate", "zstd"] }
 sonic-rs.workspace = true
 rkyv.workspace = true
 serde.workspace = true

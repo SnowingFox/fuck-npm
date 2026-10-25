@@ -485,8 +485,18 @@ impl Inner {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
                     let headers = resp.headers().clone();
-                    match resp.bytes().await {
-                        Ok(body) => {
+                    match read_body(resp, MAX_BODY).await {
+                        Ok(None) => {
+                            drop(permit);
+                            return Err(Error::InvalidResponse {
+                                url: redact_url(spec.url.as_str()),
+                                message: format!(
+                                    "response body is larger than {} MiB",
+                                    MAX_BODY >> 20
+                                ),
+                            });
+                        }
+                        Ok(Some(body)) => {
                             self.stats
                                 .bytes_downloaded
                                 .fetch_add(body.len() as u64, Ordering::Relaxed);
@@ -539,6 +549,43 @@ impl Inner {
     }
 }
 
+/// The largest (decoded) response body read into memory. The biggest full packuments on npm are
+/// a few hundred MiB; this only stops a hostile or broken server (or a decompression bomb, now
+/// that manifests are fetched compressed) from exhausting memory.
+const MAX_BODY: usize = 1 << 30;
+
+/// The whole body, or `None` once it grows past `limit` bytes.
+async fn read_body(
+    mut resp: reqwest::Response,
+    limit: usize,
+) -> std::result::Result<Option<Bytes>, reqwest::Error> {
+    let mut first: Option<Bytes> = None;
+    let mut buf: Option<bytes::BytesMut> = None;
+    let mut len = 0usize;
+    while let Some(chunk) = resp.chunk().await? {
+        len += chunk.len();
+        if len > limit {
+            return Ok(None);
+        }
+        // One chunk (the common case for small bodies) is returned without a copy.
+        match (&mut first, &mut buf) {
+            (None, None) => first = Some(chunk),
+            (Some(f), None) => {
+                let mut b = bytes::BytesMut::with_capacity((len * 2).min(limit));
+                b.extend_from_slice(f);
+                b.extend_from_slice(&chunk);
+                first = None;
+                buf = Some(b);
+            }
+            (_, Some(b)) => b.extend_from_slice(&chunk),
+        }
+    }
+    Ok(Some(match buf {
+        Some(b) => b.freeze(),
+        None => first.unwrap_or_default(),
+    }))
+}
+
 fn unreachable_error() -> Error {
     Error::Network {
         url: String::new(),
@@ -572,5 +619,53 @@ pub(crate) fn error_name(e: &reqwest::Error) -> String {
         "TooManyRedirects".to_owned()
     } else {
         "ConnectionClosed".to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bodies_are_read_whole_and_capped() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut req = [0u8; 1024];
+                    let _ = sock.read(&mut req).await;
+                    let _ = sock
+                        .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n")
+                        .await;
+                    for _ in 0..4 {
+                        let _ = sock.write_all(b"400\r\n").await;
+                        let _ = sock.write_all(&[b'x'; 0x400]).await;
+                        let _ = sock.write_all(b"\r\n").await;
+                        let _ = sock.flush().await;
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                    let _ = sock.write_all(b"0\r\n\r\n").await;
+                });
+            }
+        });
+        let http = reqwest::Client::new();
+        let get = || http.get(format!("http://{addr}/")).send();
+        let whole = read_body(get().await.unwrap(), 4096)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(whole.len(), 4096);
+        assert!(whole.iter().all(|&b| b == b'x'));
+        assert!(
+            read_body(get().await.unwrap(), 4095)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

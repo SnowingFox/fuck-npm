@@ -319,7 +319,8 @@ impl Inner {
 /// The name of the root folder of GitHub's tarball of `commit` (`<owner>-<repo>-<sha7>`), which
 /// is what a lockfile records; `None` if it would not be one safe path component.
 pub fn github_tarball_tag(owner: &str, repo: &str, commit: &str) -> Option<String> {
-    let tag = format!("{owner}-{repo}-{}", &commit[..commit.len().min(7)]);
+    let short = commit.get(..commit.len().min(7))?;
+    let tag = format!("{owner}-{repo}-{short}");
     crate::git::is_safe_resolved_tag(&tag).then_some(tag)
 }
 
@@ -345,5 +346,11 @@ mod tests {
         );
         assert_eq!(github_tarball_tag("a/b", "c", "0123456"), None);
         assert_eq!(github_tarball_tag("-x", "c", "0123456"), None);
+        // Not a char boundary at 7: no panic, and not a safe tag.
+        assert_eq!(github_tarball_tag("a", "b", "012345\u{e9}9"), None);
+        assert_eq!(
+            github_tarball_tag("a", "b", "\u{e9}\u{e9}\u{e9}\u{e9}"),
+            None
+        );
     }
 }

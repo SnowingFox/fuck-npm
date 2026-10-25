@@ -107,6 +107,9 @@ impl Inner {
         if let Some(auth) = auth {
             put(&mut headers, "authorization", &auth);
         }
+        // A `.tgz` is already compressed, and a resumed download counts raw body bytes, so the
+        // body must not be content-encoded (manifests do ask for gzip/br/zstd).
+        put(&mut headers, "accept-encoding", "identity");
         let what = format!(
             "tarball {}",
             parsed

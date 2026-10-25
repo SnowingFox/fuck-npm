@@ -585,17 +585,20 @@ impl<'r> Query<'r> {
     fn candidates<'m>(
         &self,
         versions: &'m [VersionManifest],
-    ) -> impl Iterator<Item = &'m VersionManifest> {
+    ) -> impl Iterator<Item = &'m VersionManifest> + use<'m, 'r> {
         let (range, include_prerelease, merged) =
-            (self.range.clone(), self.include_prerelease, self.merged());
-        self.passes().flat_map(move |pre_pass| {
-            let range = range.clone();
-            versions
-                .iter()
-                .rev()
-                .filter(move |v| merged || v.version.is_prerelease() == pre_pass)
-                .filter(move |v| semver_ext::satisfies(&range, &v.version, include_prerelease))
-        })
+            (self.range, self.include_prerelease, self.merged());
+        let pre = self.has_pre && !self.include_prerelease;
+        [false]
+            .into_iter()
+            .chain(pre.then_some(true))
+            .flat_map(move |pre_pass| {
+                versions
+                    .iter()
+                    .rev()
+                    .filter(move |v| merged || v.version.is_prerelease() == pre_pass)
+                    .filter(move |v| semver_ext::satisfies(range, &v.version, include_prerelease))
+            })
     }
 }
 

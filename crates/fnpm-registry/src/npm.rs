@@ -325,7 +325,12 @@ impl Inner {
                 None => Err(Error::Offline(name.to_owned())),
             };
         }
-        let usable = cached.clone().filter(|c| c.is_full || !fetch_full);
+        // Moved, not shared: a 304 then updates the decoded manifest in place instead of
+        // deep-copying every version.
+        let (usable, other) = match cached {
+            Some(c) if c.is_full || !fetch_full => (Some(c), None),
+            c => (None, c),
+        };
         if let Some(m) = &usable {
             let fresh = self.cache_mode == ManifestCacheMode::CacheControl
                 && !req.revalidate
@@ -339,14 +344,15 @@ impl Inner {
             }
         }
         match self
-            .request_manifest(&scope, name, usable.as_deref(), fetch_full)
+            .request_manifest(&scope, name, usable, fetch_full)
             .await
         {
             Ok(m) => Ok(m),
             // The full document was only wanted for `libc`: one more try with the abbreviated one.
+            // (`usable` was a full document then, so the abbreviated copy can only be `other`.)
             Err(e) if fetch_full && !req.full && e.is_transient() => {
-                let abbreviated = cached.filter(|c| !c.is_full);
-                self.request_manifest(&scope, name, abbreviated.as_deref(), false)
+                let abbreviated = other.filter(|c| !c.is_full);
+                self.request_manifest(&scope, name, abbreviated, false)
                     .await
             }
             Err(e) => Err(e),
@@ -357,13 +363,13 @@ impl Inner {
         self: &Arc<Self>,
         scope: &Scope,
         name: &str,
-        cached: Option<&PackageManifest>,
+        cached: Option<Arc<PackageManifest>>,
         full: bool,
     ) -> Result<Arc<PackageManifest>> {
         let url = manifest_url(scope, name)?;
         let spec = Spec {
             method: Method::GET,
-            headers: manifest_headers(scope, cached, full),
+            headers: manifest_headers(scope, cached.as_deref(), full),
             url,
             body: None,
             priority: Priority::Manifest,
@@ -384,7 +390,7 @@ impl Inner {
         name: &str,
         url: &Url,
         f: Fetched,
-        cached: Option<&PackageManifest>,
+        cached: Option<Arc<PackageManifest>>,
         full: bool,
     ) -> Result<Arc<PackageManifest>> {
         let now = now_ms();
@@ -397,7 +403,7 @@ impl Inner {
                     });
                 };
                 self.stats.not_modified.fetch_add(1, Ordering::Relaxed);
-                let mut m = old.clone();
+                let mut m = Arc::unwrap_or_clone(old);
                 m.fetched_at_ms = now;
                 m.max_age_secs = max_age(f.header("cache-control"));
                 let m = Arc::new(m);

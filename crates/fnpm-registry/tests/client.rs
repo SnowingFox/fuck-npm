@@ -1191,3 +1191,49 @@ async fn github_commits_and_tarball_urls() {
         "https://api.github.com/repos/o/r/tarball/abc"
     );
 }
+
+#[tokio::test]
+async fn manifests_ask_for_compression_and_are_decoded() {
+    use std::io::Write as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let server = Server::start(|s, _| {
+        let base = format!("http://{}/", s.header("host").unwrap());
+        let body = packument(&base, "zipped", "1.2.3").to_string();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(body.as_bytes()).unwrap();
+        Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .header("content-encoding", "gzip")
+            .body(Body::from(gz.finish().unwrap()))
+            .unwrap()
+    })
+    .await;
+    let c = client(config(&server.url(), tmp.path()));
+    let m = c
+        .manifest("zipped", ManifestRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(m.versions.len(), 1);
+    assert_eq!(m.dist_tags["latest"], "1.2.3");
+    let accept = server.requests()[0].header("accept-encoding").unwrap();
+    for enc in ["gzip", "br", "zstd"] {
+        assert!(accept.contains(enc), "{accept}");
+    }
+}
+
+#[tokio::test]
+async fn tarballs_are_requested_without_content_encoding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let server = Server::start(breaking_tarball(0, 0, true)).await;
+    let c = client(config(&server.url(), tmp.path()));
+    let bytes = c
+        .tarball_bytes(&format!("{}pkg/-/pkg-1.0.0.tgz", server.url()))
+        .await
+        .unwrap();
+    assert_eq!(bytes.len(), 200_000);
+    assert_eq!(
+        server.requests()[0].header("accept-encoding").as_deref(),
+        Some("identity")
+    );
+}

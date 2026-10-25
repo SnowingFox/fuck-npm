@@ -4,6 +4,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
@@ -18,12 +19,18 @@ pub(crate) enum Priority {
 /// The lowest adaptive limit (bun `min_simultaneous_requests`).
 const MIN_LIMIT: usize = 4;
 
+/// Failures this close together are one network event and lower the limit once. bun lowers it
+/// at most once per `run_tasks` pass, so a burst of streams lost with one connection (an HTTP/2
+/// GOAWAY or reset kills every multiplexed request) does not collapse the limit to the minimum.
+const THROTTLE_WINDOW: Duration = Duration::from_millis(250);
+
 #[derive(Debug)]
 struct State {
     in_flight: usize,
     limit: usize,
     configured: usize,
     clean_since_change: usize,
+    last_throttle: Option<Instant>,
     manifests: VecDeque<oneshot::Sender<()>>,
     tarballs: VecDeque<oneshot::Sender<()>>,
 }
@@ -71,6 +78,7 @@ impl Limiter {
                 limit,
                 configured: limit,
                 clean_since_change: 0,
+                last_throttle: None,
                 manifests: VecDeque::new(),
                 tarballs: VecDeque::new(),
             }),
@@ -131,8 +139,15 @@ impl Limiter {
     /// A retried request failed again: lower the limit by a quarter. Returns the new limit if it
     /// changed.
     pub fn throttle(&self) -> Option<usize> {
+        self.throttle_at(Instant::now())
+    }
+
+    fn throttle_at(&self, now: Instant) -> Option<usize> {
         let mut s = self.state.lock();
-        if s.limit <= MIN_LIMIT {
+        if s.limit <= MIN_LIMIT
+            || s.last_throttle
+                .is_some_and(|at| now.saturating_duration_since(at) < THROTTLE_WINDOW)
+        {
             return None;
         }
         let lowered = MIN_LIMIT.max(s.limit - s.limit / 4);
@@ -141,6 +156,7 @@ impl Limiter {
         }
         s.limit = lowered;
         s.clean_since_change = 0;
+        s.last_throttle = Some(now);
         Some(lowered)
     }
 
@@ -242,19 +258,34 @@ mod tests {
 
     #[test]
     fn throttles_by_a_quarter_and_recovers() {
+        let t0 = Instant::now();
+        let later = |n: u32| t0 + THROTTLE_WINDOW * n;
         let l = Limiter::new(64);
-        assert_eq!(l.throttle(), Some(48));
-        assert_eq!(l.throttle(), Some(36));
+        assert_eq!(l.throttle_at(later(0)), Some(48));
+        assert_eq!(l.throttle_at(later(1)), Some(36));
         let l8 = Limiter::new(8);
-        assert_eq!(l8.throttle(), Some(6));
-        assert_eq!(l8.throttle(), Some(5));
-        assert_eq!(l8.throttle(), Some(4));
-        assert_eq!(l8.throttle(), None);
+        assert_eq!(l8.throttle_at(later(0)), Some(6));
+        assert_eq!(l8.throttle_at(later(1)), Some(5));
+        assert_eq!(l8.throttle_at(later(2)), Some(4));
+        assert_eq!(l8.throttle_at(later(3)), None);
         for _ in 0..4 {
             l8.record_success();
         }
         assert_eq!(l8.limit(), 5);
         let small = Limiter::new(3);
         assert_eq!(small.throttle(), None);
+    }
+
+    #[test]
+    fn a_burst_of_failures_throttles_once() {
+        let t0 = Instant::now();
+        let l = Limiter::new(64);
+        assert_eq!(l.throttle_at(t0), Some(48));
+        // 63 more streams of the same lost connection fail within the window.
+        for i in 0..63u64 {
+            assert_eq!(l.throttle_at(t0 + Duration::from_millis(i)), None);
+        }
+        assert_eq!(l.limit(), 48);
+        assert_eq!(l.throttle_at(t0 + THROTTLE_WINDOW), Some(36));
     }
 }
