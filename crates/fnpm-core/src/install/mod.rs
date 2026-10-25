@@ -199,8 +199,8 @@ impl PreparedInstall {
 }
 
 /// Checks the options, loads the project and its configuration and runs the fast path. When
-/// the install is not a no-op, the link pool (and with `start_runtime` the tokio runtime) start
-/// on background threads while the workspace and the lockfile are read here.
+/// the install is not a no-op, the workspace and the lockfile are read here (with
+/// `start_runtime`, while the tokio runtime starts on a background thread).
 pub(crate) fn prepare(
     opts: InstallOptions,
     env: Env,
@@ -249,9 +249,6 @@ pub(crate) fn prepare(
     }
     phases.mark("fast path");
     let loaded = if noop.is_none() {
-        if config.install_packages && !opts.pm.lockfile_only {
-            fnpm_linker::prewarm_pool(LinkOptions::default().threads);
-        }
         if start_runtime {
             let _ = std::thread::Builder::new()
                 .name("fnpm-rt-warm".into())

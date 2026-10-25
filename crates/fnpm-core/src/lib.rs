@@ -193,8 +193,8 @@ pub async fn install_with_env(
 /// The synchronous start of [`install`]: options, project, configuration and the no-op check,
 /// with no runtime. A launcher answers a no-op install from [`PreparedInstall::noop`] without
 /// starting [`runtime`]; otherwise it continues with [`PreparedInstall::run`] on the runtime.
-/// For an install that is not a no-op, [`runtime`] and the link pool are started on background
-/// threads while this reads the workspace and the lockfile.
+/// For an install that is not a no-op, [`runtime`] is started on a background thread while
+/// this reads the workspace and the lockfile.
 pub fn prepare_install(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
     install::prepare(opts, env, true)
 }

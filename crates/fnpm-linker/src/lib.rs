@@ -264,8 +264,8 @@ pub struct Linker {
 }
 
 /// The process-wide link pool of `threads` threads (1-8). Starting 8 threads costs 0.5-1 ms, so
-/// one pool is kept for the process (napi runs many commands in one) and [`prewarm_pool`] can
-/// start it while the install is still resolving.
+/// one pool is kept for the process (napi runs many commands in one); [`prewarm_pool`] starts
+/// it ahead of time.
 fn link_pool(threads: usize) -> Result<Arc<rayon::ThreadPool>> {
     static POOL: parking_lot::Mutex<Option<(usize, Arc<rayon::ThreadPool>)>> =
         parking_lot::Mutex::new(None);
