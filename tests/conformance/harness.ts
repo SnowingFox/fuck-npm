@@ -19,8 +19,11 @@ export type { Subprocess };
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(here, "..", "..");
-/** bun's sources (the submodule). Fixtures of the ported tests are read from here, not copied. */
-export const bunRoot = join(repoRoot, "submodule", "bun");
+/**
+ * bun's sources (the submodule, or `FNPM_BUN_DIR` for a worktree without it). Fixtures of the ported tests are read
+ * from here, not copied.
+ */
+export const bunRoot = process.env.FNPM_BUN_DIR || join(repoRoot, "submodule", "bun");
 
 /** A directory of bun's test tree, e.g. `bunSourceDir("test/cli/install")`. The ported tests use it for `import.meta.dir`. */
 export function bunSourceDir(relativePath: string): string {
