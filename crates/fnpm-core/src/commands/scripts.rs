@@ -37,7 +37,7 @@ fn dotenv_vars(cx: &Ctx, project_dir: Option<PathBuf>) -> Vec<(String, String)> 
         .collect()
 }
 
-fn run_options(cx: &Ctx, project_dir: &Path) -> RunOptions {
+pub(crate) fn run_options(cx: &Ctx, project_dir: &Path) -> RunOptions {
     let mut o = RunOptions::new(project_dir);
     o.env = dotenv_vars(cx, Some(project_dir.to_path_buf()));
     o.silent = cx.flag("silent");
@@ -238,11 +238,9 @@ pub(crate) fn installed(project: &Project, graph: &LockGraph) -> Result<Vec<Cand
             }
             let mut dirs: Vec<(PathBuf, usize)> = Vec::with_capacity(tree.nodes.len());
             for (i, node) in tree.nodes.iter().enumerate() {
-                let (base, depth) = match node.parent {
-                    Some(p) => (
-                        dirs[p as usize].0.join("node_modules"),
-                        dirs[p as usize].1 + 1,
-                    ),
+                let parent = node.parent.and_then(|p| dirs.get(p as usize));
+                let (base, depth) = match parent {
+                    Some((dir, depth)) => (dir.join("node_modules"), depth + 1),
                     None => (
                         ws_base
                             .get(&(i as u32))

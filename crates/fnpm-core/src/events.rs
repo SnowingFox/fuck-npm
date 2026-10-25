@@ -42,6 +42,9 @@ pub type Deliver = Arc<dyn Fn(Vec<Event>) + Send + Sync>;
 pub struct BatchingSink {
     deliver: Deliver,
     pending: Mutex<Pending>,
+    /// Held while a batch is taken and delivered, so the flusher task and the final flush
+    /// never hand two batches over out of order.
+    delivering: Mutex<()>,
 }
 
 impl BatchingSink {
@@ -51,11 +54,13 @@ impl BatchingSink {
         Arc::new(Self {
             deliver,
             pending: Mutex::new(Pending::default()),
+            delivering: Mutex::new(()),
         })
     }
 
     /// Delivers pending events now. Returns how many were sent.
     pub fn flush(&self) -> usize {
+        let _order = self.delivering.lock();
         let batch = {
             let mut p = self.pending.lock();
             p.progress_slot = [None; 4];

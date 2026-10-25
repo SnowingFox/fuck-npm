@@ -86,6 +86,31 @@ impl Project {
         })
     }
 
+    /// [`Project::load`] for commands that also work outside a project (`info <pkg>`,
+    /// `whoami`, `pm cache`, `store`, `doctor`, `pm bin`): without a package.json above `cwd`,
+    /// the configuration is loaded for `cwd` itself (user and global config files, env).
+    pub fn load_anywhere(cwd: &Path, cli: CliOverrides, env: Env) -> Result<Self> {
+        match Self::load(cwd, cli.clone(), env.clone(), false) {
+            Err(Error::Workspace(fnpm_workspace::Error::NoProject(_))) => {
+                let cwd = absolute_cwd(cwd);
+                let config = Config::load(&LoadOptions {
+                    cwd: cwd.clone(),
+                    cli,
+                    env: env.clone(),
+                    project_dir: Some(cwd.clone()),
+                    node_version: None,
+                })?;
+                Ok(Self {
+                    root_dir: config.project_dir.clone(),
+                    cwd,
+                    config: Arc::new(config),
+                    env,
+                })
+            }
+            other => other,
+        }
+    }
+
     /// Sends the configuration's warnings to `events`.
     pub fn report_warnings(&self, events: &dyn EventSink) {
         for w in &self.config.warnings {

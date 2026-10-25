@@ -558,7 +558,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // a frozen install never changes either).
     let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
         && (config.save_package_json || edits.is_empty());
-    if planned.selected.is_none() && saved_everything {
+    // A `--filter` install links only part of the project; `update -r` links all of it.
+    if selected_ids.is_none() && saved_everything {
         // Directories the linker moved aside are deleted in the background; their removal
         // would change node_modules' mtime after the state recorded it.
         if linked.report.removed > 0 || linked.report.installed > 0 {
@@ -951,7 +952,10 @@ async fn link(
             linker.link(&dir, &view, &layout, &source, &link_opts, &*ev)
         })
         .await
-        .map_err(|e| Error::usage(format!("link task failed: {e}")))?;
+        .map_err(|e| Error::Io {
+            path: root.join("node_modules"),
+            source: std::io::Error::other(format!("link task failed: {e}")),
+        })?;
         match result {
             Ok(report) => {
                 return Ok(Linked {

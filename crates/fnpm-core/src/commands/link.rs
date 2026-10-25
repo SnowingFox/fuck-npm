@@ -25,6 +25,18 @@ fn registrations(links: &Path, name: &str) -> [PathBuf; 2] {
     ]
 }
 
+/// A name that becomes a path under the link registry must be a valid package name (no `..`,
+/// no absolute path), or `fnpm link` could replace or delete anything on disk.
+fn checked_name(name: &str) -> Result<&str> {
+    if fnpm_types::name::is_npm_package_name(name) {
+        Ok(name)
+    } else {
+        Err(Error::usage(format!(
+            "\"{name}\" is not a valid package name"
+        )))
+    }
+}
+
 fn remove_link(p: &Path) {
     if std::fs::symlink_metadata(p).is_ok() {
         let _ = std::fs::remove_file(p).or_else(|_| std::fs::remove_dir_all(p));
@@ -76,6 +88,7 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
                 "package.json missing \"name\" in this directory",
             ));
         };
+        checked_name(&name)?;
         for link in registrations(&links, &name) {
             if let Some(parent) = link.parent() {
                 std::fs::create_dir_all(parent).map_err(Error::io(parent))?;
@@ -113,6 +126,7 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
     }
     let mut packages = Vec::new();
     for name in &cx.req.positionals {
+        let name = checked_name(name)?;
         let link = fnpm_linker::fsutil::join_name(&links, name);
         if std::fs::symlink_metadata(&link).is_err() {
             return Err(Error::usage(format!("package \"{name}\" is not linked")));
@@ -149,6 +163,7 @@ pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
                 "package.json missing \"name\" in this directory",
             ));
         };
+        checked_name(&name)?;
         let link = fnpm_linker::fsutil::join_name(&links, &name);
         if std::fs::symlink_metadata(&link).is_err() {
             return Err(Error::usage(format!("package \"{name}\" is not linked")));

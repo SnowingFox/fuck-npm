@@ -140,9 +140,15 @@ fn summary(doc: &Value, version: &str, manifest: &Value) -> Vec<String> {
 
 /// `fnpm info [<pkg>[@spec]] [property...]`.
 pub(crate) async fn view(cx: &Ctx) -> Result<CoreResult> {
-    let project = cx.project()?;
     let arg = cx.req.positionals.first().cloned().unwrap_or_default();
-    let (name, spec) = if arg.is_empty() || arg == "." || arg.ends_with("package.json") {
+    let reads_package_json = arg.is_empty() || arg == "." || arg.ends_with("package.json");
+    // A named package needs no project (`fnpm info react` anywhere, like bun).
+    let project = if reads_package_json {
+        cx.project()?
+    } else {
+        cx.project_anywhere()?
+    };
+    let (name, spec) = if reads_package_json {
         let path = if arg.ends_with("package.json") {
             cx.req.cwd.join(&arg)
         } else {
@@ -209,7 +215,7 @@ pub(crate) async fn view(cx: &Ctx) -> Result<CoreResult> {
 
 /// `fnpm whoami`.
 pub(crate) async fn whoami(cx: &Ctx) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = cx.project_anywhere()?;
     let client = project.client()?;
     let (user, notice) = client.whoami(cx.string("authType").as_deref()).await?;
     let mut lines = Vec::new();

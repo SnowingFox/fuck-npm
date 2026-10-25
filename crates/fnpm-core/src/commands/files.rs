@@ -98,6 +98,10 @@ enum Seg {
     Index(usize),
 }
 
+/// The largest array index `pm pkg set` fills up to (`a[100000]=x` would otherwise allocate
+/// and write every element before it).
+const MAX_INDEX: usize = 10_000;
+
 fn segments(path: &str) -> Vec<Seg> {
     let mut out = Vec::new();
     for part in path.split('.') {
@@ -270,6 +274,14 @@ pub(crate) fn pkg(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
                     Value::String(v.to_owned())
                 };
                 let segs = segments(k);
+                if segs
+                    .iter()
+                    .any(|s| matches!(s, Seg::Index(i) if *i > MAX_INDEX))
+                {
+                    return Err(Error::usage(format!(
+                        "Invalid key: \"{k}\" (index too large)"
+                    )));
+                }
                 set_with_editor(&mut editor, &current, &segs, v.clone());
                 set(&mut current, &segs, v);
             }
@@ -398,30 +410,52 @@ fn release_type(s: &str) -> Option<ReleaseType> {
     })
 }
 
-fn git(dir: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
+/// Runs `git args` in `dir`; `Some(stdout)` (trimmed) when it exited 0.
+async fn git(dir: &Path, args: &[&str]) -> Result<Option<String>> {
+    let out = tokio::process::Command::new("git")
         .args(args)
         .current_dir(dir)
+        .stdin(std::process::Stdio::null())
         .output()
-        .ok()?;
-    out.status
+        .await
+        .map_err(|e| {
+            Error::usage(format!(
+                "git must be installed to use `fnpm pm version` ({e})"
+            ))
+        })?;
+    Ok(out
+        .status
         .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()))
 }
 
-/// `fnpm pm version <increment>`: bumps package.json, runs `preversion` / `version` /
-/// `postversion`, and commits and tags (`v<version>`) in a clean git repository unless
-/// `--no-git-tag-version`.
-pub(crate) fn version(cx: &Ctx) -> Result<CoreResult> {
+/// `from-git`: the newest tag that looks like a version (`--match=*.*.*`, like npm), with any
+/// prefix before the first digit (`v1.2.3`, `name@1.2.3`) dropped.
+async fn version_from_git(dir: &Path) -> Result<Version> {
+    let tag = git(dir, &["describe", "--tags", "--abbrev=0", "--match=*.*.*"])
+        .await?
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| Error::usage("No git tags found"))?;
+    let at = tag.find(|c: char| c.is_ascii_digit()).unwrap_or(tag.len());
+    Version::parse(&tag[at..])
+        .map_err(|_| Error::usage(format!("Tag is not a valid version: \"{tag}\"")))
+}
+
+/// `fnpm pm version <increment>` (bun `pm_version_command.rs`): bumps package.json, runs
+/// `preversion` / `version` / `postversion` with the `fnpm run` environment (unless
+/// `--ignore-scripts`), and commits and tags `v<version>` when the package directory holds a
+/// `.git` (unless `--no-git-tag-version`; a dirty tree is an error without `--force`).
+/// `--dry-run` only prints the new version.
+pub(crate) async fn version(cx: &Ctx) -> Result<CoreResult> {
     let path = nearest_package_json(&cx.req.cwd)?;
     let dir = path.parent().unwrap_or(&cx.req.cwd).to_path_buf();
     let text = read_text(&path)?;
     let value = parse(&text)?;
-    let current_text = value
+    let declared = value
         .get("version")
         .and_then(Value::as_str)
-        .unwrap_or("0.0.0")
-        .to_owned();
+        .map(str::to_owned);
+    let current_text = declared.clone().unwrap_or_else(|| "0.0.0".to_owned());
     let Some(increment) = cx.req.positionals.first().cloned() else {
         let lines = vec![
             format!("Current package version: v{current_text}"),
@@ -430,101 +464,121 @@ pub(crate) fn version(cx: &Ctx) -> Result<CoreResult> {
         ];
         return Ok(ok(json!({ "version": current_text }), lines));
     };
-    let current = Version::parse(&current_text).map_err(|_| {
-        Error::usage(format!(
-            "Current version \"{current_text}\" is not a valid semver"
-        ))
-    })?;
-    let preid = cx.string("preid");
-    let in_git = git(&dir, &["rev-parse", "--is-inside-work-tree"]).is_some_and(|s| s == "true");
-    let next = if let Some(rt) = release_type(&increment) {
-        current
-            .try_inc(rt, preid.as_deref())
-            .map_err(|e| Error::usage(e.to_string()))?
-    } else if increment == "from-git" {
-        let tag = git(&dir, &["describe", "--tags", "--abbrev=0"])
-            .ok_or_else(|| Error::usage("No git tags found"))?;
-        Version::parse(tag.trim_start_matches('v'))
-            .map_err(|_| Error::usage(format!("Git tag \"{tag}\" is not a valid version")))?
-    } else {
-        Version::parse(increment.trim_start_matches('v'))
-            .map_err(|_| Error::usage(format!("Invalid version argument: \"{increment}\"")))?
-    };
-    let next_text = next.to_string();
-    if next_text == current_text && !cx.flag("allowSameVersion") {
-        return Err(Error::usage(format!("Version not changed: {next_text}")));
-    }
-    let tag_version = match cx.opt("gitTagVersion") {
+    let dry_run = cx.pm.dry_run;
+    let mut git_tag_version = match cx.opt("gitTagVersion") {
         Some(Value::Bool(b)) => *b,
         Some(Value::String(s)) => s != "false",
         _ => !cx.flag("noGitTagVersion"),
     };
-    let do_git = tag_version && in_git;
-    if do_git {
-        let status = git(&dir, &["status", "--porcelain"]).unwrap_or_default();
-        if !status.is_empty() {
-            return Err(Error::usage("Git working directory not clean."));
+    // bun `verify_git`: only a `.git` in the package directory itself (a file in worktrees and
+    // submodules) turns the commit and tag on.
+    if git_tag_version {
+        if !dir.join(".git").exists() {
+            git_tag_version = false;
+        } else if !cx.pm.force && !cx.flag("force") {
+            let status = git(&dir, &["status", "--porcelain"]).await?;
+            if status.is_none_or(|s| !s.is_empty()) {
+                return Err(Error::usage("Git working directory not clean."));
+            }
         }
     }
-    let scripts = fnpm_scripts::run::scripts_of(&value);
-    let run = |event: &str| -> Result<()> {
-        let Some((_, script)) = scripts.iter().find(|(k, _)| k == event) else {
-            return Ok(());
-        };
-        let status = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" })
-            .args(if cfg!(windows) {
-                ["/d", "/s", "/c"].as_slice()
+    let preid = cx.string("preid");
+    let next = if let Some(rt) = release_type(&increment) {
+        let current = Version::parse(&current_text).map_err(|_| {
+            Error::usage(format!(
+                "Current version \"{current_text}\" is not a valid semver"
+            ))
+        })?;
+        current.try_inc(rt, preid.as_deref()).map_err(|_| {
+            Error::usage(format!(
+                "Invalid --preid: \"{}\"",
+                preid.unwrap_or_default()
+            ))
+        })?
+    } else if increment == "from-git" {
+        version_from_git(&dir).await?
+    } else {
+        Version::parse(increment.trim_start_matches('v')).map_err(|_| {
+            Error::usage(format!(
+                "Invalid version argument: \"{increment}\". Valid options: patch, minor, major, prepatch, preminor, premajor, prerelease, from-git, or a specific semver version"
+            ))
+        })?
+    };
+    let next_text = next.to_string();
+    if declared.as_deref() == Some(next_text.as_str()) && !cx.flag("allowSameVersion") {
+        return Err(Error::usage("Version not changed"));
+    }
+    let done = ok(
+        json!({ "from": current_text, "to": next_text }),
+        vec![format!("v{next_text}")],
+    );
+    if dry_run {
+        return Ok(done);
+    }
+
+    let ignore_scripts = cx.pm.ignore_scripts
+        || cx
+            .project()
+            .map(|p| p.config.ignore_scripts)
+            .unwrap_or(false);
+    let scripts = if ignore_scripts {
+        Vec::new()
+    } else {
+        fnpm_scripts::run::scripts_of(&value)
+    };
+    let mut opts = super::scripts::run_options(cx, &dir);
+    opts.env.extend([
+        ("npm_command".to_owned(), "version".to_owned()),
+        ("npm_old_version".to_owned(), current_text.clone()),
+        ("npm_new_version".to_owned(), next_text.clone()),
+    ]);
+    let package = value
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let run = |event: &'static str| {
+        let (scripts, opts, dir, package) = (&scripts, &opts, &dir, &package);
+        async move {
+            let Some((_, script)) = scripts.iter().find(|(k, _)| k == event) else {
+                return Ok(());
+            };
+            let code = fnpm_scripts::run::run_lifecycle_script_foreground(dir, event, script, opts)
+                .await
+                .map_err(Error::Scripts)?;
+            if code == 0 {
+                Ok(())
             } else {
-                ["-c"].as_slice()
-            })
-            .arg(script)
-            .current_dir(&dir)
-            .env("npm_lifecycle_event", event)
-            .env("npm_old_version", &current_text)
-            .env("npm_new_version", &next_text)
-            .status()
-            .map_err(Error::io(&dir))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(Error::Scripts(fnpm_scripts::Error::Failed {
-                package: value
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                script: event.to_owned(),
-                code: status.code().unwrap_or(1),
-            }))
+                Err(Error::Scripts(fnpm_scripts::Error::Failed {
+                    package: package.clone(),
+                    script: event.to_owned(),
+                    code,
+                }))
+            }
         }
     };
-    run("preversion")?;
+    run("preversion").await?;
     let mut editor = PackageJsonEditor::new(text.clone());
     editor.set_path("version", Value::String(next_text.clone()));
     crate::project::write_atomic(&path, editor.finish().as_bytes())?;
-    run("version")?;
-    if do_git {
+    run("version").await?;
+    if git_tag_version {
+        let tag = format!("v{next_text}");
         let message = cx
             .string("message")
-            .map_or_else(|| format!("v{next_text}"), |m| m.replace("%s", &next_text));
-        let rel = path
-            .strip_prefix(&dir)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .into_owned();
-        git(&dir, &["add", &rel]).ok_or_else(|| Error::usage("git add failed"))?;
-        git(&dir, &["commit", "-m", &message]).ok_or_else(|| Error::usage("git commit failed"))?;
-        git(
-            &dir,
-            &["tag", "-a", &format!("v{next_text}"), "-m", &message],
-        )
-        .ok_or_else(|| Error::usage("git tag failed"))?;
+            .map_or_else(|| tag.clone(), |m| m.replace("%s", &next_text));
+        if git(&dir, &["add", "package.json"]).await?.is_none() {
+            return Err(Error::usage("Git add failed"));
+        }
+        if git(&dir, &["commit", "-m", &message]).await?.is_none() {
+            return Err(Error::usage("Git commit failed"));
+        }
+        if git(&dir, &["tag", "-a", &tag, "-m", &tag]).await?.is_none() {
+            return Err(Error::usage("Git tag failed"));
+        }
     }
-    run("postversion")?;
-    Ok(ok(
-        json!({ "from": current_text, "to": next_text }),
-        vec![format!("v{next_text}")],
-    ))
+    run("postversion").await?;
+    Ok(done)
 }
 
 #[cfg(test)]

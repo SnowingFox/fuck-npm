@@ -261,7 +261,7 @@ pub(crate) fn export(cx: &Ctx) -> Result<CoreResult> {
 
 /// `pm cache [path] | rm | prune [--max-age d] | pack <file> | unpack <file>`.
 pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = cx.project_anywhere()?;
     let config = &project.config;
     let dry = cx.pm.dry_run;
     match rest {
@@ -378,7 +378,7 @@ fn human_bytes(n: u64) -> String {
 
 /// `store path | status | prune [--dry-run]`.
 pub(crate) fn store(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = cx.project_anywhere()?;
     let store_dir = project.config.store_dir.clone();
     match rest {
         [] | ["path"] => {
@@ -480,7 +480,7 @@ fn dev_of(_: &Path) -> Option<u64> {
 
 /// `fnpm doctor [--skip-network]`.
 pub(crate) async fn doctor(cx: &Ctx) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = cx.project_anywhere()?;
     let config = project.config.clone();
     let mut checks: Vec<Value> = Vec::new();
     let mut lines = vec![format!("fnpm {}", crate::version())];

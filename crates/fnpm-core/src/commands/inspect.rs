@@ -191,7 +191,9 @@ pub(crate) fn why(cx: &Ctx) -> Result<CoreResult> {
         ));
     };
     let (_, _, graph) = cx.load_locked("nothing to explain")?;
-    let max_depth = cx.number("depth").map_or(usize::MAX, |d| d as usize);
+    let max_depth = cx
+        .number("depth")
+        .map_or(usize::MAX, |d| usize::try_from(d).unwrap_or(usize::MAX));
     let top = cx.flag("top");
     let deps = dependents(&graph);
     let mut lines = Vec::new();
@@ -306,7 +308,9 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
     let all = cx.flag("all");
     let max_depth = cx
         .number("depth")
-        .map_or(if all { usize::MAX } else { 1 }, |d| d as usize + 1);
+        .map_or(if all { usize::MAX } else { 1 }, |d| {
+            usize::try_from(d).unwrap_or(usize::MAX).saturating_add(1)
+        });
     let names = &cx.req.positionals;
     let reachable = graph.reachable(
         Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER,
@@ -370,7 +374,11 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
 
 /// `fnpm pm bin [-g]`.
 pub(crate) fn bin(cx: &Ctx) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = if cx.pm.global {
+        cx.project_anywhere()?
+    } else {
+        cx.project()?
+    };
     let dir: PathBuf = if cx.pm.global {
         project.config.global_bin_dir.clone()
     } else {
@@ -517,6 +525,11 @@ fn read_lock_arg(
             .unwrap_or_default();
         (name, bytes)
     } else {
+        if arg.starts_with('-') {
+            return Err(Error::usage(format!(
+                "{arg} is neither a lockfile nor a git revision"
+            )));
+        }
         let out = std::process::Command::new("git")
             .arg("show")
             .arg(format!("{arg}:./{}", fnpm_lockfile::FNPM_LOCK))
@@ -556,8 +569,9 @@ pub(crate) fn diff(cx: &Ctx) -> Result<CoreResult> {
     let name_only = cx.flag("nameOnly");
     let mut lines = Vec::new();
     let name_of = |s: &str| {
-        let at = s[1..].find('@').map_or(s.len(), |i| i + 1);
-        s[..at].to_owned()
+        fnpm_types::name::split_name_and_maybe_version(s)
+            .0
+            .to_owned()
     };
     for x in &d.added {
         lines.push(if name_only {

@@ -544,3 +544,195 @@ async fn audit_store_cache_doctor_and_not_implemented() {
     let err = p.invoke(&["frobnicate"], &[], json!({})).await.unwrap_err();
     assert_eq!(err.code(), "USAGE");
 }
+
+fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn version_like_bun_dry_run_scripts_and_git() {
+    let reg = Registry::start(&[]).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "name": "x",
+            "version": "1.0.0",
+            "scripts": {
+                "preversion": "mybin pre",
+                "postversion": "echo $npm_command $npm_old_version $npm_new_version > post.txt"
+            }
+        }),
+    );
+    // A bin of the package's own node_modules is on PATH, like `fnpm run`.
+    p.write(
+        "node_modules/.bin/mybin",
+        "#!/bin/sh\necho \"$1\" > mybin.txt\n",
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            p.path("node_modules/.bin/mybin"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
+
+    // --dry-run prints the version and changes nothing.
+    let r = p
+        .invoke(&["pm", "version"], &["patch"], json!({ "dryRun": true }))
+        .await
+        .unwrap();
+    assert_eq!(r.lines.unwrap(), vec!["v1.0.1"]);
+    assert_eq!(p.json("package.json")["version"], "1.0.0");
+    assert!(!p.path("mybin.txt").exists());
+
+    // --ignore-scripts bumps without running anything.
+    p.invoke(
+        &["pm", "version"],
+        &["patch"],
+        json!({ "ignoreScripts": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.json("package.json")["version"], "1.0.1");
+    assert!(!p.path("post.txt").exists());
+
+    // A git repository: commit and tag, scripts see bun's variables.
+    git(&p.dir, &["init", "-q"]);
+    git(&p.dir, &["config", "user.email", "t@example.com"]);
+    git(&p.dir, &["config", "user.name", "t"]);
+    git(&p.dir, &["config", "commit.gpgsign", "false"]);
+    git(&p.dir, &["config", "tag.gpgsign", "false"]);
+    p.write(".gitignore", "node_modules\n*.txt\n");
+    git(&p.dir, &["add", "-A"]);
+    git(&p.dir, &["commit", "-q", "-m", "init"]);
+    let r = p
+        .invoke(
+            &["pm", "version"],
+            &["minor"],
+            json!({ "message": "release %s" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.lines.unwrap(), vec!["v1.1.0"]);
+    assert_eq!(p.read("mybin.txt").trim(), "pre");
+    assert_eq!(p.read("post.txt").trim(), "version 1.0.1 1.1.0");
+    assert_eq!(git(&p.dir, &["log", "-1", "--format=%s"]), "release 1.1.0");
+    assert_eq!(git(&p.dir, &["tag", "--list"]), "v1.1.0");
+
+    // A dirty tree is an error unless --force.
+    p.write("dirty.js", "1\n");
+    let err = p
+        .invoke(&["pm", "version"], &["patch"], json!({}))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("not clean"), "{err}");
+    assert_eq!(p.json("package.json")["version"], "1.1.0");
+    std::fs::remove_file(p.path("dirty.js")).unwrap();
+
+    // from-git takes the newest version tag, whatever its prefix.
+    git(&p.dir, &["commit", "-q", "--allow-empty", "-m", "next"]);
+    git(&p.dir, &["tag", "-a", "x@2.0.0", "-m", "x@2.0.0"]);
+    p.invoke(
+        &["pm", "version"],
+        &["from-git"],
+        json!({ "noGitTagVersion": true, "ignoreScripts": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.json("package.json")["version"], "2.0.0");
+}
+
+fn request_in(
+    dir: &std::path::Path,
+    reg: &Registry,
+    command: &[&str],
+    positionals: &[&str],
+) -> fnpm_core::CoreRequest {
+    let mut req = fnpm_core::CoreRequest {
+        command: command.iter().map(|s| (*s).to_owned()).collect(),
+        cwd: dir.to_path_buf(),
+        positionals: positionals.iter().map(|s| (*s).to_owned()).collect(),
+        ..Default::default()
+    };
+    req.options.insert("registry".into(), json!(reg.url));
+    req
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn registry_and_cache_commands_work_outside_a_project() {
+    let reg = Registry::start(&pkgs()).await;
+    let p = Project::new(&reg, json!({}));
+    let outside = p.tmp.path().join("no-project");
+    std::fs::create_dir_all(&outside).unwrap();
+    let sink = std::sync::Arc::new(fnpm_types::NoopSink);
+    for (command, positionals) in [
+        (vec!["info"], vec!["a"]),
+        (vec!["pm", "cache"], vec![]),
+        (vec!["store", "path"], vec![]),
+        (vec!["pm", "bin"], vec![]),
+    ] {
+        let mut req = request_in(&outside, &reg, &command, &positionals);
+        if command == ["pm", "bin"] {
+            req.options.insert("global".into(), json!(true));
+        }
+        let r = fnpm_core::invoke_with_env(req, sink.clone(), p.env()).await;
+        assert!(r.is_ok(), "{command:?}: {r:?}");
+    }
+    // Commands that need a project still say so.
+    let err =
+        fnpm_core::invoke_with_env(request_in(&outside, &reg, &["why"], &["a"]), sink, p.env())
+            .await
+            .unwrap_err();
+    assert_eq!(err.code(), "CORE_ERROR", "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn link_rejects_names_that_leave_the_registry() {
+    let reg = Registry::start(&[]).await;
+    let p = Project::new(&reg, json!({ "name": "app" }));
+    // Something the bad name would point at from `<global>/links`.
+    let victim = p.tmp.path().join("victim");
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join("keep.txt"), "x").unwrap();
+    let evil = p.tmp.path().join("evil");
+    std::fs::create_dir_all(&evil).unwrap();
+    std::fs::write(
+        evil.join("package.json"),
+        json!({ "name": "../../victim" }).to_string(),
+    )
+    .unwrap();
+    let sink = std::sync::Arc::new(fnpm_types::NoopSink);
+    for command in [["link"], ["unlink"]] {
+        let err = fnpm_core::invoke_with_env(
+            request_in(&evil, &reg, &command, &[]),
+            sink.clone(),
+            p.env(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "USAGE", "{command:?}: {err}");
+    }
+    let err = p
+        .invoke(&["link"], &["../../victim"], json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "USAGE");
+    assert!(
+        victim.join("keep.txt").exists(),
+        "nothing outside the registry is touched"
+    );
+
+    let err = p
+        .invoke(&["pm", "pkg", "set"], &["files[99999999]=x"], json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "USAGE");
+}

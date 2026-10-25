@@ -145,6 +145,11 @@ impl Ctx {
         )
     }
 
+    /// [`Project::load_anywhere`]: the configuration even outside a project.
+    pub fn project_anywhere(&self) -> Result<Project> {
+        Project::load_anywhere(&self.req.cwd, self.pm.to_cli_overrides(), self.env.clone())
+    }
+
     /// The project, its workspace and its lockfile graph (`None` without a lockfile).
     pub fn load(&self) -> Result<(Project, Workspace, Option<LockGraph>)> {
         let project = self.project()?;
@@ -226,7 +231,7 @@ pub async fn dispatch(
         ["pm", "untrusted"] => scripts::untrusted(&cx),
         ["pm", "trust"] => scripts::trust(&cx).await,
         ["pm", "default-trusted"] => scripts::default_trusted(),
-        ["pm", "version"] => files::version(&cx),
+        ["pm", "version"] => files::version(&cx).await,
         ["pm", "licenses"] => inspect::licenses(&cx),
         ["pm", "fetch"] => maintenance::fetch(&cx).await,
         ["lock", "migrate"] => maintenance::migrate(&cx, true),
