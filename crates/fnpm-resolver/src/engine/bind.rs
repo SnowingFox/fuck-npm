@@ -951,6 +951,18 @@ impl Engine<'_> {
                 &mut package.dependencies,
             );
         }
+        let deprecated = vm.deprecated.as_ref().filter(|_| {
+            package
+                .platform
+                .matches_for_edge(&self.cfg.platform, edge.behavior.is_optional())
+        });
+        let deprecated = deprecated.map(|message| {
+            format!(
+                "deprecated {}@{version}: {}",
+                fnpm_types::text::escape_control_chars(name),
+                fnpm_types::text::escape_control_chars(message)
+            )
+        });
         let owner = &self.st[row.pkg.index()];
         let mut state = PState::new(Kind::Registry, Some(vm.version.clone()));
         state.optional_only = owner.optional_only || edge.behavior.is_optional();
@@ -959,6 +971,9 @@ impl Engine<'_> {
         state.prev = self.prev_by_key.get(&package.key()).copied();
         package.meta.bundled = state.in_bundle;
         let id = self.add_package(package, state);
+        if let Some(line) = deprecated {
+            self.deprecated.push((id, line));
+        }
         self.set_target(row, id);
         self.push_rows(id, false);
         id

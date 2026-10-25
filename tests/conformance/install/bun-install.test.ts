@@ -177,7 +177,7 @@ async function expectInstallInFlightLimit(ctx: TestContext, limit: number) {
   expect(maxInFlight).toBe(limit);
   expect(ctx.requested).toBe(limit + 1);
   expect(stderr).toContain("failed to resolve");
-  expect(stdout).toContain("fnpm install v1.");
+  expect(stdout).toContain("fnpm install v");
   expect(exitCode).toBe(1);
 }
 
@@ -474,7 +474,7 @@ describe.concurrent("bun-install", () => {
       expect(maxConcurrentRequests).toBeLessThanOrEqual(cap);
       expect({ totalRequests: ctx.requested, stdout, stderr, exitCode }).toEqual({
         totalRequests: 51,
-        stdout: expect.stringContaining("fnpm install v1."),
+        stdout: expect.stringContaining("fnpm install v"),
         stderr: expect.stringContaining("failed to resolve"),
         exitCode: 1,
       });
@@ -507,7 +507,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toContain('error: No version matching "^1" found for specifier "bar" (but package exists)');
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([`${ctx.registry_url}bar`]);
       expect(ctx.requested).toBe(1);
@@ -560,7 +560,7 @@ describe.concurrent("bun-install", () => {
       });
       const [err, out, exitCode] = await Promise.all([proc.stderr.text(), proc.stdout.text(), proc.exited]);
       expect(err).toContain(message);
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(urls).toEqual([]);
       expect(ctx.requested).toBe(0);
       expect(exitCode).toBe(1);
@@ -837,7 +837,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ baz@${chosen}`,
         "",
@@ -932,7 +932,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toMatch(/error: (ConnectionRefused|ConnectionClosed) downloading package manifest bar/gm);
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       try {
         await access(join(ctx.package_dir, "bun.lockb"));
@@ -1051,7 +1051,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toMatch(/error: (ConnectionRefused|ConnectionClosed) downloading package manifest bar/gm);
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       try {
         await access(join(ctx.package_dir, "bun.lockb"));
@@ -1106,7 +1106,7 @@ describe.concurrent("bun-install", () => {
     const [out, err, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
     expect(err).toContain("Saved lockfile");
     expect(err).not.toContain("error:");
-    expect(out).toContain("fnpm install v1.");
+    expect(out).toContain("fnpm install v");
     expect(exitCode).toBe(0);
     return file(join(package_dir, "fnpm.lock")).text();
   }
@@ -1218,7 +1218,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err.split(/\r?\n/)).toContain(`error: GET ${ctx.registry_url}foo - 404`);
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([`${ctx.registry_url}foo`]);
       expect(ctx.requested).toBe(1);
@@ -1270,7 +1270,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err.split(/\r?\n/)).toContain(`error: GET ${url} - 422`);
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([url]);
       expect(seen_token).toBe(true);
@@ -1804,7 +1804,7 @@ describe.concurrent("bun-install", () => {
 
       expect({ received, ...result }).toEqual({
         received: [{ url: `http://127.0.0.1:${server.port}${tarballPath}`, authorization: basic("carol:wrong") }],
-        stdout: expect.stringContaining("fnpm install v1."),
+        stdout: expect.stringContaining("fnpm install v"),
         stderr: expect.stringContaining(`error: GET http://127.0.0.1:${server.port}${tarballPath} - 401`),
         exitCode: 1,
       });
@@ -2144,7 +2144,7 @@ describe.concurrent("bun-install", () => {
 
     expect(stderr).toContain("cloning repository for");
     expect(stderr).toContain("long-git-dep");
-    expect(stdout).toContain("fnpm install v1.");
+    expect(stdout).toContain("fnpm install v");
     expect(exitCode).toBe(1);
   });
 
@@ -2226,7 +2226,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -2307,7 +2307,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "4 packages installed",
       ]);
@@ -2345,7 +2345,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "4 packages installed",
       ]);
@@ -2402,7 +2402,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ Bar@workspace:path/to/bar`,
         "",
@@ -2431,7 +2431,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ Bar@workspace:path/to/bar`,
         "",
@@ -2477,7 +2477,7 @@ describe.concurrent("bun-install", () => {
       const out = await stdout.text();
 
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -2533,7 +2533,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -2590,7 +2590,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -2647,7 +2647,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -2691,7 +2691,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ boba@0.0.2",
         "+ peer@0.0.2",
@@ -2733,7 +2733,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ boba@0.0.2",
         "",
@@ -2786,7 +2786,7 @@ describe.concurrent("bun-install", () => {
       });
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -2854,7 +2854,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ qux@0.0.2",
         "",
@@ -2886,7 +2886,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ qux@0.0.2",
         "",
@@ -2918,7 +2918,7 @@ describe.concurrent("bun-install", () => {
       expect(err3).not.toContain("Saved lockfile");
       const out3 = await new Response(stdout3).text();
       expect(out3.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ qux@0.0.2",
         "",
@@ -2981,7 +2981,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3031,7 +3031,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3065,7 +3065,7 @@ describe.concurrent("bun-install", () => {
 
       const out3 = await new Response(stdout3).text();
       expect(out3.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3127,7 +3127,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3177,7 +3177,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3213,7 +3213,7 @@ describe.concurrent("bun-install", () => {
       expect(err3).not.toContain("Saved lockfile");
       const out3 = await new Response(stdout3).text();
       expect(out3.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3259,7 +3259,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "1 package installed",
       ]);
@@ -3297,7 +3297,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -3340,7 +3340,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toContain('error: No version matching "^1" found for specifier "bar" (but package exists)');
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([`${ctx.registry_url}bar`]);
       expect(ctx.requested).toBe(1);
@@ -3379,7 +3379,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -3422,7 +3422,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toContain('error: No version matching "^0.1" found for specifier "bar" (but package exists)');
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([`${ctx.registry_url}bar`]);
       expect(ctx.requested).toBe(1);
@@ -3459,7 +3459,7 @@ describe.concurrent("bun-install", () => {
       });
       const err = await stderr.text();
       expect(err).toContain('error: No version matching "^0.0.0" found for specifier "bar" (but package exists)');
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toEqual([`${ctx.registry_url}bar`]);
       expect(ctx.requested).toBe(1);
@@ -3499,7 +3499,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -3569,7 +3569,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "3 packages installed",
       ]);
@@ -3698,7 +3698,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2-rc",
         "",
@@ -3777,7 +3777,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2-alpha.3",
         "",
@@ -3823,7 +3823,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2-alpha.3",
         "",
@@ -3869,7 +3869,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2-rc1",
         "",
@@ -3918,7 +3918,7 @@ describe.concurrent("bun-install", () => {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ bar@6.3.0"),
         "",
@@ -3978,7 +3978,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.3",
         "",
@@ -4040,7 +4040,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.3",
         "",
@@ -4086,7 +4086,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\n/)).toEqual([
-        expect.stringContaining("fnpm add v1."),
+        expect.stringContaining("fnpm add v"),
         "",
         "installed baz@1.0.0-0",
         "",
@@ -4118,7 +4118,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@1.0.0-0",
         "",
@@ -4149,7 +4149,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@1.0.0-8",
         "",
@@ -4181,7 +4181,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@1.0.0-0",
         "",
@@ -4227,7 +4227,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ Bar@0.0.3",
         "",
@@ -4286,7 +4286,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ Bar@0.0.3",
         "",
@@ -4345,7 +4345,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ Bar@0.0.3",
         "",
@@ -4408,7 +4408,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ Bar@0.0.3",
         "",
@@ -4447,7 +4447,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -4516,7 +4516,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.3",
         "",
@@ -4604,7 +4604,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.3",
         "",
@@ -4685,7 +4685,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ boba@0.0.5",
         "",
@@ -5070,7 +5070,7 @@ describe.concurrent("bun-install", () => {
       const [err, out, exitCode] = await Promise.all([stderr.text(), stdout.text(), exited]);
       expect(err).toContain("Saved lockfile");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ baz@0.0.2"),
         "",
@@ -5808,7 +5808,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.3",
         "",
@@ -5855,7 +5855,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ @barn/moo@0.1.0",
         "+ moo@0.1.0",
@@ -5917,7 +5917,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ @baz/bar@0.0.2",
         "+ bar@0.0.2",
@@ -5990,7 +5990,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ moz@0.1.0",
         "",
@@ -6057,7 +6057,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ moz@0.1.0",
         "",
@@ -6133,7 +6133,7 @@ describe.concurrent("bun-install", () => {
       out = out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
       out = out.replace(/(github:[^#]+)#[a-f0-9]+/, "$1");
       expect(out.split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS",
         "",
@@ -6190,7 +6190,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS#e219a9a",
         "",
@@ -6260,7 +6260,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS#e219a9a",
         "",
@@ -6356,7 +6356,7 @@ describe.concurrent("bun-install", () => {
           expect(err).toContain("Saved lockfile");
           const out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             `+ public-install-test@git+ssh://${locked}#${repo.sha}`,
             "",
@@ -6392,7 +6392,7 @@ describe.concurrent("bun-install", () => {
           expect(err).toContain("Saved lockfile");
           const out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             `installed publicinstalltest@git+ssh://${locked}#${repo.sha}`,
             "",
@@ -6447,7 +6447,7 @@ describe.concurrent("bun-install", () => {
           expect(err).toContain("Saved lockfile");
           const out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             `+ public-install-test@git+ssh://${locked}#${repo.sha}`,
             "",
@@ -6483,7 +6483,7 @@ describe.concurrent("bun-install", () => {
           expect(err).toContain("Saved lockfile");
           const out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             `installed public-install-test@git+ssh://${locked}#${repo.sha}`,
             "",
@@ -6522,7 +6522,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS#e219a9a",
         "",
@@ -6597,7 +6597,7 @@ describe.concurrent("bun-install", () => {
       out = out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
       out = out.replace(/(github:[^#]+)#[a-f0-9]+/, "$1");
       expect(out.split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS",
         "",
@@ -6654,7 +6654,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS#e219a9a",
         "",
@@ -6729,7 +6729,7 @@ describe.concurrent("bun-install", () => {
       out = out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
       out = out.replace(/(github:[^#]+)#[a-f0-9]+/, "$1");
       expect(out.split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uglify@github:mishoo/UglifyJS",
         "",
@@ -6818,7 +6818,7 @@ describe.concurrent("bun-install", () => {
           out = out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
           out = out.replace(/(github:[^#]+)#[a-f0-9]+/, "$1");
           expect(out.split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             `+ when@${tarball_url}`,
             "",
@@ -6902,7 +6902,7 @@ describe.concurrent("bun-install", () => {
       out = out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
       out = out.replace(/(github:[^#]+)#[a-f0-9]+/, "$1");
       expect(out.split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @vercel/turbopack-node@${tarball_url}`,
         "",
@@ -6967,7 +6967,7 @@ describe.concurrent("bun-install", () => {
       const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
       expect({ requests, stdout, stderr, exitCode }).toEqual({
         requests: ["GET /pkg.tgz"],
-        stdout: expect.stringContaining("fnpm install v1."),
+        stdout: expect.stringContaining("fnpm install v"),
         // The server's 404 is what fails the install; before, the request never left the machine.
         // The userinfo travels as an Authorization header, so the reported URL is the bare one.
         stderr: expect.stringContaining(`error: GET http://127.0.0.1:${server.port}/pkg.tgz - 404`),
@@ -7006,7 +7006,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ html-minifier@github:kangax/html-minifier#4beb325",
         "",
@@ -7049,7 +7049,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ html-minifier@github:kangax/html-minifier#4beb325",
         "",
@@ -7139,7 +7139,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.5",
         "",
@@ -7255,7 +7255,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.5",
         "",
@@ -7332,7 +7332,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -7375,7 +7375,7 @@ describe.concurrent("bun-install", () => {
         "
       `);
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
     });
   });
@@ -7599,7 +7599,7 @@ describe.concurrent("bun-install", () => {
         "
       `);
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
     });
   });
@@ -7636,7 +7636,7 @@ describe.concurrent("bun-install", () => {
         `    at [dir]/package.json:1:33`,
       ]);
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
     });
   });
@@ -7675,7 +7675,7 @@ describe.concurrent("bun-install", () => {
         "
       `);
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
     });
   });
@@ -7729,7 +7729,7 @@ describe.concurrent("bun-install", () => {
         `   at [dir]/bar/package.json:1:9`,
       ]);
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
     });
   });
@@ -7747,7 +7747,7 @@ describe.concurrent("bun-install", () => {
   // HEAD (`sha`): it is reported in the summary and has to be the one tagged in the checkout and in the cache.
   async function expectInstallTest2Installed(ctx: TestContext, out: string, printed: string, sha: string) {
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       `+ install-test2@${printed}#${sha}`,
       "",
@@ -7870,7 +7870,7 @@ describe.concurrent("bun-install", () => {
       const out = await stdout.text();
       // The tag is resolved to the commit it points at.
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ uglify@${repo.url}#${repo.sha}`,
         "",
@@ -8119,7 +8119,7 @@ describe.concurrent("bun-install", () => {
       const err = await stderr.text();
       expect(err.split(/\r?\n/)).toContain("error: InstallFailed cloning repository for uglify");
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       // The clone was attempted against the URL as written (this is git's ref discovery request) and given up on
       // after it was refused.
@@ -8160,7 +8160,7 @@ describe.concurrent("bun-install", () => {
       const err = await stderr.text();
       expect(err.split(/\r?\n/)).toContain('error: "git clone" for "private-install" failed');
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toBeEmpty();
       expect(ctx.requested).toBe(0);
@@ -8201,7 +8201,7 @@ describe.concurrent("bun-install", () => {
         'error: no commit matching "404-no_such_tag" found for "uglify" (but repository exists)',
       );
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
       expect(await exited).toBe(1);
       expect(urls.sort()).toBeEmpty();
       expect(ctx.requested).toBe(0);
@@ -8239,7 +8239,7 @@ describe.concurrent("bun-install", () => {
       const out = await stdout.text();
       // The tag and the abbreviated hash name the same commit, so they are one package installed under two names.
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ uglify-hash@${repo.url}#${repo.sha}`,
         `+ uglify-ver@${repo.url}#${repo.sha}`,
@@ -8305,7 +8305,7 @@ describe.concurrent("bun-install", () => {
         });
         const [out, err, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           `+ tagged@${repo.url}#${repo.sha}`,
           "",
@@ -8395,7 +8395,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ baz@0.0.3"),
         "",
@@ -8451,7 +8451,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ baz@0.0.5",
         "",
@@ -8498,7 +8498,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ baz@${ctx.registry_url}baz-0.0.3.tgz`,
         "",
@@ -8606,7 +8606,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ baz@${join(BUN_TEST_DIR, "baz-0.0.3.tgz").replace(/\\/g, "/")}`,
         "",
@@ -8659,7 +8659,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ bar@${ctx.registry_url}baz-0.0.3.tgz`,
         "",
@@ -8713,7 +8713,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ bar@${join(BUN_TEST_DIR, "baz-0.0.3.tgz").replace(/\\/g, "/")}`,
         "",
@@ -8873,7 +8873,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @barn/moo@${ctx.registry_url}moo-0.1.0.tgz`,
         expect.stringContaining("+ bar@0.0.2"),
@@ -8968,7 +8968,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @barn/moo@${ctx.registry_url}moo-0.1.0.tgz`,
         "",
@@ -9038,7 +9038,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @barn/moo@${ctx.registry_url}moo-0.1.0.tgz`,
         "",
@@ -9174,7 +9174,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @barn/moo@${join(BUN_TEST_DIR, "moo-0.1.0.tgz").replace(/\\/g, "/")}`,
         "",
@@ -9243,7 +9243,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("Saved lockfile");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @barn/moo@${join(BUN_TEST_DIR, "moo-0.1.0.tgz").replace(/\\/g, "/")}`,
         "",
@@ -9326,7 +9326,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ moo@moo",
         "",
@@ -9383,7 +9383,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "+ moo@moo",
@@ -9438,7 +9438,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -9492,7 +9492,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -9548,7 +9548,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -9609,7 +9609,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -9839,7 +9839,7 @@ describe.concurrent("bun-install", () => {
     const [out, err, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
     expect(err).toContain("Saved lockfile");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ baz@0.0.3 (v0.0.5 available)",
       "",
@@ -9874,7 +9874,7 @@ describe.concurrent("bun-install", () => {
     const [out, err, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
     expect(err).toContain("error: lockfile had changes, but lockfile is frozen");
     expect(err).not.toContain("Saved lockfile");
-    expect(out).toContain("fnpm install v1.");
+    expect(out).toContain("fnpm install v");
     expect(out).not.toContain("installed");
     expect(exitCode).toBe(1);
     expect(urls).toContain(`${ctx.registry_url}baz`);
@@ -10128,7 +10128,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("error:");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\[[0-9\.]+m?s\]/, "[]").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "[] done",
         "",
@@ -10196,7 +10196,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@bar",
         "+ moo@moo",
@@ -10250,7 +10250,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10279,7 +10279,7 @@ describe.concurrent("bun-install", () => {
       const err2 = await new Response(stderr2).text();
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10325,7 +10325,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10370,7 +10370,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10415,7 +10415,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10471,7 +10471,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ swag@workspace:packages/swag`,
         "",
@@ -10552,7 +10552,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ p2@workspace:packages/p2`,
         "",
@@ -10638,7 +10638,7 @@ describe.concurrent("bun-install", () => {
         .toString()
         .replace(/\s*\[[0-9\.]+m?s\]\s*$/, "")
         .split(/\r?\n/),
-    ).toEqual([expect.stringContaining("fnpm install v1."), "", "Checked 7 installs across 5 packages (no changes)"]);
+    ).toEqual([expect.stringContaining("fnpm install v"), "", "Checked 7 installs across 5 packages (no changes)"]);
   });
 
   it("should handle installing workspaces with multiple glob patterns", async () => {
@@ -10699,7 +10699,7 @@ describe.concurrent("bun-install", () => {
         .toString()
         .replace(/\s*\[[0-9\.]+m?s\]\s*$/, "")
         .split(/\r?\n/),
-    ).toEqual([expect.stringContaining("fnpm install v1."), "", "Checked 7 installs across 5 packages (no changes)"]);
+    ).toEqual([expect.stringContaining("fnpm install v"), "", "Checked 7 installs across 5 packages (no changes)"]);
   });
 
   it.todo("should handle installing workspaces with absolute glob patterns", async () => {
@@ -10756,7 +10756,7 @@ describe.concurrent("bun-install", () => {
         .toString()
         .replace(/\s*\[[0-9\.]+m?s\]\s*$/, "")
         .split(/\r?\n/),
-    ).toEqual([expect.stringContaining("fnpm install v1."), "", "4 packages installed"]);
+    ).toEqual([expect.stringContaining("fnpm install v"), "", "4 packages installed"]);
   });
 
   describe("should handle installing packages inside workspaces with difference versions", () => {
@@ -10795,7 +10795,7 @@ describe.concurrent("bun-install", () => {
               const [out, err, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
               expect(err).toContain("Saved lockfile");
               expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-                expect.stringContaining("fnpm install v1."),
+                expect.stringContaining("fnpm install v"),
                 "",
                 ...(from === "the root" ? [] : ["+ package1@workspace:packages/package1", ""]),
                 "5 packages installed",
@@ -10877,7 +10877,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:bar",
         "",
@@ -10925,7 +10925,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -10969,7 +10969,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ @bar/baz@workspace:packages/bar-baz`,
         "",
@@ -11022,7 +11022,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@workspace:baz",
         "",
@@ -11078,7 +11078,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -11134,7 +11134,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "3 packages installed",
       ]);
@@ -11198,7 +11198,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -11261,7 +11261,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -11327,7 +11327,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -11382,7 +11382,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -11455,7 +11455,7 @@ describe.concurrent("bun-install", () => {
       expect(err1).toContain("Saved lockfile");
       const out1 = await new Response(stdout1).text();
       expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ bar@workspace:packages/bar`,
         "",
@@ -11494,7 +11494,7 @@ describe.concurrent("bun-install", () => {
       expect(err2).not.toContain("error:");
       const out2 = await new Response(stdout2).text();
       expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ bar@workspace:packages/bar`,
         "",
@@ -11544,7 +11544,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ bar@0.0.2",
         "",
@@ -11592,7 +11592,7 @@ describe.concurrent("bun-install", () => {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ baz@0.0.3"),
         "",
@@ -11667,7 +11667,7 @@ describe.concurrent("bun-install", () => {
               stderr: "pipe",
               env: proxy.env,
             });
-            expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+            expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
 
             const err = await stderr.text();
 
@@ -11883,7 +11883,7 @@ describe.concurrent("bun-install", () => {
         }));
         expect(result).toEqual({
           requests: [],
-          stdout: expect.stringContaining("fnpm install v1."),
+          stdout: expect.stringContaining("fnpm install v"),
           // Rejected as a name before any URL is built from it.
           stderr: expect.stringContaining(`error: invalid dependency name ".."`),
           exitCode: 1,

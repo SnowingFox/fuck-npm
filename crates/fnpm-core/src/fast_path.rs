@@ -17,7 +17,7 @@ pub const STATE_FILE: &str = "node_modules/.fnpm/.state/state";
 /// The state file of fnpm versions before `.state/` (deleted with the current one).
 const LEGACY_STATE_FILE: &str = "node_modules/.fnpm/state";
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 3;
+pub const STATE_VERSION: u32 = 4;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,8 +43,12 @@ pub struct State {
     pub virtual_store: (u64, u64, i128),
     /// `hoisted` or `isolated`.
     pub linker: String,
-    /// Packages in the lockfile graph (the no-op summary's `checked` count).
+    /// Packages in the lockfile graph (the no-op summary's `across N packages`).
     pub packages: u32,
+    /// Places in `node_modules` (a package copied to two places counts twice, a workspace
+    /// link counts): the no-op summary's `Checked N installs`, as bun counts them.
+    #[serde(default)]
+    pub installs: u32,
     /// The `workspaces` patterns (root package.json or pnpm-workspace.yaml).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_patterns: Vec<String>,
@@ -62,6 +66,8 @@ pub enum Check {
     Noop {
         /// Packages in the graph.
         packages: u32,
+        /// Places in `node_modules` ([`State::installs`]).
+        installs: u32,
     },
     /// Something changed; carry the parsed state so the install can reuse the hashes.
     Changed(Option<Box<State>>),
@@ -121,6 +127,7 @@ pub fn check(project_dir: &Path, config_hash: u64) -> Check {
     if is_unchanged(project_dir, config_hash, &state) {
         Check::Noop {
             packages: state.packages,
+            installs: state.installs,
         }
     } else {
         Check::Changed(Some(Box::new(state)))
@@ -231,6 +238,7 @@ mod tests {
             virtual_store: (0, 0, 0),
             linker: "hoisted".into(),
             packages: 3,
+            installs: 4,
             workspace_patterns: Vec::new(),
             workspace_dirs: Vec::new(),
         }
@@ -240,7 +248,13 @@ mod tests {
     fn unchanged_project_is_a_noop() {
         let dir = project();
         write(dir.path(), &state_for(dir.path())).unwrap();
-        assert_eq!(check(dir.path(), 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(dir.path(), 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
     }
 
     #[test]
@@ -253,29 +267,59 @@ mod tests {
         std::fs::write(p.join("fnpm.lock"), "{ }\n").unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "lockfile");
         std::fs::write(p.join("fnpm.lock"), "{}\n").unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::write(p.join("package.json"), r#"{"name":"app2"}"#).unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "manifest");
         std::fs::write(p.join("package.json"), r#"{"name":"app"}"#).unwrap();
         // Same content, new mtime: hashed and accepted.
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::create_dir(p.join("node_modules/left-pad")).unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "node_modules");
         write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // An isolated entry deleted from the virtual store.
         std::fs::create_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
         write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
         // Directory mtimes come from the coarse kernel clock (a few ms per tick).
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::remove_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "virtual store");
         write(p, &state_for(p)).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         std::fs::write(p.join(PNPM_WORKSPACE), "packages: []\n").unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "pnpm workspace");
@@ -296,7 +340,13 @@ mod tests {
         assert_eq!(s.workspace_dirs, vec!["packages/a", "packages/empty"]);
         s.workspace_patterns = patterns;
         write(p, &s).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // A directory without package.json gains one: a new member.
         std::fs::write(p.join("packages/empty/package.json"), r#"{"name":"e"}"#).unwrap();
@@ -305,7 +355,13 @@ mod tests {
             "package.json added"
         );
         std::fs::remove_file(p.join("packages/empty/package.json")).unwrap();
-        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        assert_eq!(
+            check(p, 7),
+            Check::Noop {
+                packages: 3,
+                installs: 4
+            }
+        );
 
         // A new directory matching the glob.
         std::fs::create_dir_all(p.join("packages/b")).unwrap();

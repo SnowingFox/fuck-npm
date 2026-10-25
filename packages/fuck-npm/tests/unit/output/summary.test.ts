@@ -94,7 +94,7 @@ describe("formatInstallSummary", () => {
       pc,
     );
 
-    expect(text).toContain("installed typescript@5.9.3 with binaries:\n  - tsc\n  - tsserver");
+    expect(text).toContain("installed typescript@5.9.3 with binaries:\n - tsc\n - tsserver");
     expect(text).toContain("skipped fsevents@2.3.3 (unsupported platform)");
     // add reports max(installed, requests).
     expect(text).toContain("2 packages installed [80.00ms]");

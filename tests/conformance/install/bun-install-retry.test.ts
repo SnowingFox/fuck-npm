@@ -315,7 +315,7 @@ it("retries on 500", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",

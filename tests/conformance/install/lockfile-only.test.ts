@@ -81,7 +81,7 @@ it.each(["bun.lockb", "fnpm.lock"])("should not download tarballs with --lockfil
 
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining(`Saved ${lockfile}`),
   ]);

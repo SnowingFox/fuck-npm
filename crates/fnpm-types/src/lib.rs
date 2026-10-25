@@ -16,6 +16,7 @@ pub mod overrides;
 pub mod platform;
 pub mod resolution;
 pub mod spec;
+pub mod text;
 
 pub use behavior::{Behavior, DependencyGroup, PeerMeta};
 pub use bin::Bin;

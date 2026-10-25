@@ -110,7 +110,7 @@ describe("install family", () => {
     expect(options?.latest).toBe(true);
   });
 
-  test("plain output: header on stderr, bun-style summary on stdout", async () => {
+  test("plain output: header and bun-style summary on stdout", async () => {
     const bed = testBed({
       core: {
         install: () =>
@@ -124,10 +124,10 @@ describe("install family", () => {
 
     expect(await bed.run(["install"])).toBe(0);
 
-    // Together: header, one blank line, rows, as bun prints them (`bun install v…\n` then
-    // its tree printer's leading `\n`).
-    expect(bed.stderr.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n$/);
-    expect(bed.stdout.text()).toBe("\n+ react@18.3.1\n\n3 packages installed [123.00ms]\n");
+    // Header, one blank line, rows, as bun prints them (`bun install v…\n` then its tree
+    // printer's leading `\n`).
+    expect(bed.stderr.text()).toBe("");
+    expect(bed.stdout.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n\n\+ react@18\.3\.1\n\n3 packages installed \[123\.00ms\]\n$/);
   });
 
   test("--json prints only the summary document", async () => {

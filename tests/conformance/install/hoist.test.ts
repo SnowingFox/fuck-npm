@@ -1148,7 +1148,7 @@ describe.concurrent("packages that are no longer in the tree are removed from no
     }).toEqual({ root: "2.0.0", a: null, b: "1.0.1" });
   });
 
-  // `bun prune` is the tool for that.
+  // `fnpm prune` is the tool for that.
   test("but not a folder in a workspace's node_modules that fnpm.lock never placed", async () => {
     const { packageDir, packageJson } = await project({
       "package.json": {
@@ -1215,7 +1215,7 @@ describe.concurrent("packages that are no longer in the tree are removed from no
       await versionAt(packageDir, "node_modules", "no-deps"),
       await versionAt(packageDir, "node_modules", "one-dep", "node_modules", "no-deps"),
     ]).toEqual(["2.0.0", "1.0.1"]);
-    // fnpm.lock never placed it, so removing it is a job for `bun prune`.
+    // fnpm.lock never placed it, so removing it is a job for `fnpm prune`.
     await write(join(packageDir, "node_modules", "by-hand", "package.json"), JSON.stringify({ name: "by-hand" }));
 
     await write(packageJson, JSON.stringify({ name: "root", dependencies: { "one-dep": "1.0.0" } }));
@@ -1618,7 +1618,7 @@ describe.concurrent("a peer dependency is the package that its dependent loads",
     }
   });
 
-  test.each(plugs)("%s, %s: bun prune, fnpm pm licenses", async (linker, plug) => {
+  test.each(plugs)("%s, %s: fnpm prune, fnpm pm licenses", async (linker, plug) => {
     using server = await serveGraph(graph());
     using tmp = tempDir("peer-prune", {
       "bunfig.toml": bunfig(server, linker),
@@ -2280,7 +2280,7 @@ describe.concurrent("a folder that no fnpm.lock placed is kept", () => {
     ["", {}],
     // The root's other@2.0.0 is hoisted, so fnpm.lock nests other@1.0.0 at "ships/other".
     [", next to a package that fnpm.lock nests there", { other: "2.0.0" }],
-  ])("below a package that bundles it%s: bun prune", async (_, more) => {
+  ])("below a package that bundles it%s: fnpm prune", async (_, more) => {
     const own = JSON.stringify({ name: "dep", version: "1.0.0", from: "the tarball" });
     const dependencies = { dep: "^1.0.0", other: "^1.0.0" };
     using server = await serveGraph(
@@ -2366,7 +2366,7 @@ describe.concurrent("a workspace switches between a member and the registry pack
     ["an edit, fnpm install", [["install"]]],
     ["an edit, fnpm update", [["update"]]],
     ["an edit, fnpm install --force", [["install", "--force"]]],
-    ["an edit, fnpm install --lockfile-only, bun prune", [["install", "--lockfile-only"], ["prune"]]],
+    ["an edit, fnpm install --lockfile-only, fnpm prune", [["install", "--lockfile-only"], ["prune"]]],
     ["fnpm add --filter", [["add", "lib@workspace:*", "--filter", "app"]]],
     ["fnpm add", [["add", "lib@workspace:*"]]],
   ])("to the member: %s", async (title, commands) => {
@@ -2384,7 +2384,7 @@ describe.concurrent("a workspace switches between a member and the registry pack
 
   test.each([
     ["fnpm install", [["install"]]],
-    ["fnpm install --lockfile-only, bun prune", [["install", "--lockfile-only"], ["prune"]]],
+    ["fnpm install --lockfile-only, fnpm prune", [["install", "--lockfile-only"], ["prune"]]],
   ])("to the package, which the root has: an edit, %s", async (_, commands) => {
     using server = await serveGraph({ lib: { "2.0.0": {} } });
     using tmp = tempDir("hoist-from-member", files(server, { dependencies: { lib: "2.0.0" } }, "workspace:*"));

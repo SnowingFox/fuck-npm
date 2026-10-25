@@ -19,11 +19,8 @@ export type { Subprocess };
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(here, "..", "..");
-/**
- * bun's sources (the submodule, or `FNPM_BUN_DIR` for a worktree without it). Fixtures of the ported tests are read
- * from here, not copied.
- */
-export const bunRoot = process.env.FNPM_BUN_DIR || join(repoRoot, "submodule", "bun");
+/** bun's sources (the submodule). Fixtures of the ported tests are read from here, not copied. */
+export const bunRoot = process.env.FNPM_BUN_DIR ?? join(repoRoot, "submodule", "bun");
 
 /** A directory of bun's test tree, e.g. `bunSourceDir("test/cli/install")`. The ported tests use it for `import.meta.dir`. */
 export function bunSourceDir(relativePath: string): string {
@@ -348,6 +345,8 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
   const version = (globalThis as { Bun?: { version: string } }).Bun?.version ?? "0.0.0";
   return snapshot
     .replaceAll("\r\n", "\n")
+    // A command header (`fnpm install v0.0.1`) reads like bun's normalized one: `fnpm install <version> (<revision>)`.
+    .replace(/^(fnpm(?: [a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
     .replaceAll("\\", "/")
     .replaceAll(fs.realpathSync.native(process.cwd()).replaceAll("\\", "/"), "<cwd>")
     .replaceAll(fs.realpathSync.native(os.tmpdir()).replaceAll("\\", "/"), "<tmp>")

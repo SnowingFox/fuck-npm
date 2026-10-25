@@ -1916,7 +1916,7 @@ describe.concurrent("links below node_modules with the isolated linker", () => {
     });
   });
 
-  it("bun prune does not delete through node_modules/.fnpm", async () => {
+  it("fnpm prune does not delete through node_modules/.fnpm", async () => {
     using root = tempDir("nm-prune", {});
     const victim = await plantVictim(String(root), "stray@1.0.0");
     const repo = await project(String(root));

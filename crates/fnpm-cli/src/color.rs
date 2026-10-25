@@ -65,6 +65,10 @@ impl Colors {
     pub fn cyan(&self, input: &str) -> String {
         self.format("\x1b[36m", "\x1b[39m", "\x1b[36m", input)
     }
+
+    pub fn blue(&self, input: &str) -> String {
+        self.format("\x1b[34m", "\x1b[39m", "\x1b[34m", input)
+    }
 }
 
 /// Remove SGR sequences (`/\u001B\[[0-9;]*m/g`).

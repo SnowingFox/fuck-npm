@@ -424,7 +424,7 @@ it.each(Object.keys(spellings) as (keyof typeof spellings)[])(
 );
 
 it.each(Object.keys(spellings) as (keyof typeof spellings)[])(
-  "bun prune keeps the packages of a workspace made self-contained by %s",
+  "fnpm prune keeps the packages of a workspace made self-contained by %s",
   async spelling => {
     const [desktopExtra, workspacesExtra] = spellings[spelling];
     await writeProject(desktopExtra, workspacesExtra);

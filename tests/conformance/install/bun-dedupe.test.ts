@@ -36,7 +36,7 @@ function lock(dir: string) {
   return file(join(dir, "fnpm.lock")).text();
 }
 
-const HEADER = "bun dedupe <version> (<revision>)";
+const HEADER = "fnpm dedupe <version> (<revision>)";
 
 const lines = (stdout: string) => normalizeFnpmSnapshot(stdout).split("\n");
 
@@ -59,7 +59,7 @@ const noDuplicates = (checked: number) =>
   `🎉 No duplicates — checked ${packagesWord(checked)} in fnpm.lock, every one already resolves to a single version`;
 const wouldRemove = (removed: number, checked: number) =>
   `${versionsWord(removed)} can be removed (checked ${packagesWord(checked)} in fnpm.lock)`;
-const HINT = "  bun dedupe";
+const HINT = "  fnpm dedupe";
 
 const row = (label: string) => `~ ${label}`;
 
@@ -119,7 +119,7 @@ function expectWouldRemove({ stdout, stderr }: Result, rows: string | string[], 
   expect(stderr).not.toContain("error:");
 }
 
-// One line, one duration, nothing saved: the same on `--check` and on a plain `bun dedupe`.
+// One line, one duration, nothing saved: the same on `--check` and on a plain `fnpm dedupe`.
 function expectNoDuplicates({ stdout, stderr, exitCode }: Result, checked?: number, kept: string[] = []) {
   expect(lines(stdout)).toStrictEqual([
     HEADER,
@@ -277,11 +277,11 @@ test.concurrent("--check reports and exits 1 without writing", async () => {
   const check = await dedupe(packageDir, "--check");
   expect(lines(check.stdout)).toMatchInlineSnapshot(`
     [
-      "bun dedupe <version> (<revision>)",
+      "fnpm dedupe <version> (<revision>)",
       "~ no-deps 1.1.0 -> 1.0.0",
       "",
       "1 duplicate version can be removed (checked 4 packages in fnpm.lock)",
-      "  bun dedupe",
+      "  fnpm dedupe",
     ]
   `);
   expectWouldRemove(check, "no-deps 1.1.0 -> 1.0.0", 4);
@@ -293,7 +293,7 @@ test.concurrent("--check reports and exits 1 without writing", async () => {
   expect(await file(nestedPkgJson).json()).toStrictEqual({ name: "no-deps", version: "1.1.0" });
 });
 
-// `--dry-run` shows the plan and succeeds like `bun prune --dry-run`; only `--check` is the CI gate.
+// `--dry-run` shows the plan and succeeds like `fnpm prune --dry-run`; only `--check` is the CI gate.
 test.concurrent("--dry-run prints what --check prints and exits 0", async () => {
   const { packageDir, packageJson } = await registry.createTestDir();
   const lockBefore = await setupRangeDuplicate(packageDir, packageJson);
@@ -347,7 +347,7 @@ test.concurrent("already deduplicated", async () => {
   const second = await dedupe(packageDir);
   expect(lines(second.stdout)).toMatchInlineSnapshot(`
     [
-      "bun dedupe <version> (<revision>)",
+      "fnpm dedupe <version> (<revision>)",
       "🎉 No duplicates — checked 3 packages in fnpm.lock, every one already resolves to a single version",
     ]
   `);
@@ -485,7 +485,7 @@ test.concurrent("rejects positional arguments", async () => {
   const lockBefore = await lock(packageDir);
 
   const { stderr, exitCode } = await dedupe(packageDir, "no-deps");
-  expect(stderr).toContain("error: bun dedupe does not take arguments");
+  expect(stderr).toContain("error: fnpm dedupe does not take arguments");
   expect(exitCode).toBe(1);
   expect(await lock(packageDir)).toBe(lockBefore);
 });
@@ -494,7 +494,7 @@ test.concurrent("--help", async () => {
   const { packageDir } = await registry.createTestDir();
 
   const { stdout, stderr, exitCode } = await dedupe(packageDir, "--help");
-  expect(stdout).toContain("Usage: bun dedupe [flags]");
+  expect(stdout).toContain("Usage: fnpm dedupe [flags]");
   const out = lines(stdout);
   const flagsStart = out.indexOf("Flags:") + 1;
   expect(flagsStart).toBeGreaterThan(0);
@@ -610,7 +610,7 @@ const REFUSALS: [string, string][] = [
 function refusalStderr(removed: number, reason: string) {
   return [
     `error: ${versionsWord(removed)} can be removed, but ${reason}`,
-    `note: run 'bun dedupe' to remove ${removed === 1 ? "it" : "them"}, or 'bun dedupe --check' in CI`,
+    `note: run 'fnpm dedupe' to remove ${removed === 1 ? "it" : "them"}, or 'fnpm dedupe --check' in CI`,
   ];
 }
 
@@ -756,7 +756,7 @@ test.concurrent("workspace package edge is re-pointed when run from the workspac
 });
 
 // https://github.com/oven-sh/bun/issues/40393: each spec resolves to the sibling workspace;
-// reloading fnpm.lock and reparsing package.json must yield the same edge, or bun dedupe refuses.
+// reloading fnpm.lock and reparsing package.json must yield the same edge, or fnpm dedupe refuses.
 test.concurrent.each([
   {
     spec: "* on a versionless workspace",
@@ -839,7 +839,7 @@ test.concurrent("--check never creates node_modules", async () => {
   const lockDeduped = await lock(packageDir);
   await rm(join(packageDir, "node_modules"), { recursive: true });
 
-  // A no-op exits before the install step, so a plain `bun dedupe` creates nothing either.
+  // A no-op exits before the install step, so a plain `fnpm dedupe` creates nothing either.
   await expectAlreadyDeduplicated(packageDir, 3);
   expect(await exists(join(packageDir, "node_modules"))).toBeFalse();
   expect(await lock(packageDir)).toBe(lockDeduped);
@@ -1598,12 +1598,12 @@ test.concurrent("a version that is the only way to reach a patched package is ke
   const check = await dedupe(packageDir, "--check");
   expect(lines(check.stdout)).toMatchInlineSnapshot(`
     [
-      "bun dedupe <version> (<revision>)",
+      "fnpm dedupe <version> (<revision>)",
       "~ dep-with-tags 3.0.1 -> 3.0.0",
       "  kept one-fixed-dep@1.0.0 (needed to reach patched no-deps@1.0.0)",
       "",
       "1 duplicate version can be removed (checked 7 packages in fnpm.lock)",
-      "  bun dedupe",
+      "  fnpm dedupe",
     ]
   `);
   expectWouldRemove(check, "dep-with-tags 3.0.1 -> 3.0.0", 7, kept);
@@ -1633,7 +1633,7 @@ test.concurrent("a version that is the only way to reach a patched package is ke
   const recheck = await dedupe(packageDir, "--check");
   expect(lines(recheck.stdout)).toMatchInlineSnapshot(`
     [
-      "bun dedupe <version> (<revision>)",
+      "fnpm dedupe <version> (<revision>)",
       "  kept one-fixed-dep@1.0.0 (needed to reach patched no-deps@1.0.0)",
       "",
       "🎉 No duplicates — checked 6 packages in fnpm.lock, every one already resolves to a single version",
@@ -1884,7 +1884,7 @@ test.concurrent("a lockfile whose root has no dependencies is reported as dedupl
   const check = await dedupe(packageDir, "--check");
   expect(lines(check.stdout)).toMatchInlineSnapshot(`
     [
-      "bun dedupe <version> (<revision>)",
+      "fnpm dedupe <version> (<revision>)",
       "🎉 No duplicates — checked 1 package in fnpm.lock, every one already resolves to a single version",
     ]
   `);
@@ -2057,7 +2057,7 @@ test.concurrent("--silent prints nothing when refusing either", async () => {
 });
 
 test.concurrent(
-  "bun dedupe wins over a package.json script named dedupe; bun run dedupe still runs the script",
+  "fnpm dedupe wins over a package.json script named dedupe; bun run dedupe still runs the script",
   async () => {
     const { packageDir, packageJson } = await registry.createTestDir();
     await setupRangeDuplicate(packageDir, packageJson);

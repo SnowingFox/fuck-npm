@@ -112,6 +112,9 @@ pub struct Terminal {
     pub stderr_is_tty: bool,
     /// Terminal width for the progress line; 80 when unknown.
     pub columns: usize,
+    /// When the process started (`main`): bun times an install from there. `None` keeps the
+    /// core's own measure (tests).
+    pub started: Option<std::time::Instant>,
 }
 
 impl Terminal {
@@ -127,6 +130,7 @@ impl Terminal {
             stdout_is_tty,
             stderr_is_tty,
             columns: terminal_columns(stdout_is_tty, stderr_is_tty),
+            started: Some(std::time::Instant::now()),
         }
     }
 }

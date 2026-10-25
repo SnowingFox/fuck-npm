@@ -1157,7 +1157,7 @@ describe("every command that installs runs the scanner", () => {
     const ctx = await createTestContext();
     try {
       const dir = ctx.package_dir;
-      // `bar` accepts any baz. Its baz 0.0.3 stays in the lockfile next to the project's 0.0.5, until `bun dedupe`
+      // `bar` accepts any baz. Its baz 0.0.3 stays in the lockfile next to the project's 0.0.5, until `fnpm dedupe`
       // merges them.
       const versions: Record<string, Record<string, object>> = {
         bar: { "0.0.2": { dependencies: { baz: ">=0.0.3" } } },

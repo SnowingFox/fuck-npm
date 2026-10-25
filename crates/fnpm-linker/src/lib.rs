@@ -238,8 +238,14 @@ impl Default for LinkOptions {
 /// What [`Linker::link`] did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LinkReport {
-    /// Packages written (not already up to date).
+    /// Packages written (not already up to date), once per place.
     pub installed: u32,
+    /// Distinct packages written: bun's `N packages installed` (a package copied to two
+    /// places counts once).
+    pub installed_packages: u32,
+    /// Places that were already up to date, workspace links included: bun's `skipped`, the
+    /// `Checked N installs` of a run that changed nothing.
+    pub verified: u32,
     /// Directories removed because they are no longer in the layout.
     pub removed: u32,
     /// Packages skipped because they do not match the platform.
