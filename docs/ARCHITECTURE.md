@@ -1512,7 +1512,11 @@ state, scripted core events, summary or core error → exit code, stdout, stderr
 output). Inputs are edited by hand; `expected` is written from the TS CLI by
 `UPDATE_NATIVE_FIXTURES=1 npx vitest run tests/unit/cli/native-fixtures.test.ts`, which
 otherwise checks the TS side, and `cargo test -p fnpm-cli` checks the native side against the
-same bytes.
+same bytes. `cli-fuzz.json` is differential fuzzing: `tests/unit/cli/native-fuzz.test.ts` builds
+800 seeded random invocations of the native commands from `cli-spec.json` (every flag spelling,
+short clusters, foreign and runtime flags, typos, other commands' flags, `--`, TTY and colour
+environments) and stores the TS planner's route plus the TS CLI's exit code, output and
+`InstallOptions`; the native side must agree on every case.
 
 **Threading.** No tokio runtime on the version, usage-error, exec and no-op paths. A no-op
 install is answered before the runtime exists: the launcher runs the core's fast path

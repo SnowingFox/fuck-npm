@@ -3205,6 +3205,60 @@
       }
     },
     {
+      "name": "cwd and position: install --cwd=/abs/link/../x/ (kept as typed)",
+      "args": [
+        "install",
+        "--cwd=/abs/link/../x/"
+      ],
+      "expected": {
+        "exit": 0,
+        "stdout": "\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stderr": "fnpm install v0.0.1\n\n",
+        "install": {
+          "cwd": "/abs/link/../x/",
+          "yarn": false,
+          "production": false,
+          "save": true,
+          "ca": [],
+          "dryRun": false,
+          "frozenLockfile": false,
+          "force": false,
+          "noCache": false,
+          "logLevel": "default",
+          "progress": true,
+          "summary": true,
+          "verify": true,
+          "offline": false,
+          "preferOffline": false,
+          "ignoreScripts": false,
+          "trust": false,
+          "global": false,
+          "envFile": [],
+          "noEnvFile": false,
+          "saveTextLockfile": false,
+          "omit": [],
+          "lockfileOnly": false,
+          "cpu": [],
+          "os": [],
+          "libc": [],
+          "command": "install",
+          "packages": [],
+          "saveProd": false,
+          "exact": false,
+          "filter": [],
+          "analyze": false,
+          "onlyMissing": false,
+          "latest": false,
+          "recursive": false,
+          "updateGroups": {
+            "dev": false,
+            "prod": false,
+            "noOptional": false
+          }
+        }
+      }
+    },
+    {
       "name": "cwd and position: install --cwd=",
       "args": [
         "install",

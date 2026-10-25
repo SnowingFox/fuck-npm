@@ -222,3 +222,102 @@ fn progress_matches_the_ts_renderer() {
     }
     failures.finish(cases.len());
 }
+
+/// Differential fuzzing against the TS CLI (`cli-fuzz.json`, generated and pinned by
+/// `packages/fuck-npm/tests/unit/cli/native-fuzz.test.ts`): random invocations of the native
+/// commands must take the TS planner's route and, when native, produce the same exit code,
+/// bytes and `InstallOptions` (stored without the fields equal to their serde defaults).
+#[test]
+fn fuzzed_invocations_match_the_ts_cli() {
+    let data = fixture("cli-fuzz.json");
+    let cwd = PathBuf::from(data["cwd"].as_str().unwrap());
+    let summary: InstallSummary = serde_json::from_value(data["summary"].clone()).unwrap();
+    let terminals = data["terminals"].as_array().unwrap();
+    let envs = data["envs"].as_array().unwrap();
+    let cases = data["cases"].as_array().unwrap();
+    assert!(cases.len() >= 500, "the fuzz corpus is missing cases");
+    let mut failures = Failures::default();
+    for case in cases {
+        let args: Vec<String> = case["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|arg| arg.as_str().unwrap().to_owned())
+            .collect();
+        let tty = &terminals[case["terminal"].as_u64().unwrap() as usize];
+        let env = &envs[case["env"].as_u64().unwrap() as usize];
+        let name = format!("{args:?} tty={tty} env={env}");
+        let os_args: Vec<OsString> = args.iter().map(OsString::from).collect();
+        let stdout = Arc::new(Capture::default());
+        let stderr = Arc::new(Capture::default());
+        let terminal = Terminal {
+            env: Env::from_pairs(
+                env.as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned())),
+            ),
+            cwd: cwd.clone(),
+            stdout: stdout.clone(),
+            stderr: stderr.clone(),
+            stdout_is_tty: tty["stdoutIsTTY"].as_bool().unwrap(),
+            stderr_is_tty: tty["stderrIsTTY"].as_bool().unwrap(),
+            columns: 120,
+        };
+        let core = FakeCore {
+            events: Vec::new(),
+            summary: summary.clone(),
+            error: None,
+            installs: Mutex::new(Vec::new()),
+        };
+        let exit = run_with(Bin::Fnpm, &os_args, || terminal, &core);
+        let route = case["route"].as_str().unwrap();
+        match (exit, route) {
+            (None, "node") => continue,
+            (None, _) => {
+                failures
+                    .0
+                    .push(format!("{name}: routed to node, the TS CLI runs it"));
+                continue;
+            }
+            (Some(_), "node") => {
+                failures.0.push(format!(
+                    "{name}: ran natively, the TS CLI routes it to node"
+                ));
+                continue;
+            }
+            (Some(_), _) => {}
+        }
+        let exit = exit.unwrap();
+        failures.check(
+            &name,
+            "exit",
+            &i64::from(exit),
+            &case["exit"].as_i64().unwrap(),
+        );
+        failures.check(
+            &name,
+            "stdout",
+            &stdout.text(),
+            &case["stdout"].as_str().unwrap().to_owned(),
+        );
+        failures.check(
+            &name,
+            "stderr",
+            &stderr.text(),
+            &case["stderr"].as_str().unwrap().to_owned(),
+        );
+        let expected: Option<InstallOptions> = match &case["install"] {
+            Value::Null => None,
+            value => Some(serde_json::from_value(value.clone()).unwrap()),
+        };
+        let installs = core.installs.into_inner().unwrap();
+        failures.check(
+            &name,
+            "install options",
+            &installs.first(),
+            &expected.as_ref(),
+        );
+    }
+    failures.finish(cases.len());
+}

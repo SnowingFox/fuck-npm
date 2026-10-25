@@ -50,10 +50,13 @@ pub fn resolve_path(base: &Path, path: &str) -> PathBuf {
     PathBuf::from(format!("/{}", parts.join("/")))
 }
 
-/// `--cwd` is resolved against the starting directory, like bun's chdir.
+/// `--cwd` is resolved against the starting directory, like bun's chdir. An absolute path
+/// is kept exactly as typed (`isAbsolute(cwd) ? cwd : resolve(start, cwd)`): normalising
+/// `/link/../x` lexically would change where a symlinked path leads.
 pub fn resolve_cwd(values: &Parsed, start: &Path) -> PathBuf {
     match values.string("cwd") {
         None | Some("") => start.to_path_buf(),
+        Some(cwd) if Path::new(cwd).is_absolute() => PathBuf::from(cwd),
         Some(cwd) => resolve_path(start, cwd),
     }
 }
