@@ -58,7 +58,7 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done (the 8-target `napi.yml` matrix has not run on GitHub yet) |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
 | Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
-| Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | harness switched (`FNPM_BIN` or `target/release/fnpm`); numbers not committed |
+| Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | done (`bench/results/2026-10-25-linux-x64.md`: small, all scenarios; medium warm/noop/ci/cold-lockfile) |
 
 Known gaps in the merged crates (PARITY rows left open for these):
 
