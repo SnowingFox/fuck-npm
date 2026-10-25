@@ -1,0 +1,50 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "monorepo-root",
+      "dependencies": {
+        "@workspace/shared": "workspace:*",
+        "@workspace/utils": "workspace:^",
+      },
+    },
+    "apps/web": {
+      "name": "web",
+      "dependencies": {
+        "@workspace/shared": "workspace:*",
+        "react": "^18.2.0",
+      },
+    },
+    "packages/shared": {
+      "name": "shared",
+      "dependencies": {
+        "@workspace/utils": "workspace:*",
+        "lodash": "^4.17.21",
+      },
+    },
+    "packages/utils": {
+      "name": "utils",
+      "dependencies": {
+        "axios": "^1.6.0",
+      },
+    },
+  },
+  "packages": {
+    "@workspace/shared": ["shared@workspace:packages/shared"],
+
+    "@workspace/utils": ["utils@workspace:packages/utils"],
+
+    "axios": ["axios@1.6.7", "", {}, ""],
+
+    "lodash": ["lodash@4.17.21", "", {}, ""],
+
+    "react": ["react@18.2.0", "", {}, ""],
+
+    "shared": ["shared@workspace:packages/shared"],
+
+    "utils": ["utils@workspace:packages/utils"],
+
+    "web": ["web@workspace:apps/web"],
+  }
+}

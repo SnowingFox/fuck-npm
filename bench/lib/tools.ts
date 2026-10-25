@@ -160,7 +160,18 @@ const bun: Tool = {
 };
 
 const FNPM_ENTRY = join(REPO_ROOT, "packages/fuck-npm/dist/fnpm.js");
+/**
+ * The native launcher, which is what users run after the postinstall swap: `FNPM_BIN`, else
+ * a release build of `crates/fnpm-cli` (`cargo build --release -p fnpm-cli`).
+ */
+export const fnpmNative = (): string | null => {
+  const target = process.env.CARGO_TARGET_DIR || join(REPO_ROOT, "target");
+  const exe = process.env.FNPM_BIN || join(target, "release", process.platform === "win32" ? "fnpm.exe" : "fnpm");
+  return existsSync(exe) ? exe : null;
+};
 const fnpmArgv = (): string[] | null => {
+  const native = fnpmNative();
+  if (native) return [native];
   const node = which("node");
   return node && existsSync(FNPM_ENTRY) ? [node, FNPM_ENTRY] : null;
 };

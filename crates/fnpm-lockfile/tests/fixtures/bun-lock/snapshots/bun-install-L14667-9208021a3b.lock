@@ -1,0 +1,22 @@
+{
+  "lockfileVersion": 3,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "my-app",
+      "dependencies": {
+        "pkg-a": "file:./pkg-a",
+      },
+    },
+  },
+  "overrides": {
+    "pkg-a": {
+      "shared": "file:./vendor/shared",
+    },
+  },
+  "packages": {
+    "pkg-a": ["pkg-a@file:pkg-a", { "dependencies": { "shared": "1.0.0" } }],
+
+    "pkg-a/shared": ["shared@file:vendor/shared", {}],
+  }
+}

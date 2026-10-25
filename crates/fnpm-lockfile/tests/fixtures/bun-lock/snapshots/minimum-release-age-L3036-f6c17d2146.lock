@@ -1,0 +1,56 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "my-monorepo",
+    },
+    "packages/app": {
+      "name": "app",
+      "version": "1.0.0",
+      "dependencies": {
+        "regular-package": "*",
+      },
+    },
+    "packages/legacy": {
+      "name": "legacy",
+      "version": "1.0.0",
+      "dependencies": {
+        "regular-package": "1.0.0",
+        "stable-package": "3.0.0",
+      },
+    },
+    "packages/lib": {
+      "name": "lib",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scope/scoped-package": "^1.0.0",
+        "bugfix-package": "*",
+        "daily-release-package": "latest",
+        "regular-package": "^2.0.0",
+        "stable-package": "latest",
+      },
+    },
+  },
+  "packages": {
+    "@scope/scoped-package": ["@scope/scoped-package@1.5.0", "http://localhost:<port>/@scope/scoped-package/-/scoped-package-1.5.0.tgz", {}, ""],
+
+    "app": ["app@workspace:packages/app"],
+
+    "bugfix-package": ["bugfix-package@1.0.0", "http://localhost:<port>/bugfix-package/-/bugfix-package-1.0.0.tgz", {}, ""],
+
+    "daily-release-package": ["daily-release-package@1.5.0", "http://localhost:<port>/daily-release-package/-/daily-release-package-1.5.0.tgz", {}, ""],
+
+    "legacy": ["legacy@workspace:packages/legacy"],
+
+    "lib": ["lib@workspace:packages/lib"],
+
+    "regular-package": ["regular-package@2.1.0", "http://localhost:<port>/regular-package/-/regular-package-2.1.0.tgz", {}, ""],
+
+    "stable-package": ["stable-package@3.0.0", "http://localhost:<port>/stable-package/-/stable-package-3.0.0.tgz", {}, ""],
+
+    "legacy/regular-package": ["regular-package@1.0.0", "http://localhost:<port>/regular-package/-/regular-package-1.0.0.tgz", {}, ""],
+
+    "lib/stable-package": ["stable-package@3.2.0", "http://localhost:<port>/stable-package/-/stable-package-3.2.0.tgz", {}, ""],
+  }
+}

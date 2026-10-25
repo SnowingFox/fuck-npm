@@ -70,7 +70,10 @@ pub fn parse_package_segment(segment: &str) -> Result<PackageSelector, SelectorE
     if range.is_empty() && segment.len() > name.len() {
         return Err(SelectorError::EmptyRange);
     }
-    Ok(PackageSelector { name: name.to_owned(), range: range.to_owned() })
+    Ok(PackageSelector {
+        name: name.to_owned(),
+        range: range.to_owned(),
+    })
 }
 
 /// pnpm's `parent>child` delimiter (`/[^ |@]>/`).
@@ -111,7 +114,9 @@ fn parse_yarn_path(key: &str) -> Result<OverrideSelector, SelectorError> {
         }
         let mut end = start + token.len();
         if token.starts_with('@') {
-            let Some(name_start) = next else { return Err(SelectorError::InvalidName) };
+            let Some(name_start) = next else {
+                return Err(SelectorError::InvalidName);
+            };
             let (name, after) = next_token(key, name_start);
             cursor = after;
             if name.is_empty() {
@@ -133,7 +138,10 @@ fn parse_yarn_path(key: &str) -> Result<OverrideSelector, SelectorError> {
     }
     match segments.as_slice() {
         [] => Err(SelectorError::EmptyName),
-        [one] => Ok(OverrideSelector { parent: None, target: parse_package_segment(one)? }),
+        [one] => Ok(OverrideSelector {
+            parent: None,
+            target: parse_package_segment(one)?,
+        }),
         [parent, target, ..] => Ok(OverrideSelector {
             parent: Some(parse_package_segment(parent)?),
             target: parse_package_segment(target)?,
@@ -158,14 +166,23 @@ impl OverrideSelector {
                 return Err(SelectorError::TooDeep);
             }
             let parent = parse_package_segment(parent)?;
-            return Ok(Some(Self { parent: Some(parent), target: parse_package_segment(name)? }));
+            return Ok(Some(Self {
+                parent: Some(parent),
+                target: parse_package_segment(name)?,
+            }));
         }
         parse_yarn_path(key).map(Some)
     }
 
     /// The canonical key fnpm.lock writes: `name`, `name@range`, `parent>child`.
     pub fn to_key(&self) -> String {
-        let seg = |s: &PackageSelector| if s.range.is_empty() { s.name.clone() } else { format!("{}@{}", s.name, s.range) };
+        let seg = |s: &PackageSelector| {
+            if s.range.is_empty() {
+                s.name.clone()
+            } else {
+                format!("{}@{}", s.name, s.range)
+            }
+        };
         match &self.parent {
             Some(p) => format!("{}>{}", seg(p), seg(&self.target)),
             None => seg(&self.target),
@@ -182,14 +199,35 @@ mod tests {
     }
 
     fn ps(name: &str, range: &str) -> PackageSelector {
-        PackageSelector { name: name.into(), range: range.into() }
+        PackageSelector {
+            name: name.into(),
+            range: range.into(),
+        }
     }
 
     #[test]
     fn flat() {
-        assert_eq!(sel("lodash"), OverrideSelector { parent: None, target: ps("lodash", "") });
-        assert_eq!(sel("lodash@^4"), OverrideSelector { parent: None, target: ps("lodash", "^4") });
-        assert_eq!(sel("@s/a@1"), OverrideSelector { parent: None, target: ps("@s/a", "1") });
+        assert_eq!(
+            sel("lodash"),
+            OverrideSelector {
+                parent: None,
+                target: ps("lodash", "")
+            }
+        );
+        assert_eq!(
+            sel("lodash@^4"),
+            OverrideSelector {
+                parent: None,
+                target: ps("lodash", "^4")
+            }
+        );
+        assert_eq!(
+            sel("@s/a@1"),
+            OverrideSelector {
+                parent: None,
+                target: ps("@s/a", "1")
+            }
+        );
         assert_eq!(sel("a@npm:^1").target, ps("a", "^1"));
         assert_eq!(sel("a@npm:1").target, ps("a", "1"));
         assert_eq!(sel("a@npm:other@1").target, ps("a", "npm:other@1"));
@@ -198,12 +236,48 @@ mod tests {
 
     #[test]
     fn scoped() {
-        assert_eq!(sel("foo>bar"), OverrideSelector { parent: Some(ps("foo", "")), target: ps("bar", "") });
-        assert_eq!(sel("foo@1>bar@2"), OverrideSelector { parent: Some(ps("foo", "1")), target: ps("bar", "2") });
-        assert_eq!(sel("a@>=1 > b"), OverrideSelector { parent: None, target: ps("a", ">=1 > b") });
-        assert_eq!(sel("foo/bar"), OverrideSelector { parent: Some(ps("foo", "")), target: ps("bar", "") });
-        assert_eq!(sel("**/bar"), OverrideSelector { parent: None, target: ps("bar", "") });
-        assert_eq!(sel("@a/b/@c/d"), OverrideSelector { parent: Some(ps("@a/b", "")), target: ps("@c/d", "") });
+        assert_eq!(
+            sel("foo>bar"),
+            OverrideSelector {
+                parent: Some(ps("foo", "")),
+                target: ps("bar", "")
+            }
+        );
+        assert_eq!(
+            sel("foo@1>bar@2"),
+            OverrideSelector {
+                parent: Some(ps("foo", "1")),
+                target: ps("bar", "2")
+            }
+        );
+        assert_eq!(
+            sel("a@>=1 > b"),
+            OverrideSelector {
+                parent: None,
+                target: ps("a", ">=1 > b")
+            }
+        );
+        assert_eq!(
+            sel("foo/bar"),
+            OverrideSelector {
+                parent: Some(ps("foo", "")),
+                target: ps("bar", "")
+            }
+        );
+        assert_eq!(
+            sel("**/bar"),
+            OverrideSelector {
+                parent: None,
+                target: ps("bar", "")
+            }
+        );
+        assert_eq!(
+            sel("@a/b/@c/d"),
+            OverrideSelector {
+                parent: Some(ps("@a/b", "")),
+                target: ps("@c/d", "")
+            }
+        );
         assert_eq!(sel("x@npm:@s/o@^1/y").parent, Some(ps("x", "npm:@s/o@^1")));
         assert_eq!(sel("foo@1>bar@2").to_key(), "foo@1>bar@2");
         assert_eq!(sel("foo/bar").to_key(), "foo>bar");
@@ -211,17 +285,41 @@ mod tests {
 
     #[test]
     fn range_comparators_are_not_delimiters() {
-        assert_eq!(sel("foo@>1"), OverrideSelector { parent: None, target: ps("foo", ">1") });
-        assert_eq!(sel("foo@1 || >2"), OverrideSelector { parent: None, target: ps("foo", "1 || >2") });
+        assert_eq!(
+            sel("foo@>1"),
+            OverrideSelector {
+                parent: None,
+                target: ps("foo", ">1")
+            }
+        );
+        assert_eq!(
+            sel("foo@1 || >2"),
+            OverrideSelector {
+                parent: None,
+                target: ps("foo", "1 || >2")
+            }
+        );
     }
 
     #[test]
     fn errors() {
         assert_eq!(OverrideSelector::parse(""), Err(SelectorError::EmptyName));
-        assert_eq!(OverrideSelector::parse("@scope"), Err(SelectorError::InvalidName));
-        assert_eq!(OverrideSelector::parse("a@"), Err(SelectorError::EmptyRange));
-        assert_eq!(OverrideSelector::parse("a>b>c"), Err(SelectorError::TooDeep));
-        assert_eq!(OverrideSelector::parse("a/b/c"), Err(SelectorError::TooDeep));
+        assert_eq!(
+            OverrideSelector::parse("@scope"),
+            Err(SelectorError::InvalidName)
+        );
+        assert_eq!(
+            OverrideSelector::parse("a@"),
+            Err(SelectorError::EmptyRange)
+        );
+        assert_eq!(
+            OverrideSelector::parse("a>b>c"),
+            Err(SelectorError::TooDeep)
+        );
+        assert_eq!(
+            OverrideSelector::parse("a/b/c"),
+            Err(SelectorError::TooDeep)
+        );
         assert_eq!(OverrideSelector::parse("a>"), Err(SelectorError::EmptyName));
         assert_eq!(OverrideSelector::parse("**"), Err(SelectorError::EmptyName));
     }

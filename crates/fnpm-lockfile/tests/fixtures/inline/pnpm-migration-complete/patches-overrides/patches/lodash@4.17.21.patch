@@ -1,0 +1,13 @@
+diff --git a/lib/application.js b/lib/application.js
+index 1234567..abcdefg 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -123,7 +123,7 @@ app.defaultConfiguration = function defaultConfiguration() {
+   this.set('subdomain offset', 2);
+   this.set('trust proxy', false);
+ 
+-  // trust proxy inherit back-compat
++  // trust proxy inherit back-compat - PATCHED
+   Object.defineProperty(this.settings, trustProxyDefaultSymbol, {
+     configurable: true,
+     value: true

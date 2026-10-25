@@ -15,11 +15,16 @@ fnpm-workspace.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml_ng.workspace = true
+yaml-rust2.workspace = true
+percent-encoding.workspace = true
 sonic-rs.workspace = true
 rkyv.workspace = true
 xxhash-rust.workspace = true
 memchr.workspace = true
+globset.workspace = true
 thiserror.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+mimalloc.workspace = true

@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "file-links-test",
+      "dependencies": {
+        "config": "file:./shared/config",
+        "local-pkg": "file:./local-pkg",
+      },
+    },
+  },
+  "packages": {
+    "config": ["hi2@file:shared/config", {}],
+
+    "local-pkg": ["hi@file:local-pkg", {}],
+  }
+}

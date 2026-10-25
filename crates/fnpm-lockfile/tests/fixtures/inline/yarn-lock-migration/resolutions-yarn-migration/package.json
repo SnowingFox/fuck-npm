@@ -1,0 +1,11 @@
+{
+  "name": "resolutions-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "webpack": "^5.89.0"
+  },
+  "resolutions": {
+    "acorn": "8.11.3",
+    "webpack/acorn": "8.11.2"
+  }
+}

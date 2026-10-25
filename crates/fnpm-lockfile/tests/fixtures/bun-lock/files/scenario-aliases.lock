@@ -1,0 +1,21 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "s",
+      "dependencies": {
+        "lodash": "^4",
+        "lodash3": "npm:lodash@3.10.1",
+        "lodash4": "npm:lodash@4.17.21",
+      },
+    },
+  },
+  "packages": {
+    "lodash": ["lodash@4.18.1", "http://127.0.0.1:4873/lodash/-/lodash-4.18.1.tgz", {}, "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q=="],
+
+    "lodash3": ["lodash@3.10.1", "http://127.0.0.1:4873/lodash/-/lodash-3.10.1.tgz", {}, "sha512-9mDDwqVIma6OZX79ZlDACZl8sBm0TEnkf99zV3iMA4GzkIT/9hiqP5mY0HoT1iNLCrKc/R1HByV+yJfRWVJryQ=="],
+
+    "lodash4": ["lodash@4.17.21", "http://127.0.0.1:4873/lodash/-/lodash-4.17.21.tgz", {}, "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="],
+  }
+}

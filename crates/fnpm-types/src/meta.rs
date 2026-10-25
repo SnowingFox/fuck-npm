@@ -29,7 +29,8 @@ impl ScriptFlags {
         ("postprepare", Self::POSTPREPARE),
     ];
 
-    pub const INSTALL_SCRIPTS: Self = Self(Self::PREINSTALL.0 | Self::INSTALL.0 | Self::POSTINSTALL.0 | Self::BINDING_GYP.0);
+    pub const INSTALL_SCRIPTS: Self =
+        Self(Self::PREINSTALL.0 | Self::INSTALL.0 | Self::POSTINSTALL.0 | Self::BINDING_GYP.0);
 
     pub fn from_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
         let mut f = Self::default();
@@ -57,7 +58,10 @@ impl ScriptFlags {
     }
 
     pub fn names(self) -> impl Iterator<Item = &'static str> {
-        Self::NAMES.into_iter().filter(move |(_, f)| self.contains(*f)).map(|(n, _)| n)
+        Self::NAMES
+            .into_iter()
+            .filter(move |(_, f)| self.contains(*f))
+            .map(|(n, _)| n)
     }
 }
 

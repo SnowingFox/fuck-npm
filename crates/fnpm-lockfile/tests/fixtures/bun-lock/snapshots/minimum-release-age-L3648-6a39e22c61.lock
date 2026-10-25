@@ -1,0 +1,22 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "app",
+      "peerDependencies": {
+        "fresh": "latest",
+        "gated": "^2.0.0",
+      },
+    },
+    "packages/ws": {
+      "name": "ws",
+      "peerDependencies": {
+        "gated": "2.0.0",
+      },
+    },
+  },
+  "packages": {
+    "ws": ["ws@workspace:packages/ws"],
+  }
+}

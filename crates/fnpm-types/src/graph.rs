@@ -33,7 +33,9 @@ impl PackageId {
 
 /// bun's `ConfigVersion`: decides defaults that changed over time (the linker for new
 /// workspaces). New lockfiles get [`ConfigVersion::CURRENT`]; migrated npm/yarn lockfiles V0.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(into = "u8", try_from = "u8")]
 pub enum ConfigVersion {
     V0,
@@ -88,7 +90,12 @@ pub struct DepEdge {
 
 impl DepEdge {
     pub fn new(name: impl Into<String>, literal: impl Into<String>, behavior: Behavior) -> Self {
-        Self { name: name.into(), literal: literal.into(), behavior, target: None }
+        Self {
+            name: name.into(),
+            literal: literal.into(),
+            behavior,
+            target: None,
+        }
     }
 
     pub fn spec(&self) -> Result<DependencySpec, SpecError> {
@@ -127,7 +134,11 @@ pub struct Package {
 }
 
 impl Package {
-    pub fn new(name: impl Into<String>, version: impl Into<String>, resolution: Resolution) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        resolution: Resolution,
+    ) -> Self {
         Self {
             name: name.into(),
             version: version.into(),
@@ -214,7 +225,11 @@ pub enum GraphError {
     #[error("package 0 must have a root resolution, found {0}")]
     RootNotFirst(String),
     #[error("{package}: dependency {dependency} points at missing package id {target}")]
-    DanglingEdge { package: String, dependency: String, target: u32 },
+    DanglingEdge {
+        package: String,
+        dependency: String,
+        target: u32,
+    },
     #[error("workspace {path:?} points at package id {target}, which is not a workspace")]
     BadWorkspace { path: String, target: u32 },
     #[error("duplicate package {0}")]
@@ -337,20 +352,32 @@ impl LockGraph {
 
     /// All packages with this name.
     pub fn by_name<'a>(&'a self, name: &'a str) -> impl Iterator<Item = PackageId> + 'a {
-        self.packages.iter().enumerate().filter(move |(_, p)| p.name == name).map(|(i, _)| PackageId(i as u32))
+        self.packages
+            .iter()
+            .enumerate()
+            .filter(move |(_, p)| p.name == name)
+            .map(|(i, _)| PackageId(i as u32))
     }
 
     pub fn index(&self) -> GraphIndex {
         let mut by_key = HashMap::with_capacity(self.packages.len());
         for (i, p) in self.packages.iter().enumerate() {
-            by_key.entry((p.name.clone(), p.resolution.to_string())).or_insert(PackageId(i as u32));
+            by_key
+                .entry((p.name.clone(), p.resolution.to_string()))
+                .or_insert(PackageId(i as u32));
         }
         GraphIndex { by_key }
     }
 
     /// `(edge, target)` pairs of resolved edges.
-    pub fn resolved_edges(&self, id: PackageId) -> impl Iterator<Item = (&DepEdge, PackageId)> + '_ {
-        self.packages[id.index()].dependencies.iter().filter_map(|e| e.target.map(|t| (e, t)))
+    pub fn resolved_edges(
+        &self,
+        id: PackageId,
+    ) -> impl Iterator<Item = (&DepEdge, PackageId)> + '_ {
+        self.packages[id.index()]
+            .dependencies
+            .iter()
+            .filter_map(|e| e.target.map(|t| (e, t)))
     }
 
     pub fn has_workspaces(&self) -> bool {
@@ -375,7 +402,9 @@ impl LockGraph {
             None => self.workspaces.values().copied().collect(),
         };
         while let Some(id) = stack.pop() {
-            let Some(slot) = seen.get_mut(id.index()) else { continue };
+            let Some(slot) = seen.get_mut(id.index()) else {
+                continue;
+            };
             if *slot {
                 continue;
             }
@@ -383,8 +412,13 @@ impl LockGraph {
             let local = self.packages[id.index()].resolution.is_local_tree();
             for e in &self.packages[id.index()].dependencies {
                 let Some(t) = e.target else { continue };
-                let b = if local { e.behavior } else { e.behavior.with(Behavior::DEV, false) };
-                let follows = b.intersects(include) || (b.is_workspace() && include.intersects(Behavior::PROD));
+                let b = if local {
+                    e.behavior
+                } else {
+                    e.behavior.with(Behavior::DEV, false)
+                };
+                let follows = b.intersects(include)
+                    || (b.is_workspace() && include.intersects(Behavior::PROD));
                 if follows && !seen.get(t.index()).copied().unwrap_or(true) {
                     stack.push(t);
                 }
@@ -396,7 +430,11 @@ impl LockGraph {
     /// Sorts every package's edges into the canonical order.
     pub fn sort_dependencies(&mut self) {
         for p in &mut self.packages {
-            p.dependencies.sort_by(|a, b| a.name.cmp(&b.name).then(a.behavior.group().cmp(&b.behavior.group())));
+            p.dependencies.sort_by(|a, b| {
+                a.name
+                    .cmp(&b.name)
+                    .then(a.behavior.group().cmp(&b.behavior.group()))
+            });
         }
     }
 
@@ -412,7 +450,11 @@ impl LockGraph {
                 if let Some(t) = e.target
                     && t.0 >= n
                 {
-                    return Err(GraphError::DanglingEdge { package: p.key(), dependency: e.name.clone(), target: t.0 });
+                    return Err(GraphError::DanglingEdge {
+                        package: p.key(),
+                        dependency: e.name.clone(),
+                        target: t.0,
+                    });
                 }
             }
         }
@@ -423,7 +465,10 @@ impl LockGraph {
                 _ => false,
             };
             if !ok {
-                return Err(GraphError::BadWorkspace { path: path.clone(), target: id.0 });
+                return Err(GraphError::BadWorkspace {
+                    path: path.clone(),
+                    target: id.0,
+                });
             }
         }
         let mut keys = BTreeSet::new();
@@ -444,11 +489,14 @@ pub struct GraphIndex {
 
 impl GraphIndex {
     pub fn get(&self, name: &str, resolution: &Resolution) -> Option<PackageId> {
-        self.by_key.get(&(name.to_owned(), resolution.to_string())).copied()
+        self.by_key
+            .get(&(name.to_owned(), resolution.to_string()))
+            .copied()
     }
 
     pub fn insert(&mut self, name: &str, resolution: &Resolution, id: PackageId) {
-        self.by_key.insert((name.to_owned(), resolution.to_string()), id);
+        self.by_key
+            .insert((name.to_owned(), resolution.to_string()), id);
     }
 }
 
@@ -464,7 +512,13 @@ mod tests {
 
     fn sample() -> LockGraph {
         let mut g = LockGraph::new(Package::new("app", "1.0.0", Resolution::Root));
-        let ws = g.add_workspace(Package::new("lib", "0.1.0", Resolution::Workspace { path: "packages/lib".into() }));
+        let ws = g.add_workspace(Package::new(
+            "lib",
+            "0.1.0",
+            Resolution::Workspace {
+                path: "packages/lib".into(),
+            },
+        ));
         let a = g.push(npm("a", "1.0.0"));
         let b = g.push(npm("b", "2.0.0"));
         let d = g.push(npm("devonly", "3.0.0"));
@@ -501,7 +555,10 @@ mod tests {
         let g = sample();
         let prod = g.reachable(Behavior::PROD | Behavior::OPTIONAL | Behavior::PEER, None);
         assert_eq!(prod, vec![true, true, true, true, false]);
-        let all = g.reachable(Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER, None);
+        let all = g.reachable(
+            Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER,
+            None,
+        );
         assert_eq!(all, vec![true; 5]);
     }
 
@@ -524,7 +581,9 @@ mod tests {
         g.catalogs.default.insert("react".into(), "^18".into());
         g.trusted_dependencies = Some(["esbuild".to_owned()].into());
         g.overrides.push(OverrideRule {
-            selector: crate::overrides::OverrideSelector::parse("a>b").unwrap().unwrap(),
+            selector: crate::overrides::OverrideSelector::parse("a>b")
+                .unwrap()
+                .unwrap(),
             value: "2.0.0".into(),
         });
         let j = serde_json::to_string(&g).unwrap();
@@ -540,7 +599,12 @@ mod tests {
         let mut g = sample();
         g.root_mut().dependencies.reverse();
         g.sort_dependencies();
-        let names: Vec<_> = g.root().dependencies.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<_> = g
+            .root()
+            .dependencies
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
         assert_eq!(names, ["a", "devonly", "lib"]);
         assert_eq!(ConfigVersion::try_from(7u8).unwrap(), ConfigVersion::V1);
         assert_eq!(serde_json::to_string(&ConfigVersion::V0).unwrap(), "0");

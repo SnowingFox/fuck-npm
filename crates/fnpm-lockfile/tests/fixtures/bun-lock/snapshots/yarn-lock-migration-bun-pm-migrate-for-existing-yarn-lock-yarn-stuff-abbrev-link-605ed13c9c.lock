@@ -1,0 +1,10 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "abbrev",
+    },
+  },
+  "packages": {}
+}

@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "registries-test",
+      "dependencies": {
+        "@company/private-pkg": "^1.0.0",
+        "lodash": "^4.17.21",
+      },
+    },
+  },
+  "packages": {
+    "@company/private-pkg": ["@company/private-pkg@1.0.5", "", {}, ""],
+
+    "lodash": ["lodash@4.17.21", "", {}, ""],
+  }
+}

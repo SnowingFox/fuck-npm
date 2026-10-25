@@ -1,0 +1,27 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+
+patchedDependencies:
+  lodash@4.17.21:
+    path: patches/lodash@4.17.21.patch
+    hash: abc123
+
+overrides:
+  axios: 1.6.0
+
+importers:
+  .:
+    dependencies:
+      lodash:
+        specifier: ^4.17.21
+        version: 4.17.21(patch_hash=abc123)
+
+packages:
+  lodash@4.17.21:
+    resolution: {integrity: sha512-lodash==}
+    patched: true
+
+snapshots:
+  lodash@4.17.21(patch_hash=abc123): {}

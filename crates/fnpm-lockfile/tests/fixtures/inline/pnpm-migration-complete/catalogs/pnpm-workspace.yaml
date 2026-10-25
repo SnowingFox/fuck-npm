@@ -1,0 +1,10 @@
+packages: []
+
+catalog:
+  react: 18.2.0
+  react-dom: 18.2.0
+
+catalogs:
+  tools:
+    lodash: 4.17.21
+    eslint: 8.56.0

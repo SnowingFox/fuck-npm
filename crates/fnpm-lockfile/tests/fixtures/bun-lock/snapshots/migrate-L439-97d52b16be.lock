@@ -1,0 +1,30 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "npm-lockfile-test",
+    },
+    "packages/pkg0": {
+      "name": "pkg0",
+    },
+    "packages/pkg1": {
+      "name": "pkg1",
+    },
+    "packages/pkg2": {
+      "name": "pkg2",
+    },
+    "packages/pkg3": {
+      "name": "pkg3",
+    },
+  },
+  "packages": {
+    "pkg0": ["pkg0@workspace:packages/pkg0"],
+
+    "pkg1": ["pkg1@workspace:packages/pkg1"],
+
+    "pkg2": ["pkg2@workspace:packages/pkg2"],
+
+    "pkg3": ["pkg3@workspace:packages/pkg3"],
+  }
+}

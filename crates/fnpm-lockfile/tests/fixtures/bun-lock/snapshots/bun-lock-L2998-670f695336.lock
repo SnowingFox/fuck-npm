@@ -1,0 +1,21 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "app",
+      "peerDependencies": {
+        "peer-target": "^1.0.1",
+      },
+    },
+    "packages/ws": {
+      "name": "ws",
+      "peerDependencies": {
+        "peer-target": "^1.0.1",
+      },
+    },
+  },
+  "packages": {
+    "ws": ["ws@workspace:packages/ws"],
+  }
+}

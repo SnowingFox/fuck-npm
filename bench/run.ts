@@ -12,7 +12,7 @@ import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { fsUsedBytes, measure, type DiskReport } from "./lib/disk.ts";
 import { renderMarkdown, type Results, type ScenarioResult, type DiskResult } from "./lib/report.ts";
-import { TOOLS, TOOL_NAMES, type Ctx, type Tool, type ToolName } from "./lib/tools.ts";
+import { TOOLS, TOOL_NAMES, fnpmNative, type Ctx, type Tool, type ToolName } from "./lib/tools.ts";
 import {
   BENCH_DIR,
   FIXTURES_DIR,
@@ -207,7 +207,7 @@ function scrub(text: string): string {
 function displayCommand(tool: Tool, argv: string[]): string {
   const prefix = tool.argv0() ?? [];
   const rest = argv.slice(prefix.length);
-  const head = tool.name === "fnpm" ? ["node", "packages/fuck-npm/dist/fnpm.js"] : [tool.name];
+  const head = tool.name === "fnpm" && !fnpmNative() ? ["node", "packages/fuck-npm/dist/fnpm.js"] : [tool.name];
   return scrub(shjoin([...head, ...rest]));
 }
 
@@ -311,7 +311,11 @@ async function main(): Promise<void> {
   for (const name of requested) {
     const tool = TOOLS[name];
     if (!tool.argv0()) {
-      log(name === "fnpm" ? "fnpm: packages/fuck-npm/dist/fnpm.js not built, skipping" : `${name}: not on PATH, skipping`);
+      log(
+        name === "fnpm"
+          ? "fnpm: neither the native launcher (target/release/fnpm, FNPM_BIN) nor packages/fuck-npm/dist/fnpm.js is built, skipping"
+          : `${name}: not on PATH, skipping`,
+      );
       continue;
     }
     versions[name] = tool.version();

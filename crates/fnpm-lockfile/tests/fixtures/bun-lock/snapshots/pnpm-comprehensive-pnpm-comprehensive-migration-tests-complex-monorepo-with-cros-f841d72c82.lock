@@ -1,0 +1,150 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "monorepo-root",
+      "devDependencies": {
+        "prettier": "^3.1.1",
+        "turbo": "^1.11.2",
+      },
+    },
+    "apps/api": {
+      "name": "@company/api",
+      "version": "1.0.0",
+      "dependencies": {
+        "@company/utils": "workspace:*",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.18.2",
+      },
+      "devDependencies": {
+        "@company/config": "workspace:*",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.21",
+        "nodemon": "^3.0.2",
+      },
+    },
+    "apps/web": {
+      "name": "@company/web",
+      "version": "1.0.0",
+      "dependencies": {
+        "@company/ui": "workspace:*",
+        "@company/utils": "workspace:*",
+        "next": "^14.0.4",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+      },
+      "devDependencies": {
+        "@company/config": "workspace:*",
+        "@types/node": "^20.10.8",
+        "@types/react": "^18.2.47",
+        "typescript": "^5.3.3",
+      },
+    },
+    "packages/config": {
+      "name": "@company/config",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@company/utils": "workspace:*",
+      },
+    },
+    "packages/ui": {
+      "name": "@company/ui",
+      "version": "1.0.0",
+      "dependencies": {
+        "@radix-ui/react-dialog": "^1.0.5",
+        "class-variance-authority": "^0.7.0",
+        "clsx": "^2.1.0",
+        "react": "^18.2.0",
+      },
+      "devDependencies": {
+        "@types/react": "^18.2.47",
+      },
+      "peerDependencies": {
+        "react": ">=16.8.0",
+      },
+    },
+    "packages/utils": {
+      "name": "@company/utils",
+      "version": "1.0.0",
+      "dependencies": {
+        "date-fns": "^3.2.0",
+        "zod": "^3.22.4",
+      },
+    },
+    "tools/cli": {
+      "name": "@company/cli",
+      "version": "1.0.0",
+      "bin": {
+        "company-cli": "./bin/cli.js",
+      },
+      "dependencies": {
+        "@company/utils": "workspace:*",
+        "chalk": "^5.3.0",
+        "commander": "^11.1.0",
+      },
+    },
+  },
+  "packages": {
+    "@company/api": ["@company/api@workspace:apps/api"],
+
+    "@company/cli": ["@company/cli@workspace:tools/cli"],
+
+    "@company/config": ["@company/config@workspace:packages/config"],
+
+    "@company/ui": ["@company/ui@workspace:packages/ui"],
+
+    "@company/utils": ["@company/utils@workspace:packages/utils"],
+
+    "@company/web": ["@company/web@workspace:apps/web"],
+
+    "@radix-ui/react-dialog": ["@radix-ui/react-dialog@1.0.5", "", { "peerDependencies": { "react": "^16.8 || ^17.0 || ^18.0", "react-dom": "^16.8 || ^17.0 || ^18.0" } }, ""],
+
+    "@types/cors": ["@types/cors@2.8.17", "", {}, ""],
+
+    "@types/express": ["@types/express@4.17.21", "", {}, ""],
+
+    "@types/node": ["@types/node@20.10.8", "", {}, ""],
+
+    "@types/react": ["@types/react@18.2.47", "", {}, ""],
+
+    "chalk": ["chalk@5.3.0", "", {}, ""],
+
+    "class-variance-authority": ["class-variance-authority@0.7.0", "", {}, ""],
+
+    "clsx": ["clsx@2.1.0", "", {}, "sha512-clsxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "commander": ["commander@11.1.0", "", {}, ""],
+
+    "cors": ["cors@2.8.5", "", {}, "sha512-corsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "date-fns": ["date-fns@3.2.0", "", {}, ""],
+
+    "dotenv": ["dotenv@16.3.1", "", {}, ""],
+
+    "express": ["express@4.18.2", "", {}, "sha512-expressAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "js-tokens": ["js-tokens@4.0.0", "", {}, ""],
+
+    "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "4.0.0" }, "bin": { "loose-envify": "cli.js" } }, ""],
+
+    "next": ["next@14.0.4", "", { "peerDependencies": { "react": "^18.2.0", "react-dom": "^18.2.0" }, "bin": { "next": "dist/bin/next" } }, "sha512-nextAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "nodemon": ["nodemon@3.0.2", "", { "bin": { "nodemon": "bin/nodemon.js" } }, ""],
+
+    "prettier": ["prettier@3.1.1", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-prettierAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+
+    "react": ["react@18.2.0", "", { "dependencies": { "loose-envify": "1.4.0" } }, ""],
+
+    "react-dom": ["react-dom@18.2.0", "", { "dependencies": { "scheduler": "0.23.0" }, "peerDependencies": { "react": "^18.2.0" } }, ""],
+
+    "scheduler": ["scheduler@0.23.0", "", { "dependencies": { "loose-envify": "1.4.0" } }, ""],
+
+    "turbo": ["turbo@1.11.2", "", { "bin": { "turbo": "bin/turbo" } }, ""],
+
+    "typescript": ["typescript@5.3.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, ""],
+
+    "zod": ["zod@3.22.4", "", {}, ""],
+  }
+}

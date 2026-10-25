@@ -15,8 +15,11 @@ node bench/mirror.ts stop
 ```
 
 Requirements: Node >= 22.18 (the scripts are TypeScript run through Node's type stripping),
-hyperfine >= 1.13, and whichever tools you want to compare on `PATH`. fnpm is run as
-`node packages/fuck-npm/dist/fnpm.js` and is skipped if that file has not been built.
+hyperfine >= 1.13, and whichever tools you want to compare on `PATH`. fnpm is run as the native
+launcher (`crates/fnpm-cli`, what users run after the postinstall swap): `FNPM_BIN` if set, else
+`$CARGO_TARGET_DIR/release/fnpm` (default `target/release/fnpm`, from
+`cargo build --release -p fnpm-cli`). Without one it falls back to
+`node packages/fuck-npm/dist/fnpm.js`, and is skipped if that has not been built either.
 
 ### Flags (`run.ts`)
 
@@ -97,7 +100,8 @@ The registry is forced on every tool with both the CLI flag and env (`npm_config
 `BUN_CONFIG_REGISTRY`, `YARN_REGISTRY`, `FNPM_REGISTRY`).
 
 hyperfine runs with `--shell=none` and its working directory set to the project, so no shell
-startup is included in the timings. fnpm's numbers therefore include Node startup.
+startup is included in the timings. While fnpm runs through `node`, its numbers include Node
+startup (about 47 ms on the baseline machine).
 
 ## Registry mirror
 

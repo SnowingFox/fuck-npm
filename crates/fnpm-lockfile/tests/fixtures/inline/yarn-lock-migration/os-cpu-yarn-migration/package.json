@@ -1,0 +1,8 @@
+{
+  "name": "os-cpu-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "fsevents": "^2.3.2",
+    "esbuild": "^0.17.0"
+  }
+}

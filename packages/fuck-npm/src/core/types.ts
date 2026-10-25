@@ -138,6 +138,7 @@ export type CoreErrorCode =
   | "SCRIPT_FAILED"
   | "INVALID_PACKAGE_JSON"
   | "USAGE"
+  | "NOT_IMPLEMENTED"
   | "CORE_ERROR";
 
 /** Any command other than the install pipeline. */

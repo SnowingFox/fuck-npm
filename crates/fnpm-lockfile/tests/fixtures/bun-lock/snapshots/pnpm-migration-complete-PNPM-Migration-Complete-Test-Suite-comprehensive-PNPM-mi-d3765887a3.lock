@@ -1,0 +1,43 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "circular-test",
+      "dependencies": {
+        "@workspace/pkg1": "workspace:*",
+      },
+    },
+    "packages/pkg1": {
+      "name": "@workspace/pkg1",
+      "version": "1.0.0",
+      "dependencies": {
+        "@workspace/pkg2": "workspace:*",
+        "lodash": "^4.17.21",
+      },
+    },
+    "packages/pkg2": {
+      "name": "@workspace/pkg2",
+      "version": "1.0.0",
+      "dependencies": {
+        "@workspace/pkg3": "workspace:*",
+      },
+    },
+    "packages/pkg3": {
+      "name": "@workspace/pkg3",
+      "version": "1.0.0",
+      "dependencies": {
+        "@workspace/pkg1": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "@workspace/pkg1": ["@workspace/pkg1@workspace:packages/pkg1"],
+
+    "@workspace/pkg2": ["@workspace/pkg2@workspace:packages/pkg2"],
+
+    "@workspace/pkg3": ["@workspace/pkg3@workspace:packages/pkg3"],
+
+    "lodash": ["lodash@4.17.21", "", {}, ""],
+  }
+}

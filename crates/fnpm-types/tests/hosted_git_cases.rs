@@ -5,7 +5,8 @@ use fnpm_types::{HostedGitInfo, Representation};
 use serde_json::Value;
 
 fn cases() -> Value {
-    serde_json::from_str(include_str!("fixtures/hosted_git_info_cases.json")).expect("fixture parses")
+    serde_json::from_str(include_str!("fixtures/hosted_git_info_cases.json"))
+        .expect("fixture parses")
 }
 
 fn representation_name(r: Representation) -> &'static str {
@@ -42,7 +43,16 @@ fn valid_urls() {
         check("user", info.user.as_deref());
         check("project", Some(&info.project));
         check("committish", info.committish.as_deref());
-        check("default", Some(representation_name(info.default_representation)));
+        check(
+            "default",
+            Some(representation_name(info.default_representation)),
+        );
     }
-    assert!(failures.is_empty(), "{} of {} cases failed:\n{}", failures.len(), valid.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} cases failed:\n{}",
+        failures.len(),
+        valid.len(),
+        failures.join("\n")
+    );
 }

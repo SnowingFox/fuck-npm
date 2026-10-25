@@ -1,0 +1,1489 @@
+{
+  "$comment": "Progress renderer golden cases shared by crates/fnpm-cli/tests/fixtures.rs and packages/fuck-npm/tests/unit/cli/native-fixtures.test.ts.",
+  "cases": [
+    {
+      "name": "burst then trailing redraw (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 4,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 5,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 6,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 7,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 8,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 9,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 10,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 11,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 12,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 13,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 14,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 15,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 16,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 17,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 18,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 19,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 20,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 21,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 22,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 23,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 24,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 25,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 26,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 27,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 28,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 29,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 30,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 31,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 32,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 33,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 34,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 35,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 36,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 37,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 38,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 39,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 40,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 41,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 42,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 43,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 44,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 45,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 46,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 47,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 48,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 49,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 50,
+            "total": 100
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 1/100\r\u001b[2KResolving 50/100\r\u001b[2K"
+    },
+    {
+      "name": "burst then trailing redraw (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 4,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 5,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 6,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 7,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 8,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 9,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 10,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 11,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 12,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 13,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 14,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 15,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 16,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 17,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 18,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 19,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 20,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 21,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 22,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 23,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 24,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 25,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 26,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 27,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 28,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 29,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 30,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 31,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 32,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 33,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 34,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 35,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 36,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 37,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 38,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 39,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 40,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 41,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 42,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 43,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 44,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 45,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 46,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 47,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 48,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 49,
+            "total": 100
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 50,
+            "total": 100
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/100\r\u001b[2K\u001b[36mResolving\u001b[39m 50/100\r\u001b[2K"
+    },
+    {
+      "name": "unknown total (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 0
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 3/?\r\u001b[2K"
+    },
+    {
+      "name": "unknown total (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 0
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 3/?\r\u001b[2K"
+    },
+    {
+      "name": "phases (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 2,
+            "total": 5,
+            "bytes": 3145728
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "extract",
+            "done": 1,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 4,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "esbuild",
+            "script": "postinstall",
+            "phase": "start"
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 1/5\r\u001b[2KDownloading 2/5 3.0 MiB  Extracted 0/5\r\u001b[2KDownloading 2/5 3.0 MiB  Extracted 1/5\r\u001b[2KLinking 4/5\r\u001b[2KRunning esbuild postinstall\r\u001b[2K"
+    },
+    {
+      "name": "phases (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 2,
+            "total": 5,
+            "bytes": 3145728
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "extract",
+            "done": 1,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 4,
+            "total": 5
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "esbuild",
+            "script": "postinstall",
+            "phase": "start"
+          }
+        },
+        {
+          "advance": 60
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/5\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/5\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 1/5\r\u001b[2K\u001b[36mLinking\u001b[39m 4/5\r\u001b[2K\u001b[36mRunning\u001b[39m esbuild \u001b[2mpostinstall\u001b[22m\r\u001b[2K"
+    },
+    {
+      "name": "extract before download (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "extract",
+            "done": 1,
+            "total": 0
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 4
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KDownloading 0/0 0 B  Extracted 1/0\r\u001b[2KDownloading 1/4 0 B  Extracted 1/4\r\u001b[2K"
+    },
+    {
+      "name": "extract before download (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "extract",
+            "done": 1,
+            "total": 0
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 4
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mDownloading\u001b[39m 0/0 \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/0\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/4 \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/4\r\u001b[2K"
+    },
+    {
+      "name": "bytes (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 2,
+            "bytes": 512
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 2,
+            "bytes": 1280
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 2,
+            "total": 2
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KDownloading 1/2 512 B  Extracted 0/2\r\u001b[2KDownloading 1/2 1.3 KiB  Extracted 0/2\r\u001b[2KDownloading 2/2 1.3 KiB  Extracted 0/2\r\u001b[2K"
+    },
+    {
+      "name": "bytes (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 2,
+            "bytes": 512
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 1,
+            "total": 2,
+            "bytes": 1280
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "event": {
+            "type": "download",
+            "done": 2,
+            "total": 2
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/2 \u001b[2m512 B\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K"
+    },
+    {
+      "name": "warn above line (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "link",
+            "done": 1,
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "warn",
+            "message": "deprecated: request"
+          }
+        },
+        {
+          "event": {
+            "type": "error",
+            "message": "boom",
+            "code": "X"
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KLinking 1/2\r\u001b[2Kwarn: deprecated: request\nerror: boom\n\r\u001b[2KLinking 1/2\r\u001b[2K"
+    },
+    {
+      "name": "warn above line (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "link",
+            "done": 1,
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "warn",
+            "message": "deprecated: request"
+          }
+        },
+        {
+          "event": {
+            "type": "error",
+            "message": "boom",
+            "code": "X"
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mLinking\u001b[39m 1/2\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request\n\u001b[31merror:\u001b[39m boom\n\r\u001b[2K\u001b[36mLinking\u001b[39m 1/2\r\u001b[2K"
+    },
+    {
+      "name": "warn before any draw (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "warn",
+            "message": "first"
+          }
+        },
+        {
+          "advance": 10
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 1
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "warn: first\n\r\u001b[2KResolving 0/?\r\u001b[2KResolving 1/1\r\u001b[2K"
+    },
+    {
+      "name": "warn before any draw (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "warn",
+            "message": "first"
+          }
+        },
+        {
+          "advance": 10
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 1
+          }
+        },
+        {
+          "advance": 50
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\u001b[33mwarn:\u001b[39m first\n\r\u001b[2K\u001b[36mResolving\u001b[39m 0/?\r\u001b[2K\u001b[36mResolving\u001b[39m 1/1\r\u001b[2K"
+    },
+    {
+      "name": "summary event ignored (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "summary",
+            "summary": {
+              "added": [],
+              "updated": [],
+              "removed": [],
+              "requested": [],
+              "installedCount": 0,
+              "removedCount": 0,
+              "failedCount": 0,
+              "blockedScripts": 0,
+              "elapsedMs": 0,
+              "noop": false
+            }
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": ""
+    },
+    {
+      "name": "summary event ignored (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "summary",
+            "summary": {
+              "added": [],
+              "updated": [],
+              "removed": [],
+              "requested": [],
+              "installedCount": 0,
+              "removedCount": 0,
+              "failedCount": 0,
+              "blockedScripts": 0,
+              "elapsedMs": 0,
+              "noop": false
+            }
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": ""
+    },
+    {
+      "name": "stop cancels pending (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 2
+          }
+        },
+        {
+          "stop": true
+        },
+        {
+          "advance": 100
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 1/2\r\u001b[2K"
+    },
+    {
+      "name": "stop cancels pending (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 2
+          }
+        },
+        {
+          "stop": true
+        },
+        {
+          "advance": 100
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/2\r\u001b[2K"
+    },
+    {
+      "name": "partial advance (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 9
+          }
+        },
+        {
+          "advance": 20
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 9
+          }
+        },
+        {
+          "advance": 20
+        },
+        {
+          "advance": 10
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 9
+          }
+        },
+        {
+          "advance": 49
+        },
+        {
+          "advance": 1
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 1/9\r\u001b[2KResolving 2/9\r\u001b[2KResolving 3/9\r\u001b[2K"
+    },
+    {
+      "name": "partial advance (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 9
+          }
+        },
+        {
+          "advance": 20
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 2,
+            "total": 9
+          }
+        },
+        {
+          "advance": 20
+        },
+        {
+          "advance": 10
+        },
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 9
+          }
+        },
+        {
+          "advance": 49
+        },
+        {
+          "advance": 1
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/9\r\u001b[2K\u001b[36mResolving\u001b[39m 2/9\r\u001b[2K\u001b[36mResolving\u001b[39m 3/9\r\u001b[2K"
+    },
+    {
+      "name": "narrow terminal (colors=False)",
+      "columns": 21,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "download",
+            "done": 1000,
+            "total": 2000,
+            "bytes": 999999999
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KDownloading 1000/200\r\u001b[2K"
+    },
+    {
+      "name": "narrow terminal (colors=True)",
+      "columns": 21,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "download",
+            "done": 1000,
+            "total": 2000,
+            "bytes": 999999999
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KDownloading 1000/200\r\u001b[2K"
+    },
+    {
+      "name": "minimum width (colors=False)",
+      "columns": 5,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "script",
+            "package": "a-very-long-package-name",
+            "script": "install",
+            "phase": "start"
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KRunning a-very-long-\r\u001b[2K"
+    },
+    {
+      "name": "minimum width (colors=True)",
+      "columns": 5,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "script",
+            "package": "a-very-long-package-name",
+            "script": "install",
+            "phase": "start"
+          }
+        },
+        {
+          "stop": true
+        }
+      ],
+      "expected": "\r\u001b[2KRunning a-very-long-\r\u001b[2K"
+    },
+    {
+      "name": "no stop (colors=False)",
+      "columns": 120,
+      "colors": false,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 1
+          }
+        }
+      ],
+      "expected": "\r\u001b[2KResolving 1/1"
+    },
+    {
+      "name": "no stop (colors=True)",
+      "columns": 120,
+      "colors": true,
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 1
+          }
+        }
+      ],
+      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/1"
+    }
+  ]
+}

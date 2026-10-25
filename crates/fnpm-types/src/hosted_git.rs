@@ -41,7 +41,13 @@ pub enum HostProvider {
 }
 
 impl HostProvider {
-    pub const ALL: [HostProvider; 5] = [Self::Bitbucket, Self::Gist, Self::Github, Self::Gitlab, Self::Sourcehut];
+    pub const ALL: [HostProvider; 5] = [
+        Self::Bitbucket,
+        Self::Gist,
+        Self::Github,
+        Self::Gitlab,
+        Self::Sourcehut,
+    ];
 
     pub fn type_str(self) -> &'static str {
         match self {
@@ -177,7 +183,10 @@ impl WellDefinedProtocol {
     }
 
     fn is_shortcut(self) -> bool {
-        matches!(self, Self::Github | Self::Bitbucket | Self::Gitlab | Self::Gist | Self::Sourcehut)
+        matches!(
+            self,
+            Self::Github | Self::Bitbucket | Self::Gitlab | Self::Gist | Self::Sourcehut
+        )
     }
 
     /// `github:foo/bar` but `git+ssh://foo/bar`.
@@ -189,7 +198,9 @@ impl WellDefinedProtocol {
         match self {
             Self::GitPlusSsh | Self::Ssh | Self::GitPlusHttp => Representation::Sshurl,
             Self::GitPlusHttps | Self::Https => Representation::Https,
-            Self::GitPlusFile | Self::GitPlusFtp | Self::GitPlusRsync | Self::Git => Representation::Git,
+            Self::GitPlusFile | Self::GitPlusFtp | Self::GitPlusRsync | Self::Git => {
+                Representation::Git
+            }
             Self::Http => Representation::Http,
             _ => Representation::Shortcut,
         }
@@ -234,7 +245,9 @@ impl ProtocolPair<'_> {
         let s = match self.protocol {
             UrlProtocol::Unknown => format!("git+ssh://{}", self.url),
             UrlProtocol::Custom(p) => format!("{p}//{}", self.url),
-            UrlProtocol::WellFormed(p) => format!("{}:{}{}", p.as_str(), p.concat_token(), self.url),
+            UrlProtocol::WellFormed(p) => {
+                format!("{}:{}{}", p.as_str(), p.concat_token(), self.url)
+            }
         };
         Url::parse(&s).ok()
     }
@@ -247,7 +260,10 @@ fn normalize_protocol(s: &str) -> ProtocolPair<'_> {
     if let Some(p) = WellDefinedProtocol::from_str_with_colon(proto) {
         let post = &s[proto.len()..];
         let post = post.strip_prefix("//").unwrap_or(post);
-        return ProtocolPair { url: post.into(), protocol: UrlProtocol::WellFormed(p) };
+        return ProtocolPair {
+            url: post.into(),
+            protocol: UrlProtocol::WellFormed(p),
+        };
     }
     if let Some(at) = s.find('@') {
         let protocol = match first_colon {
@@ -258,17 +274,29 @@ fn normalize_protocol(s: &str) -> ProtocolPair<'_> {
             // `user@host`
             None => UrlProtocol::WellFormed(WellDefinedProtocol::GitPlusSsh),
         };
-        return ProtocolPair { url: s.into(), protocol };
+        return ProtocolPair {
+            url: s.into(),
+            protocol,
+        };
     }
     if let Some(dup) = s.find("//")
         && Some(dup) == first_colon.map(|c| c + 1)
     {
-        return ProtocolPair { url: s[dup + 2..].into(), protocol: UrlProtocol::Custom(&s[..dup]) };
+        return ProtocolPair {
+            url: s[dup + 2..].into(),
+            protocol: UrlProtocol::Custom(&s[..dup]),
+        };
     }
     if let Some(colon) = first_colon {
-        return ProtocolPair { url: s[colon + 1..].into(), protocol: UrlProtocol::Custom(&s[..=colon]) };
+        return ProtocolPair {
+            url: s[colon + 1..].into(),
+            protocol: UrlProtocol::Custom(&s[..=colon]),
+        };
     }
-    ProtocolPair { url: s.into(), protocol: UrlProtocol::Unknown }
+    ProtocolPair {
+        url: s.into(),
+        protocol: UrlProtocol::Unknown,
+    }
 }
 
 /// Last index of `needle` before the first `stop` (or the end).
@@ -286,14 +314,20 @@ fn correct_url<'a>(pair: &ProtocolPair<'a>) -> ProtocolPair<'a> {
     {
         let mut owned = pair.url.to_string();
         owned.replace_range(c..=c, "/");
-        return ProtocolPair { url: owned.into(), protocol: UrlProtocol::WellFormed(WellDefinedProtocol::GitPlusSsh) };
+        return ProtocolPair {
+            url: owned.into(),
+            protocol: UrlProtocol::WellFormed(WellDefinedProtocol::GitPlusSsh),
+        };
     }
     let protocol = if col.is_none() && matches!(pair.protocol, UrlProtocol::Unknown) {
         UrlProtocol::WellFormed(WellDefinedProtocol::GitPlusSsh)
     } else {
         pair.protocol
     };
-    ProtocolPair { url: pair.url.clone(), protocol }
+    ProtocolPair {
+        url: pair.url.clone(),
+        protocol,
+    }
 }
 
 fn parse_url(s: &str) -> Option<(Url, UrlProtocol<'_>)> {
@@ -326,7 +360,11 @@ pub(crate) fn percent_decode_strict(input: &str) -> Result<String, HostedGitErro
         .map_err(|_| HostedGitError::InvalidUrl)
 }
 
-fn build(user: Option<&str>, project: &str, committish: Option<&str>) -> Result<Extracted, HostedGitError> {
+fn build(
+    user: Option<&str>,
+    project: &str,
+    committish: Option<&str>,
+) -> Result<Extracted, HostedGitError> {
     Ok(Extracted {
         user: user.map(percent_decode_strict).transpose()?,
         project: percent_decode_strict(project)?,
@@ -350,7 +388,9 @@ fn user_project_committish(
     error_as_none: bool,
 ) -> Result<Option<Extracted>, HostedGitError> {
     let mut iter = path_of(url).split('/');
-    let Some(mut user) = iter.next() else { return Ok(None) };
+    let Some(mut user) = iter.next() else {
+        return Ok(None);
+    };
     let mut project = iter.next();
     if iter.next() == Some(reject_aux) {
         return Ok(None);
@@ -359,7 +399,9 @@ fn user_project_committish(
         project = Some(user);
         user = "";
     }
-    let Some(project) = project else { return Ok(None) };
+    let Some(project) = project else {
+        return Ok(None);
+    };
     let project = project.strip_suffix(".git").unwrap_or(project);
     if project.is_empty() {
         return Ok(None);
@@ -381,8 +423,12 @@ fn user_project_committish(
 
 fn extract_github(url: &Url) -> Result<Option<Extracted>, HostedGitError> {
     let mut iter = path_of(url).split('/');
-    let Some(user) = iter.next() else { return Ok(None) };
-    let Some(project) = iter.next() else { return Ok(None) };
+    let Some(user) = iter.next() else {
+        return Ok(None);
+    };
+    let Some(project) = iter.next() else {
+        return Ok(None);
+    };
     let type_part = iter.next();
     let committish_part = iter.next();
     let project = project.strip_suffix(".git").unwrap_or(project);
@@ -393,7 +439,11 @@ fn extract_github(url: &Url) -> Result<Option<Extracted>, HostedGitError> {
     if type_part.is_some_and(|t| t != "tree") {
         return Ok(None);
     }
-    let committish = if type_part.is_none() { fragment_of(url) } else { committish_part };
+    let committish = if type_part.is_none() {
+        fragment_of(url)
+    } else {
+        committish_part
+    };
     build(Some(user), project, committish).map(Some)
 }
 
@@ -402,7 +452,9 @@ fn extract_gitlab(url: &Url) -> Result<Option<Extracted>, HostedGitError> {
     if path.contains("/-/") || path.contains("/archive.tar.gz") {
         return Ok(None);
     }
-    let Some(end) = path.rfind('/') else { return Ok(None) };
+    let Some(end) = path.rfind('/') else {
+        return Ok(None);
+    };
     let user = &path[..end];
     let project = &path[end + 1..];
     let project = project.strip_suffix(".git").unwrap_or(project);
@@ -418,11 +470,18 @@ fn extract_gitlab(url: &Url) -> Result<Option<Extracted>, HostedGitError> {
         },
         None => None,
     };
-    Ok(Some(Extracted { user: Some(user), project, committish }))
+    Ok(Some(Extracted {
+        user: Some(user),
+        project,
+        committish,
+    }))
 }
 
-const PATH_SEGMENT: &percent_encoding::AsciiSet =
-    &percent_encoding::NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'.').remove(b'~');
+const PATH_SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
 
 /// hosted-git-info's `isGitHubShorthand`: `user/repo`, `user/repo#ref`.
 pub fn is_github_shorthand(s: &str) -> bool {
@@ -468,17 +527,25 @@ impl HostedGitInfo {
         } else {
             git_url
         };
-        let Some((url, proto)) = parse_url(input) else { return Ok(None) };
+        let Some((url, proto)) = parse_url(input) else {
+            return Ok(None);
+        };
         let provider = match proto {
-            UrlProtocol::WellFormed(p) => p.host_provider().or_else(|| HostProvider::from_url_domain(&url)),
+            UrlProtocol::WellFormed(p) => p
+                .host_provider()
+                .or_else(|| HostProvider::from_url_domain(&url)),
             UrlProtocol::Unknown => HostProvider::from_url_domain(&url),
             UrlProtocol::Custom(_) => HostProvider::from_url(&url),
         };
-        let Some(provider) = provider else { return Ok(None) };
+        let Some(provider) = provider else {
+            return Ok(None);
+        };
 
         let is_shortcut = matches!(proto, UrlProtocol::WellFormed(p) if p.is_shortcut());
         if !is_shortcut {
-            let Some(e) = provider.extract(&url)? else { return Ok(None) };
+            let Some(e) = provider.extract(&url)? else {
+                return Ok(None);
+            };
             return Ok(Some(Self {
                 provider,
                 user: e.user,
@@ -512,7 +579,9 @@ impl HostedGitInfo {
     }
 
     fn hash_committish(&self) -> String {
-        self.committish.as_ref().map_or(String::new(), |c| format!("#{c}"))
+        self.committish
+            .as_ref()
+            .map_or(String::new(), |c| format!("#{c}"))
     }
 
     fn user_slash(&self) -> String {
@@ -524,7 +593,13 @@ impl HostedGitInfo {
 
     /// `github:user/project#committish`
     pub fn shortcut(&self) -> String {
-        format!("{}:{}{}{}", self.provider.type_str(), self.user_slash(), self.project, self.hash_committish())
+        format!(
+            "{}:{}{}{}",
+            self.provider.type_str(),
+            self.user_slash(),
+            self.project,
+            self.hash_committish()
+        )
     }
 
     /// `git+ssh://git@github.com/user/project.git#committish`
@@ -552,9 +627,19 @@ impl HostedGitInfo {
     /// The URL `git clone` accepts for this repository, without the committish.
     pub fn clone_url(&self, ssh: bool) -> String {
         if ssh {
-            format!("ssh://git@{}/{}{}.git", self.provider.domain(), self.user_slash(), self.project)
+            format!(
+                "ssh://git@{}/{}{}.git",
+                self.provider.domain(),
+                self.user_slash(),
+                self.project
+            )
         } else {
-            format!("https://{}/{}{}.git", self.provider.domain(), self.user_slash(), self.project)
+            format!(
+                "https://{}/{}{}.git",
+                self.provider.domain(),
+                self.user_slash(),
+                self.project
+            )
         }
     }
 
@@ -567,7 +652,9 @@ impl HostedGitInfo {
         let p = &self.project;
         match self.provider {
             HostProvider::Github => format!("https://codeload.github.com/{u}/{p}/tar.gz/{c}"),
-            HostProvider::Gitlab => format!("https://{d}/{u}/{p}/repository/archive.tar.gz?ref={c}"),
+            HostProvider::Gitlab => {
+                format!("https://{d}/{u}/{p}/repository/archive.tar.gz?ref={c}")
+            }
             HostProvider::Bitbucket => format!("https://{d}/{u}/{p}/get/{c}.tar.gz"),
             HostProvider::Gist => format!("https://codeload.github.com/gist/{p}/tar.gz/{c}"),
             HostProvider::Sourcehut => format!("https://{d}/{u}/{p}/archive/{c}.tar.gz"),
@@ -584,14 +671,27 @@ mod tests {
         assert!(is_github_shorthand("foo/bar"));
         assert!(is_github_shorthand("foo/bar#main"));
         assert!(is_github_shorthand("foo/bar#a/b:c@d"));
-        for bad in ["", ".foo/bar", "/foo/bar", "foo", "foo/bar/", "foo/bar/baz", "user@foo/bar", "foo/ bar", "a:b/c", "foo/#x"] {
+        for bad in [
+            "",
+            ".foo/bar",
+            "/foo/bar",
+            "foo",
+            "foo/bar/",
+            "foo/bar/baz",
+            "user@foo/bar",
+            "foo/ bar",
+            "a:b/c",
+            "foo/#x",
+        ] {
             assert!(!is_github_shorthand(bad), "{bad}");
         }
     }
 
     #[test]
     fn basic_forms() {
-        let i = HostedGitInfo::from_url("github:foo/bar#main").unwrap().unwrap();
+        let i = HostedGitInfo::from_url("github:foo/bar#main")
+            .unwrap()
+            .unwrap();
         assert_eq!(i.provider, HostProvider::Github);
         assert_eq!(i.user.as_deref(), Some("foo"));
         assert_eq!(i.project, "bar");
@@ -602,22 +702,40 @@ mod tests {
         assert_eq!(i.provider, HostProvider::Github);
         assert_eq!(i.shortcut(), "github:foo/bar");
 
-        let i = HostedGitInfo::from_url("git@github.com:foo/bar.git").unwrap().unwrap();
+        let i = HostedGitInfo::from_url("git@github.com:foo/bar.git")
+            .unwrap()
+            .unwrap();
         assert_eq!(i.project, "bar");
         assert_eq!(i.default_representation, Representation::Sshurl);
 
-        let i = HostedGitInfo::from_url("https://github.com/foo/bar/tree/dev").unwrap().unwrap();
+        let i = HostedGitInfo::from_url("https://github.com/foo/bar/tree/dev")
+            .unwrap()
+            .unwrap();
         assert_eq!(i.committish.as_deref(), Some("dev"));
         assert_eq!(i.default_representation, Representation::Https);
 
-        let i = HostedGitInfo::from_url("https://gitlab.com/a/b/c.git#v1").unwrap().unwrap();
+        let i = HostedGitInfo::from_url("https://gitlab.com/a/b/c.git#v1")
+            .unwrap()
+            .unwrap();
         assert_eq!(i.provider, HostProvider::Gitlab);
         assert_eq!(i.user.as_deref(), Some("a/b"));
         assert_eq!(i.project, "c");
 
-        assert!(HostedGitInfo::from_url("https://google.com").unwrap().is_none());
-        assert!(HostedGitInfo::from_url("git+ssh://git@nothosted.com/abc/def").unwrap().is_none());
-        assert!(HostedGitInfo::from_url("https://github.com/foo/bar/issues").unwrap().is_none());
+        assert!(
+            HostedGitInfo::from_url("https://google.com")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HostedGitInfo::from_url("git+ssh://git@nothosted.com/abc/def")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            HostedGitInfo::from_url("https://github.com/foo/bar/issues")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -637,7 +755,9 @@ mod tests {
             ("github:a@", HostProvider::Github),
             ("gitlab:.git", HostProvider::Gitlab),
         ] {
-            let i = HostedGitInfo::from_url(url).unwrap().unwrap_or_else(|| panic!("{url}"));
+            let i = HostedGitInfo::from_url(url)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{url}"));
             assert_eq!(i.provider, provider, "{url}");
             assert_eq!(i.user, None, "{url}");
             assert_eq!(i.project, "", "{url}");
@@ -665,28 +785,82 @@ mod tests {
             assert!(HostedGitInfo::from_url(url).unwrap().is_none(), "{url}");
         }
         for (url, p, user, project) in [
-            ("https://bitbucket.org/foo/bar/raw", HostProvider::Bitbucket, Some("foo"), "bar"),
-            ("https://bitbucket.org/foo/bar/archive", HostProvider::Bitbucket, Some("foo"), "bar"),
-            ("https://gist.github.com/foo/feedbeef/get", HostProvider::Gist, Some("foo"), "feedbeef"),
-            ("https://gist.github.com/foo/feedbeef/archive", HostProvider::Gist, Some("foo"), "feedbeef"),
-            ("https://git.sr.ht/~foo/bar/get", HostProvider::Sourcehut, Some("~foo"), "bar"),
-            ("https://git.sr.ht/~foo/bar/raw", HostProvider::Sourcehut, Some("~foo"), "bar"),
-            ("https://gist.github.com/feedbeef", HostProvider::Gist, None, "feedbeef"),
-            ("https://gist.github.com//feedbeef", HostProvider::Gist, None, "feedbeef"),
+            (
+                "https://bitbucket.org/foo/bar/raw",
+                HostProvider::Bitbucket,
+                Some("foo"),
+                "bar",
+            ),
+            (
+                "https://bitbucket.org/foo/bar/archive",
+                HostProvider::Bitbucket,
+                Some("foo"),
+                "bar",
+            ),
+            (
+                "https://gist.github.com/foo/feedbeef/get",
+                HostProvider::Gist,
+                Some("foo"),
+                "feedbeef",
+            ),
+            (
+                "https://gist.github.com/foo/feedbeef/archive",
+                HostProvider::Gist,
+                Some("foo"),
+                "feedbeef",
+            ),
+            (
+                "https://git.sr.ht/~foo/bar/get",
+                HostProvider::Sourcehut,
+                Some("~foo"),
+                "bar",
+            ),
+            (
+                "https://git.sr.ht/~foo/bar/raw",
+                HostProvider::Sourcehut,
+                Some("~foo"),
+                "bar",
+            ),
+            (
+                "https://gist.github.com/feedbeef",
+                HostProvider::Gist,
+                None,
+                "feedbeef",
+            ),
+            (
+                "https://gist.github.com//feedbeef",
+                HostProvider::Gist,
+                None,
+                "feedbeef",
+            ),
         ] {
-            let i = HostedGitInfo::from_url(url).unwrap().unwrap_or_else(|| panic!("{url}"));
-            assert_eq!((i.provider, i.user.as_deref(), i.project.as_str()), (p, user, project), "{url}");
+            let i = HostedGitInfo::from_url(url)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{url}"));
+            assert_eq!(
+                (i.provider, i.user.as_deref(), i.project.as_str()),
+                (p, user, project),
+                "{url}"
+            );
         }
-        assert_eq!(HostedGitInfo::from_url("https://bitbucket.org/foo/bar%0N"), Err(HostedGitError::InvalidUrl));
+        assert_eq!(
+            HostedGitInfo::from_url("https://bitbucket.org/foo/bar%0N"),
+            Err(HostedGitError::InvalidUrl)
+        );
         assert!(HostedGitInfo::from_url("github:foo%0N/bar").is_err());
     }
 
     #[test]
     fn formatting() {
-        let i = HostedGitInfo::from_url("github:foo/bar#v1.0.0").unwrap().unwrap();
+        let i = HostedGitInfo::from_url("github:foo/bar#v1.0.0")
+            .unwrap()
+            .unwrap();
         assert_eq!(i.ssh_url(), "git+ssh://git@github.com/foo/bar.git#v1.0.0");
         assert_eq!(i.https_url(), "git+https://github.com/foo/bar.git#v1.0.0");
         assert_eq!(i.clone_url(false), "https://github.com/foo/bar.git");
-        assert_eq!(i.tarball_url(), "https://codeload.github.com/foo/bar/tar.gz/v1.0.0");
+        assert_eq!(
+            i.tarball_url(),
+            "https://codeload.github.com/foo/bar/tar.gz/v1.0.0"
+        );
     }
 }

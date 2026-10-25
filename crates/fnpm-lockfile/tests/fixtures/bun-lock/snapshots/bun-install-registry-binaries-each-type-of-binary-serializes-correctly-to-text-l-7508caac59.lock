@@ -1,0 +1,24 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "foo",
+      "dependencies": {
+        "dir-bin": "./dir-bin",
+        "file-bin": "./file-bin",
+        "map-bin": "./map-bin",
+        "named-file-bin": "./named-file-bin",
+      },
+    },
+  },
+  "packages": {
+    "dir-bin": ["dir-bin@file:dir-bin", { "binDir": "./bins" }],
+
+    "file-bin": ["file-bin@file:file-bin", { "bin": "./file-bin.js" }],
+
+    "map-bin": ["map-bin@file:map-bin", { "bin": { "map-bin-1": "./map-bin-1.js", "map-bin-2": "./map-bin-2.js" } }],
+
+    "named-file-bin": ["named-file-bin@file:named-file-bin", { "bin": { "named-file-bin": "./named-file-bin.js" } }],
+  }
+}

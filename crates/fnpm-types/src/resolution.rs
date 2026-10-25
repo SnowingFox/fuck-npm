@@ -77,7 +77,11 @@ pub enum ResolutionTag {
 
 impl Resolution {
     pub fn npm(version: impl Into<String>, integrity: Option<Integrity>) -> Self {
-        Self::Npm { version: version.into(), tarball_url: None, integrity }
+        Self::Npm {
+            version: version.into(),
+            tarball_url: None,
+            integrity,
+        }
     }
 
     pub fn tag(&self) -> ResolutionTag {
@@ -126,7 +130,10 @@ impl Resolution {
 
     /// Fetched over the network or from the store (as opposed to linked from the project).
     pub fn is_remote(&self) -> bool {
-        matches!(self, Self::Npm { .. } | Self::Git { .. } | Self::Github { .. } | Self::RemoteTarball { .. })
+        matches!(
+            self,
+            Self::Npm { .. } | Self::Git { .. } | Self::Github { .. } | Self::RemoteTarball { .. }
+        )
     }
 
     /// Content is addressed by integrity and can live in the global store.
@@ -136,7 +143,10 @@ impl Resolution {
 
     /// Lives in the project (root, workspace, folder, link): never copied into the store.
     pub fn is_local_tree(&self) -> bool {
-        matches!(self, Self::Root | Self::Workspace { .. } | Self::Folder { .. } | Self::Symlink { .. })
+        matches!(
+            self,
+            Self::Root | Self::Workspace { .. } | Self::Folder { .. } | Self::Symlink { .. }
+        )
     }
 }
 
@@ -147,8 +157,17 @@ impl fmt::Display for Resolution {
         match self {
             Self::Root => f.write_str("root:"),
             Self::Npm { version, .. } => f.write_str(version),
-            Self::Git { url, resolved_commit, .. } => write!(f, "git+{url}#{resolved_commit}"),
-            Self::Github { owner, repo, resolved_commit, .. } => write!(f, "github:{owner}/{repo}#{resolved_commit}"),
+            Self::Git {
+                url,
+                resolved_commit,
+                ..
+            } => write!(f, "git+{url}#{resolved_commit}"),
+            Self::Github {
+                owner,
+                repo,
+                resolved_commit,
+                ..
+            } => write!(f, "github:{owner}/{repo}#{resolved_commit}"),
             Self::RemoteTarball { url, .. } => f.write_str(url),
             Self::LocalTarball { path, .. } | Self::Folder { path } => write!(f, "file:{path}"),
             Self::Symlink { path } => write!(f, "link:{path}"),
@@ -170,8 +189,20 @@ mod tests {
         assert!(r.is_remote() && r.is_storable() && !r.is_local_tree());
         r.set_integrity(i);
         assert_eq!(r.integrity(), Some(&i));
-        assert_eq!(Resolution::Folder { path: "../x".into() }.to_string(), "file:../x");
-        assert_eq!(Resolution::Workspace { path: "packages/a".into() }.to_string(), "workspace:packages/a");
+        assert_eq!(
+            Resolution::Folder {
+                path: "../x".into()
+            }
+            .to_string(),
+            "file:../x"
+        );
+        assert_eq!(
+            Resolution::Workspace {
+                path: "packages/a".into()
+            }
+            .to_string(),
+            "workspace:packages/a"
+        );
         let gh = Resolution::Github {
             owner: "u".into(),
             repo: "r".into(),
@@ -182,7 +213,13 @@ mod tests {
         assert_eq!(gh.to_string(), "github:u/r#abc");
         assert_eq!(gh.tag(), ResolutionTag::Github);
         assert!(Resolution::Root.is_local_tree());
-        assert!(Resolution::LocalTarball { path: "x.tgz".into(), integrity: None }.is_storable());
+        assert!(
+            Resolution::LocalTarball {
+                path: "x.tgz".into(),
+                integrity: None
+            }
+            .is_storable()
+        );
     }
 
     #[test]

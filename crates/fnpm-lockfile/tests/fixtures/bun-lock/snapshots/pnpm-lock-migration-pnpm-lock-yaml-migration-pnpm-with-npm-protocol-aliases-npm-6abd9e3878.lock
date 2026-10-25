@@ -1,0 +1,24 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "alias-test",
+      "dependencies": {
+        "my-lodash": "npm:lodash@latest",
+        "my-react": "npm:react@^17.0.0",
+      },
+    },
+  },
+  "packages": {
+    "js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
+
+    "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "4.0.0" }, "bin": { "loose-envify": "cli.js" } }, "sha512-lyuxPGr/Wfhrlem2CL/tNVBQAZ8HW+WqwP25nGsjKeMZk13HGBF7YbJSi1KyeKwGAteWUa/ZKPUKAZNiIrUqZg=="],
+
+    "my-lodash": ["lodash@4.17.21", "", {}, "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="],
+
+    "my-react": ["react@17.0.2", "", { "dependencies": { "loose-envify": "1.4.0", "object-assign": "4.1.1" } }, "sha512-gnhPt75i/dq/z3/6q/0asP78D0u592D5L1pd7M8P+dck6Fu/jJeL6iVVK23fptSUZj8Vjf++7wXA8UNclGQcbA=="],
+
+    "object-assign": ["object-assign@4.1.1", "", {}, "sha512-rJgTQnkUnkjVqfO3E+1Q45hXf64UF+6eWwJJCTNJN7q7vfVQqPJZsB/1/vb9TuT9e2vYfqvnMqGCDJ5x6+WUJA=="],
+  }
+}

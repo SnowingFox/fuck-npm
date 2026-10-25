@@ -1,0 +1,21 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "canary-test",
+      "dependencies": {
+        "react": "19.2.0-canary-a96a0f39-20250815",
+        "react-dom": "19.2.0-canary-a96a0f39-20250815",
+        "scheduler": "0.27.0-canary-a96a0f39-20250815",
+      },
+    },
+  },
+  "packages": {
+    "react": ["react@19.2.0-canary-a96a0f39-20250815", "", {}, ""],
+
+    "react-dom": ["react-dom@19.2.0-canary-a96a0f39-20250815", "", { "dependencies": { "scheduler": "0.27.0-canary-a96a0f39-20250815" } }, ""],
+
+    "scheduler": ["scheduler@0.27.0-canary-a96a0f39-20250815", "", {}, ""],
+  }
+}
