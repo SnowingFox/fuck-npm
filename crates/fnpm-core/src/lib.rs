@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 use fnpm_config::Env;
 use fnpm_types::{EventSink, InstallSummary};
 
-pub use install::config_hash;
+pub use install::{PreparedInstall, config_hash};
 pub use options::{CoreRequest, CoreResult, InstallOptions, PmOptions};
 
 /// Errors carry a stable `code` the CLI maps to messages and exit codes.
@@ -67,6 +67,16 @@ pub enum Error {
     /// The command path is not one fnpm knows.
     #[error("unknown command {0:?}")]
     UnknownCommand(Vec<String>),
+    /// A package could not be downloaded or put into the store.
+    #[error("{package}: {message}")]
+    Fetch {
+        /// `name@version`.
+        package: String,
+        /// What failed.
+        message: String,
+        /// The code of the underlying failure (`INTEGRITY`, `NETWORK`, `NOT_FOUND`, ...).
+        code: &'static str,
+    },
     /// A command that belongs to a later parity phase (see `docs/ROADMAP.md`).
     #[error("`fnpm {command}` is not implemented in the native core yet")]
     NotImplemented {
@@ -75,7 +85,7 @@ pub enum Error {
     },
 }
 
-fn registry_code(e: &fnpm_registry::Error) -> &'static str {
+pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
     use fnpm_registry::Error as R;
     match e {
         R::NotFound(_) => "NOT_FOUND",
@@ -110,6 +120,7 @@ impl Error {
             Self::Config(fnpm_config::Error::InvalidValue { .. }) => "USAGE",
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
+            Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }
     }
@@ -135,15 +146,28 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Worker threads of [`runtime`]: `FNPM_IO_THREADS` if set (1-64), else `min(cpus, 4)`. The
+/// workers only drive network I/O and the pipeline; CPU work (extraction, hashing, linking)
+/// runs on rayon pools, so more workers only add thread start-up cost.
+pub fn io_threads() -> usize {
+    std::env::var("FNPM_IO_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| (1..=64).contains(n))
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map_or(4, |n| n.get())
+                .clamp(1, 4)
+        })
+}
+
 /// The process-wide runtime: tokio multi-thread for network and file I/O, plus the global
-/// rayon pool for CPU work. Created on first use (`min(cpus, 8)` workers); the napi layer and
+/// rayon pool for CPU work. Created on first use ([`io_threads`] workers); the napi layer and
 /// the native launcher call into it.
 pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
-        let workers = std::thread::available_parallelism()
-            .map_or(4, |n| n.get())
-            .clamp(1, 8);
+        let workers = io_threads();
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(workers)
             .thread_name("fnpm-io")
@@ -168,6 +192,13 @@ pub async fn install_with_env(
     env: Env,
 ) -> Result<InstallSummary> {
     install::run(opts, events, env).await
+}
+
+/// The synchronous start of [`install`]: options, project, configuration and the no-op check,
+/// with no runtime. A launcher answers a no-op install from [`PreparedInstall::noop`] without
+/// starting [`runtime`]; otherwise it continues with [`PreparedInstall::run`] on the runtime.
+pub fn prepare_install(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
+    install::prepare(opts, env)
 }
 
 /// Every other command, dispatched on `request.command` (see `commands`).

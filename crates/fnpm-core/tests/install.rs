@@ -472,6 +472,19 @@ async fn optional_platform_mismatch_is_skipped() {
         p.read("fnpm.lock").contains("only-aix"),
         "kept in the lockfile"
     );
+    let downloaded = |reg: &Registry| {
+        reg.seen()
+            .iter()
+            .any(|r| r.contains("only-aix") && r.ends_with(".tgz"))
+    };
+    assert!(
+        !downloaded(&reg),
+        "never download another platform's package"
+    );
+    // Not on a reinstall from the lockfile either.
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert!(!downloaded(&reg));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -490,4 +503,117 @@ async fn local_folder_dependency() {
     p.install().await;
     assert_eq!(p.installed("local").as_deref(), Some("0.0.1"));
     assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn prepare_answers_a_noop_without_a_runtime() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    let (opts, env) = (p.opts(InstallCommand::Install, &[]), p.env());
+    // A plain thread: no tokio context at all.
+    let prepared = std::thread::spawn(move || fnpm_core::prepare_install(opts, env).unwrap())
+        .join()
+        .unwrap();
+    let noop = prepared.noop().expect("no-op");
+    assert_eq!(noop.checked.unwrap().packages, 2);
+    // Not a no-op: `run` continues the pipeline.
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let prepared =
+        fnpm_core::prepare_install(p.opts(InstallCommand::Install, &[]), p.env()).unwrap();
+    assert!(prepared.noop().is_none());
+    let s = prepared
+        .run(std::sync::Arc::new(fnpm_types::NoopSink))
+        .await
+        .unwrap();
+    assert_eq!(s.installed_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn parsed_lockfile_survives_node_modules_removal() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    let sidecar = p.path("node_modules/.fnpm/lock.bin");
+    assert!(exists(&sidecar));
+    let cached: Vec<_> = std::fs::read_dir(p.tmp.path().join("fnpm-home/cache/lockfile-sidecars"))
+        .expect("cached sidecar dir")
+        .flatten()
+        .collect();
+    assert_eq!(cached.len(), 1);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let s = p.install().await;
+    assert_eq!(s.installed_count, 2);
+    assert!(exists(&sidecar), "restored from the cached copy");
+    assert!(p.install().await.noop);
+    // A changed lockfile never uses a stale copy.
+    let lock = p.read("fnpm.lock").replace("\"^1.0.0\"", "\"^1.0.0\" ");
+    p.write("fnpm.lock", &lock);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tampered_tarball_is_an_integrity_error() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    // Same version, different bytes; the lockfile keeps the original integrity.
+    let mut evil = Pkg::new("b", "1.0.0");
+    evil.files.push(("evil.js".into(), "pwned".into()));
+    reg.publish(&evil);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    std::fs::remove_dir_all(p.tmp.path().join("fnpm-home/store")).unwrap();
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.frozen_lockfile = true;
+    let err = p.run(o).await.unwrap_err();
+    assert_eq!(err.code(), "INTEGRITY", "{err}");
+    assert!(!exists(&p.path("node_modules/b/evil.js")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hoisted_workspaces() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"], "dependencies": { "lib": "workspace:*", "b": "1.0.0" } }),
+    );
+    p.write(
+        "packages/lib/package.json",
+        &json!({ "name": "lib", "version": "0.1.0", "dependencies": { "b": "1.2.0" } }).to_string(),
+    );
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    p.run(o.clone()).await.unwrap();
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    let lib = std::fs::canonicalize(p.path("node_modules/lib")).unwrap();
+    assert_eq!(lib, std::fs::canonicalize(p.path("packages/lib")).unwrap());
+    let nested = p.path("packages/lib/node_modules/b/package.json");
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(nested).unwrap()).unwrap();
+    assert_eq!(
+        v["version"], "1.2.0",
+        "conflicting version under the workspace"
+    );
+    assert!(
+        !exists(&p.path("node_modules/.fnpm/node_modules")),
+        "hoisted layout"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn global_remove_unlinks_bins() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({}));
+    let mut o = p.opts(InstallCommand::Add, &["tool"]);
+    o.pm.global = true;
+    p.run(o).await.unwrap();
+    let bin = p.tmp.path().join("global-bin/tool");
+    assert!(exists(&bin));
+    let mut o = p.opts(InstallCommand::Remove, &["tool"]);
+    o.pm.global = true;
+    p.run(o).await.unwrap();
+    assert!(!exists(&bin), "bin unlinked");
+    assert!(!exists(&p.tmp.path().join("global/node_modules/tool")));
 }

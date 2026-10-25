@@ -25,7 +25,59 @@ pub(crate) struct Fetched {
     pub key: PackageKey,
 }
 
-type Outcome = Result<Fetched, String>;
+/// Why a package could not be put into the store, with the error code the CLI shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FetchFailure {
+    /// The message.
+    pub message: String,
+    /// A [`crate::Error::code`] value (`INTEGRITY`, `NETWORK`, `NOT_FOUND`, `CORE_ERROR`).
+    pub code: &'static str,
+}
+
+impl FetchFailure {
+    fn other(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: "CORE_ERROR",
+        }
+    }
+}
+
+impl std::fmt::Display for FetchFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl From<FetchFailure> for String {
+    fn from(f: FetchFailure) -> Self {
+        f.message
+    }
+}
+
+impl From<fnpm_registry::Error> for FetchFailure {
+    fn from(e: fnpm_registry::Error) -> Self {
+        Self {
+            code: crate::registry_code(&e),
+            message: e.to_string(),
+        }
+    }
+}
+
+impl From<fnpm_store::Error> for FetchFailure {
+    fn from(e: fnpm_store::Error) -> Self {
+        let code = match e {
+            fnpm_store::Error::Integrity { .. } => "INTEGRITY",
+            _ => "CORE_ERROR",
+        };
+        Self {
+            message: e.to_string(),
+            code,
+        }
+    }
+}
+
+type Outcome = Result<Fetched, FetchFailure>;
 
 /// One package's fetch: filled once, waited on by link threads (blocking) and the pipeline
 /// (async).
@@ -138,22 +190,23 @@ impl Fetcher {
         slots.insert(key, slot.clone());
         drop(slots);
         self.inner.counters.total.fetch_add(1, Ordering::Relaxed);
-        let (inner, s) = (self.inner.clone(), slot.clone());
-        let (name, version, resolution) = (name.to_owned(), version.to_owned(), resolution.clone());
-        self.inner.handle.spawn(async move {
-            let outcome = fetch_one(&inner, &name, &version, &resolution).await;
-            let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
-            if inner.events.enabled() {
-                inner.events.emit(Event::Download {
-                    done,
-                    total: inner.counters.total.load(Ordering::Relaxed),
-                    bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
-                    name: Some(name.clone()),
-                });
-            }
-            s.set(outcome);
-        });
+        start_fetch(
+            &self.inner,
+            slot.clone(),
+            name.to_owned(),
+            version.to_owned(),
+            resolution.clone(),
+        );
         slot
+    }
+
+    /// The slot of a package whose fetch was already started (never starts one).
+    pub fn existing(&self, p: &Package) -> Option<Arc<Slot>> {
+        self.inner
+            .slots
+            .lock()
+            .get(&format!("{}@{}", p.name, p.resolution))
+            .cloned()
     }
 
     /// [`Fetcher::ensure`] for a graph package.
@@ -161,15 +214,20 @@ impl Fetcher {
         self.ensure(&p.name, &p.version, &p.resolution)
     }
 
-    /// The `pkgs/` directory names of the installed packages (patched variants included), for
-    /// the store's project record.
+    /// The `pkgs/` directory names of the installed packages that this install fetched or found
+    /// in the store (patched variants included), for the store's project record.
     pub async fn store_dir_names(&self, graph: &LockGraph, installed: &[bool]) -> Vec<String> {
         let mut names = Vec::new();
         for (i, p) in graph.packages.iter().enumerate() {
             if !installed.get(i).copied().unwrap_or(false) || !needs_content(&p.resolution) {
                 continue;
             }
-            let Ok(f) = self.ensure_package(p).wait().await else {
+            // Only what this install fetched: packages that were not linked (another
+            // platform's optional binaries) must not be downloaded now.
+            let Some(slot) = self.existing(p) else {
+                continue;
+            };
+            let Ok(f) = slot.wait().await else {
                 continue;
             };
             names.push(f.key.dir_name());
@@ -195,16 +253,41 @@ impl Fetcher {
     }
 }
 
+/// Runs the fetch of one package on the runtime and fills `slot`.
+fn start_fetch(
+    inner: &Arc<Inner>,
+    slot: Arc<Slot>,
+    name: String,
+    version: String,
+    resolution: Resolution,
+) {
+    let task_inner = inner.clone();
+    inner.handle.spawn(async move {
+        let inner = task_inner;
+        let outcome = fetch_one(&inner, &name, &version, &resolution).await;
+        let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
+        if inner.events.enabled() {
+            inner.events.emit(Event::Download {
+                done,
+                total: inner.counters.total.load(Ordering::Relaxed),
+                bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
+                name: Some(name.clone()),
+            });
+        }
+        slot.set(outcome);
+    });
+}
+
 fn to_io(e: fnpm_registry::Error) -> std::io::Error {
     std::io::Error::other(e.to_string())
 }
 
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+    f: impl FnOnce() -> Result<T, FetchFailure> + Send + 'static,
+) -> Result<T, FetchFailure> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| FetchFailure::other(e.to_string()))?
 }
 
 async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resolution) -> Outcome {
@@ -241,7 +324,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             }
             let bytes = tokio::fs::read(&file)
                 .await
-                .map_err(|e| format!("{}: {e}", file.display()))?;
+                .map_err(|e| FetchFailure::other(format!("{}: {e}", file.display())))?;
             let (store, n, v, integrity) = (
                 inner.store.clone(),
                 name.to_owned(),
@@ -259,12 +342,12 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                     store
                         .import_tarball_bytes(&key, &bytes, ImportOptions { skip_verify })
                         .map(|entry| Fetched { entry, key })
-                        .map_err(|e| e.to_string())
+                        .map_err(FetchFailure::from)
                 }
                 None => store
                     .import_tarball_bytes_unpinned(&n, &v, &bytes)
                     .map(|(key, entry)| Fetched { entry, key })
-                    .map_err(|e| e.to_string()),
+                    .map_err(FetchFailure::from),
             })
             .await
         }
@@ -284,7 +367,9 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             let (store, n, v) = (inner.store.clone(), name.to_owned(), version.to_owned());
             blocking(move || import_folder(&store, &n, &v, &dir)).await
         }
-        other => Err(format!("{name}@{other} has no content to fetch")),
+        other => Err(FetchFailure::other(format!(
+            "{name}@{other} has no content to fetch"
+        ))),
     }
 }
 
@@ -317,7 +402,7 @@ async fn remote(
         .client
         .tarball(url, integrity.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(FetchFailure::from)?;
     let counter = inner.clone();
     let stream = body.stream.map(move |chunk| {
         if let Ok(b) = &chunk {
@@ -345,7 +430,7 @@ async fn remote(
                     },
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(FetchFailure::from)?;
             Ok(Fetched { entry, key })
         }
         None => {
@@ -353,7 +438,7 @@ async fn remote(
                 .store
                 .import_tarball_unpinned(name, version, stream)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(FetchFailure::from)?;
             Ok(Fetched { entry, key })
         }
     }
@@ -369,7 +454,7 @@ async fn git(inner: &Arc<Inner>, name: &str, version: &str, url: &str, sha: &str
     let _ = tokio::fs::remove_dir_all(&dest).await;
     fnpm_registry::git::checkout(&inner.cache_dir, url, sha, None, &dest)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(FetchFailure::from)?;
     let (store, nm, v, d) = (
         inner.store.clone(),
         name.to_owned(),
@@ -382,7 +467,7 @@ async fn git(inner: &Arc<Inner>, name: &str, version: &str, url: &str, sha: &str
 }
 
 fn import_folder(store: &Store, name: &str, version: &str, dir: &Path) -> Outcome {
-    let integrity = Store::pack_integrity(dir).map_err(|e| e.to_string())?;
+    let integrity = Store::pack_integrity(dir).map_err(FetchFailure::from)?;
     let key = PackageKey {
         name: name.to_owned(),
         version: version.to_owned(),
@@ -394,7 +479,7 @@ fn import_folder(store: &Store, name: &str, version: &str, dir: &Path) -> Outcom
     store
         .import_directory(&key, dir)
         .map(|entry| Fetched { entry, key })
-        .map_err(|e| e.to_string())
+        .map_err(FetchFailure::from)
 }
 
 /// The `_patch_hash` of a `patchedDependencies` file as it is now (the store keys patched
@@ -429,7 +514,7 @@ impl GraphSource<'_> {
         }
         let patched = store
             .import_patched(&base.key, &base.entry, &text, hash)
-            .map_err(|e| e.to_string())?;
+            .map_err(FetchFailure::from)?;
         for w in patched.warnings {
             self.fetcher.inner.events.emit(Event::warn(w, None));
         }

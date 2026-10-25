@@ -29,6 +29,8 @@ xxhash-rust.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+bytes.workspace = true
+mimalloc.workspace = true
 tempfile.workspace = true
 axum.workspace = true
 flate2.workspace = true
