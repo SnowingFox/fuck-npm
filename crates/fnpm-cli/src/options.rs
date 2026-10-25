@@ -3,7 +3,7 @@
 //! `packages/fuck-npm/src/core/options.ts`; the order of the checks is the order the TS code
 //! throws in, so the first error reported is the same.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use fnpm_config::{Backend, LinkerSetting, LogLevel};
 use fnpm_core::options::{InstallCommand, UpdateGroups};
@@ -26,28 +26,26 @@ fn is_digits(value: &str) -> bool {
 }
 
 /// Node's `path.resolve(base, path)` for an absolute `base`: lexical, no filesystem access.
+/// Works on path components, so a base that is not UTF-8 survives; a relative `base` (the
+/// start directory could not be read) is only joined.
 pub fn resolve_path(base: &Path, path: &str) -> PathBuf {
-    let candidate = Path::new(path);
-    let joined = if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        base.join(candidate)
-    };
-    if cfg!(windows) {
+    let joined = base.join(path);
+    if cfg!(windows) || !joined.is_absolute() {
         return joined;
     }
-    let mut parts: Vec<&str> = Vec::new();
-    let text = joined.to_str().unwrap_or(path);
-    for segment in text.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
+    let mut out = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                out.push(component.as_os_str());
             }
-            other => parts.push(other),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
         }
     }
-    PathBuf::from(format!("/{}", parts.join("/")))
+    out
 }
 
 /// `--cwd` is resolved against the starting directory, like bun's chdir. An absolute path
@@ -469,4 +467,35 @@ pub fn install_options(
         update_groups,
         depth,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_like_node_path_resolve() {
+        let base = Path::new("/work/app");
+        for (path, expected) in [
+            ("sub", "/work/app/sub"),
+            ("../x/./y/", "/work/x/y"),
+            ("../../../..", "/"),
+            ("a//b/.", "/work/app/a/b"),
+            ("/abs/../y/", "/y"),
+        ] {
+            assert_eq!(resolve_path(base, path), PathBuf::from(expected), "{path}");
+        }
+        // The start directory could not be read: never invent an absolute path.
+        assert_eq!(resolve_path(Path::new("."), "sub"), PathBuf::from("./sub"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_utf8_start_directory_is_kept() {
+        use std::os::unix::ffi::OsStrExt;
+        let base = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/\xff/app"));
+        let resolved = resolve_path(base, "../sub");
+        assert_eq!(resolved.as_os_str().as_bytes(), b"/tmp/\xff/sub");
+    }
 }
