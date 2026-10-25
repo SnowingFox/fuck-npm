@@ -34,6 +34,7 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     // `outdated` only reads; bun forces dry-run.
     options.dryRun = true;
   }
+  options.cliVersion = getCliVersion();
   const logLevel = logLevelOf(ctx.values);
 
   if (head === "outdated" && ctx.output.mode !== "json" && logLevel !== "silent") {

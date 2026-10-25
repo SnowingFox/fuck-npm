@@ -14,6 +14,7 @@ mod inspect;
 mod link;
 mod maintenance;
 mod outdated;
+pub(crate) mod pack;
 mod scripts;
 mod table;
 
@@ -243,13 +244,13 @@ pub async fn dispatch(
         ["lock", "dedupe"] => maintenance::dedupe(&cx, true).await,
         ["lock", "audit"] => info::audit(&cx, true).await,
         // Later parity phases (docs/ROADMAP.md P4): a typed error, never a panic.
+        ["pack"] | ["pm", "pack"] => pack::run(&cx).await,
         ["patch"]
         | ["patch-commit"]
-        | ["pack"]
         | ["publish"]
         | ["x" | "dlx"]
         | ["create"]
-        | ["pm", "pack" | "diff" | "scan"] => Err(not_implemented(&path)),
+        | ["pm", "diff" | "scan"] => Err(not_implemented(&path)),
         _ => Err(Error::UnknownCommand(command)),
     }
 }

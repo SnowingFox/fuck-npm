@@ -353,6 +353,8 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
     .replace(/^\[[\d.]+\s?m?s\]/gm, "")
     .replace(/^\s+at (.*?)\(.*?:\d+(?::\d+)?\)/gm, "    at $1(file:NN:NN)")
     .replace(/fnpm v[\d.]+(?:-[\w.]+)?(?:\+[\w]+)?(?:\s+\([^)]+\))?/g, "fnpm v<fnpm-version>")
+    // bun's `Bun.version_with_sha` -> "<version> (<revision>)" in "bun <command> v1.2.3 (abcdef12)" headers.
+    .replace(/\bfnpm ([a-z][a-z-]*) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?/g, "fnpm $1 <version> (<revision>)")
     .replaceAll(version, "<fnpm-version>")
     .trim();
 }
