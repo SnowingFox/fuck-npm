@@ -1520,11 +1520,10 @@ short clusters, foreign and runtime flags, typos, other commands' flags, `--`, T
 environments) and stores the TS planner's route plus the TS CLI's exit code, output and
 `InstallOptions`; the native side must agree on every case.
 
-**Threading.** No tokio runtime on the version, usage-error, exec and no-op paths. A no-op
-install is answered before the runtime exists: the launcher runs the core's fast path
-synchronously (`project::Project::load`, `config_hash`, `fast_path::check`, with the
-eligibility conditions of step 1 of the core's pipeline, which it must track) and builds
-`fnpm_core::runtime()` only when there is work. mimalloc is the global allocator.
+**Threading.** No tokio runtime on the version, usage-error, exec and no-op paths. The launcher
+calls `fnpm_core::prepare_install` (options, project, configuration and the no-op fast path,
+synchronously), answers a no-op from `PreparedInstall::noop` and builds `fnpm_core::runtime()`
+only when there is work, for `PreparedInstall::run`. mimalloc is the global allocator.
 
 **Startup.** Process start dominates `--version` and the no-op, so the executables are built
 for it:

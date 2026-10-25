@@ -118,3 +118,34 @@ fn the_launcher_and_the_core_agree_on_a_noop() {
     native["elapsedMs"] = Value::Null;
     assert_eq!(native, core);
 }
+
+#[test]
+fn a_noop_still_reports_configuration_warnings() {
+    let (dir, project) = project();
+    std::fs::write(
+        project.join(".npmrc"),
+        "//registry.npmjs.org/:certfile=/nonexistent/cert.pem\n",
+    )
+    .unwrap();
+    let env = isolated_env(dir.path());
+    install_json(&project, &env, &["install"]);
+    let output = Command::new(FNPM)
+        .arg("install")
+        .current_dir(&project)
+        .env_remove("NPM_CONFIG_REGISTRY")
+        .env("NO_COLOR", "1")
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(
+        stdout.contains("Checked 1 install across 1 package (no changes)"),
+        "{stdout}"
+    );
+    assert!(
+        stderr.contains("warn: ") && stderr.contains("certfile is not supported"),
+        "{stderr}"
+    );
+}
