@@ -4,9 +4,12 @@
 //   reject    a payload error: parse in Rust, build the Error, settle the promise
 //   roundtrip an async call through the runtime with no events (needs `testing` exports)
 //   events    N batches through the ThreadsafeFunction, acknowledged before settling
+//   noop      a no-op install of an empty project: the core's fast path end to end
 //
 // Usage: node bench/overhead.mjs [path to .node or package dir]
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +62,15 @@ async function perCall(label, n, call) {
 }
 
 await perCall("reject", 5_000, () => binding.install({ packages: 1 }).catch(() => {}));
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "fnpm-bench-"));
+  process.env.FNPM_HOME = join(dir, ".fnpm");
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "bench", version: "1.0.0" }));
+  await binding.install({ cwd: dir, offline: true });
+  await perCall("noop", 2_000, () => binding.install({ cwd: dir, offline: true }));
+  rmSync(dir, { recursive: true, force: true });
+}
 
 if (typeof binding.__testDeliver === "function") {
   await perCall("roundtrip", 5_000, () => binding.__testDeliver([]));

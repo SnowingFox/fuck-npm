@@ -1473,7 +1473,10 @@ same build: options the CLI builds for every install flag deserialize in Rust, e
 the sink, and rejections become `CoreError` with the core's code.
 
 **Perf.** `npm run bench -w @fuck-npm/binding` measures load time, a sync call, a rejected
-payload, an empty async round trip, and 1/100/1000 event batches.
+payload, an empty async round trip, 1/100/1000 event batches, and a no-op install of an empty
+project (the core's fast path end to end). With the `release-napi` build on the Linux baseline
+machine: load about 2 ms (`dlopen`) / 4 ms (`require` of `index.js`), no-op install of the
+small fixture 0.23 ms in process, about 10 µs per event batch.
 
 ## fnpm-cli
 
