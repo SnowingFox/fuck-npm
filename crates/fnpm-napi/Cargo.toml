@@ -27,6 +27,9 @@ tokio.workspace = true
 futures-util.workspace = true
 mimalloc.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 # On musl, an initial-exec TLS model in a dlopen'ed library crashes Node while loading it
 # (musl reserves no static TLS for dlopen); mimalloc must use local-dynamic TLS there.
 [target.'cfg(target_env = "musl")'.dependencies]

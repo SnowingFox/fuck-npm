@@ -100,6 +100,24 @@ pub fn invoke<'env>(
     })
 }
 
+/// Node marks its stdio descriptors close-on-exec, so a child that the core spawns with
+/// inherited stdio (`fnpm run`, `fnpm x`, lifecycle scripts) would start with fds 0-2
+/// closed and fail its first write with `EBADF`. Clearing the flag only affects processes
+/// spawned without explicit stdio; Node's own `child_process` always sets them up itself.
+fn inherit_stdio() {
+    #[cfg(unix)]
+    for fd in 0..=2 {
+        // SAFETY: the descriptor is only borrowed for the two `fcntl` calls; a closed one
+        // makes them fail with EBADF, which is ignored.
+        let fd = unsafe { rustix::fd::BorrowedFd::borrow_raw(fd) };
+        if let Ok(flags) = rustix::io::fcntl_getfd(fd)
+            && flags.contains(rustix::io::FdFlags::CLOEXEC)
+        {
+            let _ = rustix::io::fcntl_setfd(fd, flags - rustix::io::FdFlags::CLOEXEC);
+        }
+    }
+}
+
 /// Creates the promise and runs `work` on the core runtime with the right sink. A payload
 /// or callback that does not match the contract rejects right away, without starting the
 /// runtime or creating the `ThreadsafeFunction`.
@@ -114,6 +132,7 @@ where
     W: FnOnce(T, Arc<dyn EventSink>) -> F + Send + 'static,
     F: Future<Output = Outcome> + Send + 'static,
 {
+    inherit_stdio();
     let (deferred, promise) = env.create_deferred::<Value, Settle>()?;
     let prepared = payload::callback(on_events)
         .and_then(|callback| parsed.map(|input| (input, callback)))
