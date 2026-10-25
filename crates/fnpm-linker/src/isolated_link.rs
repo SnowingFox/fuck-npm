@@ -72,7 +72,7 @@ impl Paths<'_> {
             Kindof::External(dir) => Some(dir.clone()),
             Kindof::Nothing => {
                 let pkg = &self.cx.graph.packages[self.layout.entries[e as usize].package.index()];
-                local_target(self.cx.project_dir, &pkg.resolution)
+                self.cx.local_target(&pkg.resolution)
             }
             Kindof::Global { final_dir } if from_global => Some(fsutil::join_name(
                 &final_dir.join("node_modules"),
@@ -119,6 +119,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         .iter()
         .filter(|p| matches!(p.resolution, Resolution::Workspace { .. }))
         .filter_map(|p| local_target(cx.project_dir, &p.resolution))
+        .filter(|d| crate::is_inside_project(cx.project_dir, d))
         .collect();
     let mut is_new_fnpm = is_new_nm;
     if !is_new_nm && !crate::is_isolated_tree(cx.project_dir) {
@@ -177,9 +178,9 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                         Kindof::Nothing
                     }
                 }
-                Resolution::Symlink { .. } => Kindof::External(
-                    local_target(cx.project_dir, &pkg.resolution).unwrap_or_default(),
-                ),
+                Resolution::Symlink { .. } => {
+                    Kindof::External(cx.local_target(&pkg.resolution).unwrap_or_default())
+                }
                 _ => match (e.global_hash, &links_dir) {
                     (Some(h), Some(links)) => Kindof::Global {
                         final_dir: links.join(format!("{}-{h:016x}", e.key)),
@@ -713,8 +714,9 @@ fn link_project_to_global(local: &Path, final_dir: &Path, fresh: bool) -> Result
             Ok(_) => return fsutil::replace_symlink_atomic(final_dir, local).map_err(io),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => {
-                // A real directory from an install without the global store.
-                fsutil::remove_any(local).map_err(io)?;
+                // A real directory from an install without the global store: out of the way
+                // with one rename, deleted in the background.
+                fsutil::move_aside_and_delete(local).map_err(io)?;
             }
         }
     }

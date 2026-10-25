@@ -334,6 +334,7 @@ pub fn plan_filtered(
                     continue;
                 };
                 if let Some(t) = e.target
+                    && t.index() < n_pkgs
                     && !peer_targets[bit].contains(&t.0)
                 {
                     peer_targets[bit].push(t.0);

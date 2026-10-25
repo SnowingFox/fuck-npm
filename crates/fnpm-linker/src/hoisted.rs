@@ -85,10 +85,27 @@ pub(crate) fn optional_only(graph: &fnpm_types::LockGraph) -> Vec<bool> {
     seen.iter().zip(&required).map(|(s, r)| *s && !*r).collect()
 }
 
-/// Absolute directory of a `link:` / workspace / root package.
+/// Absolute directory of a `link:` / workspace / root package (a `link:<name>` registration
+/// resolves against the project, see [`local_target_with`]).
 pub(crate) fn local_target(project_dir: &Path, resolution: &Resolution) -> Option<PathBuf> {
+    local_target_with(project_dir, None, resolution)
+}
+
+/// Like [`local_target`]; `link:<package name>` (an `fnpm link` registration rather than a
+/// path, bun `PackageInstaller` "a name is relative to the global link directory") resolves
+/// to `<global_link_dir>/<name>` when the directory is known.
+pub(crate) fn local_target_with(
+    project_dir: &Path,
+    global_link_dir: Option<&Path>,
+    resolution: &Resolution,
+) -> Option<PathBuf> {
     match resolution {
         Resolution::Root => Some(project_dir.to_path_buf()),
+        Resolution::Symlink { path }
+            if global_link_dir.is_some() && !fnpm_types::spec::is_link_path(path) =>
+        {
+            global_link_dir.map(|d| fsutil::join_name(d, path))
+        }
         Resolution::Workspace { path } | Resolution::Symlink { path } => {
             let p = Path::new(path);
             Some(if p.is_absolute() {
@@ -157,7 +174,7 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
         let parent_skipped = node.parent.is_some_and(|p| skipped[p as usize]);
         skipped[i] = parent_skipped
             || (!pkg.resolution.is_local_tree() && !pkg.platform.matches(&cx.platform));
-        places.push(match local_target(cx.project_dir, &pkg.resolution) {
+        places.push(match cx.local_target(&pkg.resolution) {
             Some(t) => Place::Link(t),
             None => Place::Copy,
         });
@@ -202,6 +219,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
                 .graph
                 .get(*ws)
                 .and_then(|p| local_target(cx.project_dir, &p.resolution))
+                && crate::is_inside_project(cx.project_dir, &dir)
             {
                 crate::move_node_modules_aside(&dir.join("node_modules"), &[]);
             }
@@ -209,6 +227,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         for p in &cx.graph.packages {
             if let Resolution::Workspace { .. } = p.resolution
                 && let Some(dir) = local_target(cx.project_dir, &p.resolution)
+                && crate::is_inside_project(cx.project_dir, &dir)
             {
                 crate::move_node_modules_aside(&dir.join("node_modules"), &[]);
             }
@@ -256,7 +275,9 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
             {
                 removed += remove_stale(
                     &dir.join("node_modules"),
-                    ids.iter().map(|&i| tree.nodes[i as usize].name.as_str()),
+                    ids.iter()
+                        .filter_map(|&i| tree.nodes.get(i as usize))
+                        .map(|n| n.name.as_str()),
                 );
             }
         }

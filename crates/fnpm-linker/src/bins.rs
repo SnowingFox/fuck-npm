@@ -28,22 +28,42 @@ pub struct LinkedBin {
 }
 
 /// The mode of a bin target: `0o777 & !umask`, read once.
+///
+/// Reading the umask with `umask(2)` briefly sets it to 0 for the whole process, so files and
+/// directories other threads create in that window would be world-writable. Linux reads it
+/// from `/proc/self/status` instead; elsewhere [`crate::Linker::link`] calls this before any
+/// link thread starts (bun `ensure_umask`).
 pub fn exec_mode() -> u32 {
     static MODE: OnceLock<u32> = OnceLock::new();
-    *MODE.get_or_init(|| {
-        #[cfg(unix)]
-        {
-            // SAFETY: `umask` has no memory-safety preconditions; the value is restored at once.
-            let prev = unsafe { libc::umask(0) };
-            // SAFETY: as above.
-            unsafe { libc::umask(prev) };
-            0o777 & !(prev as u32)
-        }
-        #[cfg(not(unix))]
-        {
-            0o777
-        }
-    })
+    *MODE.get_or_init(|| 0o777 & !current_umask())
+}
+
+#[cfg(unix)]
+fn current_umask() -> u32 {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    if let Some(m) = umask_from_proc() {
+        return m;
+    }
+    // SAFETY: `umask` has no memory-safety preconditions; the value is restored at once.
+    let prev = unsafe { libc::umask(0) };
+    // SAFETY: as above.
+    unsafe { libc::umask(prev) };
+    #[allow(clippy::useless_conversion)] // `mode_t` is u16 on macOS.
+    let prev = u32::from(prev);
+    prev & 0o777
+}
+
+#[cfg(not(unix))]
+fn current_umask() -> u32 {
+    0
+}
+
+/// The `Umask:` line of `/proc/self/status` (Linux 4.7+), which reading does not change.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn umask_from_proc() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find_map(|l| l.strip_prefix("Umask:"))?;
+    u32::from_str_radix(line.trim(), 8).ok().map(|m| m & 0o777)
 }
 
 /// npm's bin name normalisation (bun `normalized_bin_name`): the part after the last `/`, `\`
@@ -547,10 +567,12 @@ fn make_executable(abs_target: &Path, meta: &std::fs::Metadata) {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let mode = exec_mode();
         let current = meta.mode() & 0o777;
-        if current != mode {
-            let is_link =
-                std::fs::symlink_metadata(abs_target).is_ok_and(|m| m.file_type().is_symlink());
-            let shared = meta.nlink() > 1 && !is_link;
+        // bun uses `lchmod`: a target that is itself a symlink is never chmod-ed through, so a
+        // package cannot make a file outside of it executable (or world-readable).
+        let is_link =
+            std::fs::symlink_metadata(abs_target).map_or(true, |m| m.file_type().is_symlink());
+        if current != mode && !is_link {
+            let shared = meta.nlink() > 1;
             if !(shared && current & 0o111 != 0) {
                 if shared {
                     let _ = break_hardlink(abs_target);
@@ -622,12 +644,23 @@ fn normalize_shebang(abs_target: &Path, size: u64) {
     let Ok(content) = std::fs::read(abs_target) else {
         return;
     };
+    // The file may have changed since the first read (another link thread normalised the
+    // same shared target): check the bytes that are actually rewritten.
+    if !content.starts_with(b"#!")
+        || content.get(newline) != Some(&b'\n')
+        || content[newline - 1] != b'\r'
+    {
+        return;
+    }
     let Ok(meta) = std::fs::metadata(abs_target) else {
         return;
     };
     let tmp = tmp_sibling(abs_target);
     let write = || -> io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         f.write_all(&content[..newline - 1])?;
         f.write_all(b"\n")?;
         f.write_all(&content[newline + 1..])?;

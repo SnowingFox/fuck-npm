@@ -371,6 +371,8 @@ impl Linker {
         opts: &LinkOptions,
         events: &dyn EventSink,
     ) -> Result<LinkReport> {
+        // Read the umask before any link thread creates files (see `bins::exec_mode`).
+        let _ = bins::exec_mode();
         let pool = self.pool(opts.threads)?;
         let mat = fsutil::Materializer::new(opts.backend);
         let cx = LinkCx {
@@ -383,6 +385,7 @@ impl Linker {
             store: &self.store,
             platform: self.config.platform,
             native: &self.native_binlinks,
+            global_link_dir: self.config.global_dir.join("links"),
             done: AtomicU32::new(0),
             total: AtomicU32::new(0),
         };
@@ -411,6 +414,8 @@ pub(crate) struct LinkCx<'a> {
     pub store: &'a Store,
     pub platform: fnpm_types::Platform,
     pub native: &'a [String],
+    /// Where `fnpm link` registers packages: `link:<name>` resolves to `<this>/<name>`.
+    pub global_link_dir: PathBuf,
     pub done: AtomicU32,
     pub total: AtomicU32,
 }
@@ -451,9 +456,15 @@ impl LinkCx<'_> {
             && let Some(tag) = verify::tag_for(&pkg.resolution)
         {
             let p = dest.join(verify::TAG_FILE);
-            std::fs::write(&p, tag).map_err(|source| Error::Io { path: p, source })?;
+            write_new_file(&p, tag.as_bytes()).map_err(|source| Error::Io { path: p, source })?;
         }
         Ok(())
+    }
+
+    /// The directory a root, workspace or `link:` package lives in (`None` for packages that
+    /// come from the store).
+    pub fn local_target(&self, resolution: &fnpm_types::Resolution) -> Option<PathBuf> {
+        hoisted::local_target_with(self.project_dir, Some(&self.global_link_dir), resolution)
     }
 
     /// bun native binlink: for a package on the native list, its optional dependency built for
@@ -471,6 +482,22 @@ impl LinkCx<'_> {
             })
         })
     }
+}
+
+/// Writes `bytes` to a new file at `p`. Whatever the package shipped under that name is
+/// unlinked first, never written through: with the hardlink backend it is a store blob shared
+/// with other packages, and it could be a symlink.
+fn write_new_file(p: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    match std::fs::remove_file(p) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(p)?
+        .write_all(bytes)
 }
 
 /// Node's lookup of `name` from a package directory: its own `node_modules`, then every
@@ -491,6 +518,12 @@ pub(crate) fn node_resolve(package_dir: &Path, name: &str) -> Option<PathBuf> {
         cur = dir.parent();
     }
     None
+}
+
+/// Whether a workspace directory lies inside the project (bun `is_member_path_outside`): the
+/// linker never moves or deletes anything in a member outside of it.
+pub(crate) fn is_inside_project(project_dir: &Path, dir: &Path) -> bool {
+    fsutil::normalize(dir).starts_with(fsutil::normalize(project_dir))
 }
 
 /// Entries a package manager creates in `node_modules` (bun `is_a_linkers`): every non-dot
@@ -516,9 +549,20 @@ pub(crate) fn is_a_linkers(name: &str) -> bool {
 /// bun `move_node_modules_aside`). Scoped folders are moved whole. Returns how many entries
 /// moved.
 pub(crate) fn move_node_modules_aside(node_modules: &Path, keep: &[&str]) -> u32 {
+    // Nothing is moved out of a `node_modules` that is a symlink (bun `LinkedNodeModules`):
+    // it is shared with something else.
+    if fsutil::kind(node_modules) != fsutil::Kind::Dir {
+        return 0;
+    }
     let Ok(rd) = std::fs::read_dir(node_modules) else {
         return 0;
     };
+    // List first: the `.old_modules-<hex>` folder created below must not be seen (and queued
+    // for deletion as a leftover) while entries are still being moved into it.
+    let names: Vec<String> = rd
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
     let old = node_modules.join(format!(
         "{}{:016x}",
         fsutil::OLD_MODULES_PREFIX,
@@ -526,8 +570,7 @@ pub(crate) fn move_node_modules_aside(node_modules: &Path, keep: &[&str]) -> u32
     ));
     let mut moved = 0;
     let mut made = false;
-    for e in rd.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
+    for name in names {
         if !is_a_linkers(&name) || keep.contains(&name.as_str()) {
             continue;
         }

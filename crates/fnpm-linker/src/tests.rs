@@ -1785,3 +1785,354 @@ fn perf_smoke() {
     eprintln!("hoisted warm: {:?}", t.elapsed());
     crate::flush_background_deletes();
 }
+
+// ---- Regression tests from the review pass. ----
+
+fn mode_of(p: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn bin_target_that_is_a_symlink_is_never_chmodded_through() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = tempfile::tempdir().unwrap();
+    let secret = t.path().join("secret");
+    std::fs::write(&secret, "key").unwrap();
+    std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let pkg = t.path().join("node_modules/evil");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::os::unix::fs::symlink(&secret, pkg.join("cli")).unwrap();
+    let bin_dir = t.path().join("node_modules/.bin");
+    crate::bins::link_bins("evil", &Bin::File { path: "cli".into() }, &pkg, &bin_dir).unwrap();
+    assert_eq!(mode_of(&secret), 0o600);
+    // A real file still gets the exec bits.
+    std::fs::write(pkg.join("real"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(pkg.join("real"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    crate::bins::link_bins(
+        "evil",
+        &Bin::NamedFile {
+            name: "real".into(),
+            path: "real".into(),
+        },
+        &pkg,
+        &bin_dir,
+    )
+    .unwrap();
+    assert_eq!(mode_of(&pkg.join("real")), crate::bins::exec_mode());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn umask_is_read_without_changing_it() {
+    let m = crate::bins::exec_mode();
+    assert_eq!(m & !0o777, 0);
+    // Owner bits are never masked by any sane umask in CI.
+    assert_eq!(m & 0o700, 0o700);
+}
+
+#[test]
+fn moving_aside_skips_symlinked_node_modules() {
+    let t = tempfile::tempdir().unwrap();
+    let shared = t.path().join("shared");
+    std::fs::create_dir_all(shared.join("pkg")).unwrap();
+    let project = t.path().join("p");
+    std::fs::create_dir_all(&project).unwrap();
+    std::os::unix::fs::symlink(&shared, project.join("node_modules")).unwrap();
+    assert_eq!(
+        crate::move_node_modules_aside(&project.join("node_modules"), &[]),
+        0
+    );
+    assert!(shared.join("pkg").is_dir());
+}
+
+#[test]
+fn moving_aside_moves_everything_and_keeps_other_tools() {
+    let t = tempfile::tempdir().unwrap();
+    let nm = t.path().join("node_modules");
+    for d in ["a", "@s/b", ".bin", ".vite", ".old_modules-dead"] {
+        std::fs::create_dir_all(nm.join(d)).unwrap();
+    }
+    assert_eq!(crate::move_node_modules_aside(&nm, &[]), 3);
+    crate::flush_background_deletes();
+    let mut left: Vec<String> = std::fs::read_dir(&nm)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, [".vite"]);
+}
+
+#[test]
+fn switching_layouts_leaves_workspaces_outside_the_project_alone() {
+    let env = Env::new();
+    let outside = env.project.parent().unwrap().join("outside");
+    // `.bin` is a linker entry: switching layouts would move it aside in a member inside the
+    // project, but a member outside of it is never touched.
+    std::fs::create_dir_all(outside.join("node_modules/.bin")).unwrap();
+    std::fs::write(outside.join("node_modules/.bin/keep-me"), "x").unwrap();
+    let mut store = FakeStore::new(&env.store_dir);
+    let mut g = sample(&mut store);
+    g.workspace("outside", "../outside");
+    let linker = env.linker();
+    linker
+        .link(
+            &env.project,
+            &g.g,
+            &Layout::Hoisted(sample_tree()),
+            &store,
+            &lopts(false),
+            &NoopSink,
+        )
+        .unwrap();
+    let iso = Layout::Isolated(linker.plan_isolated(&g.g, None));
+    linker
+        .link(&env.project, &g.g, &iso, &store, &lopts(false), &NoopSink)
+        .unwrap();
+    crate::flush_background_deletes();
+    assert!(outside.join("node_modules/.bin/keep-me").is_file());
+}
+
+#[test]
+fn npm_version_cannot_turn_a_store_key_into_a_path() {
+    let key = crate::store_key::store_key("a", &Resolution::npm("1.0.0/../../../evil", None), "");
+    assert!(!key.contains('/') && !key.contains('\\'), "{key}");
+    assert_eq!(key, "a@1.0.0+..+..+..+evil");
+}
+
+fn index_of(files: &[&str]) -> FileIndex {
+    FileIndex {
+        dirs: Vec::new(),
+        files: files
+            .iter()
+            .map(|p| IndexedFile {
+                path: (*p).to_owned(),
+                size: 0,
+                mode: 0o644,
+                digest: [0; 64],
+            })
+            .collect(),
+        package_json: None,
+    }
+}
+
+#[test]
+fn package_json_is_placed_last_so_a_failed_copy_is_not_trusted() {
+    let t = tempfile::tempdir().unwrap();
+    let src = t.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("package.json"),
+        r#"{"name":"a","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(src.join("index.js"), "1").unwrap();
+    let m = crate::fsutil::Materializer::new(fnpm_config::Backend::Hardlink);
+    let dest = t.path().join("dest");
+    // `zz-missing.js` sorts after `package.json`: it still fails before the manifest lands.
+    let err = m
+        .materialize(
+            &src,
+            &index_of(&["index.js", "package.json", "zz-missing.js"]),
+            &dest,
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("zz-missing.js"), "{err}");
+    assert!(dest.join("index.js").exists());
+    assert!(!dest.join("package.json").exists());
+    assert!(!crate::verify::verify_package_json(&dest, "a", "1.0.0"));
+    // A complete copy has it.
+    let dest2 = t.path().join("dest2");
+    m.materialize(&src, &index_of(&["index.js", "package.json"]), &dest2)
+        .unwrap();
+    assert!(crate::verify::verify_package_json(&dest2, "a", "1.0.0"));
+}
+
+#[test]
+fn store_index_paths_cannot_escape_the_package() {
+    let t = tempfile::tempdir().unwrap();
+    let src = t.path().join("a/b/src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(t.path().join("a/b/x"), "x").unwrap();
+    let m = crate::fsutil::Materializer::new(fnpm_config::Backend::Copyfile);
+    for bad in ["../x", "lib/../../x", "/etc/passwd", ""] {
+        let dest = t.path().join("dest");
+        let r = m.materialize(&src, &index_of(&[bad]), &dest);
+        assert!(r.is_err(), "{bad:?} was accepted");
+    }
+    let mut idx = index_of(&[]);
+    idx.dirs.push("../../evil".into());
+    assert!(m.materialize(&src, &idx, &t.path().join("d3")).is_err());
+    assert!(!t.path().join("evil").exists());
+}
+
+#[test]
+fn link_name_resolves_in_the_global_link_dir() {
+    let env = Env::new();
+    let mut g = G::new();
+    let lib = g.with(
+        "mylib",
+        "1.0.0",
+        Resolution::Symlink {
+            path: "mylib".into(),
+        },
+    );
+    let rel = g.with(
+        "rel",
+        "1.0.0",
+        Resolution::Symlink {
+            path: "../rel".into(),
+        },
+    );
+    g.dep(PackageId::ROOT, lib);
+    g.dep(PackageId::ROOT, rel);
+    let registered = env.store_dir.join("global/links/mylib");
+    std::fs::create_dir_all(&registered).unwrap();
+    let rel_dir = env.project.parent().unwrap().join("rel");
+    std::fs::create_dir_all(&rel_dir).unwrap();
+    let store = FakeStore::new(&env.store_dir);
+    let linker = env.linker();
+    let tree = Tree {
+        nodes: vec![
+            TreeNode {
+                package: lib,
+                name: "mylib".into(),
+                parent: None,
+                path: "mylib".into(),
+            },
+            TreeNode {
+                package: rel,
+                name: "rel".into(),
+                parent: None,
+                path: "rel".into(),
+            },
+        ],
+        workspace_roots: Vec::new(),
+    };
+    linker
+        .link(
+            &env.project,
+            &g.g,
+            &Layout::Hoisted(tree),
+            &store,
+            &lopts(false),
+            &NoopSink,
+        )
+        .unwrap();
+    assert!(crate::verify::same_file(&env.nm("mylib"), &registered));
+    assert!(crate::verify::same_file(&env.nm("rel"), &rel_dir));
+    // Isolated: the same.
+    let iso = Layout::Isolated(linker.plan_isolated(&g.g, None));
+    linker
+        .link(&env.project, &g.g, &iso, &store, &lopts(false), &NoopSink)
+        .unwrap();
+    assert!(crate::verify::same_file(&env.nm("mylib"), &registered));
+    assert!(crate::verify::same_file(&env.nm("rel"), &rel_dir));
+}
+
+#[test]
+fn background_deletes_all_finish() {
+    let t = tempfile::tempdir().unwrap();
+    let mut paths = Vec::new();
+    for i in 0..200 {
+        let p = t.path().join(format!("d{i}"));
+        std::fs::create_dir_all(p.join("x")).unwrap();
+        paths.push(p);
+    }
+    std::thread::scope(|s| {
+        for chunk in paths.chunks(50) {
+            s.spawn(move || {
+                for p in chunk {
+                    crate::fsutil::delete_in_background(p.clone());
+                }
+            });
+        }
+    });
+    crate::flush_background_deletes();
+    assert!(paths.iter().all(|p| !p.exists()));
+}
+
+#[test]
+fn out_of_range_peer_targets_do_not_panic() {
+    let mut b = G::new();
+    let a = b.npm("a", "1.0.0");
+    b.dep(PackageId::ROOT, a);
+    b.edge(a, "ghost", PackageId(999), Behavior::PEER, "*");
+    b.edge(a, "ghost2", PackageId(998), Behavior::PROD, "*");
+    let l = plan_default(&b.g);
+    assert_eq!(entry_of(&l, &b.g, "a").len(), 1);
+}
+
+#[test]
+fn shipped_tag_file_is_replaced_not_written_through() {
+    let env = Env::new();
+    let mut store = FakeStore::new(&env.store_dir);
+    let mut g = G::new();
+    let i = Integrity::compute(HashAlgorithm::Sha512, b"t");
+    let t = g.with(
+        "t",
+        "1.0.0",
+        Resolution::RemoteTarball {
+            url: "https://h/t.tgz".into(),
+            integrity: Some(i),
+        },
+    );
+    g.dep(PackageId::ROOT, t);
+    store.add(t, "t", "1.0.0", &[(".fnpm-tag", "shared blob")]);
+    let blob = store.entries[&t.0].root.join(".fnpm-tag");
+    let linker = env.linker();
+    let tree = Tree {
+        nodes: vec![TreeNode {
+            package: t,
+            name: "t".into(),
+            parent: None,
+            path: "t".into(),
+        }],
+        workspace_roots: Vec::new(),
+    };
+    linker
+        .link(
+            &env.project,
+            &g.g,
+            &Layout::Hoisted(tree),
+            &store,
+            &lopts(false),
+            &NoopSink,
+        )
+        .unwrap();
+    assert_eq!(read(&blob), "shared blob");
+    assert_eq!(read(&env.nm("t/.fnpm-tag")), i.to_sri());
+}
+
+#[test]
+fn concurrent_shebang_normalisation_of_one_target_is_safe() {
+    let t = tempfile::tempdir().unwrap();
+    let pkg = t.path().join("node_modules/a");
+    std::fs::create_dir_all(&pkg).unwrap();
+    for round in 0..20 {
+        let body = format!("#!/usr/bin/env node\r\nconsole.log({round})\r\n");
+        std::fs::write(pkg.join("cli.js"), &body).unwrap();
+        std::thread::scope(|s| {
+            for k in 0..8 {
+                let pkg = &pkg;
+                let bin_dir = t.path().join(format!("bins{k}"));
+                s.spawn(move || {
+                    crate::bins::link_bins(
+                        "a",
+                        &Bin::File {
+                            path: "cli.js".into(),
+                        },
+                        pkg,
+                        &bin_dir,
+                    )
+                    .unwrap();
+                });
+            }
+        });
+        assert_eq!(
+            read(&pkg.join("cli.js")),
+            format!("#!/usr/bin/env node\nconsole.log({round})\r\n")
+        );
+    }
+}

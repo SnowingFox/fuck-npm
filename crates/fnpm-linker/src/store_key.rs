@@ -99,7 +99,9 @@ fn resolution_text(resolution: &Resolution) -> String {
     let mut out = String::new();
     match resolution {
         Resolution::Root => out.push_str("root"),
-        Resolution::Npm { version, .. } => out.push_str(version),
+        // A valid version has none of the escaped characters; a lockfile that says otherwise
+        // must not turn the key into a path (`1.0.0/../../x`).
+        Resolution::Npm { version, .. } => push_component(&mut out, version),
         Resolution::LocalTarball { path, .. } => push_component(&mut out, path),
         Resolution::RemoteTarball { url, .. } => push_url(&mut out, url),
         Resolution::Folder { path } => {

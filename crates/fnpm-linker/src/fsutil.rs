@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Condvar, Mutex, OnceLock};
 
 use fnpm_config::Backend;
 use fnpm_store::fsops::StickyBackend;
@@ -141,6 +141,9 @@ impl Materializer {
             if d.is_empty() {
                 continue;
             }
+            if !is_safe_index_path(d) {
+                return Err(unsafe_index_path(src, dest, d));
+            }
             let dir_buf = dest.join(d);
             match std::fs::create_dir(&dir_buf) {
                 Ok(()) => {}
@@ -152,10 +155,25 @@ impl Materializer {
             }
         }
         let mut weakest = Backend::Clonefile;
+        // The root `package.json` goes last: an install that is interrupted (or fails on a
+        // file) leaves no `package.json`, so the next run's cheap check rebuilds the folder
+        // instead of trusting a half-copied package.
+        let mut manifest = None;
         for f in &index.files {
-            let from = src.join(&f.path);
-            let to = dest.join(&f.path);
-            let used = self.place_file(&from, &to)?;
+            if !is_safe_index_path(&f.path) {
+                return Err(unsafe_index_path(src, dest, &f.path));
+            }
+            if f.path == "package.json" {
+                manifest = Some(f);
+                continue;
+            }
+            let used = self.place_file(&src.join(&f.path), &dest.join(&f.path))?;
+            if (used as u8) > (weakest as u8) {
+                weakest = used;
+            }
+        }
+        if let Some(f) = manifest {
+            let used = self.place_file(&src.join(&f.path), &dest.join(&f.path))?;
             if (used as u8) > (weakest as u8) {
                 weakest = used;
             }
@@ -233,6 +251,28 @@ impl Materializer {
         };
         self.sticky.degrade(next);
     }
+}
+
+/// A store index path must stay inside the package: relative, no `..`, no NUL. The store
+/// writes sane indexes; this guards against a corrupted or planted index file.
+fn is_safe_index_path(p: &str) -> bool {
+    !p.is_empty()
+        && !p.starts_with(['/', '\\'])
+        && !p.contains('\0')
+        && !Path::new(p).is_absolute()
+        && !p.split(['/', '\\']).any(|c| c == "..")
+}
+
+fn unsafe_index_path(src: &Path, dest: &Path, p: &str) -> MaterializeError {
+    mat_err(
+        "index",
+        src,
+        dest,
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("store index entry {p:?} leaves the package"),
+        ),
+    )
 }
 
 fn op_name(b: Backend) -> &'static str {
@@ -339,85 +379,97 @@ pub fn remove_link(p: &Path) -> io::Result<()> {
 }
 
 /// Paths queued for deletion on a background thread.
+#[derive(Default)]
+struct TrashState {
+    queue: Vec<PathBuf>,
+    /// A worker is draining the queue. Changes under the same lock as `queue`, so an item is
+    /// never pushed after the worker decided to stop.
+    active: bool,
+    /// Deletions popped but not finished.
+    in_flight: usize,
+}
+
 struct Trash {
-    queue: Mutex<Vec<PathBuf>>,
-    running: Mutex<Option<std::thread::JoinHandle<()>>>,
+    state: Mutex<TrashState>,
+    idle: Condvar,
 }
 
 fn trash() -> &'static Trash {
     static TRASH: OnceLock<Trash> = OnceLock::new();
     TRASH.get_or_init(|| Trash {
-        queue: Mutex::new(Vec::new()),
-        running: Mutex::new(None),
+        state: Mutex::new(TrashState::default()),
+        idle: Condvar::new(),
     })
+}
+
+fn lock_trash() -> std::sync::MutexGuard<'static, TrashState> {
+    trash().state.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Deletes one path that was popped (and counted in `in_flight`), then reports it done.
+fn finish_one(p: &Path) {
+    let _ = remove_any(p);
+    lock_trash().in_flight -= 1;
+    trash().idle.notify_all();
+}
+
+fn worker() {
+    loop {
+        let next = {
+            let mut st = lock_trash();
+            match st.queue.pop() {
+                Some(p) => {
+                    st.in_flight += 1;
+                    p
+                }
+                None => {
+                    st.active = false;
+                    drop(st);
+                    trash().idle.notify_all();
+                    return;
+                }
+            }
+        };
+        finish_one(&next);
+    }
 }
 
 /// Deletes `p` on a background thread. The caller has already renamed it out of the way.
 pub fn delete_in_background(p: PathBuf) {
-    let t = trash();
-    t.queue.lock().unwrap_or_else(|e| e.into_inner()).push(p);
-    let mut running = t.running.lock().unwrap_or_else(|e| e.into_inner());
-    if running.as_ref().is_some_and(|h| !h.is_finished()) {
-        return;
-    }
-    if let Some(h) = running.take() {
-        let _ = h.join();
+    {
+        let mut st = lock_trash();
+        st.queue.push(p);
+        if st.active {
+            return;
+        }
+        st.active = true;
     }
     let spawned = std::thread::Builder::new()
         .name("fnpm-trash".into())
-        .spawn(|| {
-            loop {
-                let next = trash()
-                    .queue
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .pop();
-                let Some(p) = next else { break };
-                let _ = remove_any(&p);
-            }
-        });
-    match spawned {
-        Ok(h) => *running = Some(h),
-        Err(_) => {
-            drop(running);
-            // No thread: delete inline.
-            let items: Vec<PathBuf> =
-                std::mem::take(&mut *t.queue.lock().unwrap_or_else(|e| e.into_inner()));
-            for p in items {
-                let _ = remove_any(&p);
-            }
-        }
+        .spawn(worker);
+    if spawned.is_err() {
+        // No thread: delete inline.
+        worker();
     }
 }
 
-/// Blocks until every background deletion queued so far has finished.
+/// Blocks until every background deletion queued so far (by any thread) has finished.
 pub fn flush_background_deletes() {
+    let mut st = lock_trash();
     loop {
-        let handle = trash()
-            .running
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        match handle {
-            Some(h) => {
-                let _ = h.join();
-            }
-            None => break,
+        if st.queue.is_empty() && st.in_flight == 0 {
+            return;
         }
-        if trash()
-            .queue
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_empty()
+        if !st.active
+            && let Some(p) = st.queue.pop()
         {
-            break;
+            st.in_flight += 1;
+            drop(st);
+            finish_one(&p);
+            st = lock_trash();
+            continue;
         }
-        // Items queued after the thread exited: drain them here.
-        let items: Vec<PathBuf> =
-            std::mem::take(&mut *trash().queue.lock().unwrap_or_else(|e| e.into_inner()));
-        for p in items {
-            let _ = remove_any(&p);
-        }
+        st = trash().idle.wait(st).unwrap_or_else(|e| e.into_inner());
     }
 }
 
