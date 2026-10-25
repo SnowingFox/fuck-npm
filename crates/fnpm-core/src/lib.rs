@@ -67,6 +67,16 @@ pub enum Error {
     /// The command path is not one fnpm knows.
     #[error("unknown command {0:?}")]
     UnknownCommand(Vec<String>),
+    /// A package could not be downloaded or put into the store.
+    #[error("{package}: {message}")]
+    Fetch {
+        /// `name@version`.
+        package: String,
+        /// What failed.
+        message: String,
+        /// The code of the underlying failure (`INTEGRITY`, `NETWORK`, `NOT_FOUND`, ...).
+        code: &'static str,
+    },
     /// A command that belongs to a later parity phase (see `docs/ROADMAP.md`).
     #[error("`fnpm {command}` is not implemented in the native core yet")]
     NotImplemented {
@@ -75,7 +85,7 @@ pub enum Error {
     },
 }
 
-fn registry_code(e: &fnpm_registry::Error) -> &'static str {
+pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
     use fnpm_registry::Error as R;
     match e {
         R::NotFound(_) => "NOT_FOUND",
@@ -110,6 +120,7 @@ impl Error {
             Self::Config(fnpm_config::Error::InvalidValue { .. }) => "USAGE",
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
+            Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }
     }

@@ -36,7 +36,7 @@ pub(crate) fn current_layout(
     let kind = fnpm_linker::prune::detect_layout(&project.root_dir, graph, configured);
     let linker = Linker::new(config.clone(), project.store()?);
     let view = crate::install::link_view(graph);
-    let layout = linker.plan(&view, kind);
+    let layout = crate::install::plan_layout(&linker, &view, kind, None);
     Ok((linker, layout))
 }
 

@@ -376,6 +376,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
 
     // 6. Link, overlapping the downloads still in flight.
     fast_path::remove(&root);
+    if config.global {
+        // `remove -g`: the global bin links of removed packages go before their directories.
+        for (_, name) in &planned.removals {
+            let dir = fnpm_linker::fsutil::join_name(&root.join("node_modules"), name);
+            let _ = fnpm_linker::bins::unlink_bins(&dir, &config.global_bin_dir);
+        }
+    }
     let selected_ids: Option<Vec<PackageId>> = planned.selected.as_ref().and_then(|paths| {
         (!paths.is_empty() && opts.command == InstallCommand::Install).then(|| {
             paths
@@ -801,6 +808,34 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     g
 }
 
+/// The layout for `view` (a [`link_view`] of the graph). The hoisted tree from
+/// `fnpm_lockfile::tree::hoist` records a workspace's own `node_modules` entries with the
+/// workspace's node as parent and lists them in `workspace_roots`; the linker places
+/// `workspace_roots` entries as top-level nodes of that workspace, so they are made tops here.
+pub(crate) fn plan_layout(
+    linker: &Linker,
+    view: &LockGraph,
+    kind: NodeLinker,
+    selected: Option<Vec<PackageId>>,
+) -> Layout {
+    match kind {
+        NodeLinker::Hoisted => {
+            let mut layout = linker.plan(view, kind);
+            if let Layout::Hoisted(tree) = &mut layout {
+                for (_, ids) in &tree.workspace_roots {
+                    for &id in ids {
+                        if let Some(node) = tree.nodes.get_mut(id as usize) {
+                            node.parent = None;
+                        }
+                    }
+                }
+            }
+            layout
+        }
+        NodeLinker::Isolated => Layout::Isolated(linker.plan_isolated(view, selected)),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn link(
     project: &Project,
@@ -837,10 +872,7 @@ async fn link(
             .with_trust(trusted)
             .with_native_dependencies(native_dependencies(config, ws));
         let view = link_view(graph);
-        let layout = match kind {
-            NodeLinker::Hoisted => linker.plan(&view, kind),
-            NodeLinker::Isolated => Layout::Isolated(linker.plan_isolated(&view, selected.clone())),
-        };
+        let layout = plan_layout(&linker, &view, kind, selected.clone());
         let reachable = graph.reachable(linker.include(), selected.as_deref());
         for (i, p) in graph.packages.iter().enumerate() {
             if reachable[i] && needs_content(&p.resolution) && !p.is_disabled(&config.platform) {
@@ -889,7 +921,19 @@ async fn link(
                         }
                         failed += 1;
                     }
-                    _ => {
+                    Some(id) => {
+                        // Report the fetch failure with its own code (INTEGRITY, NETWORK, ...).
+                        let pkg = &graph.packages[id.index()];
+                        return Err(match fetcher.ensure_package(pkg).wait().await {
+                            Err(f) => Error::Fetch {
+                                package,
+                                message: f.message,
+                                code: f.code,
+                            },
+                            Ok(_) => Error::Link(fnpm_linker::Error::Missing { package, message }),
+                        });
+                    }
+                    None => {
                         return Err(Error::Link(fnpm_linker::Error::Missing {
                             package,
                             message,

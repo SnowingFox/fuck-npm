@@ -540,3 +540,67 @@ async fn parsed_lockfile_survives_node_modules_removal() {
     p.install().await;
     assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tampered_tarball_is_an_integrity_error() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    // Same version, different bytes; the lockfile keeps the original integrity.
+    let mut evil = Pkg::new("b", "1.0.0");
+    evil.files.push(("evil.js".into(), "pwned".into()));
+    reg.publish(&evil);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    std::fs::remove_dir_all(p.tmp.path().join("fnpm-home/store")).unwrap();
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.frozen_lockfile = true;
+    let err = p.run(o).await.unwrap_err();
+    assert_eq!(err.code(), "INTEGRITY", "{err}");
+    assert!(!exists(&p.path("node_modules/b/evil.js")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hoisted_workspaces() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"], "dependencies": { "lib": "workspace:*", "b": "1.0.0" } }),
+    );
+    p.write(
+        "packages/lib/package.json",
+        &json!({ "name": "lib", "version": "0.1.0", "dependencies": { "b": "1.2.0" } }).to_string(),
+    );
+    let mut o = p.opts(InstallCommand::Install, &[]);
+    o.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    p.run(o.clone()).await.unwrap();
+    assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
+    let lib = std::fs::canonicalize(p.path("node_modules/lib")).unwrap();
+    assert_eq!(lib, std::fs::canonicalize(p.path("packages/lib")).unwrap());
+    let nested = p.path("packages/lib/node_modules/b/package.json");
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(nested).unwrap()).unwrap();
+    assert_eq!(
+        v["version"], "1.2.0",
+        "conflicting version under the workspace"
+    );
+    assert!(
+        !exists(&p.path("node_modules/.fnpm/node_modules")),
+        "hoisted layout"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn global_remove_unlinks_bins() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({}));
+    let mut o = p.opts(InstallCommand::Add, &["tool"]);
+    o.pm.global = true;
+    p.run(o).await.unwrap();
+    let bin = p.tmp.path().join("global-bin/tool");
+    assert!(exists(&bin));
+    let mut o = p.opts(InstallCommand::Remove, &["tool"]);
+    o.pm.global = true;
+    p.run(o).await.unwrap();
+    assert!(!exists(&bin), "bin unlinked");
+    assert!(!exists(&p.tmp.path().join("global/node_modules/tool")));
+}
