@@ -91,7 +91,7 @@ fn pem_certs(bytes: &[u8], what: &str) -> Result<Vec<CertificateDer<'static>>> {
 fn read_pem_file(path: &Path, what: &str) -> Result<Vec<CertificateDer<'static>>> {
     let bytes = std::fs::read(path).map_err(|e| {
         tls_error(if e.kind() == std::io::ErrorKind::NotFound {
-            format!("failed to find {what}: '{}'", path.display())
+            format!("could not find {what}: '{}'", path.display())
         } else {
             format!("failed to load {what}: '{}': {e}", path.display())
         })
@@ -376,7 +376,7 @@ mod tests {
         let e = trust(&missing, &Env::default(), None)
             .unwrap_err()
             .to_string();
-        assert!(e.contains("failed to find CA file"), "{e}");
+        assert!(e.contains("could not find CA file"), "{e}");
         let empty = tmp.path().join("empty.pem");
         std::fs::write(&empty, "not a cert").unwrap();
         let invalid = TlsConfig {

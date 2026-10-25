@@ -147,12 +147,13 @@ fn run_route(
     }
 }
 
-/// Whether the program was started as `fnpmx` (a link to the `fnpm` executable).
+/// Whether the program was started as `fnpmx` (a link to the `fnpm` executable), or as
+/// `bunx` for scripts written for bun.
 fn started_as_fnpmx() -> bool {
     std::env::args_os().next().is_some_and(|argv0| {
         std::path::Path::new(&argv0)
             .file_stem()
-            .is_some_and(|stem| stem == "fnpmx")
+            .is_some_and(|stem| stem == "fnpmx" || stem == "bunx")
     })
 }
 

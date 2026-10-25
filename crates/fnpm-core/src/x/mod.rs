@@ -405,6 +405,12 @@ fn install_error(error: &crate::Error, registry: &str) -> String {
         | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Status { url, status })) => {
             format!("GET {url} - {status}")
         }
+        crate::Error::Registry(R::Network { url, message })
+        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Network { url, message }))
+            if url.is_empty() =>
+        {
+            message.clone()
+        }
         other => other.to_string(),
     }
 }
@@ -814,7 +820,9 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
             cwd: tree_dir.clone(),
             summary: false,
             progress: false,
-            no_cache: target.is_dist_tag || tree == Tree::Stale,
+            // Like `--force` / `--no-cache` on the `bun add` that bunx spawns: the requested
+            // package's manifest comes from the registry; the lockfile still pins the rest.
+            no_cache: target.is_dist_tag || tree == Tree::Stale || installed.is_none(),
             log_level,
             trust: opts.trust && !opts.ignore_scripts,
             ignore_scripts: opts.ignore_scripts,

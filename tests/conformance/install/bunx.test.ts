@@ -2200,7 +2200,7 @@ describe("a cached tree", () => {
           bin: { tool: "cli.js" },
           scripts: { postinstall: "node postinstall.js" },
           files: {
-            "cli.js": `#!/usr/bin/env node\nconsole.log("the script saw", require("../../../submodule/bun/test/cli/install/saw.json"));\n`,
+            "cli.js": `#!/usr/bin/env node\nconsole.log("the script saw", require("./saw.json"));\n`,
             "postinstall.js": `
 const saw = Object.keys(process.env).filter(key => key.startsWith("BUN_INTERNAL_BUNX_"));
 require("fs").writeFileSync("saw.json", JSON.stringify(saw));

@@ -1892,8 +1892,8 @@ describe.concurrent("fnpm pm diff (engine invariants)", () => {
         `exports.pick = function (a, b) {\n  return run(b);\n};\n`,
       ],
       "use-import.mjs": [
-        `import { first, second } from "../../../submodule/bun/test/cli/install/x.js";\nexport function run(v) {\n  return first(v);\n}\n`,
-        `import { first, second } from "../../../submodule/bun/test/cli/install/x.js";\nexport function run(v) {\n  return second(v);\n}\n`,
+        `import { first, second } from "./x.js";\nexport function run(v) {\n  return first(v);\n}\n`,
+        `import { first, second } from "./x.js";\nexport function run(v) {\n  return second(v);\n}\n`,
       ],
       "use-and-more.js": [use("first"), use("second").replaceAll("(x)", "(x, y)")],
       "use-and-more-short.js": [

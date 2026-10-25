@@ -58,7 +58,7 @@ function manyFilesPackage(name: string): Record<string, string> {
   const files: Record<string, string> = {
     "package.json": JSON.stringify({ name, version: "1.0.0", main: "index.js" }),
     "index.js":
-      Array.from({ length: FILE_COUNT }, (_, i) => `require("../../../submodule/bun/test/cli/install/file${i}.js");`).join("\n") +
+      Array.from({ length: FILE_COUNT }, (_, i) => `require("./file${i}.js");`).join("\n") +
       `\nmodule.exports = ${FILE_COUNT};\n`,
   };
   for (let i = 0; i < FILE_COUNT; i++) {
