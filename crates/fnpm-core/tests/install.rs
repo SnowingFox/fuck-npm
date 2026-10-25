@@ -908,3 +908,39 @@ async fn bins_of_a_migrated_yarn_or_pnpm_lockfile_come_from_the_manifests() {
         );
     }
 }
+
+/// With the isolated linker, a workspace that depends on another one (`workspace:*`) gets a
+/// link to it in its own node_modules, like bun (real-world: opencode and create-t3-turbo
+/// had none, so their packages could not import each other).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_workspace_links_the_workspaces_it_depends_on() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"] }),
+    );
+    p.write(
+        "packages/a/package.json",
+        &json!({ "name": "@x/a", "version": "1.0.0" }).to_string(),
+    );
+    p.write(
+        "packages/b/package.json",
+        &json!({ "name": "@x/b", "version": "1.0.0", "dependencies": { "@x/a": "workspace:*", "b": "1.0.0" } })
+            .to_string(),
+    );
+    for _ in 0..2 {
+        p.install().await;
+        assert!(
+            exists(&p.path("node_modules/.fnpm/b@1.0.0")),
+            "isolated layout"
+        );
+        assert_eq!(
+            std::fs::read_link(p.path("packages/b/node_modules/@x/a")).ok(),
+            Some(std::path::PathBuf::from("../../../a"))
+        );
+        assert!(exists(&p.path("packages/b/node_modules/b/package.json")));
+        // Again from fnpm.lock.
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        std::fs::remove_dir_all(p.path("packages/b/node_modules")).unwrap();
+    }
+}

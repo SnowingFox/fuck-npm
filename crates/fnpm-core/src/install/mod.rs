@@ -922,10 +922,10 @@ fn optional_only(graph: &LockGraph, id: PackageId) -> bool {
 }
 
 /// The graph as the linker reads it (bun's shape): the root has one membership edge
-/// (`WORKSPACE | PROD`) per workspace member, and the root's declared dependencies on members
-/// are plain edges. The resolver marks every edge into a project package with `WORKSPACE`
-/// and adds no membership edges, and graphs read from fnpm.lock have neither, so both are
-/// normalised here.
+/// (`WORKSPACE | PROD`) per workspace member, and every declared dependency on a member, of
+/// the root or of another workspace, is a plain edge. The resolver marks every edge into a
+/// project package with `WORKSPACE` and adds no membership edges, and graphs read from
+/// fnpm.lock have neither, so both are normalised here.
 pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     use fnpm_types::{Behavior, DepEdge};
     let mut g = graph.clone();
@@ -935,11 +935,13 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
             && graph.workspaces.get(&e.literal).copied() == e.target
     };
     let mut have: Vec<PackageId> = Vec::new();
-    for e in &mut g.packages[0].dependencies {
-        if is_membership(e) {
-            have.extend(e.target);
-        } else if e.behavior.is_workspace() {
-            e.behavior = e.behavior.with(Behavior::WORKSPACE, false);
+    for (i, p) in g.packages.iter_mut().enumerate() {
+        for e in &mut p.dependencies {
+            if i == 0 && is_membership(e) {
+                have.extend(e.target);
+            } else if e.behavior.is_workspace() {
+                e.behavior = e.behavior.with(Behavior::WORKSPACE, false);
+            }
         }
     }
     for (path, id) in &graph.workspaces {
