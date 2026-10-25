@@ -146,12 +146,12 @@ Exit criteria:
   (`bun-run`, `bun-run-bunfig`, `hosted-git-info/*` as fnpm-resolver unit tests).
 - Benchmark: no regression on the full matrix.
 
-## P5: UX parity (not started)
+## P5: UX parity (in progress)
 
 | deliverable | status |
 |---|---|
-| Help text, usage errors and hints matching bun for every command | not started |
-| Progress and summary output identical between the native and TS renderers (shared golden fixtures) | not started |
+| Help text, usage errors and hints matching bun for every command | in progress (unknown long flags and help hints share native/TS golden fixtures; other diagnostics still differ) |
+| Progress and summary output identical between the native and TS renderers (shared golden fixtures) | in progress (shared fixtures pass; plain output and rendered color styles match the small cold/no-op/add/remove fixture; cached availability hints and warning/status ordering still differ) |
 | `update -i`, `--json` payloads for every command, redacted config logs, control-character escaping | not started |
 | Every PARITY.md "Output/UX" row | not started |
 
