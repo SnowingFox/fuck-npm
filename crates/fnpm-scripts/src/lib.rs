@@ -92,7 +92,8 @@ pub struct Job {
     pub scripts: Vec<(String, String)>,
     /// Optional dependencies may fail without failing the install.
     pub optional: bool,
-    /// Root/workspace scripts run in the foreground (inherited stdio, command echoed).
+    /// The root's scripts run in the foreground (inherited stdio, command echoed, one at a
+    /// time); everything else, workspaces included, is captured and shown only on failure.
     pub foreground: bool,
 }
 

@@ -457,3 +457,45 @@ fn concurrency_parsing() {
     assert_eq!(fnpm_scripts::parse_concurrency("abc"), default);
     assert_eq!(fnpm_scripts::parse_concurrency("-1"), default);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workspace_scripts_run_in_the_background_with_the_project_path() {
+    // bun runs only the root in the foreground; a workspace is not a dependency, so its PATH
+    // keeps the inherited PATH last.
+    let (_t, p) = project();
+    let ws = p.join("packages/ws");
+    write_pkg(&ws, json!({"name": "ws", "version": "1.0.0"}));
+    let j = job("ws", &ws, &[("postinstall", "echo \"$PATH\" > path.txt")]);
+    assert!(!j.foreground);
+    run_jobs(vec![vec![j]], &opts(&p), &NoopSink).await.unwrap();
+    let path = read(&ws.join("path.txt"));
+    let parts: Vec<&str> = path.trim().split(':').collect();
+    let own = parts
+        .iter()
+        .position(|e| *e == ws.join("node_modules/.bin").display().to_string())
+        .unwrap();
+    let project_bin = parts
+        .iter()
+        .position(|e| *e == p.join("node_modules/.bin").display().to_string())
+        .unwrap();
+    let inherited = parts.iter().position(|e| *e == "/bin" || *e == "/usr/bin");
+    assert_eq!(own, 0);
+    assert!(project_bin < 3, "{path}");
+    if let Some(inherited) = inherited {
+        assert!(project_bin < inherited, "{path}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn nul_bytes_in_package_json_strings_do_not_break_the_spawn() {
+    let (_t, p) = project();
+    let d = p.join("node_modules/nul-dep");
+    write(
+        &d.join("package.json"),
+        r#"{"name": "nul-dep", "version": "1.0.0", "config": {"x": "a\u0000b"}}"#,
+    );
+    let j = job("nul-dep", &d, &[("postinstall", "env > env.txt")]);
+    run_jobs(vec![vec![j]], &opts(&p), &NoopSink).await.unwrap();
+    let env = env_file(&d.join("env.txt"));
+    assert_eq!(env["npm_package_config_x"], "a");
+}

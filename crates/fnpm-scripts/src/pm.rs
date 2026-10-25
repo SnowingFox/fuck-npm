@@ -436,8 +436,12 @@ pub fn add_trusted_dependencies(package_json: &mut serde_json::Value, names: &[S
                 .collect()
         })
         .unwrap_or_default();
-    let mut to_add: Vec<&String> = names.iter().filter(|n| !existing.contains(n)).collect();
-    to_add.dedup();
+    let mut to_add: Vec<&String> = Vec::new();
+    for n in names {
+        if !existing.contains(n) && !to_add.contains(&n) {
+            to_add.push(n);
+        }
+    }
     let is_array = obj.get("trustedDependencies").is_some_and(|v| v.is_array());
     if to_add.is_empty() {
         if !is_array {

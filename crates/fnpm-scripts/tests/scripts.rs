@@ -189,3 +189,35 @@ fn source_from_resolution() {
     );
     assert!(ScriptSource::Git.is_dependency() && !ScriptSource::Workspace.is_dependency());
 }
+
+#[test]
+fn only_the_root_job_is_foreground() {
+    use fnpm_scripts::scripts::job_for;
+    use fnpm_types::{Package, PackageId, Resolution};
+    let tmp = tempfile::tempdir().unwrap();
+    let ws_dir = tmp.path().join("packages/ws");
+    write_pkg(tmp.path(), json!({"scripts": {"postinstall": "r"}}));
+    write_pkg(&ws_dir, json!({"scripts": {"postinstall": "w"}}));
+    let mut g = root("app");
+    let ws = add(
+        &mut g,
+        Package::new(
+            "ws",
+            "1.0.0",
+            Resolution::Workspace {
+                path: "packages/ws".into(),
+            },
+        ),
+    );
+    let root_job = job_for(&g, PackageId::ROOT, tmp.path(), false).unwrap();
+    let ws_job = job_for(&g, ws, &ws_dir, false).unwrap();
+    assert!(root_job.foreground);
+    assert!(
+        !ws_job.foreground,
+        "bun buffers workspace scripts like dependencies"
+    );
+    assert_eq!(
+        ws_job.scripts,
+        [("postinstall".to_string(), "w".to_string())]
+    );
+}

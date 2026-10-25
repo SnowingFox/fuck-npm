@@ -114,8 +114,8 @@ impl EnvMap {
 
     /// `npm_lifecycle_event` / `npm_lifecycle_script`, which differ per script.
     pub fn set_lifecycle(&mut self, event: &str, script: &str) {
-        self.set("npm_lifecycle_event", event);
-        self.set("npm_lifecycle_script", script);
+        self.set("npm_lifecycle_event", until_nul(event));
+        self.set("npm_lifecycle_script", until_nul(script));
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&OsStr, &OsStr)> {
@@ -143,20 +143,30 @@ pub struct PackageVars<'a> {
 impl PackageVars<'_> {
     /// Writes `npm_package_json`, `npm_package_name`, `npm_package_version` (when non-empty)
     /// and `npm_package_config_<key>` (non-empty keys and values).
+    ///
+    /// package.json strings may contain `\u0000`, which an environment cannot hold; they are
+    /// cut at the first NUL, as bun's NUL-terminated environment block does.
     pub fn apply(&self, env: &mut EnvMap) {
         env.set("npm_package_json", self.package_json.as_os_str());
-        if !self.name.is_empty() {
-            env.set("npm_package_name", self.name);
+        let (name, version) = (until_nul(self.name), until_nul(self.version));
+        if !name.is_empty() {
+            env.set("npm_package_name", name);
         }
-        if !self.version.is_empty() {
-            env.set("npm_package_version", self.version);
+        if !version.is_empty() {
+            env.set("npm_package_version", version);
         }
         for (k, v) in self.config {
+            let (k, v) = (until_nul(k), until_nul(v));
             if !k.is_empty() && !v.is_empty() {
                 env.set(format!("npm_package_config_{k}"), v);
             }
         }
     }
+}
+
+/// `s` up to its first NUL byte (what a C string of it holds).
+pub(crate) fn until_nul(s: &str) -> &str {
+    s.split('\0').next().unwrap_or_default()
 }
 
 /// `name`, `version` and the string values of `config` from a parsed package.json.

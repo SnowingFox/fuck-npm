@@ -314,7 +314,8 @@ pub fn plan_install(
             dir,
             scripts: entries,
             optional: optional[id.index()],
-            foreground: !source.is_dependency(),
+            // bun runs only the root's scripts in the foreground (after the install).
+            foreground: source == ScriptSource::Root,
         });
     }
     plan.deps = dependencies(graph, &plan.jobs);

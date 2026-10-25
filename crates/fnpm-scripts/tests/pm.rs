@@ -282,6 +282,13 @@ fn edits_trusted_dependencies() {
     assert!(!add_trusted_dependencies(&mut pj, &["alpha".into()]));
     assert!(add_trusted_dependencies(&mut pj, &["beta".into()]));
     assert_eq!(pj["trustedDependencies"], json!(["alpha", "beta", "zeta"]));
+    // Duplicates anywhere in `names` are added once.
+    let mut pj = json!({});
+    assert!(add_trusted_dependencies(
+        &mut pj,
+        &["b".into(), "a".into(), "b".into()]
+    ));
+    assert_eq!(pj["trustedDependencies"], json!(["a", "b"]));
     let mut not_object = json!([]);
     assert!(!add_trusted_dependencies(&mut not_object, &["a".into()]));
 }

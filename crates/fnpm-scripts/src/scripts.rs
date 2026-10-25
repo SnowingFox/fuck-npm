@@ -98,7 +98,7 @@ impl PackageScripts {
         self.hooks[INSTALL].is_none()
             && self.hooks[PREINSTALL].is_none()
             && self.gypfile
-            && dir.join("binding.gyp").is_file()
+            && dir.join("binding.gyp").exists()
     }
 
     /// The `(event, command)` pairs that run, in order (bun `get_script_entries`). With
@@ -209,6 +209,7 @@ pub fn job_for(
         package_json: dir.join("package.json"),
         scripts,
         optional,
-        foreground: !source.is_dependency(),
+        // Only the root runs in the foreground; workspaces are buffered like dependencies.
+        foreground: source == ScriptSource::Root,
     })
 }

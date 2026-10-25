@@ -236,6 +236,9 @@ pub fn plan(
     Ok(out)
 }
 
+/// How long output is still read after a script exited while its pipes stay open.
+const DRAIN_AFTER_EXIT: std::time::Duration = std::time::Duration::from_millis(100);
+
 const COLORS: [&str; 6] = [
     "\x1b[36m", "\x1b[33m", "\x1b[35m", "\x1b[32m", "\x1b[34m", "\x1b[31m",
 ];
@@ -353,11 +356,25 @@ pub async fn run(scripts: Vec<MultiScript>, opts: &RunOptions, mo: MultiOptions)
                 let out = child.stdout.take();
                 let err = child.stderr.take();
                 tasks.spawn(async move {
-                    let (_, _, st) = tokio::join!(
-                        pump(out, i, false, tx.clone()),
-                        pump(err, i, true, tx.clone()),
-                        child.wait()
-                    );
+                    let mut pumps = Box::pin({
+                        let tx = tx.clone();
+                        async move {
+                            tokio::join!(pump(out, i, false, tx.clone()), pump(err, i, true, tx));
+                        }
+                    });
+                    let mut pumps_done = false;
+                    let st = loop {
+                        tokio::select! {
+                            st = child.wait() => break st,
+                            () = &mut pumps, if !pumps_done => pumps_done = true,
+                        }
+                    };
+                    // bun `drain_and_close_pipes`: a background grandchild may hold the pipes
+                    // open; read what is buffered, then stop instead of waiting for it.
+                    if !pumps_done {
+                        let _ = tokio::time::timeout(DRAIN_AFTER_EXIT, &mut pumps).await;
+                    }
+                    drop(pumps);
                     let status = match st {
                         Ok(s) => exit_status(s),
                         Err(_) => Status::Error,

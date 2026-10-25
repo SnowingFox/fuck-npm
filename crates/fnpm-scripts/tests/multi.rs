@@ -260,3 +260,21 @@ async fn success_is_zero_and_signals_map_to_128_plus() {
         128 + 15
     );
 }
+
+#[tokio::test]
+async fn a_background_grandchild_holding_the_pipes_does_not_hang_the_run() {
+    let (_t, d) = dir();
+    // `sleep` inherits the script stdout/stderr and keeps them open after the shell exits.
+    let p = pkg(d.clone(), None, &[("bg", "sleep 8 & echo started")]);
+    let scripts = plan(&names(&["bg"]), &[p], MultiOptions::default()).unwrap();
+    let started = std::time::Instant::now();
+    let code = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        run(scripts, &RunOptions::new(&d), MultiOptions::default()),
+    )
+    .await
+    .expect("the run finishes when the script exits")
+    .unwrap();
+    assert_eq!(code, 0);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}

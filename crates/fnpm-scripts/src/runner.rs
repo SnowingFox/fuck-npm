@@ -3,7 +3,7 @@
 //!
 //! Jobs form a DAG: a job starts once every job it depends on finished. At most
 //! `concurrency` background jobs (one package's script chain each) run at once; foreground
-//! jobs (root and workspaces) run one at a time with inherited stdio. Background output is
+//! jobs (the root) run one at a time with inherited stdio. Background output is
 //! captured and printed to stderr only when a script fails.
 
 use std::collections::VecDeque;
@@ -68,6 +68,7 @@ impl Flags {
 
 struct Ctx {
     base: BaseEnv,
+    project_dir: std::path::PathBuf,
     shell: Shell,
     silent: bool,
     verbose: bool,
@@ -95,7 +96,7 @@ struct JobDone {
     index: usize,
     name: String,
     optional: bool,
-    foreground: bool,
+    is_dependency: bool,
     ran: u32,
     result: std::result::Result<(), JobFailure>,
 }
@@ -141,6 +142,7 @@ pub(crate) async fn execute(
     };
     let ctx = Arc::new(Ctx {
         base,
+        project_dir: opts.project_dir.clone(),
         shell,
         silent: opts.silent,
         verbose: flags.verbose,
@@ -253,7 +255,7 @@ pub(crate) async fn execute(
                             events.emit(event);
                         }
                         if !ctx.silent {
-                            print_failure_output(&failure, done_job.foreground);
+                            print_failure_output(&failure, done_job.is_dependency);
                         }
                         return Err(match failure.failure {
                             Failure::Exited(code) => Error::Failed { package: done_job.name, script: failure.script, code },
@@ -290,11 +292,12 @@ async fn run_job(
         &ctx.background
     };
     let _permit = semaphore.acquire().await.ok();
+    let is_dependency = job_is_dependency(&job, &ctx.project_dir);
     let mut done = JobDone {
         index,
         name: job.name.clone(),
         optional: job.optional,
-        foreground: job.foreground,
+        is_dependency,
         ran: 0,
         result: Ok(()),
     };
@@ -317,7 +320,7 @@ async fn run_job(
         version: &version,
         config: &config,
     };
-    let mut env = ctx.base.for_package(&vars, !job.foreground);
+    let mut env = ctx.base.for_package(&vars, is_dependency);
 
     for (event, script) in &job.scripts {
         env.set_lifecycle(event, script);
@@ -373,6 +376,14 @@ async fn run_job(
         break;
     }
     done
+}
+
+/// bun `List::is_dependency`: not the project's or a workspace's own scripts. Workspaces run
+/// in the background like dependencies, so this is read from where the package lives: inside
+/// a `node_modules` (or the global store) below the project.
+fn job_is_dependency(job: &Job, project_dir: &std::path::Path) -> bool {
+    !job.foreground
+        && crate::env::is_dependency_dir(job.dir.strip_prefix(project_dir).unwrap_or(&job.dir))
 }
 
 /// `None` for success (bun treats only `code > 0` and signals as failures).
@@ -436,11 +447,12 @@ pub(crate) fn shell_command(shell: &Shell, command: &str) -> tokio::process::Com
     #[cfg(windows)]
     {
         if shell.flags.iter().any(|f| f == "/c") {
-            cmd.raw_arg(command);
+            cmd.raw_arg(crate::env::until_nul(command));
             return cmd;
         }
     }
-    cmd.arg(command);
+    // A NUL cannot be passed in argv; bun's C string of the script ends there too.
+    cmd.arg(crate::env::until_nul(command));
     cmd
 }
 
@@ -487,7 +499,7 @@ pub(crate) fn print_command(command: &str) {
 }
 
 /// bun `print_output`: the captured stdout, then stderr, each followed by a newline, raw bytes.
-fn print_failure_output(failure: &JobFailure, foreground: bool) {
+fn print_failure_output(failure: &JobFailure, is_dependency: bool) {
     let mut stderr = std::io::stderr().lock();
     for buf in [&failure.stdout, &failure.stderr] {
         if !buf.is_empty() {
@@ -496,7 +508,7 @@ fn print_failure_output(failure: &JobFailure, foreground: bool) {
         }
     }
     // Git dependencies are the only dependencies whose `prepare` scripts run.
-    if !foreground
+    if is_dependency
         && failure.script.ends_with("prepare")
         && matches!(failure.failure, Failure::Exited(_))
     {
