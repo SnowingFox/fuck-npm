@@ -8,7 +8,7 @@ pub mod commands;
 pub mod events;
 pub mod fast_path;
 mod fetch;
-mod install;
+pub(crate) mod install;
 pub mod options;
 pub mod project;
 pub mod spec;

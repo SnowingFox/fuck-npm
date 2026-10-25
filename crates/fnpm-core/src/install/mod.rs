@@ -32,7 +32,7 @@ use crate::project::Project;
 use crate::spec::{added_literal, updated_literal};
 use crate::{Error, Result};
 
-use edits::{Edit, Edits};
+use edits::Edits;
 use plan::Planned;
 
 /// xxh3 over the install-relevant configuration: what changes `node_modules` for the same
@@ -78,6 +78,37 @@ fn registry_lookup<'c>(config: &'c Config) -> impl for<'x> Fn(&'x str) -> &'c st
     move |name| config.registry_for(name).url.as_str()
 }
 
+/// The previous graph for `ws` (fnpm.lock, bun.lock(b) or a migrated foreign lockfile).
+pub(crate) fn load_lock(config: &Config, ws: &Workspace) -> Result<lock::LockState> {
+    lock::load(config, ws)
+}
+
+/// [`lock::migrate_from`].
+pub(crate) fn migrate_lock(
+    config: &Config,
+    ws: &Workspace,
+    names: &[&str],
+) -> Result<lock::LockState> {
+    lock::migrate_from(config, ws, names)
+}
+
+/// Writes a migration's package.json edits; returns bun's report lines.
+pub(crate) fn write_migration(
+    root: &Path,
+    ws: &Workspace,
+    state: &lock::LockState,
+) -> Result<Vec<String>> {
+    lock::write_back(root, ws, &state.write_back)
+}
+
+pub(crate) use edits::Edit;
+pub(crate) use plan::name_matches;
+
+/// Applies package.json edits to text with the format-preserving editor.
+pub(crate) fn edit_package_json_text(text: &str, edits: &[Edit]) -> Result<String> {
+    edits::apply_text(text, edits)
+}
+
 /// Runs one install command.
 pub(crate) async fn run(
     opts: InstallOptions,
@@ -85,6 +116,12 @@ pub(crate) async fn run(
     env: Env,
 ) -> Result<InstallSummary> {
     let start = Instant::now();
+    if opts.analyze {
+        // `install --analyze <files>` scans imports; it belongs to a later parity phase.
+        return Err(Error::NotImplemented {
+            command: "install --analyze".into(),
+        });
+    }
     let mut cli = opts.pm.to_cli_overrides();
     if opts.exact {
         cli.exact = Some(true);
@@ -603,7 +640,7 @@ fn optional_only(graph: &LockGraph, id: PackageId) -> bool {
 /// are plain edges. The resolver marks every edge into a project package with `WORKSPACE`
 /// and adds no membership edges, and graphs read from fnpm.lock have neither, so both are
 /// normalised here.
-fn link_view(graph: &LockGraph) -> LockGraph {
+pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     use fnpm_types::{Behavior, DepEdge};
     let mut g = graph.clone();
     let is_membership = |e: &DepEdge| {

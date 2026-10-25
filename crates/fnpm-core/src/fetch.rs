@@ -174,12 +174,10 @@ impl Fetcher {
             };
             names.push(f.key.dir_name());
             let key = format!("{}@{}", p.name, p.version);
-            if let Some(hash) = graph
-                .patched_dependencies
-                .get(&key)
-                .and_then(|d| d.hash.as_deref())
+            if let Some(patch) = graph.patched_dependencies.get(&key)
+                && let Ok((hash, _)) = read_patch(&self.inner.root_dir, patch)
             {
-                names.push(f.key.patched_dir_name(patch_hash_u64(hash)));
+                names.push(f.key.patched_dir_name(hash));
             }
         }
         names.sort();
@@ -399,9 +397,15 @@ fn import_folder(store: &Store, name: &str, version: &str, dir: &Path) -> Outcom
         .map_err(|e| e.to_string())
 }
 
-/// The patch hash a store key uses, from the lockfile's hex string.
-pub(crate) fn patch_hash_u64(hash: &str) -> u64 {
-    u64::from_str_radix(hash, 16).unwrap_or_else(|_| xxhash_rust::xxh3::xxh3_64(hash.as_bytes()))
+/// The `_patch_hash` of a `patchedDependencies` file as it is now (the store keys patched
+/// copies by it), with its text.
+pub(crate) fn read_patch(
+    root: &Path,
+    patch: &fnpm_types::PatchedDependency,
+) -> Result<(u64, String), String> {
+    let path = root.join(&patch.path);
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((fnpm_store::patch::hash_patch(text.as_bytes()), text))
 }
 
 /// [`fnpm_linker::PackageSource`] over a resolved graph: maps ids to slots (starting any fetch
@@ -419,13 +423,7 @@ impl GraphSource<'_> {
             return Ok(base.entry);
         };
         let store = self.fetcher.store();
-        let path = self.fetcher.inner.root_dir.join(&patch.path);
-        let text =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let hash = patch.hash.as_deref().map_or_else(
-            || xxhash_rust::xxh3::xxh3_64(text.as_bytes()),
-            patch_hash_u64,
-        );
+        let (hash, text) = read_patch(&self.fetcher.inner.root_dir, patch)?;
         if let Ok(Some(entry)) = store.get_patched(&base.key, hash) {
             return Ok(entry);
         }

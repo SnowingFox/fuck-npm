@@ -158,6 +158,8 @@ type Tags = BTreeMap<String, String>;
 #[derive(Default)]
 struct State {
     packages: BTreeMap<String, (Versions, Tags)>,
+    /// The bulk advisory endpoint's answer.
+    advisories: Value,
     /// Paths requested, in order.
     seen: Vec<String>,
 }
@@ -218,6 +220,11 @@ impl Registry {
         }
     }
 
+    /// What `POST /-/npm/v1/security/advisories/bulk` answers.
+    pub fn set_advisories(&self, v: Value) {
+        self.state.lock().advisories = v;
+    }
+
     pub fn tag(&self, name: &str, tag: &str, version: &str) {
         let mut st = self.state.lock();
         st.packages
@@ -263,6 +270,24 @@ fn serve(state: &Mutex<State>, base: &str, path: &str) -> Response {
         .trim_start_matches('/')
         .replace("%2f", "/")
         .replace("%2F", "/");
+    if decoded.ends_with("security/advisories/bulk") {
+        let body = if st.advisories.is_null() {
+            json!({})
+        } else {
+            st.advisories.clone()
+        };
+        return Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+    }
+    if decoded == "-/ping" {
+        return Response::builder()
+            .status(200)
+            .body(Body::from("{}"))
+            .unwrap();
+    }
     let not_found = || {
         Response::builder()
             .status(404)
