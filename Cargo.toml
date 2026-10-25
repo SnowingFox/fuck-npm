@@ -57,6 +57,9 @@ axum = "=0.8.9"
 url = "=2.5.8"
 percent-encoding = "=2.3.2"
 toml = "=1.1.8"
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+webpki-roots = "=1.0.11"
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["tls12", "aws_lc_rs"] }
 
 [profile.release]
 lto = "fat"

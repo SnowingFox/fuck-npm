@@ -23,7 +23,15 @@ parking_lot.workspace = true
 thiserror.workspace = true
 xxhash-rust.workspace = true
 url.workspace = true
+rayon.workspace = true
+flate2.workspace = true
+base64.workspace = true
+percent-encoding.workspace = true
+rustls.workspace = true
+webpki-roots.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 axum.workspace = true
+tokio-rustls.workspace = true
+mimalloc.workspace = true
