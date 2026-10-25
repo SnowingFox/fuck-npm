@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Where the state lives, relative to the project root.
 pub const STATE_FILE: &str = "node_modules/.fnpm/state";
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 1;
+pub const STATE_VERSION: u32 = 2;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +37,14 @@ pub struct State {
     pub linker: String,
     /// Packages in the lockfile graph (the no-op summary's `checked` count).
     pub packages: u32,
+    /// The `workspaces` patterns (root package.json or pnpm-workspace.yaml).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_patterns: Vec<String>,
+    /// Every directory the patterns selected ([`fnpm_workspace::Workspace::candidate_dirs`]).
+    /// A directory that appears, disappears or gains a package.json is a new or removed
+    /// member, which no manifest entry would show.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_dirs: Vec<String>,
 }
 
 /// The result of [`check`].
@@ -131,7 +139,7 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
     if !has_pnpm_ws && project_dir.join(PNPM_WORKSPACE).exists() {
         return false;
     }
-    state.manifests.iter().all(|(rel, size, mtime, hash)| {
+    let manifests_unchanged = state.manifests.iter().all(|(rel, size, mtime, hash)| {
         let path = project_dir.join(rel);
         let Ok(meta) = std::fs::metadata(&path) else {
             return false;
@@ -140,6 +148,22 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
             return true;
         }
         std::fs::read(&path).is_ok_and(|b| xxhash_rust::xxh3::xxh3_64(&b) == *hash)
+    });
+    manifests_unchanged && members_unchanged(project_dir, state)
+}
+
+/// The workspace globs select the same directories, and none of them gained a package.json.
+fn members_unchanged(project_dir: &Path, state: &State) -> bool {
+    if state.workspace_patterns.is_empty() {
+        return true;
+    }
+    match fnpm_workspace::Workspace::candidate_dirs(project_dir, &state.workspace_patterns) {
+        Ok(dirs) if dirs == state.workspace_dirs => {}
+        _ => return false,
+    }
+    state.workspace_dirs.iter().all(|dir| {
+        let rel = format!("{dir}/package.json");
+        state.manifests.iter().any(|m| m.0 == rel) || !project_dir.join(&rel).exists()
     })
 }
 
@@ -190,6 +214,8 @@ mod tests {
             node_modules: (0, 0, 0),
             linker: "hoisted".into(),
             packages: 3,
+            workspace_patterns: Vec::new(),
+            workspace_dirs: Vec::new(),
         }
     }
 
@@ -225,6 +251,38 @@ mod tests {
 
         std::fs::write(p.join(PNPM_WORKSPACE), "packages: []\n").unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "pnpm workspace");
+    }
+
+    #[test]
+    fn new_workspace_member_is_a_change() {
+        let dir = project();
+        let p = dir.path();
+        std::fs::create_dir_all(p.join("packages/a")).unwrap();
+        std::fs::write(p.join("packages/a/package.json"), r#"{"name":"a"}"#).unwrap();
+        std::fs::create_dir_all(p.join("packages/empty")).unwrap();
+        let patterns = vec!["packages/*".to_owned()];
+        let mut s = state_for(p);
+        s.manifests
+            .push(manifest_entry(p, "packages/a/package.json").unwrap());
+        s.workspace_dirs = fnpm_workspace::Workspace::candidate_dirs(p, &patterns).unwrap();
+        assert_eq!(s.workspace_dirs, vec!["packages/a", "packages/empty"]);
+        s.workspace_patterns = patterns;
+        write(p, &s).unwrap();
+        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+
+        // A directory without package.json gains one: a new member.
+        std::fs::write(p.join("packages/empty/package.json"), r#"{"name":"e"}"#).unwrap();
+        assert!(
+            matches!(check(p, 7), Check::Changed(_)),
+            "package.json added"
+        );
+        std::fs::remove_file(p.join("packages/empty/package.json")).unwrap();
+        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+
+        // A new directory matching the glob.
+        std::fs::create_dir_all(p.join("packages/b")).unwrap();
+        std::fs::write(p.join("packages/b/package.json"), r#"{"name":"b"}"#).unwrap();
+        assert!(matches!(check(p, 7), Check::Changed(_)), "new member dir");
     }
 
     #[test]

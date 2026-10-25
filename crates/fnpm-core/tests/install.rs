@@ -617,3 +617,59 @@ async fn global_remove_unlinks_bins() {
     assert!(!exists(&bin), "bin unlinked");
     assert!(!exists(&p.tmp.path().join("global/node_modules/tool")));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn new_workspace_member_is_not_a_noop() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"] }),
+    );
+    p.write(
+        "packages/one/package.json",
+        &json!({ "name": "one", "version": "1.0.0" }).to_string(),
+    );
+    p.install().await;
+    assert!(p.install().await.noop);
+
+    // A new member under the glob changes no manifest the last install saw.
+    p.write(
+        "packages/two/package.json",
+        &json!({ "name": "two", "version": "1.0.0", "dependencies": { "b": "1.0.0" } }).to_string(),
+    );
+    let s = p.install().await;
+    assert!(!s.noop, "a new member must be installed");
+    assert!(p.read("fnpm.lock").contains("\"packages/two\""));
+    assert!(p.install().await.noop);
+
+    // A matched directory that gains a package.json is a new member too.
+    std::fs::create_dir_all(p.path("packages/three")).unwrap();
+    let s = p.install().await;
+    assert!(!s.noop, "a new directory under the glob is a change");
+    assert!(p.install().await.noop);
+    p.write(
+        "packages/three/package.json",
+        &json!({ "name": "three", "version": "1.0.0" }).to_string(),
+    );
+    assert!(!p.install().await.noop);
+    assert!(p.read("fnpm.lock").contains("\"packages/three\""));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn edited_patch_file_is_not_a_noop() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    p.write("patches/b.patch", "");
+    let mut pj = p.json("package.json");
+    pj["patchedDependencies"] = json!({ "b@1.0.0": "patches/b.patch" });
+    p.write("package.json", &serde_json::to_string_pretty(&pj).unwrap());
+    p.install().await;
+    assert!(p.read("fnpm.lock").contains("patches/b.patch"));
+    assert!(p.install().await.noop);
+    p.write("patches/b.patch", "\n");
+    assert!(
+        !p.install().await.noop,
+        "an edited patch file must reinstall"
+    );
+}

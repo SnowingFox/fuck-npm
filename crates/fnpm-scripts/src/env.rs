@@ -210,7 +210,7 @@ impl BaseEnv {
         seed_script_env(&mut env, project_dir);
         env.set_default("INIT_CWD", || Some(project_dir.as_os_str().to_owned()));
         // Run node-gyp jobs in parallel (node-gyp lib/build.js).
-        let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let threads = fnpm_types::available_parallelism();
         if threads > 2 {
             env.set_default("JOBS", || Some(threads.to_string().into()));
         }

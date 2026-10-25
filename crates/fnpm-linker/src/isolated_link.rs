@@ -224,7 +224,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
             *g = Some(e);
         }
     };
-    (0..layout.entries.len()).into_par_iter().for_each(|i| {
+    let materialize_one = |i: usize| {
         let e = &layout.entries[i];
         let st = &states[i];
         let pkg = &cx.graph.packages[e.package.index()];
@@ -288,6 +288,15 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
             fail(err);
         }
         cx.tick();
+    };
+    // FIFO, biggest packages first (see `crate::largest_first`).
+    let all: Vec<usize> = (0..layout.entries.len()).collect();
+    let order = crate::largest_first(cx.source, &all, |i| layout.entries[i].package);
+    rayon::scope_fifo(|s| {
+        for i in order {
+            let f = &materialize_one;
+            s.spawn_fifo(move |_| f(i));
+        }
     });
     if let Some(e) = first_error.lock().take() {
         cleanup_staging(&states);

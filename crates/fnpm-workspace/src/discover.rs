@@ -283,8 +283,18 @@ fn classify(entries: &[String], negated: &mut NegatedWorkspaces) -> Vec<Entry> {
 /// that match it (whether they have a package.json is checked by the caller). Hidden segments are not matched by
 /// wildcards; ignored names are never entered. Symlinked directories are followed; one that
 /// points back at an ancestor is matched but not entered.
-pub(crate) fn expand_glob(root_posix: &str, user_pattern: &str) -> Result<Vec<PathBuf>> {
-    expand_glob_opts(root_posix, user_pattern, &IGNORED_PATHS, Dots::Hide)
+pub(crate) fn expand_glob(
+    root_posix: &str,
+    user_pattern: &str,
+    parallel: bool,
+) -> Result<Vec<PathBuf>> {
+    expand_glob_with(
+        root_posix,
+        user_pattern,
+        &IGNORED_PATHS,
+        Dots::Hide,
+        parallel,
+    )
 }
 
 /// [`expand_glob`] with the names never entered and how wildcards treat dot segments.
@@ -293,6 +303,18 @@ pub(crate) fn expand_glob_opts(
     user_pattern: &str,
     ignored: &[&str],
     dots: Dots,
+) -> Result<Vec<PathBuf>> {
+    expand_glob_with(root_posix, user_pattern, ignored, dots, true)
+}
+
+/// [`expand_glob_opts`]; `parallel: false` never touches the rayon pool (the no-op fast path
+/// runs before any thread is started).
+fn expand_glob_with(
+    root_posix: &str,
+    user_pattern: &str,
+    ignored: &[&str],
+    dots: Dots,
+    parallel: bool,
 ) -> Result<Vec<PathBuf>> {
     let joined = join_posix(&glob::escape_literal(root_posix), user_pattern);
     let mut out = Vec::new();
@@ -323,6 +345,7 @@ pub(crate) fn expand_glob_opts(
             pattern: user_pattern,
             ignored,
             dots,
+            parallel,
         };
         walker.visit(&base_path, &states, &mut Vec::new(), &mut out)?;
     }
@@ -352,6 +375,7 @@ struct Walker<'a> {
     pattern: &'a str,
     ignored: &'a [&'a str],
     dots: Dots,
+    parallel: bool,
 }
 
 /// Fan out to rayon only when a directory has this many candidate children.
@@ -406,7 +430,7 @@ impl Walker<'_> {
         }
         children.sort_by(|a, b| a.0.cmp(&b.0));
         ancestors.push(dir.to_path_buf());
-        let result = if children.len() >= PARALLEL_CHILDREN {
+        let result = if self.parallel && children.len() >= PARALLEL_CHILDREN {
             let parts: Vec<Result<Vec<PathBuf>>> = children
                 .par_iter()
                 .map(|(path, next, is_link)| {
@@ -477,7 +501,11 @@ pub(crate) struct Found {
 
 /// Every member directory `entries` select, keyed by path relative to `root_dir`. Literal
 /// entries come first and win over globs for the same directory.
-pub(crate) fn member_dirs(root_dir: &Path, entries: &[String]) -> Result<BTreeMap<String, Found>> {
+pub(crate) fn member_dirs(
+    root_dir: &Path,
+    entries: &[String],
+    parallel: bool,
+) -> Result<BTreeMap<String, Found>> {
     let root_posix = abs_posix(root_dir);
     let mut negated = NegatedWorkspaces::default();
     let classified = classify(entries, &mut negated);
@@ -500,7 +528,7 @@ pub(crate) fn member_dirs(root_dir: &Path, entries: &[String]) -> Result<BTreeMa
                 );
             }
             Entry::Glob(p) => {
-                for dir in expand_glob(&root_posix, p)? {
+                for dir in expand_glob(&root_posix, p, parallel)? {
                     let rel = relative_posix(root_dir, &dir);
                     if rel.is_empty() || negated.excludes(&rel) {
                         continue;
@@ -515,6 +543,20 @@ pub(crate) fn member_dirs(root_dir: &Path, entries: &[String]) -> Result<BTreeMa
         }
     }
     Ok(found)
+}
+
+/// The `workspaces` entries members are discovered from: the root package.json's, else the
+/// `packages` of `pnpm-workspace.yaml` when the root has no `workspaces` field.
+pub(crate) fn member_patterns(root_dir: &Path, root: &PackageJson) -> Result<Option<Vec<String>>> {
+    let root_pj = root_dir.join("package.json");
+    match workspace_entries(root).map_err(|e| with_path(e, &root_pj))? {
+        Some(e) => Ok(Some(e)),
+        None if root.raw.get("workspaces").is_none() => {
+            let mut warnings = Vec::new();
+            Ok(read_pnpm_workspace(root_dir, &mut warnings)?.and_then(|p| p.packages))
+        }
+        None => Ok(None),
+    }
 }
 
 /// [`crate::Workspace::load_with`].
@@ -544,7 +586,9 @@ pub(crate) fn load(root_dir: &Path, options: &LoadOptions) -> Result<(Workspace,
     let settings = settings(&root, pnpm.as_ref()).map_err(|e| with_path(e, &root_pj))?;
     let mut members = Vec::new();
     if let Some(entries) = entries.filter(|e| !e.is_empty()) {
-        let dirs: Vec<(String, Found)> = member_dirs(&root_dir, &entries)?.into_iter().collect();
+        let dirs: Vec<(String, Found)> = member_dirs(&root_dir, &entries, true)?
+            .into_iter()
+            .collect();
         let parsed: Vec<Result<Outcome>> = dirs
             .par_iter()
             .map(|(rel, found)| read_member(rel, found, options.missing))

@@ -159,6 +159,7 @@ impl Materializer {
         // file) leaves no `package.json`, so the next run's cheap check rebuilds the folder
         // instead of trusting a half-copied package.
         let mut manifest = None;
+        let mut linker = DirLinker::open(self.current(), src, dest);
         for f in &index.files {
             if !is_safe_index_path(&f.path) {
                 return Err(unsafe_index_path(src, dest, &f.path));
@@ -167,16 +168,33 @@ impl Materializer {
                 manifest = Some(f);
                 continue;
             }
-            let used = self.place_file(&src.join(&f.path), &dest.join(&f.path))?;
+            let used = match linker
+                .as_mut()
+                .filter(|_| self.current() == Backend::Hardlink)
+                .and_then(|l| l.link(&f.path))
+            {
+                Some(()) => Backend::Hardlink,
+                None => self.place_file(&src.join(&f.path), &dest.join(&f.path))?,
+            };
             if (used as u8) > (weakest as u8) {
                 weakest = used;
             }
         }
         if let Some(f) = manifest {
-            let used = self.place_file(&src.join(&f.path), &dest.join(&f.path))?;
+            let used = match linker
+                .as_mut()
+                .filter(|_| self.current() == Backend::Hardlink)
+                .and_then(|l| l.link(&f.path))
+            {
+                Some(()) => Backend::Hardlink,
+                None => self.place_file(&src.join(&f.path), &dest.join(&f.path))?,
+            };
             if (used as u8) > (weakest as u8) {
                 weakest = used;
             }
+        }
+        if linker.is_some_and(|l| l.linked) {
+            self.mark(Backend::Hardlink);
         }
         if index.files.is_empty() {
             weakest = self.current();
@@ -250,6 +268,80 @@ impl Materializer {
             _ => Backend::Copyfile,
         };
         self.sticky.degrade(next);
+    }
+}
+
+/// Hard links relative to open directory descriptors of the package source and destination
+/// (`linkat(src_fd, path, dest_fd, path)`), like bun: the kernel walks two short relative
+/// paths instead of two absolute ones per file, and no `PathBuf` is built. Any failure is
+/// left to [`Materializer::place_file`], which handles every error case.
+struct DirLinker {
+    #[cfg(unix)]
+    src: std::fs::File,
+    #[cfg(unix)]
+    dest: std::fs::File,
+    #[cfg(unix)]
+    buf: Vec<u8>,
+    linked: bool,
+}
+
+impl DirLinker {
+    #[cfg(unix)]
+    fn open(backend: Backend, src: &Path, dest: &Path) -> Option<Self> {
+        use std::os::unix::fs::OpenOptionsExt;
+        if backend != Backend::Hardlink {
+            return None;
+        }
+        let open = |p: &Path| {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY)
+                .open(p)
+                .ok()
+        };
+        Some(Self {
+            src: open(src)?,
+            dest: open(dest)?,
+            buf: Vec::with_capacity(256),
+            linked: false,
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn open(_: Backend, _: &Path, _: &Path) -> Option<Self> {
+        None
+    }
+
+    /// `Some(())` when the link was made.
+    #[cfg(unix)]
+    fn link(&mut self, rel: &str) -> Option<()> {
+        use std::os::fd::AsRawFd;
+        self.buf.clear();
+        self.buf.extend_from_slice(rel.as_bytes());
+        self.buf.push(0);
+        let path = std::ffi::CStr::from_bytes_with_nul(&self.buf).ok()?;
+        // SAFETY: both descriptors are open directories owned by `self`, and `path` is a valid
+        // NUL-terminated string that outlives the call.
+        let rc = unsafe {
+            libc::linkat(
+                self.src.as_raw_fd(),
+                path.as_ptr(),
+                self.dest.as_raw_fd(),
+                path.as_ptr(),
+                0,
+            )
+        };
+        if rc == 0 {
+            self.linked = true;
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn link(&mut self, _: &str) -> Option<()> {
+        None
     }
 }
 

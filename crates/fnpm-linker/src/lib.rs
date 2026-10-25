@@ -170,6 +170,29 @@ pub enum Layout {
 pub trait PackageSource: Sync {
     /// The store entry of package `id` (for `file:` folders, the imported directory).
     fn wait(&self, id: PackageId) -> std::result::Result<PackageEntry, String>;
+
+    /// The number of files of `id` if it is already available, without waiting. The linker
+    /// starts the biggest packages first: one package's files go into the same directories,
+    /// so the largest one (lodash: ~1,000 files in one directory) bounds the link time.
+    fn size_hint(&self, id: PackageId) -> Option<usize> {
+        let _ = id;
+        None
+    }
+}
+
+/// `items` ordered by the [`PackageSource::size_hint`] of their package, largest first
+/// (unknown sizes keep their order, after the known ones).
+pub(crate) fn largest_first<T: Copy>(
+    source: &dyn PackageSource,
+    items: &[T],
+    package: impl Fn(T) -> PackageId,
+) -> Vec<T> {
+    let mut keyed: Vec<(usize, T)> = items
+        .iter()
+        .map(|&t| (source.size_hint(package(t)).unwrap_or(0), t))
+        .collect();
+    keyed.sort_by_key(|k| std::cmp::Reverse(k.0));
+    keyed.into_iter().map(|(_, t)| t).collect()
 }
 
 /// Per-call options.
@@ -194,9 +217,7 @@ impl Default for LinkOptions {
             backend: default_backend(),
             force: false,
             fresh: false,
-            threads: std::thread::available_parallelism()
-                .map_or(4, |n| n.get())
-                .min(8),
+            threads: fnpm_types::available_parallelism().min(8),
             global_store: true,
         }
     }
@@ -228,6 +249,39 @@ pub struct Linker {
     trusted: TrustFn,
     native_binlinks: Vec<String>,
     pool: parking_lot::Mutex<Option<(usize, Arc<rayon::ThreadPool>)>>,
+}
+
+/// The process-wide link pool of `threads` threads (1-8). Starting 8 threads costs 0.5-1 ms, so
+/// one pool is kept for the process (napi runs many commands in one) and [`prewarm_pool`] can
+/// start it while the install is still resolving.
+fn link_pool(threads: usize) -> Result<Arc<rayon::ThreadPool>> {
+    static POOL: parking_lot::Mutex<Option<(usize, Arc<rayon::ThreadPool>)>> =
+        parking_lot::Mutex::new(None);
+    let threads = threads.clamp(1, 8);
+    let mut guard = POOL.lock();
+    if let Some((n, p)) = guard.as_ref()
+        && *n == threads
+    {
+        return Ok(p.clone());
+    }
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .thread_name(|i| format!("fnpm-link-{i}"))
+        .build()
+        .map_err(|e| Error::NodeModules(std::io::Error::other(e.to_string())))?;
+    let pool = Arc::new(pool);
+    *guard = Some((threads, pool.clone()));
+    Ok(pool)
+}
+
+/// Starts the link pool for `threads` (see [`LinkOptions::threads`]) on a background thread,
+/// so [`Linker::link`] finds it running. Cheap to call more than once.
+pub fn prewarm_pool(threads: usize) {
+    let _ = std::thread::Builder::new()
+        .name("fnpm-link-warm".into())
+        .spawn(move || {
+            let _ = link_pool(threads);
+        });
 }
 
 /// bun's default native-binlink packages (`postinstall_optimizer.rs`).
@@ -342,20 +396,14 @@ impl Linker {
     }
 
     fn pool(&self, threads: usize) -> Result<Arc<rayon::ThreadPool>> {
-        let threads = threads.clamp(1, 8);
         let mut guard = self.pool.lock();
         if let Some((n, p)) = guard.as_ref()
-            && *n == threads
+            && *n == threads.clamp(1, 8)
         {
             return Ok(p.clone());
         }
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .thread_name(|i| format!("fnpm-link-{i}"))
-            .build()
-            .map_err(|e| Error::NodeModules(std::io::Error::other(e.to_string())))?;
-        let pool = Arc::new(pool);
-        *guard = Some((threads, pool.clone()));
+        let pool = link_pool(threads)?;
+        *guard = Some((threads.clamp(1, 8), pool.clone()));
         Ok(pool)
     }
 

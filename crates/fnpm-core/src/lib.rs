@@ -154,11 +154,7 @@ pub fn io_threads() -> usize {
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
         .filter(|n| (1..=64).contains(n))
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map_or(4, |n| n.get())
-                .clamp(1, 4)
-        })
+        .unwrap_or_else(|| fnpm_types::available_parallelism().clamp(1, 4))
 }
 
 /// The process-wide runtime: tokio multi-thread for network and file I/O, plus the global
@@ -197,8 +193,10 @@ pub async fn install_with_env(
 /// The synchronous start of [`install`]: options, project, configuration and the no-op check,
 /// with no runtime. A launcher answers a no-op install from [`PreparedInstall::noop`] without
 /// starting [`runtime`]; otherwise it continues with [`PreparedInstall::run`] on the runtime.
+/// For an install that is not a no-op, [`runtime`] and the link pool are started on background
+/// threads while this reads the workspace and the lockfile.
 pub fn prepare_install(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
-    install::prepare(opts, env)
+    install::prepare(opts, env, true)
 }
 
 /// Every other command, dispatched on `request.command` (see `commands`).

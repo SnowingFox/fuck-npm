@@ -248,10 +248,15 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         error: Mutex::new(None),
     };
     let force = cx.opts.force;
-    rayon::scope(|s| {
-        for &top in &plan.tops {
+    // FIFO, biggest packages first: every worker starts on the largest remaining one, so a
+    // big package does not start last and stretch the whole link.
+    let tops = crate::largest_first(cx.source, &plan.tops, |t| {
+        plan.tree.nodes[t as usize].package
+    });
+    rayon::scope_fifo(|s| {
+        for top in tops {
             let (plan, out) = (&plan, &out);
-            s.spawn(move |s| place_node(s, cx, plan, out, top, fresh, force));
+            s.spawn_fifo(move |s| place_node(s, cx, plan, out, top, fresh, force));
         }
     });
     if let Some(e) = out.error.lock().take() {
@@ -304,7 +309,7 @@ fn is_ws_root(tree: &Tree, id: u32) -> bool {
 }
 
 fn place_node<'s>(
-    s: &rayon::Scope<'s>,
+    s: &rayon::ScopeFifo<'s>,
     cx: &'s LinkCx<'s>,
     plan: &'s Plan<'_>,
     out: &'s Out,
@@ -430,7 +435,7 @@ fn place_node<'s>(
         );
     }
     for &c in &plan.children[idx] {
-        s.spawn(move |s| place_node(s, cx, plan, out, c, child_fresh, force));
+        s.spawn_fifo(move |s| place_node(s, cx, plan, out, c, child_fresh, force));
     }
 }
 

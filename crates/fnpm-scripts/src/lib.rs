@@ -134,7 +134,7 @@ impl RunOptions {
 
 /// bun's default `max_concurrent_lifecycle_scripts`: twice the CPU count.
 pub fn default_concurrency() -> usize {
-    std::thread::available_parallelism().map_or(1, |n| n.get()) * 2
+    fnpm_types::available_parallelism() * 2
 }
 
 /// `--concurrent-scripts <N>`: `0` or an invalid value keeps the default.

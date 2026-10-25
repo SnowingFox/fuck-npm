@@ -24,8 +24,7 @@ const DEFAULT_GITHUB_API_URL: &str = "https://api.github.com";
 
 /// `2 * available_parallelism`, computed once (on Linux it reads cgroup files).
 fn default_concurrent_scripts() -> usize {
-    static CPUS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *CPUS.get_or_init(|| std::thread::available_parallelism().map_or(1, usize::from)) * 2
+    fnpm_types::available_parallelism() * 2
 }
 
 /// `cwd` made absolute against the process working directory.

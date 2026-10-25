@@ -56,3 +56,11 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// `std::thread::available_parallelism()` (at least 1), computed once per process: on Linux
+/// every std call reads `/proc/self/cgroup` and the cgroup CPU quota files (about 40 syscalls,
+/// 50-130 us), and the install path asks from several crates.
+pub fn available_parallelism() -> usize {
+    static CPUS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CPUS.get_or_init(|| std::thread::available_parallelism().map_or(1, usize::from))
+}

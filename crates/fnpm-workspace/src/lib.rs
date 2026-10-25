@@ -207,6 +207,23 @@ impl Workspace {
         discover::load(root_dir, options)
     }
 
+    /// The `workspaces` entries the members come from (the root package.json's, else the
+    /// `packages` of `pnpm-workspace.yaml`); `None` when the project has no workspaces.
+    pub fn member_patterns(&self) -> Result<Option<Vec<String>>> {
+        discover::member_patterns(&self.root_dir, &self.root)
+    }
+
+    /// Every directory `patterns` select under `root_dir` (relative, `/`-separated, sorted),
+    /// whether or not it has a package.json, without reading any manifest. Single-threaded:
+    /// the no-op fast path compares it with the directories the last install saw, so a new
+    /// workspace member is never missed.
+    pub fn candidate_dirs(root_dir: &Path, patterns: &[String]) -> Result<Vec<String>> {
+        let root_dir = paths::absolute(root_dir);
+        Ok(discover::member_dirs(&root_dir, patterns, false)?
+            .into_keys()
+            .collect())
+    }
+
     /// The member called `name`.
     pub fn member(&self, name: &str) -> Option<&Member> {
         self.members.iter().find(|m| m.name == name)

@@ -106,6 +106,14 @@ impl Slot {
         }
     }
 
+    /// The number of files, if the fetch already succeeded (never waits).
+    pub fn files_if_ready(&self) -> Option<usize> {
+        match self.result.lock().as_ref() {
+            Some(Ok(f)) => Some(f.entry.index.files.len()),
+            _ => None,
+        }
+    }
+
     /// Waits on the runtime until the fetch finished.
     pub async fn wait(&self) -> Outcome {
         loop {
@@ -541,5 +549,10 @@ impl fnpm_linker::PackageSource for GraphSource<'_> {
         let out = self.patch(pkg, base);
         self.patched.lock().insert(id, out.clone());
         out
+    }
+
+    fn size_hint(&self, id: PackageId) -> Option<usize> {
+        let pkg = self.graph.get(id)?;
+        self.fetcher.existing(pkg)?.files_if_ready()
     }
 }

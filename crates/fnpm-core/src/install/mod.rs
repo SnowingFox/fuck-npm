@@ -91,8 +91,11 @@ impl Phases {
     }
 }
 
-/// The relative paths of every manifest the fast path watches.
-fn manifest_paths(ws: &Workspace) -> Vec<String> {
+/// The relative paths of every file the fast path watches: the manifests, pnpm-workspace.yaml,
+/// the package.json of every directory the workspace globs select (members and not), and the
+/// `patchedDependencies` patch files. Also returns the globs and the directories they
+/// selected.
+fn watched_files(ws: &Workspace, graph: &LockGraph) -> (Vec<String>, Vec<String>, Vec<String>) {
     let mut v = vec!["package.json".to_owned()];
     v.extend(
         ws.members
@@ -102,7 +105,25 @@ fn manifest_paths(ws: &Workspace) -> Vec<String> {
     if ws.root_dir.join(fast_path::PNPM_WORKSPACE).exists() {
         v.push(fast_path::PNPM_WORKSPACE.to_owned());
     }
-    v
+    let patterns = ws.member_patterns().ok().flatten().unwrap_or_default();
+    let dirs = if patterns.is_empty() {
+        Vec::new()
+    } else {
+        Workspace::candidate_dirs(&ws.root_dir, &patterns).unwrap_or_default()
+    };
+    for d in &dirs {
+        let rel = format!("{d}/package.json");
+        if !v.contains(&rel) && ws.root_dir.join(&rel).is_file() {
+            v.push(rel);
+        }
+    }
+    for patch in graph.patched_dependencies.values() {
+        let rel = patch.path.replace('\\', "/");
+        if !rel.is_empty() && !v.contains(&rel) {
+            v.push(rel);
+        }
+    }
+    (v, patterns, dirs)
 }
 
 /// `registry_for` with the lifetime of the config.
@@ -151,6 +172,9 @@ pub struct PreparedInstall {
     start: Instant,
     phases: Phases,
     noop: Option<InstallSummary>,
+    /// The workspace (with its warnings) and the previous lockfile, read while the runtime and
+    /// the link pool start on other threads. `None` for a no-op.
+    loaded: Option<(Workspace, Vec<String>, lock::LockState)>,
 }
 
 impl PreparedInstall {
@@ -174,8 +198,14 @@ impl PreparedInstall {
     }
 }
 
-/// Checks the options, loads the project and its configuration and runs the fast path.
-pub(crate) fn prepare(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
+/// Checks the options, loads the project and its configuration and runs the fast path. When
+/// the install is not a no-op, the link pool (and with `start_runtime` the tokio runtime) start
+/// on background threads while the workspace and the lockfile are read here.
+pub(crate) fn prepare(
+    opts: InstallOptions,
+    env: Env,
+    start_runtime: bool,
+) -> Result<PreparedInstall> {
     let start = Instant::now();
     let mut phases = Phases::new(&env);
     if opts.analyze {
@@ -218,6 +248,25 @@ pub(crate) fn prepare(opts: InstallOptions, env: Env) -> Result<PreparedInstall>
         });
     }
     phases.mark("fast path");
+    let loaded = if noop.is_none() {
+        if config.install_packages && !opts.pm.lockfile_only {
+            fnpm_linker::prewarm_pool(LinkOptions::default().threads);
+        }
+        if start_runtime {
+            let _ = std::thread::Builder::new()
+                .name("fnpm-rt-warm".into())
+                .spawn(|| {
+                    let _ = crate::runtime();
+                });
+        }
+        let (ws, warnings) = Workspace::load_with(&project.root_dir, &Default::default())?;
+        phases.mark("workspace");
+        let lock = lock::load(config, &ws)?;
+        phases.mark("lockfile");
+        Some((ws, warnings, lock))
+    } else {
+        None
+    };
     Ok(PreparedInstall {
         opts,
         project,
@@ -225,6 +274,7 @@ pub(crate) fn prepare(opts: InstallOptions, env: Env) -> Result<PreparedInstall>
         start,
         phases,
         noop,
+        loaded,
     })
 }
 
@@ -234,7 +284,7 @@ pub(crate) async fn run(
     events: Arc<dyn EventSink>,
     env: Env,
 ) -> Result<InstallSummary> {
-    prepare(opts, env)?.run(events).await
+    prepare(opts, env, false)?.run(events).await
 }
 
 /// Steps 2-8.
@@ -245,21 +295,27 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         hash,
         start,
         mut phases,
+        loaded,
         ..
     } = prepared;
     let config = project.config.clone();
     let root = project.root_dir.clone();
-    // 2. Workspace.
-    let mut ws = project.workspace(&*events)?;
-    phases.mark("workspace");
-
-    // 3. Lockfile.
-    let lock = lock::load(&config, &ws)?;
+    // 2. Workspace and 3. lockfile (read by `prepare`).
+    let (mut ws, ws_warnings, lock) = match loaded {
+        Some(l) => l,
+        None => {
+            let (ws, warnings) = Workspace::load_with(&root, &Default::default())?;
+            let lock = lock::load(&config, &ws)?;
+            (ws, warnings, lock)
+        }
+    };
+    for w in ws_warnings {
+        events.emit(Event::warn(w, None));
+    }
     for w in &lock.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
-    phases.mark("lockfile");
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
@@ -508,7 +564,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         if linked.report.removed > 0 || linked.report.installed > 0 {
             let _ = tokio::task::spawn_blocking(fnpm_linker::flush_background_deletes).await;
         }
-        write_state(&root, &ws, hash, &linked.linker, graph.len() as u32);
+        write_state(&root, &ws, &graph, hash, &linked.linker);
     }
     phases.mark("state");
     client.flush_cache_writes().await;
@@ -1077,11 +1133,18 @@ async fn run_scripts(
 }
 
 /// Writes the no-op state for the files as they are now.
-fn write_state(root: &Path, ws: &Workspace, config_hash: u64, linker: &NodeLinker, packages: u32) {
+fn write_state(
+    root: &Path,
+    ws: &Workspace,
+    graph: &LockGraph,
+    config_hash: u64,
+    linker: &NodeLinker,
+) {
     let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
         return;
     };
-    let manifests = manifest_paths(ws)
+    let (files, workspace_patterns, workspace_dirs) = watched_files(ws, graph);
+    let manifests = files
         .iter()
         .filter_map(|rel| fast_path::manifest_entry(root, rel).ok())
         .collect();
@@ -1096,7 +1159,9 @@ fn write_state(root: &Path, ws: &Workspace, config_hash: u64, linker: &NodeLinke
             NodeLinker::Hoisted => "hoisted".into(),
             NodeLinker::Isolated => "isolated".into(),
         },
-        packages,
+        packages: graph.len() as u32,
+        workspace_patterns,
+        workspace_dirs,
     };
     let _ = fast_path::write(root, &state);
 }
