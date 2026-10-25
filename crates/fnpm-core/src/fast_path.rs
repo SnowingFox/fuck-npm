@@ -1,4 +1,4 @@
-//! The no-op fast path: `node_modules/.fnpm/state`.
+//! The no-op fast path: `node_modules/.fnpm/.state/state`.
 //!
 //! If the lockfile, every workspace package.json, the effective config and the
 //! `node_modules` directory are unchanged since the last successful install, `fnpm install`
@@ -10,10 +10,14 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Where the state lives, relative to the project root.
-pub const STATE_FILE: &str = "node_modules/.fnpm/state";
+/// Where the state lives, relative to the project root. In a directory of its own, so writing it
+/// changes neither `node_modules` nor `node_modules/.fnpm` (both identities are recorded).
+pub const STATE_FILE: &str = "node_modules/.fnpm/.state/state";
+
+/// The state file of fnpm versions before `.state/` (deleted with the current one).
+const LEGACY_STATE_FILE: &str = "node_modules/.fnpm/state";
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 2;
+pub const STATE_VERSION: u32 = 3;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +37,10 @@ pub struct State {
     pub config_hash: u64,
     /// `(dev, ino, mtime ns)` of `node_modules` after the install finished.
     pub node_modules: (u64, u64, i128),
+    /// The same for `node_modules/.fnpm` (the isolated layout's entries live there: a deleted
+    /// entry does not touch `node_modules` itself).
+    #[serde(default)]
+    pub virtual_store: (u64, u64, i128),
     /// `hoisted` or `isolated`.
     pub linker: String,
     /// Packages in the lockfile graph (the no-op summary's `checked` count).
@@ -126,8 +134,13 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
     {
         return false;
     }
-    match dir_identity(&project_dir.join("node_modules")) {
+    let nm = project_dir.join("node_modules");
+    match dir_identity(&nm) {
         Ok(id) if id == state.node_modules => {}
+        _ => return false,
+    }
+    match dir_identity(&nm.join(".fnpm")) {
+        Ok(id) if id == state.virtual_store => {}
         _ => return false,
     }
     match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK)) {
@@ -179,6 +192,8 @@ pub fn write(project_dir: &Path, state: &State) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let mut state = state.clone();
     state.node_modules = dir_identity(&project_dir.join("node_modules"))?;
+    state.virtual_store = dir_identity(&project_dir.join("node_modules/.fnpm"))?;
+    let _ = std::fs::remove_file(project_dir.join(LEGACY_STATE_FILE));
     let bytes = serde_json::to_vec(&state).map_err(io::Error::other)?;
     let tmp = dir.join(format!(".state-{}.tmp", std::process::id()));
     std::fs::write(&tmp, &bytes)?;
@@ -190,6 +205,7 @@ pub fn write(project_dir: &Path, state: &State) -> io::Result<()> {
 /// Deletes the state file (at the start of an install that changes `node_modules`).
 pub fn remove(project_dir: &Path) {
     let _ = std::fs::remove_file(project_dir.join(STATE_FILE));
+    let _ = std::fs::remove_file(project_dir.join(LEGACY_STATE_FILE));
 }
 
 #[cfg(test)]
@@ -212,6 +228,7 @@ mod tests {
             manifests: vec![manifest_entry(dir, "package.json").unwrap()],
             config_hash: 7,
             node_modules: (0, 0, 0),
+            virtual_store: (0, 0, 0),
             linker: "hoisted".into(),
             packages: 3,
             workspace_patterns: Vec::new(),
@@ -246,6 +263,17 @@ mod tests {
 
         std::fs::create_dir(p.join("node_modules/left-pad")).unwrap();
         assert!(matches!(check(p, 7), Check::Changed(_)), "node_modules");
+        write(p, &state_for(p)).unwrap();
+        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+
+        // An isolated entry deleted from the virtual store.
+        std::fs::create_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
+        write(p, &state_for(p)).unwrap();
+        assert_eq!(check(p, 7), Check::Noop { packages: 3 });
+        // Directory mtimes come from the coarse kernel clock (a few ms per tick).
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::remove_dir(p.join("node_modules/.fnpm/a@1.0.0")).unwrap();
+        assert!(matches!(check(p, 7), Check::Changed(_)), "virtual store");
         write(p, &state_for(p)).unwrap();
         assert_eq!(check(p, 7), Check::Noop { packages: 3 });
 

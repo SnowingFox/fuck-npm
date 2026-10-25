@@ -42,7 +42,10 @@ async fn fresh_install_resolves_fetches_links_and_saves() {
     let lock = p.read("fnpm.lock");
     assert!(lock.contains("\"a\": [\"a@1.1.0\""), "{lock}");
     assert!(lock.contains("sha512-"), "integrity recorded: {lock}");
-    assert!(exists(&p.path("node_modules/.fnpm/state")), "state written");
+    assert!(
+        exists(&p.path(fnpm_core::fast_path::STATE_FILE)),
+        "state written"
+    );
     assert!(
         exists(&p.path("node_modules/.fnpm/lock.bin")),
         "sidecar written"

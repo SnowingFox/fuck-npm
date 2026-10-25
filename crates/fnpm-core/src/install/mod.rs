@@ -1243,6 +1243,7 @@ fn write_state(
         manifests,
         config_hash,
         node_modules: (0, 0, 0),
+        virtual_store: (0, 0, 0),
         linker: match linker {
             NodeLinker::Hoisted => "hoisted".into(),
             NodeLinker::Isolated => "isolated".into(),
