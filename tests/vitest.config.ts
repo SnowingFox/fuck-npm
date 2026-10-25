@@ -29,6 +29,10 @@ export default defineConfig({
             { find: /^bun$/, replacement: here("conformance/compat/bun.ts") },
             { find: /^harness$/, replacement: here("conformance/harness.ts") },
             { find: /^registry$/, replacement: here("conformance/compat/registry.ts") },
+            // Fixtures imported from bun's checkout, which FNPM_BUN_DIR names when the submodule is not checked out.
+            ...(process.env.FNPM_BUN_DIR
+              ? [{ find: /^(?:\.\.\/)+submodule\/bun\//, replacement: `${process.env.FNPM_BUN_DIR}/` }]
+              : []),
           ],
         },
         test: {

@@ -414,7 +414,7 @@ export function spawn(cmdOrOptions: string[] | SpawnOptions, maybeOptions?: Spaw
         nodeStdio(options.stderr, "inherit"),
       ];
   const child = nodeSpawn(cmd[0], cmd.slice(1), {
-    cwd: options.cwd,
+    cwd: options.cwd === undefined ? undefined : String(options.cwd),
     env: cleanEnv(options.env),
     stdio,
     uid: options.uid,
@@ -458,7 +458,7 @@ export function spawnSync(cmdOrOptions: string[] | SpawnOptions, maybeOptions?: 
   const input =
     typeof stdinValue === "string" || ArrayBuffer.isView(stdinValue) ? toBytes(stdinValue as string) : undefined;
   const result = nodeSpawnSync(cmd[0], cmd.slice(1), {
-    cwd: options.cwd,
+    cwd: options.cwd === undefined ? undefined : String(options.cwd),
     env: cleanEnv(options.env),
     input,
     stdio: [

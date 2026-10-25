@@ -1,5 +1,19 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`\`fnpm audit\` should exit 1 and behave exactly the same when there are vulnerabilities when only devDependencies are specified: bun-audit-expect-vulnerabilities-found 1`] = `
+"fnpm audit <version> (<revision>)
+
+ms@0.7.0
+  (direct dependency)
+  moderate: Vercel ms Inefficient Regular Expression Complexity vulnerability (<2.0.0) - https://github.com/advisories/GHSA-w9mr-4mfr-499f
+  high: Regular Expression Denial of Service in ms (<0.7.1) - https://github.com/advisories/GHSA-3fx5-fwvr-xrjg
+
+2 vulnerabilities (1 high, 1 moderate)
+
+  fnpm audit fix           upgrade the vulnerable packages within their ranges
+  fnpm audit fix --latest  also cross major versions"
+`;
+
 exports[`\`fnpm audit\` should exit code 1 when there are vulnerabilities: bun-audit-expect-vulnerabilities-found 1`] = `
 "fnpm audit <version> (<revision>)
 
@@ -405,20 +419,6 @@ exports[`\`fnpm audit\` should print valid JSON and exit 1 when --json is passed
     },
   ],
 }
-`;
-
-exports[`\`fnpm audit\` should exit 1 and behave exactly the same when there are vulnerabilities when only devDependencies are specified: bun-audit-expect-vulnerabilities-found 1`] = `
-"fnpm audit <version> (<revision>)
-
-ms@0.7.0
-  (direct dependency)
-  moderate: Vercel ms Inefficient Regular Expression Complexity vulnerability (<2.0.0) - https://github.com/advisories/GHSA-w9mr-4mfr-499f
-  high: Regular Expression Denial of Service in ms (<0.7.1) - https://github.com/advisories/GHSA-3fx5-fwvr-xrjg
-
-2 vulnerabilities (1 high, 1 moderate)
-
-  fnpm audit fix           upgrade the vulnerable packages within their ranges
-  fnpm audit fix --latest  also cross major versions"
 `;
 
 exports[`\`fnpm audit\` when a project has some safe dependencies and some vulnerable dependencies, we should not print the safe dependencies: bun-audit-expect-vulnerabilities-found 1`] = `

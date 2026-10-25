@@ -238,10 +238,8 @@ fn severity_rank(s: &str) -> u8 {
 
 /// `fnpm audit [--audit-level x] [--ignore id]` / `fnpm-lock audit`.
 pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
-    if cx.req.positionals.first().is_some_and(|a| a == "fix") {
-        return Err(Error::NotImplemented {
-            command: "audit fix".into(),
-        });
+    if cx.req.positionals.first().is_some_and(|a| a == "fix") && !lock_tool {
+        return super::audit_fix::fix(cx).await;
     }
     let (project, _, graph) = cx.load_locked("nothing to audit")?;
     let mut versions: BTreeMap<String, Vec<String>> = BTreeMap::new();

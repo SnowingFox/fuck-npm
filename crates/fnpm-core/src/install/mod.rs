@@ -157,6 +157,35 @@ pub(crate) fn write_migration(
 pub(crate) use edits::Edit;
 pub(crate) use plan::name_matches;
 
+/// Rewrites the specs of existing dependencies, by workspace path (`""` is the root), keeping
+/// the formatting of each package.json.
+pub(crate) fn apply_package_json_updates(
+    root: &Path,
+    updates: &std::collections::BTreeMap<String, Vec<(String, String)>>,
+) -> Result<()> {
+    for (ws, list) in updates {
+        let dir = if ws.is_empty() {
+            root.to_path_buf()
+        } else {
+            root.join(ws)
+        };
+        let file = dir.join("package.json");
+        let text = std::fs::read_to_string(&file).map_err(Error::io(&file))?;
+        let edits: Vec<Edit> = list
+            .iter()
+            .map(|(name, spec)| Edit::Update {
+                name: name.clone(),
+                spec: spec.clone(),
+            })
+            .collect();
+        let out = edits::apply_text(&text, &edits)?;
+        if out != text {
+            crate::project::write_atomic(&file, out.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
 /// Applies package.json edits to text with the format-preserving editor.
 pub(crate) fn edit_package_json_text(text: &str, edits: &[Edit]) -> Result<String> {
     edits::apply_text(text, edits)
@@ -235,6 +264,7 @@ pub(crate) fn prepare(
         && !opts.pm.lockfile_only
         && !opts.pm.trust
         && config.install_packages
+        && opts.patch.is_none()
         && let Check::Noop { packages } = fast_path::check(&project.root_dir, hash)
     {
         noop = Some(InstallSummary {
@@ -298,7 +328,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let config = project.config.clone();
     let root = project.root_dir.clone();
     // 2. Workspace and 3. lockfile (read by `prepare`).
-    let (mut ws, ws_warnings, lock) = match loaded {
+    let (mut ws, ws_warnings, mut lock) = match loaded {
         Some(l) => l,
         None => {
             let (ws, warnings) = Workspace::load_with(&root, &Default::default())?;
@@ -313,6 +343,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.emit(Event::warn(w.clone(), None));
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
+    if let (Some(patch), Some(graph)) = (&opts.patch, lock.graph.as_mut()) {
+        (patch.0)(graph);
+    }
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
@@ -411,7 +444,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         requested,
         ..InstallSummary::default()
     };
-    let lockfile_dirty = changed || lock.migrated || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
+    let lockfile_dirty = changed
+        || lock.migrated
+        || opts.patch.is_some()
+        || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
 
     if opts.pm.lockfile_only || !config.install_packages {
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.

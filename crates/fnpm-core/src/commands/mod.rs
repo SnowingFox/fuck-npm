@@ -8,6 +8,7 @@
 //! Every command returns [`CoreResult`]: `data` is the `--json` payload and `lines` the
 //! pre-rendered human output (plain ASCII tables unless the request sets `options.color`).
 
+mod audit_fix;
 mod files;
 mod info;
 mod inspect;

@@ -467,6 +467,7 @@ pub fn install_options(
         update_groups,
         depth,
         dlx: None,
+        patch: None,
     })
 }
 

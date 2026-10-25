@@ -42,6 +42,8 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     ctx.runtime.stderr.write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
   }
 
+  // Commands that print their own header (`fnpm audit fix vX`) print the CLI's version.
+  (options as Record<string, unknown>).cliVersion = getCliVersion();
   const request: CoreRequest = {
     command: ctx.registry.bin === "fnpm-lock" ? ["lock", ...ctx.path] : ctx.path,
     cwd: String(options.cwd),

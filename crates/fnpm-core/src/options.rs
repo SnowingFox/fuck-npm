@@ -245,7 +245,29 @@ pub struct InstallOptions {
     /// Set by `fnpm x` for the install into one of its cached trees; never sent by a CLI.
     #[serde(skip)]
     pub dlx: Option<DlxMode>,
+    /// Applied to the lockfile's graph before resolving (`fnpm audit fix` swaps vulnerable
+    /// packages); the lockfile is always saved. Never sent by a CLI.
+    #[serde(skip)]
+    pub patch: Option<GraphPatch>,
 }
+
+/// An edit of the previous graph, see [`InstallOptions::patch`].
+#[derive(Clone)]
+pub struct GraphPatch(pub std::sync::Arc<dyn Fn(&mut fnpm_types::LockGraph) + Send + Sync>);
+
+impl std::fmt::Debug for GraphPatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GraphPatch")
+    }
+}
+
+impl PartialEq for GraphPatch {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for GraphPatch {}
 
 /// How `fnpm x` installs into its tree (bun `BUN_INTERNAL_BUNX_INSTALL`).
 ///

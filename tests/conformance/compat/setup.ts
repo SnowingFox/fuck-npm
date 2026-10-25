@@ -2,12 +2,26 @@
  * vitest setup for the conformance suite: the `Bun` global, and the matchers that bun:test has and vitest does not
  * (`toBeTrue`, `toEndWith`, ... plus the harness matchers `toHaveBins`, `toBeValidBin`, `toBeWorkspaceLink`, `toMatchNodeModulesAt`).
  */
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
 import { expect } from "vitest";
 import { toBeValidBin, toBeWorkspaceLink, toHaveBins, toMatchNodeModulesAt } from "../harness.ts";
 import { Bun } from "./bun.ts";
 import * as bunTest from "./bun-test.ts";
 
 (globalThis as { Bun?: unknown }).Bun = Bun;
+
+// `tempDir()` returns a String object, which bun's `path` functions take like a string and node's reject. Unwrap it.
+{
+  const unwrap = (value: unknown) => (value instanceof String ? value.valueOf() : value);
+  for (const p of [path, path.posix]) {
+    for (const name of ["join", "resolve", "relative", "dirname", "basename", "extname", "normalize", "isAbsolute"] as const) {
+      const original = p[name] as (...args: unknown[]) => unknown;
+      (p as Record<string, unknown>)[name] = (...args: unknown[]) => original(...args.map(unwrap));
+    }
+  }
+  syncBuiltinESMExports();
+}
 // bun:test names are globals in bun; vitest `globals: true` installs its own, replace them with the bun flavour.
 Object.assign(globalThis, {
   test: bunTest.test,
