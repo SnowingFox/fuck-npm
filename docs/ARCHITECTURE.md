@@ -1458,7 +1458,9 @@ launcher spawns node with inherited stdio, ignores console Ctrl-C itself
 
 - **Finding node:** `FNPM_NODE` if set, else `node` on `PATH`. If it cannot be started the
   launcher prints `fnpm: '<cmd>' needs Node.js 20.19 or newer, and no 'node' was found on PATH`
-  and exits 1. The native commands never need Node.
+  (`… and FNPM_NODE (<path>) was not found` when the override is set; `<cmd>` is found by
+  walking the root like dispatch, stepping over flag values) and exits 1. The native commands
+  never need Node.
 - **Finding the JS entry:** `FNPM_JS_ENTRY` if set (for `fnpm-lock`: `FNPM_LOCK_JS_ENTRY`, else
   `fnpm-lock.js` next to `FNPM_JS_ENTRY`), else `<dir of realpath(current_exe)>/../dist/<bin>.js`
   (the postinstall layout, see [packaging](#packaging-and-distribution)), else

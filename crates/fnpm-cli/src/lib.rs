@@ -161,7 +161,7 @@ pub fn main(bin: Bin) -> i32 {
     }
     match run_route(bin, route, Terminal::from_process, &NativeCore) {
         Some(code) => code,
-        None => exec::run_node(bin.def().name, &args, &Env::from_process()),
+        None => exec::run_node(bin.def(), &args, &Env::from_process()),
     }
 }
 
@@ -172,9 +172,7 @@ pub fn main_lock() -> i32 {
     match route_args(Bin::FnpmLock, &args) {
         Route::Version => print_version(),
         // There are no native `fnpm-lock` commands; anything else is Node's.
-        Route::Node | Route::Native(_) => {
-            exec::run_node(FNPM_LOCK.name, &args, &Env::from_process())
-        }
+        Route::Node | Route::Native(_) => exec::run_node(&FNPM_LOCK, &args, &Env::from_process()),
     }
 }
 

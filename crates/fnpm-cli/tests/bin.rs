@@ -138,7 +138,24 @@ fn missing_node_is_explained() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         stderr(&output),
-        "fnpm: 'outdated' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n"
+        format!(
+            "fnpm: 'outdated' needs Node.js 20.19 or newer, and FNPM_NODE ({}) was not found\n",
+            missing.display()
+        )
+    );
+
+    // Without FNPM_NODE: `node` on PATH, and an empty PATH has none.
+    let output = Command::new(FNPM)
+        .args(["--cwd", "app", "why", "react"])
+        .env_remove("FNPM_NODE")
+        .env("FNPM_JS_ENTRY", &entry)
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        "fnpm: 'why' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n"
     );
 }
 

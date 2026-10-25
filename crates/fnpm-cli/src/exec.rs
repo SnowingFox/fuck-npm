@@ -8,6 +8,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::plan::{consumes_next, is_flag_token};
+use crate::spec::BinDef;
 use crate::terminal::Env;
 
 /// Where the JS entry of `bin` is: `FNPM_JS_ENTRY` (and, for `fnpm-lock`,
@@ -65,28 +67,46 @@ pub fn node_program(env: &Env) -> OsString {
         .map_or_else(|| OsString::from("node"), OsString::from)
 }
 
-/// The command name used in the "no node" message: the first non-flag argument.
-fn command_label(args: &[OsString]) -> String {
-    args.iter()
-        .map(|arg| arg.to_string_lossy())
-        .find(|arg| !arg.starts_with('-'))
-        .or_else(|| args.first().map(|arg| arg.to_string_lossy()))
-        .map_or_else(|| "help".to_owned(), |arg| arg.into_owned())
+/// The command named in the "no node" message: the first argument that is neither a flag
+/// nor a flag's value (`fnpm --cwd app outdated` is `outdated`, as the root is walked in
+/// `plan::route`); the first argument when there is none, `help` for no arguments.
+fn command_label(bin: &BinDef, args: &[OsString]) -> String {
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let mut index = 0;
+    while index < args.len() && args[index] != "--" {
+        let token = args[index].as_str();
+        if !is_flag_token(token) {
+            return token.to_owned();
+        }
+        if consumes_next(token, bin.root_long, bin.root_short) {
+            index += 1;
+        }
+        index += 1;
+    }
+    args.first().cloned().unwrap_or_else(|| "help".to_owned())
 }
 
 /// The message printed when node cannot be started.
-pub fn missing_node_message(bin: &str, args: &[OsString]) -> String {
-    format!(
-        "{bin}: '{}' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n",
-        command_label(args)
-    )
+pub fn missing_node_message(bin: &BinDef, args: &[OsString], env: &Env) -> String {
+    let wanted = format!(
+        "{}: '{}' needs Node.js 20.19 or newer",
+        bin.name,
+        command_label(bin, args)
+    );
+    match env.get("FNPM_NODE").filter(|value| !value.is_empty()) {
+        Some(node) => format!("{wanted}, and FNPM_NODE ({node}) was not found\n"),
+        None => format!("{wanted}, and no 'node' was found on PATH\n"),
+    }
 }
 
 /// Run the TS CLI for `bin` with `args` (argv after the program name, unchanged). Returns
 /// the exit status to use; on Unix it only returns when the exec failed.
-pub fn run_node(bin: &str, args: &[OsString], env: &Env) -> i32 {
+pub fn run_node(bin: &BinDef, args: &[OsString], env: &Env) -> i32 {
     let exe = std::env::current_exe().ok();
-    let entry = match js_entry(bin, env, exe.as_deref()) {
+    let entry = match js_entry(bin.name, env, exe.as_deref()) {
         Ok(entry) => entry,
         Err(message) => {
             eprintln!("{message}");
@@ -98,23 +118,23 @@ pub fn run_node(bin: &str, args: &[OsString], env: &Env) -> i32 {
     if let Some(exe) = &exe {
         command.env("FNPM_LAUNCHER", exe);
     }
-    launch(bin, args, command)
+    launch(bin, args, env, command)
 }
 
 #[cfg(unix)]
-fn launch(bin: &str, args: &[OsString], mut command: Command) -> i32 {
+fn launch(bin: &BinDef, args: &[OsString], env: &Env, mut command: Command) -> i32 {
     use std::os::unix::process::CommandExt;
     let error = command.exec();
     if error.kind() == std::io::ErrorKind::NotFound {
-        eprint!("{}", missing_node_message(bin, args));
+        eprint!("{}", missing_node_message(bin, args, env));
     } else {
-        eprintln!("{bin}: failed to start node: {error}");
+        eprintln!("{}: failed to start node: {error}", bin.name);
     }
     1
 }
 
 #[cfg(windows)]
-fn launch(bin: &str, args: &[OsString], mut command: Command) -> i32 {
+fn launch(bin: &BinDef, args: &[OsString], env: &Env, mut command: Command) -> i32 {
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn SetConsoleCtrlHandler(
@@ -130,11 +150,11 @@ fn launch(bin: &str, args: &[OsString], mut command: Command) -> i32 {
     match command.status() {
         Ok(status) => status.code().unwrap_or(1),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            eprint!("{}", missing_node_message(bin, args));
+            eprint!("{}", missing_node_message(bin, args, env));
             1
         }
         Err(error) => {
-            eprintln!("{bin}: failed to start node: {error}");
+            eprintln!("{}: failed to start node: {error}", bin.name);
             1
         }
     }
@@ -185,14 +205,27 @@ mod tests {
             node_program(&Env::from_pairs([("FNPM_NODE", "/opt/node")])),
             OsString::from("/opt/node")
         );
-        let args: Vec<OsString> = ["--cwd", "x", "outdated"]
-            .iter()
-            .map(OsString::from)
-            .collect();
+        let os = |args: &[&str]| args.iter().map(OsString::from).collect::<Vec<_>>();
+        let none = Env::default();
         assert_eq!(
-            missing_node_message("fnpm", &args),
-            "fnpm: 'x' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n"
+            missing_node_message(&crate::spec::FNPM, &os(&["--cwd", "x", "outdated"]), &none),
+            "fnpm: 'outdated' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n"
         );
-        assert!(missing_node_message("fnpm", &[]).contains("'help'"));
+        assert_eq!(
+            missing_node_message(&crate::spec::FNPM, &os(&["--json", "why", "react"]), &none),
+            "fnpm: 'why' needs Node.js 20.19 or newer, and no 'node' was found on PATH\n"
+        );
+        assert!(
+            missing_node_message(&crate::spec::FNPM, &os(&["--help"]), &none).contains("'--help'")
+        );
+        assert!(missing_node_message(&crate::spec::FNPM, &[], &none).contains("'help'"));
+        assert_eq!(
+            missing_node_message(
+                &crate::spec::FNPM_LOCK,
+                &os(&["migrate"]),
+                &Env::from_pairs([("FNPM_NODE", "/opt/node")])
+            ),
+            "fnpm-lock: 'migrate' needs Node.js 20.19 or newer, and FNPM_NODE (/opt/node) was not found\n"
+        );
     }
 }
