@@ -28,6 +28,17 @@ describe("spawn", () => {
     expect(proc.exitCode).toBe(3);
   });
 
+  test("output remains readable after exited resolves", async () => {
+    const proc = spawn({
+      cmd: [process.execPath, "-e", "process.stdout.write('o'.repeat(262144)); process.stderr.write('e'.repeat(262144))"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+    expect(await proc.stderr!.text()).toBe("e".repeat(262144));
+    expect(await proc.stdout!.text()).toBe("o".repeat(262144));
+  }, 2000);
+
   test("new Response(stdout).text() and stdin pipe", async () => {
     const proc = spawn({
       cmd: [process.execPath, "-e", "process.stdin.pipe(process.stdout)"],

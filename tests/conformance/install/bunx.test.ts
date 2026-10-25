@@ -210,6 +210,8 @@ function sandbox(registry?: { url: string; requests: string[] }, files: Director
     HOME: home,
     USERPROFILE: home,
     FNPM_CACHE_DIR: undefined,
+    // The sandbox's home npmrc supplies its user configuration.
+    NPM_CONFIG_USERCONFIG: undefined,
     // `npm_config_registry` below names the registry, as in bun's harness.
     FNPM_REGISTRY: undefined,
     BUN_INSTALL_CACHE_DIR: undefined,

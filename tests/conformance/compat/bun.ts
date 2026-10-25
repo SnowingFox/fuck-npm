@@ -46,10 +46,29 @@ function withReaders(stream: ReadableStream<Bytes>): BunReadableStream {
   return s;
 }
 
-/** A web stream over node `Readable`, created on first access so an unread pipe does not get a reader. */
+/** Drain child pipes eagerly so awaiting exit before reading output cannot block the child. */
 function webStream(readable: Readable | null): BunReadableStream | undefined {
   if (readable === null) return undefined;
-  return withReaders(Readable.toWeb(readable) as unknown as ReadableStream<Bytes>);
+  return withReaders(new ReadableStream<Bytes>({
+    start(controller) {
+      let closed = false;
+      const finish = () => {
+        if (closed) return;
+        closed = true;
+        controller.close();
+      };
+      readable.on("data", chunk => {
+        if (!closed) controller.enqueue(new Uint8Array(chunk) as Bytes);
+      });
+      readable.once("end", finish);
+      readable.once("close", finish);
+      readable.once("error", error => {
+        if (closed) return;
+        closed = true;
+        controller.error(error);
+      });
+    },
+  }));
 }
 
 export function readableStreamToText(stream: ReadableStream): Promise<string> {
@@ -318,6 +337,9 @@ export class Subprocess {
         options.onExit?.(this, code, signal);
       });
     });
+    this.#stdout = webStream(child.stdout);
+    // Install listeners before the child can end, retaining output for readers after exited.
+    void this.stderr;
   }
 
   get pid(): number | undefined {

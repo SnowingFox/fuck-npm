@@ -187,6 +187,7 @@ pub struct PreparedInstall {
     start: Instant,
     phases: Phases,
     noop: Option<InstallSummary>,
+    had_node_modules: bool,
     /// The workspace (with its warnings) and the previous lockfile, read while the runtime and
     /// the link pool start on other threads. `None` for a no-op.
     loaded: Option<(Workspace, Vec<String>, lock::LockState)>,
@@ -261,6 +262,8 @@ fn prepare_with_patch(
     // 1. Fast path.
     let config = &project.config;
     let hash = config_hash(config);
+    // Sidecar/cache writes may recreate node_modules before resolution.
+    let had_node_modules = project.root_dir.join("node_modules").is_dir();
     let mut noop = None;
     if pending_patch.is_none()
         && opts.command == InstallCommand::Install
@@ -309,6 +312,7 @@ fn prepare_with_patch(
         start,
         phases,
         noop,
+        had_node_modules,
         loaded,
         pending_patch,
     })
@@ -344,6 +348,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         mut phases,
         loaded,
         pending_patch,
+        had_node_modules,
         ..
     } = prepared;
     let config = project.config.clone();
@@ -453,7 +458,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         })
         .map(|r| r.name.clone())
         .collect();
-    if !registry_names.is_empty() {
+    // An age gate needs full manifests; abbreviated look-ahead would issue a second request.
+    if !registry_names.is_empty() && config.minimum_release_age_ms.is_none_or(|age| age == 0) {
         client.prefetch(registry_names);
     }
     if lock.migrated {
@@ -487,7 +493,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // place and only asks the store for the ones it has to (re)build, so they are not looked up
     // (or downloaded) up front.
     // A migrated lockfile may lack integrity values the fetches fill in, so it fetches all.
-    let in_place = !config.force && !lock.migrated && root.join("node_modules").is_dir();
+    let in_place = !config.force && !lock.migrated && had_node_modules;
     let skip = Arc::new(if stream {
         let mut skip = not_fetched(previous, &config);
         if in_place && let Some(prev) = previous {
@@ -696,7 +702,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         }
         let scan_all = requested_ids.is_empty()
             || !loaded_fnpm_lock
-            || !root.join("node_modules").is_dir()
+            || !had_node_modules
             || opts.command == InstallCommand::Remove
             || pending_patch.is_some()
             || requested_ids.iter().any(|id| {
