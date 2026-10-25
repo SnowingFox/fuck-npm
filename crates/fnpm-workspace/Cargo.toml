@@ -8,3 +8,15 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-semver.workspace = true
+fnpm-config.workspace = true
+globset.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

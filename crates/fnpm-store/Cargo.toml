@@ -8,3 +8,25 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-semver.workspace = true
+fnpm-config.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+flate2.workspace = true
+libdeflater.workspace = true
+rayon.workspace = true
+reflink-copy.workspace = true
+rustix.workspace = true
+libc.workspace = true
+rkyv.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+xxhash-rust.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

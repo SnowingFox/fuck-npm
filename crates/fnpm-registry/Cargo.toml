@@ -8,3 +8,22 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-semver.workspace = true
+fnpm-config.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+sonic-rs.workspace = true
+rkyv.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+xxhash-rust.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+axum.workspace = true

@@ -8,3 +8,19 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-config.workspace = true
+fnpm-store.workspace = true
+fnpm-lockfile.workspace = true
+fnpm-workspace.workspace = true
+rayon.workspace = true
+rustix.workspace = true
+reflink-copy.workspace = true
+libc.workspace = true
+globset.workspace = true
+xxhash-rust.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

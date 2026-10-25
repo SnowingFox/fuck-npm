@@ -11,6 +11,9 @@ rust-version.workspace = true
 napi.workspace = true
 napi-derive.workspace = true
 fnpm-core.workspace = true
+fnpm-types.workspace = true
+serde_json.workspace = true
+mimalloc.workspace = true
 
 [lib]
 crate-type = ["cdylib"]

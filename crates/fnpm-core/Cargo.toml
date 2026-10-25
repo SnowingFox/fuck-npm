@@ -8,3 +8,25 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-semver.workspace = true
+fnpm-config.workspace = true
+fnpm-registry.workspace = true
+fnpm-store.workspace = true
+fnpm-workspace.workspace = true
+fnpm-resolver.workspace = true
+fnpm-lockfile.workspace = true
+fnpm-linker.workspace = true
+fnpm-scripts.workspace = true
+tokio.workspace = true
+rayon.workspace = true
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+xxhash-rust.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

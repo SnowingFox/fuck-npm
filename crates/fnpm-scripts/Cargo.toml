@@ -8,3 +8,14 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+fnpm-types.workspace = true
+fnpm-config.workspace = true
+fnpm-workspace.workspace = true
+fnpm-lockfile.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
