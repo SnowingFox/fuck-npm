@@ -298,6 +298,8 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         // Visit importers as well so removing its last nested dependency prunes the old copy.
         for ws in cx.graph.workspaces.values().filter(|&&id| {
             id != PackageId::ROOT
+                && (tree.workspace_roots.iter().any(|(ws, _)| *ws == id)
+                    || cx.opts.previous_hoisted_workspaces.contains(&id))
                 && cx
                     .opts
                     .selected_workspaces

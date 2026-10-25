@@ -778,6 +778,7 @@ fn lopts(global: bool) -> LinkOptions {
         global_store: global,
         check_unpatched: false,
         hoisted_prune_tree: None,
+        previous_hoisted_workspaces: Vec::new(),
         selected_workspaces: None,
     }
 }
@@ -1910,7 +1911,9 @@ fn hoisted_reinstall_preserves_external_workspace_modules() {
     std::fs::write(&keep, r#"{"name":"keep-me","version":"1.0.0"}"#).unwrap();
     let mut store = FakeStore::new(&env.store_dir);
     let mut g = sample(&mut store);
-    g.workspace("outside", "../outside");
+    let member = g.workspace("outside", "../outside");
+    let mut opts = lopts(false);
+    opts.previous_hoisted_workspaces = vec![member];
     let linker = env.linker();
     for _ in 0..2 {
         linker
@@ -1919,7 +1922,7 @@ fn hoisted_reinstall_preserves_external_workspace_modules() {
                 &g.g,
                 &Layout::Hoisted(sample_tree()),
                 &store,
-                &lopts(false),
+                &opts,
                 &NoopSink,
             )
             .unwrap();
@@ -1944,7 +1947,9 @@ fn hoisted_reinstall_preserves_symlinked_workspace_modules() {
     std::os::unix::fs::symlink(&outside, workspace.join("node_modules")).unwrap();
     let mut store = FakeStore::new(&env.store_dir);
     let mut g = sample(&mut store);
-    g.workspace("lib", "packages/lib");
+    let member = g.workspace("lib", "packages/lib");
+    let mut opts = lopts(false);
+    opts.previous_hoisted_workspaces = vec![member];
     let linker = env.linker();
     for _ in 0..2 {
         linker
@@ -1953,7 +1958,7 @@ fn hoisted_reinstall_preserves_symlinked_workspace_modules() {
                 &g.g,
                 &Layout::Hoisted(sample_tree()),
                 &store,
-                &lopts(false),
+                &opts,
                 &NoopSink,
             )
             .unwrap();

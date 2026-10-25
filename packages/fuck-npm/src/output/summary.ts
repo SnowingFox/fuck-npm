@@ -25,11 +25,11 @@ export function formatElapsed(ms: number): string {
 const elapsedValue = (ms: number): string => (ms <= 1500 ? `${ms.toFixed(2)}ms` : `${(ms / 1000).toFixed(2)}s`);
 
 /** bun's `<d>[<b>12.00ms<r><d>]<r>`. */
-const timeOf = (ms: number, pc: Colors): string => `${pc.dim("[")}${pc.bold(elapsedValue(ms))}${pc.dim("]")}`;
+const timeOf = (ms: number, pc: Colors): string => pc.dim(`[${pc.bold(elapsedValue(ms))}]`);
 
 /** bun's ` <d>(<blue>v1.2.4 available<r><d>)<r>`. */
 const availableOf = (version: string | undefined, pc: Colors): string =>
-  version ? ` ${pc.dim("(")}${pc.blue(`v${version} available`)}${pc.dim(")")}` : "";
+  version ? ` ${pc.dim(`(${pc.blue(`v${version} available`)})`)}` : "";
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -125,7 +125,7 @@ export function formatInstallSummary(
     lines.push(
       installs === packages
         ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`
-        : `Checked ${pc.green(String(installs))} ${installs === 1 ? "install" : "installs"} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
+        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
     );
     blocked();
   } else {

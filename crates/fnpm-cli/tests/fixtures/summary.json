@@ -37,7 +37,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[2m[\u001b[22m\u001b[1m0.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\n\u001b[2m[\u001b[1m0.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "empty (colors=True, arrows=False)",
@@ -56,7 +56,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[2m[\u001b[22m\u001b[1m0.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\n\u001b[2m[\u001b[1m0.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "added and updated (colors=False, arrows=False)",
@@ -128,7 +128,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[32m+\u001b[39m \u001b[1m@scope/pkg\u001b[22m\u001b[2m@1.0.0-beta.1\u001b[22m \u001b[2m(\u001b[22m\u001b[34mv1.0.0 available\u001b[39m\u001b[2m)\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m \u001b[2m(\u001b[22m\u001b[34mv3.24.0 available\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m123.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[32m+\u001b[39m \u001b[1m@scope/pkg\u001b[22m\u001b[2m@1.0.0-beta.1\u001b[22m \u001b[2m(\u001b[34mv1.0.0 available\u001b[39m)\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m \u001b[2m(\u001b[34mv3.24.0 available\u001b[39m)\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m123.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "added and updated (colors=True, arrows=False)",
@@ -164,7 +164,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[32m+\u001b[39m \u001b[1m@scope/pkg\u001b[22m\u001b[2m@1.0.0-beta.1\u001b[22m \u001b[2m(\u001b[22m\u001b[34mv1.0.0 available\u001b[39m\u001b[2m)\u001b[22m\n\u001b[36m^\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 ->\u001b[22m \u001b[1m3.23.8\u001b[22m \u001b[2m(\u001b[22m\u001b[34mv3.24.0 available\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m123.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[32m+\u001b[39m \u001b[1m@scope/pkg\u001b[22m\u001b[2m@1.0.0-beta.1\u001b[22m \u001b[2m(\u001b[34mv1.0.0 available\u001b[39m)\u001b[22m\n\u001b[36m^\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 ->\u001b[22m \u001b[1m3.23.8\u001b[22m \u001b[2m(\u001b[34mv3.24.0 available\u001b[39m)\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m123.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "one package (colors=False, arrows=False)",
@@ -212,7 +212,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m1500.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m1500.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "one package (colors=True, arrows=False)",
@@ -236,7 +236,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m1500.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m1500.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "seconds (colors=False, arrows=False)",
@@ -274,7 +274,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m1.50s\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[1m1.50s\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "seconds (colors=True, arrows=False)",
@@ -293,7 +293,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m1.50s\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[1m1.50s\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "seconds rounding (colors=False, arrows=False)",
@@ -331,7 +331,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m12.35s\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[1m12.35s\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "seconds rounding (colors=True, arrows=False)",
@@ -350,7 +350,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m12.35s\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m200\u001b[39m packages installed \u001b[2m[\u001b[1m12.35s\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "removed (colors=False, arrows=False)",
@@ -394,7 +394,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[\u001b[22m\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "removed (colors=True, arrows=False)",
@@ -416,7 +416,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[\u001b[22m\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[31m-\u001b[39m left-pad\n\u001b[1m2\u001b[22m packages removed \u001b[2m[\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "removed one (colors=False, arrows=False)",
@@ -458,7 +458,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "removed one (colors=True, arrows=False)",
@@ -479,7 +479,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[31m-\u001b[39m lodash\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m8.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "installed and removed (colors=False, arrows=False)",
@@ -517,7 +517,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m40.00ms\u001b[22m\u001b[2m]\u001b[22m\nRemoved: \u001b[36m2\u001b[39m\n"
+      "expected": "\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[1m40.00ms\u001b[22m\u001b[2m]\u001b[22m\nRemoved: \u001b[36m2\u001b[39m\n"
     },
     {
       "name": "installed and removed (colors=True, arrows=False)",
@@ -536,7 +536,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m40.00ms\u001b[22m\u001b[2m]\u001b[22m\nRemoved: \u001b[36m2\u001b[39m\n"
+      "expected": "\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[1m40.00ms\u001b[22m\u001b[2m]\u001b[22m\nRemoved: \u001b[36m2\u001b[39m\n"
     },
     {
       "name": "checked (colors=False, arrows=False)",
@@ -582,7 +582,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32mDone\u001b[39m! Checked 1 package \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[22m\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32mDone\u001b[39m! Checked 1 package \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "checked (colors=True, arrows=False)",
@@ -605,7 +605,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32mDone\u001b[39m! Checked 1 package \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[22m\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32mDone\u001b[39m! Checked 1 package \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "checked many (colors=False, arrows=False)",
@@ -651,7 +651,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\nChecked \u001b[32m12\u001b[39m installs across 40 packages \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[22m\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\nChecked \u001b[32m12 installs\u001b[39m across 40 packages \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "checked many (colors=True, arrows=False)",
@@ -674,7 +674,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\nChecked \u001b[32m12\u001b[39m installs across 40 packages \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[22m\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\nChecked \u001b[32m12 installs\u001b[39m across 40 packages \u001b[2m(no changes)\u001b[22m \u001b[2m[\u001b[1m2.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "failed (colors=False, arrows=False)",
@@ -712,7 +712,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
+      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
     },
     {
       "name": "failed (colors=True, arrows=False)",
@@ -731,7 +731,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
+      "expected": "\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n"
     },
     {
       "name": "failed many (colors=False, arrows=False)",
@@ -769,7 +769,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "failed many (colors=True, arrows=False)",
@@ -788,7 +788,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m3\u001b[22m\u001b[39m packages\n\u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "blocked (colors=False, arrows=False)",
@@ -826,7 +826,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked (colors=True, arrows=False)",
@@ -845,7 +845,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 1 postinstall. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked many (colors=False, arrows=False)",
@@ -883,7 +883,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "blocked many (colors=True, arrows=False)",
@@ -902,7 +902,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
+      "expected": "\n\u001b[32m5\u001b[39m packages installed \u001b[2m[\u001b[1m10.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 3 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\n"
     },
     {
       "name": "add requested (colors=False, arrows=False)",
@@ -1002,7 +1002,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript\u001b[22m\u001b[2m@5.9.3\u001b[22m with binaries:\n \u001b[2m- \u001b[22m\u001b[1mtsc\u001b[22m\n \u001b[2m- \u001b[22m\u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod\u001b[22m\u001b[2m@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias\u001b[22m\u001b[2m@npm:\u001b[22m\u001b[1mreal-pkg\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m \u001b[1mfsevents\u001b[22m\u001b[2m@2.3.3\u001b[22m \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m55.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript\u001b[22m\u001b[2m@5.9.3\u001b[22m with binaries:\n \u001b[2m- \u001b[22m\u001b[1mtsc\u001b[22m\n \u001b[2m- \u001b[22m\u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod\u001b[22m\u001b[2m@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias\u001b[22m\u001b[2m@npm:\u001b[22m\u001b[1mreal-pkg\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m \u001b[1mfsevents\u001b[22m\u001b[2m@2.3.3\u001b[22m \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[1m55.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "add requested (colors=True, arrows=False)",
@@ -1052,7 +1052,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript\u001b[22m\u001b[2m@5.9.3\u001b[22m with binaries:\n \u001b[2m- \u001b[22m\u001b[1mtsc\u001b[22m\n \u001b[2m- \u001b[22m\u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod\u001b[22m\u001b[2m@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias\u001b[22m\u001b[2m@npm:\u001b[22m\u001b[1mreal-pkg\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m \u001b[1mfsevents\u001b[22m\u001b[2m@2.3.3\u001b[22m \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m55.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1mtypescript\u001b[22m\u001b[2m@5.9.3\u001b[22m with binaries:\n \u001b[2m- \u001b[22m\u001b[1mtsc\u001b[22m\n \u001b[2m- \u001b[22m\u001b[1mtsserver\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mzod\u001b[22m\u001b[2m@3.23.8\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1malias\u001b[22m\u001b[2m@npm:\u001b[22m\u001b[1mreal-pkg\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[33mskipped\u001b[39m \u001b[1mfsevents\u001b[22m\u001b[2m@2.3.3\u001b[22m \u001b[2m(unsupported platform)\u001b[22m\n\n\u001b[32m4\u001b[39m packages installed \u001b[2m[\u001b[1m55.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "add count uses requested (colors=False, arrows=False)",
@@ -1112,7 +1112,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "add count uses requested (colors=True, arrows=False)",
@@ -1142,7 +1142,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32minstalled\u001b[39m \u001b[1ma\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\u001b[32minstalled\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "update requested (colors=False, arrows=False)",
@@ -1204,7 +1204,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[36m↑\u001b[39m \u001b[1mreact\u001b[22m \u001b[2m18.2.0 →\u001b[22m \u001b[1m\u001b[36m18.3.1\u001b[39m\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[36m↑\u001b[39m \u001b[1mreact\u001b[22m \u001b[2m18.2.0 →\u001b[22m \u001b[1m\u001b[36m18.3.1\u001b[39m\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "update requested (colors=True, arrows=False)",
@@ -1235,7 +1235,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[36m^\u001b[39m \u001b[1mreact\u001b[22m \u001b[2m18.2.0 ->\u001b[22m \u001b[1m18.3.1\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[36m^\u001b[39m \u001b[1mreact\u001b[22m \u001b[2m18.2.0 ->\u001b[22m \u001b[1m18.3.1\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install ignores requested (colors=False, arrows=False)",
@@ -1285,7 +1285,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install ignores requested (colors=True, arrows=False)",
@@ -1310,7 +1310,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m5.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "nested colour close (colors=False, arrows=False)",
@@ -1358,7 +1358,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mweird\u001b[22m\u001b[1mname\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m1.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mweird\u001b[22m\u001b[1mname\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m1.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "nested colour close (colors=True, arrows=False)",
@@ -1382,7 +1382,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mweird\u001b[22m\u001b[1mname\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m1.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mweird\u001b[22m\u001b[1mname\u001b[22m\u001b[2m@1.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m1.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "add lists a request once (colors=False, arrows=False)",
@@ -1450,7 +1450,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mloose-envify\u001b[22m\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mloose-envify\u001b[22m\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "add lists a request once (colors=True, arrows=False)",
@@ -1484,7 +1484,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mloose-envify\u001b[22m\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[22m\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mloose-envify\u001b[22m\u001b[2m@1.4.0\u001b[22m\n\n\u001b[32minstalled\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m3\u001b[39m packages installed \u001b[2m[\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install keeps every + row (colors=False, arrows=False)",
@@ -1544,7 +1544,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install keeps every + row (colors=True, arrows=False)",
@@ -1574,7 +1574,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m7.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install that removed packages (colors=False, arrows=False)",
@@ -1616,7 +1616,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "install that removed packages (colors=True, arrows=False)",
@@ -1637,7 +1637,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
+      "expected": "\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n"
     },
     {
       "name": "remove that also installed (colors=False, arrows=False)",
@@ -1689,7 +1689,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
     },
     {
       "name": "remove that also installed (colors=True, arrows=False)",
@@ -1715,7 +1715,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
+      "expected": "\n\u001b[32m+\u001b[39m \u001b[1mb\u001b[22m\u001b[2m@2.0.0\u001b[22m\n\n\u001b[32m1\u001b[39m package installed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\n\n\u001b[2mBlocked 2 postinstalls. Run `fnpm pm untrusted` for details.\u001b[22m\nRemoved: \u001b[36m1\u001b[39m\n"
     },
     {
       "name": "failed after removals (colors=False, arrows=False)",
@@ -1757,7 +1757,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
+      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
     },
     {
       "name": "failed after removals (colors=True, arrows=False)",
@@ -1778,7 +1778,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
+      "expected": "\n\u001b[31m-\u001b[39m a\n\u001b[1m1\u001b[22m package removed \u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m\nFailed to install \u001b[31m\u001b[1m2\u001b[22m\u001b[39m packages\n"
     },
     {
       "name": "noop with failures (colors=False, arrows=False)",
@@ -1824,7 +1824,7 @@
       },
       "colors": true,
       "arrows": true,
-      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     },
     {
       "name": "noop with failures (colors=True, arrows=False)",
@@ -1847,7 +1847,7 @@
       },
       "colors": true,
       "arrows": false,
-      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[\u001b[22m\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
+      "expected": "\nFailed to install \u001b[31m\u001b[1m1\u001b[22m\u001b[39m package\n\u001b[2m[\u001b[1m4.00ms\u001b[22m\u001b[2m]\u001b[22m \u001b[2mdone\u001b[22m\n"
     }
   ]
 }

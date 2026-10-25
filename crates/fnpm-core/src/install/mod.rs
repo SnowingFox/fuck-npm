@@ -1107,7 +1107,34 @@ async fn link(
                 fetcher.ensure_package(p);
             }
         }
+        let previous_hoisted_workspaces = if kind == NodeLinker::Hoisted && graph.has_workspaces() {
+            lock.graph
+                .as_ref()
+                .filter(|previous| *previous != graph)
+                .map(|previous| {
+                    let old_view = link_view(previous);
+                    let Layout::Hoisted(old_tree) = plan_layout(&linker, &old_view, kind, None)
+                    else {
+                        unreachable!("hoisted layout requested");
+                    };
+                    old_tree
+                        .workspace_roots
+                        .iter()
+                        .filter_map(|(id, _)| {
+                            let path = previous
+                                .workspaces
+                                .iter()
+                                .find_map(|(path, old)| (old == id).then_some(path))?;
+                            graph.workspaces.get(path).copied()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let link_opts = LinkOptions {
+            previous_hoisted_workspaces,
             backend: config.backend.unwrap_or_else(fnpm_linker::default_backend),
             force: config.force,
             fresh: !root.join("node_modules").exists(),
@@ -1255,9 +1282,11 @@ fn save(
             Err(e) => return Err(Error::io(&path)(e)),
         }
         let _ = std::fs::remove_file(lock::sidecar_path(config, root));
-        events.emit(Event::status(
-            "\npackage.json has no dependencies! Deleted empty lockfile",
-        ));
+        if !config.global {
+            events.emit(Event::status(
+                "\npackage.json has no dependencies! Deleted empty lockfile",
+            ));
+        }
         return Ok(true);
     }
     fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?;

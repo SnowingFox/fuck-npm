@@ -21,22 +21,15 @@ fn elapsed_value(ms: f64) -> String {
 
 /// bun's `<d>[<b>12.00ms<r><d>]<r>`.
 fn time_of(ms: f64, pc: Colors) -> String {
-    format!(
-        "{}{}{}",
-        pc.dim("["),
-        pc.bold(&elapsed_value(ms)),
-        pc.dim("]")
-    )
+    pc.dim(&format!("[{}]", pc.bold(&elapsed_value(ms))))
 }
 
 /// bun's ` <d>(<blue>v1.2.4 available<r><d>)<r>`.
 fn available_of(version: &Option<String>, pc: Colors) -> String {
     match version {
         Some(version) if !version.is_empty() => format!(
-            " {}{}{}",
-            pc.dim("("),
-            pc.blue(&format!("v{version} available")),
-            pc.dim(")")
+            " {}",
+            pc.dim(&format!("({})", pc.blue(&format!("v{version} available"))))
         ),
         _ => String::new(),
     }
@@ -206,13 +199,8 @@ pub fn format_install_summary_at(
             ));
         } else {
             lines.push(format!(
-                "Checked {} {} across {} {} {} {time}",
-                pc.green(&checked.installs.to_string()),
-                if checked.installs == 1 {
-                    "install"
-                } else {
-                    "installs"
-                },
+                "Checked {} across {} {} {} {time}",
+                pc.green(&plural(checked.installs, "install")),
                 checked.packages,
                 noun(checked.packages),
                 pc.dim("(no changes)"),

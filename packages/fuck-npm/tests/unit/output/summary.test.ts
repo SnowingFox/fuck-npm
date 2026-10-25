@@ -116,6 +116,16 @@ describe("formatInstallSummary", () => {
     expect(text).toContain("Blocked 1 postinstall. Run `fnpm pm untrusted` for details.");
   });
 
+  test("availability hints and bold timing stay dim like bun", () => {
+    const colored = render(emptySummary({
+      added: [{ name: "pkg", version: "1.0.0", availableVersion: "2.0.0" }],
+      installedCount: 1,
+      elapsedMs: 12,
+    }), "install", createColors(true));
+    expect(colored).toContain("\u001b[2m(\u001b[34mv2.0.0 available\u001b[39m)\u001b[22m");
+    expect(colored).toContain("\u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m");
+  });
+
   test("coloured output carries the same text", () => {
     const coloured = render(emptySummary({ installedCount: 1, elapsedMs: 1 }), "install", createColors(true));
     expect(plain(coloured)).toBe(render(emptySummary({ installedCount: 1, elapsedMs: 1 }), "install", pc));

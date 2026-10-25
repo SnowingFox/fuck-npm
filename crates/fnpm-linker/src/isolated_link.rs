@@ -434,12 +434,15 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
         written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
-        // Importers and duplicate link-only entries are not installed store packages.
+        // Bun includes the root and workspace importers among checked entries. They are
+        // never installed store packages, but still count on an unchanged isolated run.
         verified: states
             .iter()
             .filter(|st| {
-                matches!(st.kind, Kindof::Local | Kindof::Global { .. })
-                    && !st.built.load(Ordering::Relaxed)
+                matches!(
+                    st.kind,
+                    Kindof::Local | Kindof::Global { .. } | Kindof::Importer(_)
+                ) && !st.built.load(Ordering::Relaxed)
                     && !st.skipped.load(Ordering::Relaxed)
             })
             .count() as u32,

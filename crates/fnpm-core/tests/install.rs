@@ -870,7 +870,10 @@ async fn global_remove_unlinks_bins() {
     assert!(exists(&bin));
     let mut o = p.opts(InstallCommand::Remove, &["tool"]);
     o.pm.global = true;
-    p.run(o).await.unwrap();
+    let (_, events) = p.run(o).await.unwrap();
+    assert!(!events.iter().any(|event| matches!(event,
+        fnpm_types::Event::Status { message } if message.contains("Deleted empty lockfile")
+    )));
     assert!(!exists(&bin), "bin unlinked");
     assert!(!exists(&p.tmp.path().join("global/node_modules/tool")));
 }
@@ -1039,6 +1042,32 @@ async fn dependencies_of_another_platforms_package_are_not_downloaded() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn full_install_after_filtered_add_preserves_unmanaged_workspace_packages() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({"name":"root", "workspaces":["packages/*"]}));
+    p.write("packages/lib/package.json", r#"{"name":"lib"}"#);
+    p.write(
+        "packages/other/package.json",
+        r#"{"name":"other","dependencies":{"b":"1.0.0"}}"#,
+    );
+    p.write(
+        "packages/other/node_modules/stale/package.json",
+        r#"{"name":"stale"}"#,
+    );
+    let mut add = p.opts(InstallCommand::Add, &["a"]);
+    add.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    add.filter = vec!["lib".into()];
+    p.run(add).await.unwrap();
+    let mut full = p.opts(InstallCommand::Install, &[]);
+    full.pm.linker = Some(fnpm_config::LinkerSetting::Hoisted);
+    p.run(full).await.unwrap();
+    assert!(
+        p.path("packages/other/node_modules/stale/package.json")
+            .is_file()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn filtered_remove_prunes_the_last_nested_workspace_dependency() {
     let reg = Registry::start(&basic()).await;
     let p = Project::new(
@@ -1064,6 +1093,45 @@ async fn filtered_remove_prunes_the_last_nested_workspace_dependency() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_noop_counts_root_and_workspace_importers_like_bun() {
+    let reg = Registry::start(&basic()).await;
+    for workspaces in [false, true] {
+        let manifest = if workspaces {
+            json!({"name":"root", "workspaces":["packages/*"]})
+        } else {
+            json!({"name":"root", "dependencies":{"b":"1.0.0"}})
+        };
+        let p = Project::new(&reg, manifest);
+        if workspaces {
+            p.write(
+                "packages/lib/package.json",
+                r#"{"name":"lib","version":"1.0.0"}"#,
+            );
+        }
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.linker = Some(fnpm_config::LinkerSetting::Isolated);
+        let (first, _) = p.run(opts.clone()).await.unwrap();
+        if workspaces {
+            assert_eq!(
+                first.checked.unwrap(),
+                fnpm_types::event::CheckedCount {
+                    installs: 2,
+                    packages: 2
+                }
+            );
+        }
+        let (warm, _) = p.run(opts).await.unwrap();
+        assert_eq!(
+            warm.checked.unwrap(),
+            fnpm_types::event::CheckedCount {
+                installs: 2,
+                packages: 2
+            }
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn isolated_global_store_reuse_counts_new_project_installs() {
     let reg = Registry::start(&basic()).await;
     let p = Project::new(&reg, json!({"dependencies": {"b": "1.0.0"}}));
@@ -1085,5 +1153,5 @@ async fn isolated_global_store_reuse_counts_new_project_installs() {
     assert!(reg.seen().is_empty());
     let summary = p.run(opts).await.unwrap().0;
     assert!(summary.noop);
-    assert_eq!(summary.checked.unwrap().installs, 1);
+    assert_eq!(summary.checked.unwrap().installs, 2);
 }

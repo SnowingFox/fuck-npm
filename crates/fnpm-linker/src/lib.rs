@@ -223,6 +223,9 @@ pub struct LinkOptions {
     /// Full hoisted tree used for pruning during a filtered install. Only the selected
     /// layout is written; entries still required by unselected workspaces are preserved.
     pub hoisted_prune_tree: Option<Tree>,
+    /// Importers with nested packages in the previous hoisted layout. They still need
+    /// pruning when their last nested entry disappeared from the current layout.
+    pub previous_hoisted_workspaces: Vec<PackageId>,
     /// Selected importers of a filtered install. Unselected importer directories are
     /// neither cleared nor pruned; the virtual store keeps its existing hidden links.
     pub selected_workspaces: Option<Vec<PackageId>>,
@@ -238,6 +241,7 @@ impl Default for LinkOptions {
             global_store: true,
             check_unpatched: false,
             hoisted_prune_tree: None,
+            previous_hoisted_workspaces: Vec::new(),
             selected_workspaces: None,
         }
     }
