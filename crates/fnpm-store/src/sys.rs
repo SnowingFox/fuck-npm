@@ -110,6 +110,25 @@ impl Dir {
         }
     }
 
+    /// Opens an existing file for reading (never follows a final symlink).
+    pub(crate) fn open_read(&self, rel: &str) -> io::Result<File> {
+        #[cfg(unix)]
+        {
+            use rustix::fs::OFlags;
+            let fd = rustix::fs::openat(
+                &self.fd,
+                rel,
+                OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+                mode(0),
+            )?;
+            Ok(File::from(fd))
+        }
+        #[cfg(not(unix))]
+        {
+            File::open(self.join(rel))
+        }
+    }
+
     pub(crate) fn unlink(&self, rel: &str) -> io::Result<()> {
         #[cfg(unix)]
         {

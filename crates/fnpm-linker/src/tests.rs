@@ -712,7 +712,6 @@ impl FakeStore {
                 path: p.clone(),
                 size: c.len() as u64,
                 mode: 0o644,
-                digest: [0; 64],
             });
         }
         let index = FileIndex {
@@ -1914,7 +1913,6 @@ fn index_of(files: &[&str]) -> FileIndex {
                 path: (*p).to_owned(),
                 size: 0,
                 mode: 0o644,
-                digest: [0; 64],
             })
             .collect(),
         package_json: None,

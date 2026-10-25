@@ -11,7 +11,15 @@ use std::sync::{Condvar, Mutex, OnceLock};
 
 use fnpm_config::Backend;
 use fnpm_store::fsops::StickyBackend;
-use fnpm_store::{FileIndex, MaterializeError};
+use fnpm_store::{FileIndex, IndexedFile, MaterializeError};
+use rayon::prelude::*;
+
+/// A package with at least this many files has them linked by several threads (the calling
+/// thread's rayon pool), [`LINK_CHUNK`] files per task: one big package (next: ~8,700 files)
+/// would otherwise bound the whole link step.
+const PARALLEL_LINK_MIN: usize = 768;
+/// See [`PARALLEL_LINK_MIN`].
+const LINK_CHUNK: usize = 192;
 
 /// Prefix of a tree moved out of the way (bun `OldModules::PREFIX`).
 pub const OLD_MODULES_PREFIX: &str = ".old_modules-";
@@ -154,50 +162,57 @@ impl Materializer {
                 Err(e) => return Err(mat_err("mkdir", src, &dir_buf, e)),
             }
         }
-        let mut weakest = Backend::Clonefile;
         // The root `package.json` goes last: an install that is interrupted (or fails on a
         // file) leaves no `package.json`, so the next run's cheap check rebuilds the folder
         // instead of trusting a half-copied package.
-        let mut manifest = None;
-        let mut linker = DirLinker::open(self.current(), src, dest);
-        for f in &index.files {
-            if !is_safe_index_path(&f.path) {
-                return Err(unsafe_index_path(src, dest, &f.path));
-            }
-            if f.path == "package.json" {
-                manifest = Some(f);
-                continue;
-            }
-            let used = match linker
-                .as_mut()
-                .filter(|_| self.current() == Backend::Hardlink)
-                .and_then(|l| l.link(&f.path))
-            {
-                Some(()) => Backend::Hardlink,
-                None => self.place_file(&src.join(&f.path), &dest.join(&f.path))?,
-            };
-            if (used as u8) > (weakest as u8) {
-                weakest = used;
-            }
-        }
+        let manifest = index.files.iter().find(|f| f.path == "package.json");
+        let others = |chunk: &'_ [IndexedFile]| -> Result<Backend, MaterializeError> {
+            self.place_files(src, dest, chunk.iter().filter(|f| f.path != "package.json"))
+        };
+        let mut weakest = if index.files.len() >= PARALLEL_LINK_MIN {
+            index
+                .files
+                .par_chunks(LINK_CHUNK)
+                .map(others)
+                .try_reduce(|| Backend::Clonefile, |a, b| Ok(weaker(a, b)))?
+        } else {
+            others(&index.files)?
+        };
         if let Some(f) = manifest {
-            let used = match linker
-                .as_mut()
-                .filter(|_| self.current() == Backend::Hardlink)
-                .and_then(|l| l.link(&f.path))
-            {
-                Some(()) => Backend::Hardlink,
-                None => self.place_file(&src.join(&f.path), &dest.join(&f.path))?,
-            };
-            if (used as u8) > (weakest as u8) {
-                weakest = used;
-            }
-        }
-        if linker.is_some_and(|l| l.linked) {
-            self.mark(Backend::Hardlink);
+            weakest = weaker(weakest, self.place_files(src, dest, std::iter::once(f))?);
         }
         if index.files.is_empty() {
             weakest = self.current();
+        }
+        Ok(weakest)
+    }
+
+    /// Places `files` of the package `src` into `dest` (whose directories exist); returns the
+    /// weakest backend used.
+    fn place_files<'f>(
+        &self,
+        src: &Path,
+        dest: &Path,
+        files: impl Iterator<Item = &'f IndexedFile>,
+    ) -> Result<Backend, MaterializeError> {
+        let mut weakest = Backend::Clonefile;
+        let mut linker = DirLinker::open(self.current(), src, dest);
+        for f in files {
+            if !is_safe_index_path(&f.path) {
+                return Err(unsafe_index_path(src, dest, &f.path));
+            }
+            let used = match linker
+                .as_mut()
+                .filter(|_| self.current() == Backend::Hardlink)
+                .and_then(|l| l.link(&f.path))
+            {
+                Some(()) => Backend::Hardlink,
+                None => self.place_file(&src.join(&f.path), &dest.join(&f.path))?,
+            };
+            weakest = weaker(weakest, used);
+        }
+        if linker.is_some_and(|l| l.linked) {
+            self.mark(Backend::Hardlink);
         }
         Ok(weakest)
     }
@@ -269,6 +284,11 @@ impl Materializer {
         };
         self.sticky.degrade(next);
     }
+}
+
+/// The weaker of two backends (the report shows the weakest one used).
+fn weaker(a: Backend, b: Backend) -> Backend {
+    if (b as u8) > (a as u8) { b } else { a }
 }
 
 /// Hard links relative to open directory descriptors of the package source and destination
@@ -799,7 +819,6 @@ mod tests {
                     path: (*p).to_owned(),
                     size: 0,
                     mode: 0o644,
-                    digest: [0; 64],
                 })
                 .collect(),
             package_json: None,

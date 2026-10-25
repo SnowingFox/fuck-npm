@@ -28,7 +28,7 @@ fn key_for(name: &str, version: &str, tgz: &[u8]) -> PackageKey {
 
 fn store() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open_with_tuning(&dir.path().join("store/v1"), Tuning::default()).unwrap();
+    let store = Store::open_with_tuning(&dir.path().join("store/v2"), Tuning::default()).unwrap();
     (dir, store)
 }
 
@@ -104,16 +104,13 @@ fn imports_real_npm_tarballs() {
         entry.index.total_size(),
         646 + 58 + 502 + 302 + 1469 + 871 + 4005 + 216 + 241 + 1442
     );
-    // Every file is a hard link of its blob.
+    // Every file was written once, into the package itself: nothing else in the store links
+    // to it, and there is no blob directory.
+    #[cfg(unix)]
     for f in &entry.index.files {
-        let blob = store.blob_path(&f.digest, f.is_executable());
-        assert_eq!(
-            std::fs::read(&blob).unwrap(),
-            std::fs::read(entry.root.join(&f.path)).unwrap()
-        );
-        #[cfg(unix)]
-        assert_eq!(ino(&blob), ino(&entry.root.join(&f.path)));
+        assert_eq!(nlink(&entry.root.join(&f.path)), 1, "{}", f.path);
     }
+    assert!(!store.root().join("files").exists());
     // A hit reads the index.
     let again = store.get(&key).unwrap().unwrap();
     assert_eq!(*again.index, *entry.index);
@@ -139,12 +136,7 @@ fn mac_metadata_files_and_vendor_pax_keys() {
     );
     let cli = entry.index.file("cli.js").unwrap();
     assert_eq!(cli.mode, 0o755);
-    assert!(
-        store
-            .blob_path(&cli.digest, true)
-            .to_string_lossy()
-            .ends_with("-x")
-    );
+    assert!(cli.is_executable());
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -202,41 +194,98 @@ fn all_fixtures_extract_like_tar() {
     assert_eq!(store.status().unwrap().packages, 4);
 }
 
+/// A package whose `lib/` and `dist/` hold the same bytes, plus near-misses that must not be
+/// shared: same bytes with another mode, same size with other bytes.
+fn duplicated_package(name: &str, shared: &[u8]) -> Vec<u8> {
+    let mut other = shared.to_vec();
+    other[0] ^= 1;
+    TarBuilder::new()
+        .file(
+            "package/package.json",
+            format!(r#"{{"name":"{name}"}}"#).as_bytes(),
+        )
+        .file("package/lib/big.bin", shared)
+        .file("package/dist/big.bin", shared)
+        .file("package/esm/big.bin", shared)
+        .file_mode("package/bin/big.bin", shared, 0o755)
+        .file("package/other.bin", &other)
+        .file("package/a/empty", b"")
+        .file("package/b/empty", b"")
+        .end()
+        .tgz()
+}
+
+fn check_duplicated_package(entry: &crate::PackageEntry, shared: &[u8]) {
+    let at = |p: &str| entry.root.join(p);
+    for p in ["lib/big.bin", "dist/big.bin", "esm/big.bin", "bin/big.bin"] {
+        assert_eq!(std::fs::read(at(p)).unwrap(), shared, "{p}");
+    }
+    assert_ne!(std::fs::read(at("other.bin")).unwrap(), shared);
+    assert_eq!(std::fs::read(at("b/empty")).unwrap(), b"");
+    #[cfg(unix)]
+    {
+        assert_eq!(ino(&at("lib/big.bin")), ino(&at("dist/big.bin")));
+        assert_eq!(ino(&at("lib/big.bin")), ino(&at("esm/big.bin")));
+        assert_eq!(nlink(&at("lib/big.bin")), 3);
+        assert_ne!(ino(&at("lib/big.bin")), ino(&at("bin/big.bin")));
+        assert_ne!(ino(&at("lib/big.bin")), ino(&at("other.bin")));
+        assert_eq!(ino(&at("a/empty")), ino(&at("b/empty")));
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &str| std::fs::metadata(at(p)).unwrap().permissions().mode() & 0o111;
+        assert_eq!(mode("lib/big.bin"), 0);
+        assert_ne!(mode("bin/big.bin"), 0);
+    }
+    assert_eq!(entry.index.files.len(), 8);
+}
+
 #[test]
-fn identical_files_are_stored_once() {
+fn identical_files_in_a_package_share_an_inode() {
     let (_t, store) = store();
     let shared = incompressible(100_000, 5);
-    let a = TarBuilder::new()
-        .file("package/package.json", br#"{"name":"a"}"#)
-        .file("package/lib/big.bin", &shared)
-        .end()
-        .tgz();
-    let b = TarBuilder::new()
-        .file("package/package.json", br#"{"name":"b"}"#)
-        .file("package/dist/big.bin", &shared)
-        .end()
-        .tgz();
+    let a = duplicated_package("a", &shared);
     let ea = store
         .import_tarball_bytes(&key_for("a", "1.0.0", &a), &a, ImportOptions::default())
         .unwrap();
+    check_duplicated_package(&ea, &shared);
+    // Another package with the same bytes gets its own copy: packages never share files.
+    let b = duplicated_package("b", &shared);
     let eb = store
         .import_tarball_bytes(&key_for("b", "1.0.0", &b), &b, ImportOptions::default())
         .unwrap();
+    check_duplicated_package(&eb, &shared);
     #[cfg(unix)]
-    {
-        assert_eq!(
-            ino(&ea.root.join("lib/big.bin")),
-            ino(&eb.root.join("dist/big.bin"))
-        );
-        assert_eq!(nlink(&ea.root.join("lib/big.bin")), 3);
-    }
+    assert_ne!(
+        ino(&ea.root.join("lib/big.bin")),
+        ino(&eb.root.join("lib/big.bin"))
+    );
     let status = store.status().unwrap();
-    assert_eq!(status.files, 3);
+    // Per package: package.json, big.bin, bin/big.bin, other.bin, empty.
+    assert_eq!(status.files, 10);
     assert!(
-        status.bytes >= 100_000 && status.bytes < 200_000,
+        status.bytes >= 600_000 && status.bytes < 800_000,
         "{}",
         status.bytes
     );
+}
+
+#[test]
+fn identical_files_share_an_inode_when_streamed() {
+    let shared = incompressible(300_000, 9);
+    let tgz = duplicated_package("s", &shared);
+    let rt = runtime();
+    let (_t, store) = store();
+    let key = key_for("s", "1.0.0", &tgz);
+    let tuning = Tuning {
+        streaming_min_size: 1,
+        drain_threshold: 7_000,
+        ..Tuning::default()
+    };
+    let store = Store::open_with_tuning(store.root(), tuning).unwrap();
+    let entry = rt
+        .block_on(store.import_tarball(&key, body(&tgz, 4096), ImportOptions::default()))
+        .unwrap();
+    check_duplicated_package(&entry, &shared);
+    assert!(tmp_is_empty(&store));
 }
 
 #[test]
@@ -773,7 +822,7 @@ fn streaming_unpinned_and_truncated() {
 }
 
 #[test]
-fn large_files_stream_to_disk_and_dedupe() {
+fn large_files_stream_to_disk() {
     let big = incompressible(9 * 1024 * 1024, 11);
     let a = TarBuilder::new()
         .file("package/package.json", b"{}")
@@ -797,18 +846,8 @@ fn large_files_stream_to_disk_and_dedupe() {
         .unwrap();
     assert_eq!(std::fs::read(ea.root.join("big.wasm")).unwrap(), big);
     assert_eq!(std::fs::read(eb.root.join("big.wasm")).unwrap(), big);
-    #[cfg(unix)]
-    assert_eq!(
-        ino(&ea.root.join("big.wasm")),
-        ino(&eb.root.join("big.wasm"))
-    );
-    assert!(
-        std::fs::read_dir(eb.root.clone()).unwrap().all(|e| !e
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains("dedupe"))
-    );
+    assert_eq!(ea.index.file("big.wasm").unwrap().size, big.len() as u64);
+    assert_eq!(paths(&eb), vec!["big.wasm", "package.json"]);
 }
 
 fn write_files(root: &Path, files: &[(&str, &str)]) {
@@ -876,7 +915,7 @@ Binary files a/logo.png and b/logo.png differ
 ";
 
 #[test]
-fn patched_copies_leave_the_blobs_alone() {
+fn patched_copies_leave_the_base_package_alone() {
     let (_t, store) = store();
     let tgz = TarBuilder::new()
         .file("package/package.json", br#"{"name":"p","version":"1.0.0"}"#)
@@ -913,7 +952,7 @@ fn patched_copies_leave_the_blobs_alone() {
         paths(&patched.entry),
         vec!["added.txt", "index.js", "keep.txt", "package.json"]
     );
-    // The base package and its blobs are unchanged.
+    // The base package is unchanged.
     assert_eq!(
         std::fs::read_to_string(base.root.join("index.js")).unwrap(),
         "const a = 1;\nmodule.exports = 'original';\n// end\n"
@@ -1158,7 +1197,7 @@ fn prune_keeps_what_live_projects_use() {
         .set_project_packages(&gone, [even.dir_name()])
         .unwrap();
     std::fs::remove_dir_all(&gone).unwrap();
-    // A hard link in node_modules keeps a blob alive after its package is pruned.
+    // A hard link in node_modules keeps a file alive after its package is pruned.
     let pad_entry = store.get(&pad).unwrap().unwrap();
     let installed = project.join("node_modules/left-pad-index.js");
     std::fs::hard_link(pad_entry.root.join("index.js"), &installed).unwrap();
@@ -1177,6 +1216,9 @@ fn prune_keeps_what_live_projects_use() {
             .unwrap();
     assert_eq!((report.removed_links, report.removed_packages), (1, 2));
     assert!(report.removed_files > 0 && report.bytes_freed > 0);
+    // The file hard linked into node_modules is not counted as freed: is-even has 4 files,
+    // left-pad 10 of which index.js is still linked, plus each package's index.bin.
+    assert_eq!(report.removed_files, 4 + 9 + 2);
     assert!(store.get(&odd).unwrap().is_some());
     assert!(store.get(&even).unwrap().is_none());
     assert!(store.get(&pad).unwrap().is_none());
@@ -1184,13 +1226,13 @@ fn prune_keeps_what_live_projects_use() {
     assert!(links.join("dep@1.0.0-bbbb").exists());
     assert!(!links.join("orphan@1.0.0-cccc").exists());
     assert_eq!(std::fs::read_to_string(&installed).unwrap().len(), 1469);
-    // Blobs of the kept package are still there; the hard-linked one too.
+    // The files of the kept package are still there.
     for f in &odd_e.index.files {
-        assert!(store.blob_path(&f.digest, f.is_executable()).exists());
+        assert!(odd_e.root.join(&f.path).exists());
     }
     let status = store.status().unwrap();
     assert_eq!((status.packages, status.links), (1, 2));
-    assert_eq!(status.files, 5);
+    assert_eq!(status.files, 4);
     let projects = std::fs::read_to_string(store.root().join("projects.json")).unwrap();
     assert!(crate::sys::is_staging_name(&crate::sys::random_name("")));
     assert!(!crate::sys::is_staging_name("my-own-file"));
@@ -1424,10 +1466,10 @@ fn perf_extract_and_get() {
         keys.push(key);
     }
     eprintln!(
-        "import (blobs deduped after the first): {:?} per tarball",
+        "import (warm store): {:?} per tarball",
         start.elapsed() / rounds
     );
-    // Cold: a fresh store each time, every blob written.
+    // Cold: a fresh store each time.
     let mut cold = std::time::Duration::ZERO;
     for _ in 0..10 {
         let (_t2, fresh) = super::store_tests::store();
@@ -1488,14 +1530,6 @@ fn perf_components() {
     for _ in 0..3 {
         let s = std::time::Instant::now();
         for _ in 0..10 {
-            std::hint::black_box(crate::hash::content_digest(&data));
-        }
-        eprintln!(
-            "blake3 (content digest): {:.0} MiB/s",
-            40.0 / s.elapsed().as_secs_f64()
-        );
-        let s = std::time::Instant::now();
-        for _ in 0..10 {
             std::hint::black_box(ring::digest::digest(&ring::digest::SHA512, &data));
         }
         eprintln!("ring sha512: {:.0} MiB/s", 40.0 / s.elapsed().as_secs_f64());
@@ -1509,26 +1543,6 @@ fn perf_components() {
         eprintln!("ring sha512 x1000 ~2.5KB files: {:?}", s.elapsed());
         let s = std::time::Instant::now();
         for _ in 0..10 {
-            let mut out = [0u8; 64];
-            blake3::Hasher::new()
-                .update(&data)
-                .finalize_xof()
-                .fill(&mut out);
-            std::hint::black_box(out);
-        }
-        eprintln!("blake3: {:.0} MiB/s", 40.0 / s.elapsed().as_secs_f64());
-        let s = std::time::Instant::now();
-        for f in &small {
-            let mut out = [0u8; 64];
-            blake3::Hasher::new()
-                .update(f)
-                .finalize_xof()
-                .fill(&mut out);
-            std::hint::black_box(out);
-        }
-        eprintln!("blake3 x1000 ~2.5KB files: {:?}", s.elapsed());
-        let s = std::time::Instant::now();
-        for _ in 0..10 {
             std::hint::black_box(xxhash_rust::xxh3::xxh3_128(&data));
         }
         eprintln!("xxh3-128: {:.0} MiB/s", 40.0 / s.elapsed().as_secs_f64());
@@ -1540,13 +1554,8 @@ fn perf_components() {
     }
 }
 
-fn count_blobs(store: &Store) -> usize {
-    std::fs::read_dir(store.files_dir())
-        .unwrap()
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .map(|e| std::fs::read_dir(e.path()).unwrap().count())
-        .sum()
+fn count_packages(store: &Store) -> usize {
+    std::fs::read_dir(store.pkgs_dir()).unwrap().count()
 }
 
 #[test]
@@ -1583,7 +1592,7 @@ fn hostile_names_and_versions_stay_inside_pkgs() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     top.sort();
-    assert_eq!(top, ["files", "links", "pkgs", "tmp"]);
+    assert_eq!(top, ["links", "pkgs", "tmp"]);
 }
 
 #[test]
@@ -1646,12 +1655,12 @@ fn cache_unpack_dry_run_writes_nothing() {
     let dry = crate::cache_pack::unpack(&other, &pack_path, true).unwrap();
     assert_eq!((dry.packages, dry.created), (1, 1));
     assert!(dry.bytes > 0);
-    assert_eq!(count_blobs(&other), 0);
+    assert_eq!(count_packages(&other), 0);
     assert!(tmp_is_empty(&other));
     assert!(other.get(&a).unwrap().is_none());
     let real = crate::cache_pack::unpack(&other, &pack_path, false).unwrap();
     assert_eq!(real.bytes, dry.bytes);
-    assert!(count_blobs(&other) > 0);
+    assert_eq!(count_packages(&other), 1);
 }
 
 #[test]
@@ -1703,9 +1712,131 @@ fn patch_paths_with_dot_components_still_apply() {
     let patched = store.import_patched(&key, &base, &patch, 7).unwrap();
     let text = std::fs::read_to_string(patched.entry.root.join("index.js")).unwrap();
     assert!(text.starts_with("// patched\n"), "{text}");
-    // The blob behind the base package is untouched.
+    // The base package is untouched.
     assert_eq!(
         std::fs::read_to_string(base.root.join("index.js")).unwrap(),
         original
     );
+}
+
+#[test]
+fn streamed_duplicate_entries_last_one_wins_across_batches() {
+    // The first `a.js` lands in an early write batch; the later entries come after many other
+    // files, so they are written after it (and a large duplicate replaces the earlier one).
+    let big1 = incompressible(9 * 1024 * 1024, 21);
+    let big2 = incompressible(9 * 1024 * 1024, 22);
+    let mut b = TarBuilder::new();
+    b.file("package/package.json", b"{}");
+    b.file("package/a.js", b"first");
+    b.file("package/big.bin", &big1);
+    for i in 0..100 {
+        b.file(&format!("package/f{i}.js"), &incompressible(4000, i + 1));
+    }
+    b.file("package/a.js", b"second");
+    b.file("package/big.bin", &big2);
+    let tgz = b.end().tgz();
+    let rt = runtime();
+    let (_t, store) = store();
+    let store = Store::open_with_tuning(
+        store.root(),
+        Tuning {
+            streaming_min_size: 1,
+            drain_threshold: 16 * 1024,
+            ..Tuning::default()
+        },
+    )
+    .unwrap();
+    let key = key_for("dup", "1.0.0", &tgz);
+    let entry = rt
+        .block_on(store.import_tarball(&key, body(&tgz, 8192), ImportOptions::default()))
+        .unwrap();
+    assert_eq!(std::fs::read(entry.root.join("a.js")).unwrap(), b"second");
+    assert_eq!(std::fs::read(entry.root.join("big.bin")).unwrap(), big2);
+    assert_eq!(entry.index.files.len(), 103);
+    assert_eq!(entry.index.file("a.js").unwrap().size, 6);
+    // No temporary file of the large duplicate is left in the package.
+    assert_eq!(all_files(&entry.root).len(), 103);
+    assert!(tmp_is_empty(&store));
+}
+
+#[test]
+fn concurrent_streamed_imports_of_one_key_publish_one_complete_package() {
+    let shared = incompressible(300_000, 31);
+    let tgz = duplicated_package("c", &shared);
+    let key = key_for("c", "1.0.0", &tgz);
+    let (_t, store) = store();
+    let store = Store::open_with_tuning(
+        store.root(),
+        Tuning {
+            streaming_min_size: 1,
+            drain_threshold: 32 * 1024,
+            ..Tuning::default()
+        },
+    )
+    .unwrap();
+    let roots: Vec<PathBuf> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let (store, key, tgz) = (store.clone(), key.clone(), tgz.clone());
+                s.spawn(move || {
+                    runtime()
+                        .block_on(store.import_tarball(
+                            &key,
+                            body(&tgz, 4096),
+                            ImportOptions::default(),
+                        ))
+                        .unwrap()
+                        .root
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(roots.iter().all(|r| *r == roots[0]));
+    let entry = store.get(&key).unwrap().unwrap();
+    check_duplicated_package(&entry, &shared);
+    assert_eq!(store.status().unwrap().packages, 1);
+    assert!(tmp_is_empty(&store));
+}
+
+#[test]
+fn an_index_of_the_previous_layout_is_not_trusted() {
+    let (_t, store) = store();
+    let (key, entry) = import_fixture(&store, "left-pad", "1.3.0");
+    let index = store.package_dir(&key).join("index.bin");
+    let mut bytes = std::fs::read(&index).unwrap();
+    // Format 1 (with per-file BLAKE3 digests) had another magic.
+    bytes[7] = 1;
+    std::fs::write(&index, &bytes).unwrap();
+    assert!(store.get(&key).unwrap().is_none());
+    // A reimport replaces it.
+    let tgz = fixture("left-pad-1.3.0.tgz");
+    let again = store
+        .import_tarball_bytes(&key, &tgz, ImportOptions::default())
+        .unwrap();
+    assert_eq!(*again.index, *entry.index);
+    assert!(store.get(&key).unwrap().is_some());
+}
+
+#[test]
+fn a_crashed_import_leaves_nothing_a_later_install_trusts() {
+    let (_t, store) = store();
+    let tgz = fixture("left-pad-1.3.0.tgz");
+    let key = key_for("left-pad", "1.3.0", &tgz);
+    // A crash after files were written but before `index.bin`: the package dir exists with
+    // some files and no index.
+    let dir = store.package_dir(&key);
+    std::fs::create_dir_all(dir.join("package")).unwrap();
+    std::fs::write(dir.join("package/index.js"), "truncat").unwrap();
+    assert!(store.get(&key).unwrap().is_none());
+    let entry = store
+        .import_tarball_bytes(&key, &tgz, ImportOptions::default())
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(entry.root.join("index.js"))
+            .unwrap()
+            .len(),
+        1469
+    );
+    assert_eq!(paths(&entry).len(), 10);
 }

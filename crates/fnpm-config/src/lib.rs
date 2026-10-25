@@ -31,6 +31,11 @@ pub use files::{ConfigFile, FileKind, InstallFile, RunFile};
 pub use npmrc::Npmrc;
 pub use redact::redact_url;
 
+/// The store layout version: the directory appended to the store dir (`~/.fnpm/store/v2`).
+/// Bumped whenever an older fnpm could not read what a newer one writes (v2: no `files/` blob
+/// directory, `index.bin` format 2).
+pub const STORE_LAYOUT: &str = "v2";
+
 /// Errors of config loading.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -401,7 +406,7 @@ pub struct Config {
     pub project_dir: PathBuf,
     /// `~/.fnpm` (`FNPM_HOME`).
     pub home_dir: PathBuf,
-    /// `~/.fnpm/store/v1` (`FNPM_STORE_DIR` overrides the parent: `$FNPM_STORE_DIR/v1`).
+    /// `~/.fnpm/store/v2` (`FNPM_STORE_DIR` overrides the parent: `$FNPM_STORE_DIR/v2`).
     pub store_dir: PathBuf,
     /// `~/.fnpm/cache` (`FNPM_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, `install.cache.dir`).
     pub cache_dir: PathBuf,

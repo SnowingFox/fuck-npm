@@ -337,8 +337,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lock.graph.as_ref()
     };
     let resolver = Resolver::new(config.clone(), client.clone());
+    // With node_modules in place (add, remove, an edited package.json), the packages the
+    // previous lockfile had are most likely installed already: the linker verifies them in
+    // place and only asks the store for the ones it has to (re)build, so they are not looked up
+    // (or downloaded) up front.
+    // A migrated lockfile may lack integrity values the fetches fill in, so it fetches all.
+    let in_place = !config.force && !lock.migrated && root.join("node_modules").is_dir();
     let skip = Arc::new(if stream {
-        not_fetched(previous, &config)
+        let mut skip = not_fetched(previous, &config);
+        if in_place && let Some(prev) = previous {
+            skip.extend(prev.packages.iter().map(|p| p.key()));
+        }
+        skip
     } else {
         HashSet::new()
     });
@@ -457,6 +467,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         Vec::new()
     };
+    let lazy: HashSet<String> = match previous {
+        Some(prev) if in_place => prev.packages.iter().map(|p| p.key()).collect(),
+        _ => HashSet::new(),
+    };
     let linked = link(
         &project,
         &ws,
@@ -465,6 +479,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &mut graph,
         selected_ids.clone(),
         &trust_names,
+        &lazy,
         &events,
     )
     .await?;
@@ -977,6 +992,7 @@ async fn link(
     graph: &mut LockGraph,
     selected: Option<Vec<PackageId>>,
     trust_names: &[String],
+    lazy: &HashSet<String>,
     events: &Arc<dyn EventSink>,
 ) -> Result<Linked> {
     let config = &project.config;
@@ -1011,8 +1027,10 @@ async fn link(
             selected.as_deref(),
             &config.platform,
         );
+        // Start every fetch the link will wait for; `lazy` packages are fetched when the linker
+        // finds them missing.
         for (i, p) in graph.packages.iter().enumerate() {
-            if reachable[i] && fetches(p) {
+            if reachable[i] && fetches(p) && (lazy.is_empty() || !lazy.contains(&p.key())) {
                 fetcher.ensure_package(p);
             }
         }

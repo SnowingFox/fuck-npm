@@ -1,11 +1,10 @@
-//! Content-addressable store, streaming tarball extraction, package file index, filesystem
+//! The package store, streaming tarball extraction, package file index, filesystem
 //! materialisation primitives and prune. See `docs/ARCHITECTURE.md#fnpm-store`.
 //!
-//! Layout under `Config::store_dir` (`~/.fnpm/store/v1`):
+//! Layout under `Config::store_dir` (`~/.fnpm/store/v2`):
 //! ```text
-//! files/<2 hex>/<blake3 hex>[-x]          one blob per unique file content (-x: executable)
 //! pkgs/<name+escaped>@<version>-<integrity hex16>/
-//!     package/...                          hardlinks to blobs (the package root)
+//!     package/...                          the package's files (the package root)
 //!     index.bin                            rkyv FileIndex
 //! links/<store key>-<closure hash16>/node_modules/<name>   global virtual store (isolated)
 //! tmp/                                     staging, same filesystem, renamed into place
@@ -13,10 +12,10 @@
 //! ```
 //!
 //! Importing a tarball is one pass: the compressed bytes are hashed for the integrity check
-//! while they are inflated and untarred; every file is hashed (BLAKE3) and either linked from
-//! an existing blob (no write at all) or written once and given its blob name with a hard
-//! link; `index.bin` is written; the staging directory is renamed into `pkgs/`. Identical
-//! files across versions and packages are stored once.
+//! while they are inflated and untarred, every file is written once into a staging package
+//! (identical files of one package share an inode), `index.bin` is written and the staging
+//! directory is renamed into `pkgs/`. The linker hard links (or clones) from there, so a
+//! file costs one write when it is imported and one link per install.
 
 #![warn(missing_docs)]
 
@@ -33,12 +32,12 @@ pub mod patch;
 pub mod tar;
 pub mod tuning;
 
-mod cas;
 mod extract;
 mod gzip;
 mod hash;
 mod prune;
 mod publish;
+mod staging;
 #[cfg(test)]
 mod store_tests;
 mod sys;
@@ -59,9 +58,9 @@ pub use index::{FileIndex, IndexMeta, IndexedFile};
 pub use prune::CachePruneReport;
 pub use tuning::Tuning;
 
-use cas::{Cas, Staging};
 use extract::{Built, StreamExtractor, Target};
 use publish::Published;
+use staging::Staging;
 
 /// Errors of the store.
 #[derive(Debug, thiserror::Error)]
@@ -189,7 +188,7 @@ pub struct PackageEntry {
 /// Options of a tarball import.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImportOptions {
-    /// `--no-verify`: skip the integrity comparison (hashing still happens for the CAS).
+    /// `--no-verify`: skip the integrity comparison (the tarball is not hashed at all).
     pub skip_verify: bool,
 }
 
@@ -209,9 +208,9 @@ pub struct PruneReport {
     pub removed_links: u64,
     /// `pkgs/` entries.
     pub removed_packages: u64,
-    /// `files/` blobs.
+    /// Files of the removed packages that nothing else linked to.
     pub removed_files: u64,
-    /// Bytes of blobs freed.
+    /// Bytes freed: files of the removed packages that nothing else linked to.
     pub bytes_freed: u64,
 }
 
@@ -223,11 +222,11 @@ pub struct StoreStatus {
     pub path: PathBuf,
     /// `pkgs/` entries.
     pub packages: u64,
-    /// `files/` blobs.
+    /// Files in `pkgs/` (hard links within a package counted once).
     pub files: u64,
     /// `links/` entries.
     pub links: u64,
-    /// Physical bytes of `files/` (hardlinks counted once).
+    /// Physical bytes of the files in `pkgs/` (hard links counted once).
     pub bytes: u64,
 }
 
@@ -252,7 +251,6 @@ pub struct Store {
 
 #[derive(Debug)]
 struct Inner {
-    cas: Arc<Cas>,
     tmp: PathBuf,
     tuning: Tuning,
 }
@@ -302,12 +300,10 @@ impl Store {
 
     /// [`Store::open`] with explicit tuning.
     pub fn open_with_tuning(root: &Path, tuning: Tuning) -> Result<Self> {
-        for sub in ["files", "pkgs", "links", "tmp"] {
+        for sub in ["pkgs", "links", "tmp"] {
             let dir = root.join(sub);
             std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
         }
-        let files = root.join("files");
-        let cas = Arc::new(Cas::open(&files).map_err(io_err(&files))?);
         let own_tmp = root.join("tmp");
         let tmp = match &tuning.tmpdir {
             Some(t) if t.is_absolute() && same_device(t, &own_tmp) => t.clone(),
@@ -315,11 +311,11 @@ impl Store {
         };
         Ok(Self {
             root: root.to_path_buf(),
-            inner: Arc::new(Inner { cas, tmp, tuning }),
+            inner: Arc::new(Inner { tmp, tuning }),
         })
     }
 
-    /// The store root (`…/store/v1`).
+    /// The store root (`…/store/v2`).
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -332,11 +328,6 @@ impl Store {
     /// `pkgs/`.
     pub fn pkgs_dir(&self) -> PathBuf {
         self.root.join("pkgs")
-    }
-
-    /// `files/`.
-    pub fn files_dir(&self) -> PathBuf {
-        self.root.join("files")
     }
 
     /// Where packages are staged before they are renamed into place.
@@ -359,11 +350,6 @@ impl Store {
         self.root
             .join("pkgs")
             .join(key.patched_dir_name(patch_hash))
-    }
-
-    /// The path of a blob in `files/`.
-    pub fn blob_path(&self, digest: &[u8; 64], executable: bool) -> PathBuf {
-        self.files_dir().join(Cas::blob_rel(digest, executable))
     }
 
     fn read_index(dir: &Path) -> io::Result<Option<(FileIndex, IndexMeta)>> {
@@ -414,7 +400,7 @@ impl Store {
     }
 
     fn new_staging(&self) -> Result<Arc<Staging>> {
-        Staging::create(&self.inner.tmp, self.inner.cas.clone())
+        Staging::create(&self.inner.tmp)
             .map(Arc::new)
             .map_err(io_err(&self.inner.tmp))
     }
@@ -750,8 +736,8 @@ impl Store {
 
     /// Builds the patched copy of `base` (the store entry of `key`) by applying `patch_text`
     /// (a `git diff` style patch, bun `patch` / patch-package format), stored under
-    /// [`Store::patched_package_dir`]. Files the patch does not touch stay hard links to their
-    /// blobs; touched files are copies, so blobs are never modified.
+    /// [`Store::patched_package_dir`]. Files the patch does not touch stay hard links to the
+    /// base package's files; touched files are copies, so the base package is never modified.
     pub fn import_patched(
         &self,
         key: &PackageKey,
@@ -782,7 +768,7 @@ impl Store {
         parsed
             .apply(staging.package_root())
             .map_err(|e| patch_err(format!("failed applying patch file: {e}")))?;
-        // Re-index: untouched files keep their records, the rest is hashed into the CAS.
+        // Re-index: untouched files keep their records, the rest is recorded as written.
         let mut records = Vec::with_capacity(base.index.files.len());
         for f in pack::walk_files(staging.package_root())? {
             match base.index.file(&f.path) {
@@ -836,15 +822,13 @@ impl Store {
         prune::register_project(self, project_dir, Some(list))
     }
 
-    /// Removes `links/` and `pkgs/` entries no registered project references, then blobs
-    /// with link count 1.
+    /// Removes `links/` and `pkgs/` entries no registered project references.
     pub fn prune(&self, opts: PruneOptions) -> Result<PruneReport> {
         prune::prune(self, opts)
     }
 
     /// `pm cache prune`: removes `pkgs/` entries neither imported nor read for `max_age_days`
-    /// (bun default 30), then blobs left unreferenced. `links/` (the global store) and
-    /// manifests are kept.
+    /// (bun default 30). `links/` (the global store) and manifests are kept.
     pub fn prune_older_than(&self, max_age_days: u32, dry_run: bool) -> Result<CachePruneReport> {
         prune::prune_by_age(self, max_age_days, dry_run)
     }

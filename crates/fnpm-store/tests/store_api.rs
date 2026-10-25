@@ -18,7 +18,7 @@ fn fixture(name: &str) -> Vec<u8> {
 #[test]
 fn import_get_link() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open_with_tuning(&dir.path().join("store/v1"), Tuning::default()).unwrap();
+    let store = Store::open_with_tuning(&dir.path().join("store/v2"), Tuning::default()).unwrap();
     let tgz = fixture("is-odd-1.0.0.tgz");
     let key = PackageKey {
         name: "is-odd".into(),

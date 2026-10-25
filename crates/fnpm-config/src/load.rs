@@ -16,6 +16,8 @@ use crate::{
     RegistryScope, Result, RunConfig, TlsConfig,
 };
 
+use crate::STORE_LAYOUT;
+
 const DEFAULT_CONCURRENCY: u16 = 64;
 const DEFAULT_RETRIES: u16 = 5;
 const DEFAULT_BACKOFF_MS: u64 = 50;
@@ -1159,8 +1161,8 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
 
     // ── directories ──
     let store_dir = match env.get_not_empty(crate::env::names::STORE_DIR) {
-        Some(v) => env_path(&cwd, v, h).join("v1"),
-        None => fnpm_home.join("store").join("v1"),
+        Some(v) => env_path(&cwd, v, h).join(STORE_LAYOUT),
+        None => fnpm_home.join("store").join(STORE_LAYOUT),
     };
     let cache_dir = if let Some(dir) = cache_dir_flag {
         dir

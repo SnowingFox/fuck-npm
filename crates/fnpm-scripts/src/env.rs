@@ -382,7 +382,14 @@ fn in_store_entry(dir: &Path) -> bool {
 fn in_global_store(dir: &Path) -> bool {
     normal_components(dir)
         .windows(4)
-        .any(|w| w[0] == "store" && w[1] == "v1" && w[2] == "links")
+        .any(|w| w[0] == "store" && is_layout_dir(w[1]) && w[2] == "links")
+}
+
+/// `v1`, `v2`, ...: a store layout directory (`fnpm_config::STORE_LAYOUT` and older ones).
+fn is_layout_dir(c: &OsStr) -> bool {
+    c.to_str().is_some_and(|s| {
+        s.len() > 1 && s.starts_with('v') && s[1..].bytes().all(|b| b.is_ascii_digit())
+    })
 }
 
 fn normal_components(dir: &Path) -> Vec<&OsStr> {

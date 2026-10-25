@@ -87,7 +87,7 @@ fnpm-registry     fnpm-store      fnpm-workspace
 | fnpm-semver | types | thiserror |
 | fnpm-config | types, semver | toml, serde_json, url |
 | fnpm-registry | types, semver, config | tokio, reqwest (h2 + rustls), sonic-rs, rkyv, xxhash |
-| fnpm-store | types, semver, config | tokio, flate2 (zlib-rs), libdeflater, rayon, rustix, reflink-copy, rkyv, blake3, ring |
+| fnpm-store | types, semver, config | tokio, flate2 (zlib-rs), libdeflater, rayon, rustix, reflink-copy, rkyv, ring, xxhash-rust |
 | fnpm-workspace | types, semver, config | globset, rayon, serde_json, serde_yaml_ng |
 | fnpm-resolver | types, semver, config, registry, store, workspace | tokio, rayon, parking_lot |
 | fnpm-lockfile | types, semver, config, workspace | serde_json, serde_yaml_ng, sonic-rs, rkyv, xxhash |
@@ -131,11 +131,10 @@ both lockfile serialisation and the hoisted linker need it.
 
 ```text
 ~/.fnpm/
-  store/v1/                  FNPM_STORE_DIR overrides ~/.fnpm/store (v1 is appended)
-    files/<2 hex>/<128 hex>[-x]   CAS blobs: BLAKE3 (64-byte output) of the file contents; -x = executable
+  store/v2/                  FNPM_STORE_DIR overrides ~/.fnpm/store (v2, the layout version, is appended)
     pkgs/<name>@<version>-<16 hex>/
-      package/...                 hardlinks to blobs, the package root
-      index.bin                   rkyv FileIndex (dirs, files, sizes, modes, digests, package.json)
+      package/...                 the package's files (identical files of one package share an inode)
+      index.bin                   rkyv FileIndex format 2 (dirs, files, sizes, modes, package.json)
     links/<store key>-<16 hex>/node_modules/<name>   global virtual store entries
     tmp/                          staging (same filesystem as files/ and pkgs/)
     projects.json                 projects that use this store, for prune
@@ -814,7 +813,8 @@ pub struct ImportOptions { pub skip_verify: bool }
 #[derive(Clone)] pub struct Store { /* root */ }
 impl Store {
     pub fn open(root: &Path) -> Result<Self>;
-    pub fn root(&self) -> &Path; pub fn links_dir(&self) -> PathBuf; pub fn package_dir(&self, k: &PackageKey) -> PathBuf;
+    pub fn root(&self) -> &Path; pub fn links_dir(&self) -> PathBuf; pub fn pkgs_dir(&self) -> PathBuf;
+    pub fn package_dir(&self, k: &PackageKey) -> PathBuf;
     pub fn get(&self, k: &PackageKey) -> Result<Option<PackageEntry>>;
     pub async fn import_tarball<S>(&self, k: &PackageKey, body: S, o: ImportOptions) -> Result<PackageEntry>
         where S: Stream<Item = io::Result<Bytes>> + Send + Unpin;
@@ -826,7 +826,7 @@ impl Store {
     pub fn status(&self) -> Result<StoreStatus>;
 }
 pub struct FileIndex { pub dirs: Vec<String>, pub files: Vec<IndexedFile>, pub package_json: Option<String> }
-pub struct IndexedFile { pub path: String, pub size: u64, pub mode: u32, pub digest: [u8; 64] }
+pub struct IndexedFile { pub path: String, pub size: u64, pub mode: u32 }
 pub mod tar { pub struct TarParser; pub enum TarEvent<'a> { Entry(EntryHeader), Data(&'a [u8]), EntryEnd };
               pub fn sanitize_entry_path(raw: &str) -> Option<String>; }
 pub mod fsops {
@@ -843,14 +843,19 @@ pub mod fsops {
 **Import algorithm.** (1) Stream bytes through the integrity hasher and a zlib-rs inflater
 into `TarParser` in one pass (bun `TarballStream.rs`, `extract_tarball.rs`); tarballs whose
 `Content-Length` is under 2 MiB are buffered and inflated in one shot with libdeflate.
-(2) For each file: BLAKE3 the contents (64-byte extended output, 128 hex digits; the
-tarball's own SHA-512/SHA-1 integrity is checked separately with ring), write the blob to `files/<2>/<hex>[-x]` with
-`O_EXCL` (exists = already stored, skip), and record it in the index. Hashing and blob writes
-fan out to rayon for files > 64 KiB. (3) Build `tmp/<random>/package/` with hardlinks to the
-blobs (directories first, from the index), write `index.bin`, then `rename` into
-`pkgs/<dir>`; `EEXIST`/`ENOTEMPTY` means another process won, so discard ours
-(bun `cache_publish.rs`). (4) Verify the integrity before the rename; mismatch deletes the
-staging dir and returns `Error::Integrity` unless `skip_verify`.
+(2) Each file is written once into `tmp/<random>/package/` (`O_EXCL`), directories first.
+A file with the same mode, size and xxh3-128 as an earlier file of the package is compared
+byte for byte with it and, when equal, hard linked to it instead. Buffered packages fan the
+writes out to rayon above 256 KiB; streamed ones hand finished files to rayon in batches of
+256 KiB / 32 files while the inflater runs on, and hash each compressed chunk beside the
+inflate. A later tar entry for a path already seen is written after the batches before it, so
+the last entry wins. Files above 8 MiB are streamed to disk while they arrive. (3) Verify the
+integrity, write `index.bin`, then `rename` the staging dir into `pkgs/<dir>`;
+`EEXIST`/`ENOTEMPTY` means another process won, so discard ours (bun `cache_publish.rs`). A
+mismatch deletes the staging dir and returns `Error::Integrity` unless `skip_verify`.
+Nothing outside the staging dir is written per file, so a crash leaves only a staging dir
+(removed by prune) or a `pkgs/` dir without a valid `index.bin` (treated as absent, replaced
+by the next import). Layout rationale: docs/DECISIONS.md 9.
 
 Tar rules (bun "tarball extraction path traversal protections"): strip the first path
 component; reject absolute, `..`, drive-letter and NUL paths; skip symlink/hardlink/device
@@ -858,8 +863,8 @@ entries; modes normalised to 0o644/0o755 (executable if any x bit); pax `path` a
 long-name headers supported. `package.json` content is kept in the index.
 
 **Prune.** Read `projects.json`, drop projects whose directory is gone, collect every
-`node_modules/.fnpm/state` package list and `.fnpm/<key>` symlink target, delete unreferenced
-`links/` then `pkgs/`, then blobs with `st_nlink == 1`.
+recorded package list and `.fnpm/<key>` symlink target, delete unreferenced `links/` then
+`pkgs/` entries. The freed bytes are those of files no path outside the package links to.
 
 **fsops.** Backend order per platform: macOS `clonefileat` (whole directory first via
 `clone_dir`, per-file fallback), Linux `ioctl(FICLONE)` -> `linkat` -> `copy_file_range`,
@@ -880,8 +885,8 @@ hashing and writes on rayon (or one `spawn_blocking` per package for the one-sho
 `bun-install-cache-publish.test.ts`, `bun-prune.test.ts`.
 
 **Perf.** Extraction of a 1 MB tarball with 100 files < 8 ms on one core (zlib-rs inflate
-~1 GB/s, BLAKE3 several GB/s per core). A store hit (`get`) is one `stat` plus an index read (< 50 µs).
-Disk: identical files across versions are stored once; `fnpm store status` reports physical
+~1 GB/s, xxh3 > 10 GB/s per core). A store hit (`get`) is one `stat` plus an index read (< 50 µs).
+Disk: identical files of one package are stored once; `fnpm store status` reports physical
 bytes.
 ## fnpm-workspace
 
@@ -1485,9 +1490,9 @@ In-process (`tests/perf.rs`, 150 packages, release): no-op 0.13 ms, `fast_path::
 ~1,000 files in one directory bound it) and `linkat` on open directory descriptors. Where the
 remaining time goes: the binary starts in 2.8 ms vs bun's 1.5 ms (fnpm-cli); `add` re-runs the
 resolver engine (~3-4 ms), verifies every installed package, and `fnpm_lockfile::save`
-re-parses the written lockfile for the sidecar (~2 ms on medium); a cold import writes every
-file as a BLAKE3 CAS blob plus a link (fnpm-store), and the largest tarball (35 MB
-`@next/swc-linux-x64-gnu`) is inflated on one thread. The no-op target is met without starting
+re-parses the written lockfile for the sidecar (~2 ms on medium); the largest tarball (35 MB
+`@next/swc-linux-x64-gnu`) is inflated on one thread, with its file writes and SHA-512 on
+other threads. The no-op target is met without starting
 the runtime.
 
 ## fnpm-napi

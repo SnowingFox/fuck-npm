@@ -58,7 +58,7 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
 2026-10-25.
 
 - **Decision:** isolated installs link `node_modules/.fnpm/<pkg>` to shared entries in
-  `~/.fnpm/store/v1/links/` by default (bun has the same feature, off by default).
+  `~/.fnpm/store/v2/links/` by default (bun has the same feature, off by default).
 - **Why:** a warm isolated install becomes one symlink per package instead of a clone or
   hardlink per file. bun's own measurement (`docs/pm/global-store.mdx`, 1,400-package fixture,
   macOS): 124.8 ms with the global store vs 840.9 ms without.
@@ -84,6 +84,7 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   file's blob. The registry's SHA-512/SHA-1 tarball integrity is still verified (with ring).
 - **Cost:** extraction hashes every file and writes two levels (blob, then package directory);
   `fnpm store prune` needs reference counting across projects (`projects.json`).
+- **Superseded by 9** (2026-10-26): the blob directory is gone.
 
 ## 6. HTTP/2 to the registry
 
@@ -113,6 +114,30 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
 - **Why:** existing CI setups and bun's tests keep working unchanged, and fnpm still has an
   unambiguous namespace of its own.
 - **Cost:** a larger precedence table to document and test (`config-precedence.test.ts`).
+
+## 9. Store without a global blob directory (layout v2)
+
+2026-10-26. Supersedes 5.
+
+- **Decision:** `store/v2/pkgs/<dir>/package/` holds each package's files directly. An import
+  writes every file once, into the staging package, and publishes it with one `rename`;
+  nothing outside the package is touched per file. Identical files inside one package (same
+  mode, size, xxh3-128 and bytes, compared byte for byte) share an inode. Files of different
+  packages are never shared. `index.bin` (format 2) lists dirs, files, sizes and modes; it has
+  no per-file digests. The layout version moved to `v2` (`fnpm_config::STORE_LAYOUT`), so a v1
+  store is left alone and a new one is built next to it.
+- **Why:** measured on the bench fixtures (`bench/results`, `strace -f -c`): the v1 import did
+  three `linkat` per file (probe the blob, write the file, link it into `files/`), 52,791
+  calls with 16,718 failures on medium, plus 2,611 `ENOENT` retries for missing shard dirs, and
+  every file was hashed with BLAKE3. Cross-package sharing saved 3.7 MiB of 492 MiB on medium
+  (0.75 %); sharing inside a package saved 5.2 MiB, and v2 keeps that. The blob directory
+  itself cost 4.2 MiB of directory blocks for 257 shard dirs. bun's cache is per package as
+  well, so v2 is never larger than bun's on the same tree. Per install the linker still does
+  one `linkat` (or clone) per file from `pkgs/`.
+- **Cost:** two versions of a package with mostly unchanged files store them twice (pnpm
+  shares those). On the fixtures that is under 1 % of the store; a monorepo with many
+  versions of one large package would see more. `store prune` now frees a package's files
+  with its `pkgs/` entry (files still hard linked into some `node_modules` stay there).
 
 ## 8. Benchmark against a local registry mirror
 

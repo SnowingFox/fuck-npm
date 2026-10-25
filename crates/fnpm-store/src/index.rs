@@ -12,7 +12,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{Error, Result};
 
-const MAGIC: &[u8; 8] = b"FNPMIDX\x01";
+const MAGIC: &[u8; 8] = b"FNPMIDX\x02";
 const HEADER_LEN: usize = 16;
 
 /// One file of a package.
@@ -24,12 +24,10 @@ pub struct IndexedFile {
     pub size: u64,
     /// 0o755 or 0o644 (tar modes are normalised like npm).
     pub mode: u32,
-    /// BLAKE3 (64-byte output) of the contents; names the CAS blob.
-    pub digest: [u8; 64],
 }
 
 impl IndexedFile {
-    /// Whether the file is executable (its CAS blob carries the `-x` suffix).
+    /// Whether the file is executable.
     pub fn is_executable(&self) -> bool {
         self.mode & 0o111 != 0
     }
@@ -61,7 +59,6 @@ struct FileRecord {
     path: String,
     size: u64,
     mode: u32,
-    digest: [u8; 64],
 }
 
 #[derive(Archive, Serialize, Deserialize)]
@@ -146,7 +143,6 @@ impl FileIndex {
                     path: f.path.clone(),
                     size: f.size,
                     mode: f.mode,
-                    digest: f.digest,
                 })
                 .collect(),
             package_json: self.package_json.clone(),
@@ -187,7 +183,6 @@ impl FileIndex {
                     path: f.path,
                     size: f.size,
                     mode: f.mode,
-                    digest: f.digest,
                 })
                 .collect(),
             package_json: record.package_json,
@@ -251,19 +246,16 @@ mod tests {
                     path: "lib/b/c.js".into(),
                     size: 3,
                     mode: 0o644,
-                    digest: [3; 64],
                 },
                 IndexedFile {
                     path: "package.json".into(),
                     size: 2,
                     mode: 0o644,
-                    digest: [1; 64],
                 },
                 IndexedFile {
                     path: "bin/x".into(),
                     size: 5,
                     mode: 0o755,
-                    digest: [2; 64],
                 },
             ],
             Some("{}".into()),

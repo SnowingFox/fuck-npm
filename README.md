@@ -113,8 +113,8 @@ disk measurement are in [bench/README.md](bench/README.md).
   with no Node. Everything else (help, prompts, the long tail of commands) execs the TypeScript
   CLI with the same argv. Commands and flags are defined once, in TypeScript; a build step emits
   `cli-spec.json`, which the Rust parser compiles in. See [docs/DECISIONS.md](docs/DECISIONS.md).
-- **Store.** `~/.fnpm/store/v1` holds content-addressed file blobs (SHA-512), package
-  directories made of hardlinks to those blobs plus a precomputed file index, and the global
+- **Store.** `~/.fnpm/store/v2` holds one directory per package (each file written once,
+  identical files of a package sharing an inode) with a precomputed file index, and the global
   virtual store. Projects link from it by `clonefile` (APFS), `FICLONE` (btrfs/XFS) or
   hardlink, with copy only as a sticky last resort.
 - **Pipeline.** Resolution, download, extraction and linking overlap: each package is fetched as

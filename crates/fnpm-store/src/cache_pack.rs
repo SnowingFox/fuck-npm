@@ -19,9 +19,9 @@ use std::sync::Arc;
 use fnpm_types::Integrity;
 use xxhash_rust::xxh3::Xxh3;
 
-use crate::cas::Staging;
 use crate::extract::Built;
 use crate::publish::Published;
+use crate::staging::Staging;
 use crate::{Error, IndexMeta, PackageKey, Result, Store};
 
 const MAGIC: &[u8; 16] = b"FNPMCACHEPACKv1\n";

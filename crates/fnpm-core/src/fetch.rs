@@ -231,19 +231,28 @@ impl Fetcher {
                 continue;
             }
             // Only what this install fetched: packages that were not linked (another
-            // platform's optional binaries) must not be downloaded now.
-            let Some(slot) = self.existing(p) else {
-                continue;
+            // platform's optional binaries) must not be downloaded now. A package the linker
+            // found in place was not fetched; its key comes from the graph.
+            let key = match self.existing(p) {
+                Some(slot) => match slot.wait().await {
+                    Ok(f) => f.key,
+                    Err(_) => continue,
+                },
+                None => match p.resolution.integrity() {
+                    Some(integrity) => PackageKey {
+                        name: p.name.clone(),
+                        version: p.version.clone(),
+                        integrity: *integrity,
+                    },
+                    None => continue,
+                },
             };
-            let Ok(f) = slot.wait().await else {
-                continue;
-            };
-            names.push(f.key.dir_name());
-            let key = format!("{}@{}", p.name, p.version);
-            if let Some(patch) = graph.patched_dependencies.get(&key)
+            names.push(key.dir_name());
+            let spec = format!("{}@{}", p.name, p.version);
+            if let Some(patch) = graph.patched_dependencies.get(&spec)
                 && let Ok((hash, _)) = read_patch(&self.inner.root_dir, patch)
             {
-                names.push(f.key.patched_dir_name(hash));
+                names.push(key.patched_dir_name(hash));
             }
         }
         names.sort();

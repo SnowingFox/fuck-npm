@@ -6,10 +6,9 @@
 //! used); global-store entries are found by following the project's `node_modules/.fnpm/*`
 //! symlinks into `links/`, and from there the symlinks between `links/` entries. A project
 //! whose directory is gone is dropped. Entries younger than a grace period are always kept,
-//! so a prune never races an install that has not recorded its packages yet. Blobs are
-//! removed when nothing links to them any more (`st_nlink == 1`): a package that is still
-//! installed somewhere keeps its files alive through its hard links even after its `pkgs/`
-//! entry is pruned.
+//! so a prune never races an install that has not recorded its packages yet. A pruned package
+//! that is still hard linked into some `node_modules` keeps its files there; only the bytes
+//! nothing else links to are reported as freed.
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::io;
@@ -229,17 +228,6 @@ fn referenced_links(store: &Store, projects: &[String]) -> HashSet<String> {
 }
 
 #[cfg(unix)]
-fn nlink(meta: &std::fs::Metadata) -> u64 {
-    use std::os::unix::fs::MetadataExt;
-    meta.nlink()
-}
-
-#[cfg(not(unix))]
-fn nlink(_meta: &std::fs::Metadata) -> u64 {
-    2
-}
-
-#[cfg(unix)]
 fn physical_size(meta: &std::fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt;
     meta.blocks() * 512
@@ -250,25 +238,61 @@ fn physical_size(meta: &std::fs::Metadata) -> u64 {
     meta.len()
 }
 
-/// Removes (or counts, dry run) blobs nothing else links to.
-fn sweep_blobs(store: &Store, cutoff: SystemTime, dry_run: bool) -> (u64, u64) {
-    let (mut removed, mut bytes) = (0, 0);
-    for (shard, meta) in dir_names(&store.files_dir()) {
-        if !meta.is_dir() {
+/// Files below `dir` and their physical bytes, counting only inodes that no path outside
+/// `dir` links to (what removing `dir` frees).
+#[cfg(unix)]
+fn exclusive_usage(dir: &Path) -> (u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    let mut links: std::collections::HashMap<(u64, u64), (u64, u64, u64)> =
+        std::collections::HashMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
             continue;
-        }
-        let shard_dir = store.files_dir().join(shard);
-        for (name, meta) in dir_names(&shard_dir) {
-            if !meta.is_file() || nlink(&meta) > 1 || !older_than(&meta, cutoff) {
+        };
+        for e in entries.flatten() {
+            let Ok(meta) = e.path().symlink_metadata() else {
                 continue;
-            }
-            if dry_run || std::fs::remove_file(shard_dir.join(&name)).is_ok() {
-                removed += 1;
-                bytes += physical_size(&meta);
+            };
+            if meta.is_dir() {
+                stack.push(e.path());
+            } else if meta.is_file() {
+                let slot = links.entry((meta.dev(), meta.ino())).or_insert((
+                    0,
+                    meta.nlink(),
+                    physical_size(&meta),
+                ));
+                slot.0 += 1;
             }
         }
     }
-    (removed, bytes)
+    links
+        .values()
+        .filter(|(seen, nlink, _)| seen >= nlink)
+        .fold((0, 0), |(f, b), (_, _, size)| (f + 1, b + size))
+}
+
+#[cfg(not(unix))]
+fn exclusive_usage(dir: &Path) -> (u64, u64) {
+    let mut out = (0, 0);
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let Ok(meta) = e.path().symlink_metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(e.path());
+            } else if meta.is_file() {
+                out.0 += 1;
+                out.1 += physical_size(&meta);
+            }
+        }
+    }
+    out
 }
 
 pub(crate) fn prune(store: &Store, opts: PruneOptions) -> Result<PruneReport> {
@@ -321,8 +345,12 @@ pub(crate) fn prune_with_grace(
             if keep.contains(&name) || !older_than(&meta, cutoff) {
                 continue;
             }
-            if opts.dry_run || crate::sys::remove_tree(&pkgs_dir.join(&name)).is_ok() {
+            let dir = pkgs_dir.join(&name);
+            let (files, bytes) = exclusive_usage(&dir);
+            if opts.dry_run || crate::sys::remove_tree(&dir).is_ok() {
                 report.removed_packages += 1;
+                report.removed_files += files;
+                report.bytes_freed += bytes;
             }
         }
     }
@@ -336,9 +364,6 @@ pub(crate) fn prune_with_grace(
             }
         }
     }
-    let (files, bytes) = sweep_blobs(store, cutoff, opts.dry_run);
-    report.removed_files = files;
-    report.bytes_freed = bytes;
     Ok(report)
 }
 
@@ -355,18 +380,52 @@ pub(crate) fn status(store: &Store) -> Result<StoreStatus> {
         .iter()
         .filter(|(_, m)| m.is_dir())
         .count() as u64;
-    for (shard, meta) in dir_names(&store.files_dir()) {
-        if !meta.is_dir() {
-            continue;
-        }
-        for (_, meta) in dir_names(&store.files_dir().join(shard)) {
-            if meta.is_file() {
-                status.files += 1;
-                status.bytes += physical_size(&meta);
-            }
+    for (name, meta) in dir_names(&store.pkgs_dir()) {
+        if meta.is_dir() {
+            let (files, bytes) = package_usage(&store.pkgs_dir().join(name).join("package"));
+            status.files += files;
+            status.bytes += bytes;
         }
     }
     Ok(status)
+}
+
+/// Files below `dir` and their physical bytes, hard links within `dir` counted once.
+fn package_usage(dir: &Path) -> (u64, u64) {
+    let mut seen = HashSet::new();
+    let mut out = (0, 0);
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let Ok(meta) = e.path().symlink_metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(e.path());
+            } else if meta.is_file() && seen.insert(inode(&meta, &e.path())) {
+                out.0 += 1;
+                out.1 += physical_size(&meta);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(unix)]
+fn inode(meta: &std::fs::Metadata, _path: &Path) -> (u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    (meta.dev(), meta.ino())
+}
+
+#[cfg(not(unix))]
+fn inode(_meta: &std::fs::Metadata, path: &Path) -> (u64, u64) {
+    (
+        0,
+        xxhash_rust::xxh3::xxh3_64(path.as_os_str().as_encoded_bytes()),
+    )
 }
 
 /// What `pm cache prune` did (or would do).
@@ -379,7 +438,7 @@ pub struct CachePruneReport {
     pub removed: u64,
     /// Packages that could not be removed.
     pub failed: u64,
-    /// Bytes freed (blobs no longer linked from anywhere).
+    /// Bytes freed (files of the removed packages nothing else linked to).
     pub bytes: u64,
     /// The `pkgs/` names removed (dry run: that would be removed).
     pub removed_names: Vec<String>,
@@ -500,9 +559,11 @@ pub(crate) fn prune_by_age(
             report.removed_names.push(name);
             continue;
         }
+        let (_, bytes) = exclusive_usage(&dir);
         match crate::sys::remove_tree(&dir) {
             Ok(()) => {
                 report.removed += 1;
+                report.bytes += bytes;
                 report.removed_names.push(name);
             }
             Err(e) => {
@@ -510,16 +571,6 @@ pub(crate) fn prune_by_age(
                 report.errors.push(format!("Could not delete {name}: {e}"));
             }
         }
-    }
-    if !dry_run && report.removed > 0 {
-        let (_, bytes) = sweep_blobs(
-            store,
-            SystemTime::now()
-                .checked_sub(GRACE)
-                .unwrap_or(SystemTime::UNIX_EPOCH),
-            false,
-        );
-        report.bytes = bytes;
     }
     Ok(report)
 }
