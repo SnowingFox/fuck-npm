@@ -116,12 +116,10 @@ fn same_version(a: &Version, b: &Version) -> bool {
     a.cmp(b) == Ordering::Equal
 }
 
+/// bun `Flags::PRE`: the `<X.Y.Z-0` upper bound that `^`/`~`/x-ranges derive does not count,
+/// or `^1.2.5` would never prefer a satisfying `latest`.
 fn has_prerelease(range: &Range) -> bool {
-    range
-        .sets
-        .iter()
-        .flatten()
-        .any(|c| c.version.is_prerelease())
+    range.has_prerelease()
 }
 
 fn left_version(range: &Range) -> Option<&Version> {

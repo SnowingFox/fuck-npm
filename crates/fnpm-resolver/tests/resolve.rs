@@ -56,6 +56,52 @@ async fn latest_tag_wins_when_it_satisfies_the_range() {
 }
 
 #[tokio::test]
+async fn latest_tag_wins_over_newer_matches_for_caret_and_tilde() {
+    let h = Harness::new();
+    h.registry.add_full(packument(
+        "a",
+        &[
+            ("1.0.0", no_deps()),
+            ("1.2.5", no_deps()),
+            ("1.3.0", no_deps()),
+            ("1.3.1", no_deps()),
+        ],
+        &[("latest", "1.3.0")],
+        &[],
+    ));
+    h.registry.add_full(packument(
+        "b",
+        &[
+            ("1.2.1", no_deps()),
+            ("1.2.3", no_deps()),
+            ("2.0.0", no_deps()),
+        ],
+        &[("latest", "1.2.1")],
+        &[],
+    ));
+    h.registry.add_full(packument(
+        "c",
+        &[
+            ("1.0.0", no_deps()),
+            ("1.4.0", no_deps()),
+            ("1.9.0", no_deps()),
+        ],
+        &[("latest", "1.4.0")],
+        &[],
+    ));
+    // The derived upper bounds (`<2.0.0-0`, `<1.3.0-0`) are not a written prerelease, so like
+    // bun (`find_best_version`) and npm-pick-manifest, a satisfying `latest` is preferred.
+    let ws = workspace(
+        json!({"dependencies": {"a": "^1.2.5", "b": "~1.2.0", "c": "1.x"}}),
+        &[],
+    );
+    let g = h.install(&ws).await.graph;
+    assert_eq!(root_dep(&g, "a").as_deref(), Some("1.3.0"));
+    assert_eq!(root_dep(&g, "b").as_deref(), Some("1.2.1"));
+    assert_eq!(root_dep(&g, "c").as_deref(), Some("1.4.0"));
+}
+
+#[tokio::test]
 async fn dist_tags_empty_and_star() {
     let h = Harness::new();
     h.registry.add_full(packument(
