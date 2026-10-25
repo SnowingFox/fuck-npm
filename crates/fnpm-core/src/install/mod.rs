@@ -1175,8 +1175,8 @@ fn save(
     Ok(true)
 }
 
-/// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns
-/// Runs the install's lifecycle scripts; returns the number of blocked (untrusted) ones.
+/// Step 7: lifecycle scripts of trusted packages, in dependency order.
+/// Returns the number of blocked (untrusted) scripts.
 async fn run_scripts(
     project: &Project,
     ws: &Workspace,
@@ -1226,15 +1226,105 @@ async fn run_scripts(
         silent: config.log_level == fnpm_config::LogLevel::Silent,
         project_dir: root.clone(),
     };
-    let report = fnpm_scripts::run_dag(plan.jobs, plan.deps, &opts, &**events).await?;
-    // Like bun's `discard_failed_optional_package`: an optional dependency whose script failed
-    // is deleted and the install goes on (the runner warns about it when verbose).
-    for dir in &report.failed_optional_dirs {
-        if dir.starts_with(&root) && dir != &root {
-            let _ = std::fs::remove_dir_all(dir);
+    let cleanup = |failed: &Path| -> std::io::Result<()> {
+        let Some(id) = linked
+            .report
+            .dirs
+            .iter()
+            .find_map(|(id, dir)| (dir == failed).then_some(*id))
+        else {
+            return Ok(());
+        };
+        // A hoisted package can have several physical copies. Remove every copy and every
+        // bin link into it before releasing parent and root lifecycle scripts.
+        for (_, dir) in linked
+            .report
+            .dirs
+            .iter()
+            .filter(|(package, _)| *package == id)
+        {
+            if !dir.starts_with(&root) || dir == &root {
+                continue;
+            }
+            if linked.linker == NodeLinker::Isolated {
+                let real = std::fs::canonicalize(dir)?;
+                remove_optional_links(&root.join("node_modules"), &real)?;
+                for member in &ws.members {
+                    remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+                }
+            }
+            for ancestor in dir
+                .ancestors()
+                .filter(|p| p.file_name().is_some_and(|n| n == "node_modules"))
+            {
+                fnpm_linker::bins::unlink_bins(dir, &ancestor.join(".bin"))
+                    .map_err(std::io::Error::other)?;
+            }
+            if config.global {
+                fnpm_linker::bins::unlink_bins(dir, &config.global_bin_dir)
+                    .map_err(std::io::Error::other)?;
+            }
+            match std::fs::remove_dir_all(dir) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    };
+    fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
+        .await?;
+    Ok(blocked)
+}
+
+/// Remove isolated aliases and their bins while the failed package still exists, so realpath
+/// can identify aliases in root, workspace, hidden-hoist and local virtual-store directories.
+/// Never follow other package links into shared store entries or external workspace folders.
+fn remove_optional_links(nm: &Path, failed: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(nm) {
+        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    }
+    let entries = match std::fs::read_dir(nm) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            if std::fs::canonicalize(&path).is_ok_and(|p| p == failed) {
+                for ancestor in path
+                    .ancestors()
+                    .filter(|p| p.file_name().is_some_and(|name| name == "node_modules"))
+                {
+                    fnpm_linker::bins::unlink_bins(&path, &ancestor.join(".bin"))
+                        .map_err(std::io::Error::other)?;
+                }
+                std::fs::remove_file(&path)?;
+            }
+        } else if kind.is_dir() {
+            let name = entry.file_name();
+            if name == ".fnpm" {
+                remove_optional_links(&path.join("node_modules"), failed)?;
+                for slot in std::fs::read_dir(&path)? {
+                    let slot = slot?;
+                    if slot.file_type()?.is_dir() && slot.file_name() != "node_modules" {
+                        remove_optional_links(&slot.path().join("node_modules"), failed)?;
+                    }
+                }
+            } else if name.to_string_lossy().starts_with('@') {
+                remove_optional_links(&path, failed)?;
+            } else if !name.to_string_lossy().starts_with('.') {
+                remove_optional_links(&path.join("node_modules"), failed)?;
+            }
         }
     }
-    Ok(blocked)
+    Ok(())
 }
 
 /// Writes the no-op state for the files as they are now.

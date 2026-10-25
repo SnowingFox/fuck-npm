@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const E2E_DIR = dirname(fileURLToPath(import.meta.url));
@@ -149,13 +149,12 @@ function globDirs(root: string, pattern: string): string[] {
       for (const d of subdirs(dir)) walk(join(dir, d), i);
       return;
     }
-    if (!seg.includes("*")) {
+    if (!/[*?{\[]/.test(seg)) {
       const next = join(dir, seg);
       if (existsSync(next)) walk(next, i + 1);
       return;
     }
-    const re = new RegExp(`^${seg.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
-    for (const d of subdirs(dir)) if (re.test(d)) walk(join(dir, d), i + 1);
+    for (const d of subdirs(dir)) if (matchesGlob(d, seg)) walk(join(dir, d), i + 1);
   };
   walk(root, 0);
   return out;
@@ -180,6 +179,18 @@ export function importers(root: string): string[] {
     for (const d of globDirs(root, neg ? p.slice(1) : p)) (neg ? exc : inc).add(relative(root, d) || ".");
   }
   return [".", ...[...inc].filter((d) => !exc.has(d) && d !== ".").sort()];
+}
+
+/** Workspace directories and their ancestors where Node searches for packages. */
+export function resolutionDirs(root: string): string[] {
+  const dirs = new Set<string>();
+  for (const imp of importers(root)) {
+    for (let cur = imp; ; cur = dirname(cur)) {
+      dirs.add(cur);
+      if (cur === ".") break;
+    }
+  }
+  return [...dirs];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -270,7 +281,8 @@ export function snapshot(root: string): Snapshot {
 
   const imps: Record<string, Record<string, string>> = {};
   const bins: Record<string, string[]> = {};
-  for (const imp of importers(root)) {
+  // Include ancestor node_modules even when the directory is not a workspace itself.
+  for (const imp of resolutionDirs(root)) {
     const nm = join(root, imp, "node_modules");
     if (!isDir(nm)) continue;
     walkNm(nm);

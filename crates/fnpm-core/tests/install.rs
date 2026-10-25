@@ -794,6 +794,11 @@ async fn tarball_url_dependency_is_not_downloaded_again_when_warm() {
     let url = reg.tarball_url("b", "1.2.0");
     let p = Project::new(&reg, json!({ "dependencies": { "repo": url } }));
     p.install().await;
+    assert_eq!(
+        reg.tarball_requests(),
+        1,
+        "resolver content reused by fetcher"
+    );
     assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
     assert!(
         p.read("fnpm.lock").contains(&format!("b@{url}")),
@@ -858,21 +863,30 @@ async fn failing_optional_script_deletes_the_package_and_succeeds() {
         Pkg::new("host", "1.0.0").optional("native-opt", "1.0.0"),
     ])
     .await;
-    let p = Project::new(
-        &reg,
-        json!({ "dependencies": { "host": "1.0.0" }, "trustedDependencies": ["native-opt"] }),
-    );
-    let s = p.install().await;
-    assert_eq!(s.failed_count, 0, "{s:?}");
-    assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
-    assert!(
-        !exists(&p.path("node_modules/native-opt")),
-        "deleted like bun"
-    );
-    assert!(
-        p.read("fnpm.lock").contains("native-opt@1.0.0"),
-        "still locked"
-    );
+    for linker in ["hoisted", "isolated"] {
+        let p = Project::new(
+            &reg,
+            json!({
+                "dependencies": { "host": "1.0.0" },
+                "optionalDependencies": { "native-opt": "1.0.0" },
+                "trustedDependencies": ["native-opt"],
+                "scripts": { "postinstall": "test ! -e node_modules/native-opt && test ! -L node_modules/native-opt && test ! -L node_modules/.bin/native-opt" }
+            }),
+        );
+        p.write("fnpm.toml", &format!("[install]\nlinker = \"{linker}\"\n"));
+        let s = p.install().await;
+        assert_eq!(s.failed_count, 0, "{linker}: {s:?}");
+        assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
+        assert!(
+            !exists(&p.path("node_modules/native-opt")),
+            "{linker}: deleted like bun"
+        );
+        assert!(std::fs::symlink_metadata(p.path("node_modules/.bin/native-opt")).is_err());
+        assert!(
+            p.read("fnpm.lock").contains("native-opt@1.0.0"),
+            "still locked"
+        );
+    }
 }
 
 /// yarn.lock and pnpm-lock.yaml record no bins, so after migrating one the registry manifests
@@ -983,4 +997,32 @@ async fn frozen_reinstall_accepts_unused_trust_and_patch_entries_omitted_by_the_
     manifest["patchedDependencies"]["a@1.0.0"] = json!("unused.patch");
     p.write("package.json", &manifest.to_string());
     assert_eq!(p.run(opts).await.unwrap_err().code(), "FROZEN_LOCKFILE");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unused_explicit_trust_never_enables_default_scripts_on_reinstall() {
+    let reg =
+        Registry::start(&[Pkg::new("esbuild", "1.0.0").script("install", "echo ran > ran.txt")])
+            .await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "esbuild": "1.0.0" },
+            "trustedDependencies": ["not-installed"]
+        }),
+    );
+    p.install().await;
+    assert!(!exists(&p.path("node_modules/esbuild/ran.txt")));
+    assert!(!p.read("fnpm.lock").contains("not-installed"));
+    for frozen in [false, true] {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.frozen_lockfile = frozen;
+        let (summary, _) = p.run(opts).await.unwrap();
+        assert_eq!(summary.blocked_scripts, 1);
+        assert!(
+            !exists(&p.path("node_modules/esbuild/ran.txt")),
+            "frozen={frozen}"
+        );
+    }
 }

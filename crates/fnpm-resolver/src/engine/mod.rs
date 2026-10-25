@@ -390,7 +390,7 @@ impl<'a> Engine<'a> {
                 }
             }
         }
-        self.graph.trusted_dependencies = self.parse_trusted()?;
+        self.graph.trusted_dependencies = crate::frozen::trusted(self.ws)?;
         if let Some(prev) = self.prev {
             self.graph.node_linker = prev.node_linker;
             self.graph.config_version = prev.config_version;
@@ -433,39 +433,6 @@ impl<'a> Engine<'a> {
             );
         }
         Ok(out)
-    }
-
-    fn parse_trusted(&self) -> Result<Option<std::collections::BTreeSet<String>>> {
-        let mut set: Option<std::collections::BTreeSet<String>> = None;
-        let sources = std::iter::once(&self.ws.root.raw)
-            .chain(self.ws.members.iter().map(|m| &m.manifest.raw));
-        for raw in sources {
-            let Some(field) = raw.get("trustedDependencies") else {
-                continue;
-            };
-            let Some(items) = field.as_array() else {
-                return Err(Error::InvalidPackageJson {
-                    path: "package.json".into(),
-                    message: "Expected \"trustedDependencies\" to be an array of strings".into(),
-                });
-            };
-            let set = set.get_or_insert_with(Default::default);
-            for item in items {
-                let Some(name) = item.as_str() else {
-                    return Err(Error::InvalidPackageJson {
-                        path: "package.json".into(),
-                        message: "Expected \"trustedDependencies\" to be an array of strings"
-                            .into(),
-                    });
-                };
-                set.insert(name.to_owned());
-            }
-        }
-        if let Some(only) = &self.ws.settings.only_built_dependencies {
-            set.get_or_insert_with(Default::default)
-                .extend(only.iter().cloned());
-        }
-        Ok(set)
     }
 
     /// The root and workspace packages with their declared edges, `fnpm add` requests and

@@ -35,6 +35,7 @@ import {
   importers,
   loadCorpus,
   readScriptLog,
+  resolutionDirs,
   sh,
   shq,
   snapshot,
@@ -148,7 +149,7 @@ function env(entry: CorpusEntry, mirror: string, store: string): NodeJS.ProcessE
 
 /** Every node_modules directory fnpm may have created (root and workspace importers). */
 function removeNodeModules(dir: string): void {
-  for (const imp of importers(dir)) rmSync(join(dir, imp, "node_modules"), { recursive: true, force: true });
+  for (const imp of resolutionDirs(dir)) rmSync(join(dir, imp, "node_modules"), { recursive: true, force: true });
 }
 
 function lockHash(dir: string): string | null {
@@ -269,8 +270,12 @@ async function project(entry: CorpusEntry, mirror: string): Promise<Result> {
     }
     return res;
   };
-  if (!base?.install?.ok) {
-    fail("no usable baseline (the native PM install failed)");
+  if (base && (base.name !== entry.name || base.repo !== entry.repo || base.commit !== entry.commit || base.pm !== entry.pm)) {
+    fail("baseline does not match the corpus revision; regenerate it with run.ts");
+    return finish();
+  }
+  if (!base?.install?.ok || !base.verify?.ok) {
+    fail("no usable baseline (the native PM install and verification must both pass)");
     return finish();
   }
 

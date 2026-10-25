@@ -68,11 +68,18 @@ async function main(): Promise<void> {
   mkdirSync(logs, { recursive: true });
   const logger = join(E2E_DIR, "script-logger.cjs");
   const summary: string[] = [];
+  let failed = false;
 
   for (const entry of corpus) {
     const dir = join(root, entry.name);
     const outFile = join(REPO_ROOT, entry.baseline);
     let base: any = existsSync(outFile) ? JSON.parse(readFileSync(outFile, "utf8")) : {};
+
+    if (args["verify-only"] && (!base.install?.ok || base.name !== entry.name || base.repo !== entry.repo || base.commit !== entry.commit || base.pm !== entry.pm)) {
+      failed = true;
+      summary.push(`${entry.name}: no matching successful baseline; run install first`);
+      continue;
+    }
 
     if (!args["verify-only"]) {
       log(`${entry.name}: checkout ${entry.repo}@${entry.commit.slice(0, 12)}`);
@@ -106,6 +113,7 @@ async function main(): Promise<void> {
       mkdirSync(join(E2E_DIR, "baselines"), { recursive: true });
       write(outFile, base);
       if (inst.status !== 0) {
+        failed = true;
         summary.push(`${entry.name}: INSTALL FAILED (see ${installLog})`);
         continue;
       }
@@ -116,6 +124,7 @@ async function main(): Promise<void> {
       rmSync(verifyLog, { force: true });
       log(`${entry.name}: verify: ${entry.verify}`);
       const v = sh(entry.verify, dir, baseEnv(entry, mirror), entry.verifyTimeoutSec ?? 300, verifyLog);
+      if (v.status !== 0) failed = true;
       base.verify = { command: entry.verify, ok: v.status === 0, exitCode: v.status, timedOut: v.timedOut, ms: v.ms };
       write(outFile, base);
       log(`${entry.name}: verify exit=${v.status}${v.timedOut ? " (timeout)" : ""} ${(v.ms / 1000).toFixed(1)}s`);
@@ -126,6 +135,7 @@ async function main(): Promise<void> {
     );
   }
   log("summary:\n  " + summary.join("\n  "));
+  if (failed) process.exitCode = 1;
 }
 
 main().catch((e) => {

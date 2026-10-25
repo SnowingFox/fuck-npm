@@ -390,6 +390,11 @@ impl Resolver {
         warnings: Vec<String>,
     ) -> Result<ResolveOutput> {
         let mut graph = prev.clone();
+        // Text locks omit trust names absent from the tree. Restore the explicit manifest
+        // policy so an unused allowlist never falls back to the built-in trusted list.
+        if let Some(trusted) = frozen::trusted(workspace)? {
+            graph.trusted_dependencies = Some(trusted);
+        }
         for (key, patch) in &mut graph.patched_dependencies {
             patch.hash = Some(engine::patch_hash(&workspace.root_dir, key, &patch.path)?);
         }

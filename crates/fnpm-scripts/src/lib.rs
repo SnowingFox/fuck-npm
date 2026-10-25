@@ -174,7 +174,7 @@ pub async fn run_jobs(
         deps.push(barrier_deps);
         previous_barrier = Some(barrier);
     }
-    execute_with_node_gyp(nodes, deps, opts, events).await
+    execute_with_node_gyp(nodes, deps, opts, events, None).await
 }
 
 /// Runs `jobs`, each after the jobs listed in `deps[i]` (indices into `jobs`) finished. A
@@ -185,13 +185,27 @@ pub async fn run_dag(
     opts: &RunOptions,
     events: &dyn EventSink,
 ) -> Result<Report> {
+    run_dag_with_cleanup(jobs, deps, opts, events, None).await
+}
+
+/// Cleanup invoked after an optional lifecycle failure, before dependents run.
+pub type OptionalCleanup<'a> = dyn Fn(&std::path::Path) -> std::io::Result<()> + Sync + 'a;
+
+/// Like [`run_dag`], with optional-package cleanup before dependent jobs are released.
+pub async fn run_dag_with_cleanup(
+    jobs: Vec<Job>,
+    deps: Vec<Vec<usize>>,
+    opts: &RunOptions,
+    events: &dyn EventSink,
+    cleanup: Option<&OptionalCleanup<'_>>,
+) -> Result<Report> {
     let mut deps = deps;
     deps.resize(jobs.len(), Vec::new());
     let nodes = jobs
         .into_iter()
         .map(|j| runner::Node::Job(Box::new(j)))
         .collect();
-    execute_with_node_gyp(nodes, deps, opts, events).await
+    execute_with_node_gyp(nodes, deps, opts, events, cleanup).await
 }
 
 async fn execute_with_node_gyp(
@@ -199,6 +213,7 @@ async fn execute_with_node_gyp(
     deps: Vec<Vec<usize>>,
     opts: &RunOptions,
     events: &dyn EventSink,
+    cleanup: Option<&OptionalCleanup<'_>>,
 ) -> Result<Report> {
     let any = nodes
         .iter()
@@ -214,7 +229,7 @@ async fn execute_with_node_gyp(
         ));
     }
     let dir = shim.as_ref().ok().map(|s| s.dir().to_path_buf());
-    let report = runner::execute(nodes, deps, opts, events, dir.as_deref()).await;
+    let report = runner::execute(nodes, deps, opts, events, dir.as_deref(), cleanup).await;
     drop(shim);
     report
 }
