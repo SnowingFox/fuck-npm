@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
@@ -49,8 +50,9 @@ pub(crate) struct Staging {
     root: PathBuf,
     pkg: Dir,
     dirs: Mutex<HashSet<String>>,
-    /// The first file written with each content, for in-package deduplication.
-    contents: Mutex<HashMap<ContentKey, String>>,
+    /// Per-content locks reserve the first write before another batch can look it up.
+    /// Unrelated contents can still be written in parallel.
+    contents: Mutex<HashMap<ContentKey, Arc<Mutex<Option<String>>>>>,
     published: AtomicBool,
 }
 
@@ -145,20 +147,22 @@ impl Staging {
     /// when there is one, else a new file. Its parent directory must exist.
     pub(crate) fn add_bytes(&self, rel: &str, mode: u32, data: &[u8]) -> io::Result<IndexedFile> {
         let key = ContentKey::of(data, mode);
-        let first = self.contents.lock().get(&key).cloned();
-        if let Some(first) = first
-            && first != rel
-            && self.same_content(&first, data)
-            && self.link_to(&first, rel).is_ok()
+        let slot = self.content_slot(key);
+        let mut first = slot.lock();
+        if let Some(path) = first.as_deref()
+            && path != rel
+            && self.same_content(path, mode, data)
+            && self.link_to(path, rel).is_ok()
         {
             return Ok(record(rel, data.len() as u64, mode));
         }
         self.write_file(rel, mode, data)?;
-        self.contents
-            .lock()
-            .entry(key)
-            .or_insert_with(|| rel.to_owned());
+        *first = Some(rel.to_owned());
         Ok(record(rel, data.len() as u64, mode))
+    }
+
+    fn content_slot(&self, key: ContentKey) -> Arc<Mutex<Option<String>>> {
+        self.contents.lock().entry(key).or_default().clone()
     }
 
     /// Writes a new file (replacing an earlier entry of the same path: the later one wins).
@@ -187,10 +191,27 @@ impl Staging {
     }
 
     /// Whether the file `first` holds exactly `data`.
-    fn same_content(&self, first: &str, data: &[u8]) -> bool {
+    fn same_content(&self, first: &str, mode: u32, data: &[u8]) -> bool {
         let Ok(mut f) = self.pkg.open_read(first) else {
             return false;
         };
+        // A later tar entry may have replaced this path since it was indexed. Bytes can
+        // still match while its executable mode changed, so check the opened file as well.
+        let Ok(meta) = f.metadata() else {
+            return false;
+        };
+        if meta.len() != data.len() as u64 {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if (meta.permissions().mode() & 0o111 != 0) != (mode & 0o111 != 0) {
+                return false;
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = mode;
         let mut buf = vec![0u8; data.len()];
         let mut extra = [0u8; 1];
         f.read_exact(&mut buf).is_ok() && buf == data && matches!(f.read(&mut extra), Ok(0))
@@ -221,10 +242,9 @@ impl Staging {
             size,
             executable: mode & 0o111 != 0,
         };
-        self.contents
+        self.content_slot(key)
             .lock()
-            .entry(key)
-            .or_insert_with(|| rel.to_owned());
+            .get_or_insert_with(|| rel.to_owned());
         record(rel, size, mode)
     }
 }

@@ -437,7 +437,13 @@ fn place_node<'s>(
                 if !parent_fresh && !force {
                     let trusted = unchanged.get(idx).copied().unwrap_or(false)
                         && !matches!(pkg.resolution, Resolution::Folder { .. });
-                    if trusted {
+                    // Removing a scoped or nested package does not change the root
+                    // node_modules identity. Require the placement and completion marker
+                    // even when the previous tree lets us skip parsing package.json.
+                    if trusted
+                        && fsutil::kind(dest) == Kind::Dir
+                        && fsutil::kind(&dest.join("package.json")) == Kind::File
+                    {
                         return Ok(Some(false));
                     }
                     let ok = match &pkg.resolution {

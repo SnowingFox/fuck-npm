@@ -591,7 +591,7 @@ impl Store {
         recv(&mut rx, &label).await
     }
 
-    /// Streams `gzip -> tar -> CAS` in one pass while hashing the compressed bytes with the
+    /// Streams `gzip -> tar -> staging` in one pass while hashing the compressed bytes with the
     /// key's algorithm; verifies, writes `index.bin`, renames the staged directory into
     /// `pkgs/`. Blocking work runs on rayon / `spawn_blocking`; the future only awaits network
     /// chunks.

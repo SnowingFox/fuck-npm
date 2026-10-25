@@ -830,3 +830,36 @@ async fn add_repairs_what_changed_in_node_modules_since_the_install() {
     );
     assert!(p.install().await.noop);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_repairs_missing_scoped_and_nested_placements() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "dependencies": { "a": "1.0.0", "b": "1.2.0", "@scope/pkg": "3.0.0" } }),
+    );
+    p.install().await;
+    let before = fnpm_core::fast_path::dir_identity(&p.path("node_modules")).unwrap();
+    let nested = p.path("node_modules/@scope/pkg/node_modules/b");
+    assert!(nested.is_dir(), "conflicting b must be nested");
+    std::fs::remove_dir_all(&nested).unwrap();
+    assert_eq!(
+        before,
+        fnpm_core::fast_path::dir_identity(&p.path("node_modules")).unwrap()
+    );
+    p.run(p.opts(InstallCommand::Add, &["tool"])).await.unwrap();
+    assert!(
+        nested.join("package.json").is_file(),
+        "add repairs missing nested package"
+    );
+
+    std::fs::remove_dir_all(p.path("node_modules/@scope/pkg")).unwrap();
+    p.run(p.opts(InstallCommand::Remove, &["tool"]))
+        .await
+        .unwrap();
+    assert_eq!(p.installed("@scope/pkg").as_deref(), Some("3.0.0"));
+    assert!(
+        nested.join("package.json").is_file(),
+        "remove repairs missing scoped subtree"
+    );
+}

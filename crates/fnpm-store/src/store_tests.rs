@@ -1840,3 +1840,64 @@ fn a_crashed_import_leaves_nothing_a_later_install_trusts() {
     );
     assert_eq!(paths(&entry).len(), 10);
 }
+
+#[cfg(unix)]
+#[test]
+fn streamed_replacement_does_not_share_the_wrong_executable_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, store) = store();
+    let mut tar = TarBuilder::new();
+    tar.file_mode("package/a", b"shared", 0o644);
+    tar.file_mode("package/a", b"shared", 0o755);
+    tar.file_mode("package/b", b"shared", 0o644);
+    tar.end();
+    let staging = store.new_staging().unwrap();
+    let mut extractor = crate::extract::StreamExtractor::new(staging.clone(), None);
+    // Each replacement settles before the next header arrives, so the dedupe lookup
+    // retains a candidate path whose mode has since changed.
+    for chunk in tar.buf.chunks(1024) {
+        extractor.feed(chunk).unwrap();
+    }
+    let (_, built) = extractor.finish().unwrap();
+    assert_eq!(built.files.len(), 2);
+    for (name, executable) in [("a", true), ("b", false)] {
+        let path = staging.package_root().join(name);
+        assert_eq!(std::fs::read(&path).unwrap(), b"shared");
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o111 != 0,
+            executable
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn concurrent_staging_writes_share_one_inode() {
+    let (_t, store) = store();
+    let staging = store.new_staging().unwrap();
+    // Match the race between independent streaming write batches: every thread sees the
+    // same previously unseen content, and the first write is long enough to overlap them.
+    let data = incompressible(1024 * 1024, 47);
+    let barrier = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        for i in 0..8 {
+            let (staging, data, barrier) = (&staging, &data, &barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                staging
+                    .add_bytes(&format!("file-{i}"), 0o644, data)
+                    .unwrap();
+            });
+        }
+    });
+    let first = staging.package_root().join("file-0");
+    for i in 0..8 {
+        let path = staging.package_root().join(format!("file-{i}"));
+        assert_eq!(std::fs::read(&path).unwrap(), data);
+        assert_eq!(
+            ino(&first),
+            ino(&path),
+            "file-{i} must share the first write"
+        );
+    }
+}
