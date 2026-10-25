@@ -16,7 +16,7 @@ const binding = require(pkg);
 
 const testing = typeof binding.__testDeliver === "function";
 
-/** The core is implemented concurrently; until then its entry points panic with todo!(). */
+/** The core is implemented concurrently; until then its entry points panic with "not yet implemented". */
 function coreStubbed(error) {
   return error?.code === "CORE_ERROR" && /not (yet )?implemented/.test(error.message);
 }
