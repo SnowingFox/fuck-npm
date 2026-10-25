@@ -369,7 +369,7 @@ the parsed graph keyed by xxh3-64 of these bytes; it is never committed and is s
 `fnpm_core::install`, in order. Steps marked (overlap) start before the previous step ends.
 
 1. **Fast path.** Locate the project root (walk up for package.json), `stat`
-   `node_modules/.fnpm/state`, compare the lockfile hash, each package.json's size/mtime
+   `node_modules/.fnpm/.state/state`, compare the lockfile hash, each package.json's size/mtime
    (hash on mismatch) and the config hash. Unchanged: emit the summary with `noop: true` and
    return. Budget: < 5 ms of Rust for a 100-workspace monorepo.
 2. **Config + workspace.** `Config::load`, `Workspace::load` (parallel package.json reads).
@@ -1197,9 +1197,13 @@ propagates to dependents; SCCs share one hash (Tarjan); hash = xxh3 over
 are built in `<entry>.tmp-<rand>` and renamed; EEXIST means another project built it.
 
 **Materialisation.** Per package: if the backend is clonefile and `clone_dir` succeeds, one
-syscall; else create every directory in `index.dirs` (batch), then `fsops::place_file` for
-each file in `index.files` (no readdir; bun walks, we read the index). Files keep the store's
-modes. At most `threads` (default `min(8, cpus)`) packages at a time.
+syscall; else create every directory in `index.dirs` (batch), then hard link each file in
+`index.files` with `linkat` relative to open descriptors of the package's store directory and
+its destination (any failure falls back to `fsops::place_file`; no readdir; bun walks, we read
+the index). Files keep the store's modes. At most `threads` (default `min(8, cpus)`) packages
+at a time, biggest first (`PackageSource::size_hint`, FIFO scopes), on one process-wide pool.
+A patched package gets `.fnpm-patch-tag` (the patch hash from `PackageSource::patch_tag`);
+verify requires it to match (bun `.bun-patch-tag`).
 
 **Bins** (bun `bin.rs`): names normalised (`fnpm_types::bin::normalize_bin_name`), targets
 must stay inside the package (`UnsafeBin`), `chmod +x` the target, rewrite a `\r\n` shebang
@@ -1290,7 +1294,7 @@ Tests: `bun-install-lifecycle-scripts.test.ts`, `bun-install-native-binlink.test
 unrelated packages.
 ## fnpm-core
 
-**Status: implemented** (`cargo test -p fnpm-core`: 21 unit, 24 install, 13 command, 1 perf
+**Status: implemented** (`cargo test -p fnpm-core`: 22 unit, 29 install, 16 command, 1 perf
 test, all against an in-process axum registry serving fixture packuments and tarballs).
 
 **Responsibility.** The orchestrator and the only crate `fnpm-napi` and `fnpm-cli` call. Owns the
@@ -1345,7 +1349,8 @@ pub mod commands { pub async fn dispatch(req, events, env) -> Result<CoreResult>
 
 **Install pipeline as implemented.** `prepare_install` (sync): options, project root
 (`Workspace::find_root`; `add` in an empty directory and `-g` write `{}` first), `Config::load`,
-fast path. `PreparedInstall::run`: workspace, lockfile (`install/lock.rs`: fnpm.lock through the
+fast path; when it is not a no-op, the workspace and the lockfile are read there while
+`runtime()` starts on a background thread. `PreparedInstall::run`: lockfile (`install/lock.rs`: fnpm.lock through the
 sidecar, else bun.lock / bun.lockb, else `npm-shrinkwrap.json`, `package-lock.json`,
 `yarn.lock`, `pnpm-lock.yaml` in bun's order, each failure a warning and the next tried; with
 none, pnpm-workspace.yaml settings), the migration's package.json write-back applied in memory
@@ -1359,8 +1364,15 @@ integrity backfill from the imports, save (package.json edits, lockfile, yarn.lo
 lifecycle scripts (`plan_install` + `run_dag`, `blockedScripts`), then the state file. The
 graph the linker sees is normalised (`link_view`): one `WORKSPACE | PROD` membership edge per
 member on the root and plain root edges to members; hoisted `workspace_roots` nodes are made
-top-level (`plan_layout`). A failed optional package is dropped and linking retried; a failed
-required one reports the fetch's own code (`Error::Fetch`). `FNPM_TIMING=1` prints phase times.
+top-level (`plan_layout`). What is fetched and counted is `installable()`: reachability that
+stops at packages disabled for the platform (bun does not install their dependencies either:
+`@img/sharp-wasm32` under `@img/sharp-webcontainers-wasm32`); bundled packages are never
+fetched on their own, and the resolve stream skips previous-graph packages that will not be
+installed. `PackageSource::size_hint` lets the linker start the biggest packages first, and
+`PackageSource::patch_tag` (the current `patchedDependencies` hash) makes the linker reinstall a
+package whose `.fnpm-patch-tag` differs, so an edited or removed patch is applied. A failed
+optional package is dropped and linking retried; a failed required one reports the fetch's own
+code (`Error::Fetch`). `FNPM_TIMING=1` prints phase times.
 
 **Command semantics.** `add`: bun's `UpdateRequest` parsing (`spec::Positional`), group
 precedence and move-to-group, saved literal `^<v>` for tags / bare names / bare `npm:` aliases
@@ -1397,19 +1409,29 @@ re-resolve without the previous graph and relink. `install --analyze` is `NOT_IM
 | `lock verify`, `lock diff`, `lock print` | out-of-sync + integrity checks; diff of paths or git revisions; text or `--yarn` | `commands/inspect.rs` |
 | `run`, `exec` | `fnpm_scripts::run` (pre/post, `--if-present`), `--filter` / `--workspaces` in dependency order, `--parallel` / `--sequential` | `commands/scripts.rs` |
 | `pm untrusted`, `pm trust`, `pm default-trusted` | `fnpm_scripts::pm` over the installed layout | `commands/scripts.rs` |
-| `init`, `pm pkg get/set/delete/fix`, `pm version` | package.json via `PackageJsonEditor`; version bump with lifecycle scripts and git tag | `commands/files.rs` |
+| `init`, `pm pkg get/set/delete/fix`, `pm version` | package.json via `PackageJsonEditor`; `pm version` as bun: `--dry-run` only prints, hooks run with the `fnpm run` environment unless `--ignore-scripts`, commit and `v<version>` tag only when the package directory has a `.git` (dirty tree is an error without `--force`), `from-git` uses `--match=*.*.*` | `commands/files.rs` |
 | `pm cache [path]/rm/prune/pack/unpack`, `store path/status/prune`, `pm fetch`, `pm bin`, `pm hash*`, `pm licenses`, `doctor` | store / cache maintenance and diagnostics | `commands/maintenance.rs`, `inspect.rs` |
 | `patch`, `patch-commit`, `pack`, `publish`, `x`/`dlx`, `create`, `pm pack/diff/scan`, `audit fix` | P4: `Error::NotImplemented` (`NOT_IMPLEMENTED`) | `commands/mod.rs` |
 
-**Fast path state** (`node_modules/.fnpm/state`, JSON): `version`, `fnpmVersion`,
-`lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs, xxh3]` per
-package.json, plus `pnpm-workspace.yaml` when present; a new one invalidates), `configHash`
-(`config_hash`: linker, backend, omit, platform, registry and scope URLs, ignoreScripts,
-production, globalStore, hoist patterns, store dir, verify), `nodeModules` (`[dev, ino,
-mtimeNs]`, taken after `.fnpm` exists and background deletes finished), `linker`, `packages`.
-`check` returns `Noop` only if every field matches; a package.json whose size and mtime match is
-not read. Deleted at the start of any install that will modify `node_modules`, written last,
-and not written after `--filter`, `--no-save` with changes, or a failure.
+`info <pkg>`, `whoami`, `pm cache`, `store`, `doctor` and `pm bin -g` also work outside a project
+(`Project::load_anywhere`: the configuration for `cwd`). `link` / `unlink` names (positionals
+and the package's own name) must be valid package names: they become paths under the link
+registry.
+
+**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 3): `version`,
+`fnpmVersion`, `lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs,
+xxh3]` per package.json, `pnpm-workspace.yaml` when present (a new one invalidates), the
+package.json of every directory the workspace globs select, and the `patchedDependencies`
+patch files), `configHash` (`config_hash`: linker, backend, omit, platform, registry and scope
+URLs, ignoreScripts, production, globalStore, hoist patterns, store dir, verify),
+`nodeModules` and `virtualStore` (`[dev, ino, mtimeNs]` of `node_modules` and
+`node_modules/.fnpm`, taken after `.state/` exists and background deletes finished: a deleted
+isolated entry changes `.fnpm`), `workspacePatterns` and `workspaceDirs` (the globs and the
+directories they selected, re-expanded single-threaded by `Workspace::candidate_dirs`: a new
+member directory or one that gains a package.json is a change), `linker`, `packages`. `check`
+returns `Noop` only if every field matches; a package.json whose size and mtime match is not
+read. Deleted at the start of any install that will modify `node_modules`, written last, and
+not written after `--filter`, `--no-save` with changes, or a failure.
 
 **Parsed-lockfile cache.** Besides `node_modules/.fnpm/lock.bin`, a copy keyed by project path
 lives in `<cache>/lockfile-sidecars/<xxh3>.bin` (same format and hash check), so an install
@@ -1442,26 +1464,31 @@ them.
 
 **Perf.** Measured 2026-10-25 on the Linux baseline machine against the verdaccio mirror with
 `examples/install.rs` (the core behind a minimal native `main`, mimalloc, release profile),
-interleaved with bun 1.4.4, medians:
+hyperfine means, bun 1.4.4 run in the same invocation (`*`: an earlier single-run measurement):
 
 | fixture | scenario | bun | fnpm-core |
 |---|---|---:|---:|
-| small | noop | 7.1 ms | 3.8 ms |
-| small | warm | 22.6 ms | 27.5 ms |
-| small | ci | 23.3 ms | 28.8 ms |
-| small | add | 9.2 ms | 17.1 ms |
-| small | cold-lockfile | 115.7 ms | 145.9 ms |
-| medium | noop | 11.0 ms | 3.9 ms |
-| medium | warm | 121.1 ms | 124.9 ms |
-| medium | ci | 124.9 ms | 122.6 ms |
-| medium | cold-lockfile | 1.25 s | 1.81 s |
+| small | noop | 6.8 ms | 3.5 ms |
+| small | warm | 26.6 ms | 25.7 ms |
+| small | ci | 26.1 ms | 26.4 ms |
+| small | add | 8.9 ms | 17.7 ms |
+| small | cold-lockfile | 115.7 ms* | 145.9 ms* |
+| medium | noop | 10.3 ms | 3.3 ms |
+| medium | warm | 134.6 ms | 120.8 ms |
+| medium | ci | 130.2 ms | 110.7 ms |
+| medium | add | 14.6 ms | 26.1 ms |
+| medium | cold-lockfile | 1.25 s* | 1.8 s |
+| monorepo | noop | 26.8 ms | 5.0 ms |
 
 In-process (`tests/perf.rs`, 150 packages, release): no-op 0.13 ms, `fast_path::check`
-0.006 ms. Where the remaining time goes: the binary starts in 2.8 ms vs bun's 1.5 ms; `link`
-(hard links into fresh directories by absolute path) is ~18 ms of the small warm install; a
-cold import writes every file as a BLAKE3 CAS blob plus a link, and add re-resolves through the
-engine (~4 ms) and re-parses the saved lockfile for the sidecar. The no-op target (< 7.2 ms
-small) is met without starting the runtime.
+0.006 ms. The small warm link went from ~19 ms to ~14 ms with largest-first scheduling (lodash's
+~1,000 files in one directory bound it) and `linkat` on open directory descriptors. Where the
+remaining time goes: the binary starts in 2.8 ms vs bun's 1.5 ms (fnpm-cli); `add` re-runs the
+resolver engine (~3-4 ms), verifies every installed package, and `fnpm_lockfile::save`
+re-parses the written lockfile for the sidecar (~2 ms on medium); a cold import writes every
+file as a BLAKE3 CAS blob plus a link (fnpm-store), and the largest tarball (35 MB
+`@next/swc-linux-x64-gnu`) is inflated on one thread. The no-op target is met without starting
+the runtime.
 
 ## fnpm-napi
 

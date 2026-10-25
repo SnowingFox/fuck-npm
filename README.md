@@ -120,7 +120,7 @@ disk measurement are in [bench/README.md](bench/README.md).
 - **Pipeline.** Resolution, download, extraction and linking overlap: each package is fetched as
   soon as it is resolved and linked as soon as it is in the store. Tarballs stream through
   gunzip, untar and hashing in one pass.
-- **Beyond bun.** A no-op fast path (`node_modules/.fnpm/state`: exit after a few `stat` calls
+- **Beyond bun.** A no-op fast path (`node_modules/.fnpm/.state/state`: exit after a few `stat` calls
   when nothing changed), the per-file CAS, the file index (no `readdir` while linking), HTTP/2
   multiplexing to the registry, a lockfile that holds everything an install needs (zero manifest
   fetches on a frozen install), the global virtual store on by default, and the native launcher.
