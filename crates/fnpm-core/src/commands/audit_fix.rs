@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fnpm_registry::{AuditPackage, ManifestRequest, PackageManifest};
-use fnpm_semver::{Range, Version};
+use fnpm_semver::{Range, SatisfyOptions, Version};
 use fnpm_types::{Behavior, DepEdge, LockGraph, Package, PackageId, Resolution};
 use serde_json::{Value, json};
 
@@ -32,7 +32,14 @@ struct Advisory {
 
 impl Advisory {
     fn matches(&self, v: &Version) -> bool {
-        self.range.as_ref().is_some_and(|r| r.satisfies(v))
+        self.range.as_ref().is_some_and(|r| {
+            r.satisfies_with(
+                v,
+                SatisfyOptions {
+                    include_prerelease: true,
+                },
+            )
+        })
     }
 }
 
@@ -66,7 +73,7 @@ fn advisories_of(resp: &Value, ignore: &[String]) -> Vec<Advisory> {
                 .to_owned();
             out.push(Advisory {
                 name: name.clone(),
-                range: Range::parse(&range_text).ok(),
+                range: Range::parse_including_prerelease(&range_text).ok(),
                 range_text,
                 token: ghsa.unwrap_or(id),
             });
@@ -735,7 +742,6 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     }
     let dry_run = cx.flag("dryRun");
     let latest = cx.flag("latest");
-    let exact = cx.flag("exact");
     let json_out = cx.req.json;
     if !dry_run {
         let refuse = if cx.flag("frozenLockfile") {
@@ -748,18 +754,78 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
             None
         };
         if let Some(flag) = refuse {
-            eprintln!("error: `fnpm audit fix` writes the lockfile, so it cannot run with {flag}");
-            eprintln!("note: pass --dry-run to see the fixes without applying them");
+            if cx.pm.log_level != fnpm_config::LogLevel::Silent {
+                eprintln!(
+                    "error: `fnpm audit fix` writes the lockfile, so it cannot run with {flag}"
+                );
+                eprintln!("note: pass --dry-run to see the fixes without applying them");
+            }
             return Err(Error::Reported);
         }
     }
-    let (project, _, graph) = cx.load_locked("nothing to fix")?;
+    let (project, ws, graph) = cx.load_locked("nothing to fix")?;
+    if !dry_run {
+        let config = &project.config;
+        let reason = if config.frozen_lockfile {
+            Some("--frozen-lockfile")
+        } else if config.production {
+            Some("--production")
+        } else if !config.save_package_json {
+            Some("--no-save")
+        } else if !config.lockfile.save {
+            Some("lockfile saving disabled")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            if project.config.log_level != fnpm_config::LogLevel::Silent {
+                eprintln!(
+                    "error: `fnpm audit fix` writes the lockfile, so it cannot run with {reason}"
+                );
+                eprintln!("note: pass --dry-run to see the fixes without applying them");
+            }
+            return Err(Error::Reported);
+        }
+    }
+
     let packages = audit_packages(&graph);
     let client = project.client()?;
+    // Reuse the resolver's complete declared-state check, including workspaces,
+    // catalogs, overrides and missing resolutions, before asking the audit endpoint.
+    match fnpm_resolver::Resolver::new(project.config.clone(), client.clone())
+        .resolve(
+            fnpm_resolver::ResolveInput {
+                workspace: &ws,
+                previous: Some(&graph),
+                mode: fnpm_resolver::Mode::Frozen,
+                requests: Vec::new(),
+                removals: Vec::new(),
+            },
+            None,
+            &fnpm_types::NoopSink,
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(fnpm_resolver::Error::FrozenLockfile { .. }) => {
+            return Err(Error::usage(
+                "fnpm.lock does not match package.json. Run 'fnpm install' before 'fnpm audit fix'",
+            ));
+        }
+        Err(error) => return Err(error.into()),
+    }
     let resp = client.audit(&packages).await?;
     let ignore = cx.strings("ignore");
     let advisories = advisories_of(&resp.advisories, &ignore);
-    let mut plan = plan(cx, &graph, &advisories, &client, latest, exact).await;
+    let mut plan = plan(
+        cx,
+        &graph,
+        &advisories,
+        &client,
+        latest,
+        project.config.exact || cx.flag("exact"),
+    )
+    .await;
     plan.checked = plan
         .checked
         .saturating_sub(resp.skipped)
@@ -793,7 +859,6 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
 
     // Apply: the vulnerable packages are replaced in the lockfile graph, the pins rewritten in
     // package.json, and an install resolves what the new versions depend on.
-    let registry = project.config.registry.url.clone();
     let replacements: Vec<(Fix, Package)> = plan
         .fixes
         .iter()
@@ -803,7 +868,6 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
             Some((f.clone(), package_for(&f.name, m, &f.to, &reg)?))
         })
         .collect();
-    let _ = registry;
     let edits: Vec<(String, String, String)> = plan
         .fixes
         .iter()
@@ -848,7 +912,6 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
                 .push((e.key.clone(), e.to.clone()));
             m
         });
-    crate::install::apply_package_json_updates(&project.root_dir, &pj_edits)?;
 
     // The security scanner, if any, sees the new versions before anything is linked.
     let opts = InstallOptions {
@@ -856,14 +919,18 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
             cwd: project.root_dir.clone(),
             summary: false,
             progress: false,
+            json: json_out,
             ..cx.pm.clone()
         },
         command: InstallCommand::Install,
         patch: Some(patch),
+        manifest_updates: pj_edits,
         ..InstallOptions::default()
     };
     crate::install_with_env(opts, cx.events.clone(), cx.env.clone()).await?;
-    eprintln!("Saved lockfile");
+    if project.config.log_level != fnpm_config::LogLevel::Silent {
+        eprintln!("Saved lockfile");
+    }
 
     // Audit what is installed now.
     let (_, _, after_graph) = cx.load_locked("nothing to fix")?;
@@ -960,6 +1027,27 @@ mod tests {
         assert_eq!(new_literal("1.0.2", "1.0.4", false), "1.0.4");
         assert_eq!(new_literal("^1.0.2", "1.1.0", false), "^1.1.0");
         assert_eq!(new_literal("~1.0.2", "1.0.4", false), "~1.0.4");
+    }
+
+    #[test]
+    fn advisory_ranges_include_prereleases_and_partial_lower_bounds() {
+        let version = Version::parse("1.0.0-rc.1").unwrap();
+        for range in [
+            "<1.1.0",
+            ">0 <1.1.0",
+            "1.0.x",
+            "0.x || 1.0",
+            ">=1.0 <1.1.0",
+            "^1.0 <1.1.0",
+            "1.0.0 - 1.0.9",
+        ] {
+            let items = advisories_of(&json!({"a": [{"vulnerable_versions": range}]}), &[]);
+            assert!(items[0].matches(&version), "{range}");
+            assert!(
+                !items[0].matches(&Version::parse("1.1.0").unwrap()),
+                "{range}"
+            );
+        }
     }
 
     #[test]

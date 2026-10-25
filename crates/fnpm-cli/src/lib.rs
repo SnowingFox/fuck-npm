@@ -143,7 +143,7 @@ fn run_route(
                 Outcome::Node => None,
             }
         }
-        Route::Exec { create, args } => Some(exec::run_x(args, create)),
+        Route::Exec { .. } => None,
     }
 }
 
@@ -176,6 +176,9 @@ pub fn main(bin: Bin) -> i32 {
     let route = route_args(bin, &args);
     if let Route::Version = route {
         return print_version();
+    }
+    if let Route::Exec { create, args } = route {
+        return exec::run_x(args, create);
     }
     match run_route(bin, route, Terminal::from_process, &NativeCore) {
         Some(code) => code,

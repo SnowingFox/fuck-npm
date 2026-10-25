@@ -157,35 +157,6 @@ pub(crate) fn write_migration(
 pub(crate) use edits::Edit;
 pub(crate) use plan::name_matches;
 
-/// Rewrites the specs of existing dependencies, by workspace path (`""` is the root), keeping
-/// the formatting of each package.json.
-pub(crate) fn apply_package_json_updates(
-    root: &Path,
-    updates: &std::collections::BTreeMap<String, Vec<(String, String)>>,
-) -> Result<()> {
-    for (ws, list) in updates {
-        let dir = if ws.is_empty() {
-            root.to_path_buf()
-        } else {
-            root.join(ws)
-        };
-        let file = dir.join("package.json");
-        let text = std::fs::read_to_string(&file).map_err(Error::io(&file))?;
-        let edits: Vec<Edit> = list
-            .iter()
-            .map(|(name, spec)| Edit::Update {
-                name: name.clone(),
-                spec: spec.clone(),
-            })
-            .collect();
-        let out = edits::apply_text(&text, &edits)?;
-        if out != text {
-            crate::project::write_atomic(&file, out.as_bytes())?;
-        }
-    }
-    Ok(())
-}
-
 /// Applies package.json edits to text with the format-preserving editor.
 pub(crate) fn edit_package_json_text(text: &str, edits: &[Edit]) -> Result<String> {
     edits::apply_text(text, edits)
@@ -273,7 +244,10 @@ pub(crate) fn prepare(
         && !opts.pm.lockfile_only
         && !opts.pm.trust
         && config.install_packages
+        && config.security_scanner.is_none()
         && opts.patch.is_none()
+        && opts.manifest_updates.is_empty()
+        && opts.interactive_choices.is_none()
         && let Check::Noop { packages, installs } = fast_path::check(&project.root_dir, hash)
     {
         noop = Some(InstallSummary {
@@ -350,12 +324,76 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.emit(Event::warn(w.clone(), None));
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
+    let mut deferred_edits = Edits::default();
+    for (member, updates) in &opts.manifest_updates {
+        let (manifest, path) = if member.is_empty() {
+            (&mut ws.root, root.join("package.json"))
+        } else {
+            let m = ws
+                .members
+                .iter_mut()
+                .find(|m| &m.path == member)
+                .ok_or_else(|| Error::usage(format!("workspace not found: {member}")))?;
+            (&mut m.manifest, m.dir.join("package.json"))
+        };
+        let edits: Vec<_> = updates
+            .iter()
+            .map(|(name, spec)| Edit::Update {
+                name: name.clone(),
+                spec: spec.clone(),
+            })
+            .collect();
+        let text = edits::apply_text(&manifest.raw.to_string(), &edits)?;
+        let value = serde_json::from_str(&text).map_err(|e| Error::usage(e.to_string()))?;
+        *manifest = fnpm_workspace::PackageJson::from_value(value, &path)?;
+        deferred_edits.by_workspace.insert(member.clone(), edits);
+    }
+
+    if let Some(choices) = &opts.interactive_choices {
+        for (member, edits) in crate::commands::interactive_edits(&root, &ws, choices.clone())? {
+            let (manifest, path) = if member.is_empty() {
+                (&mut ws.root, root.join("package.json"))
+            } else {
+                let m = ws
+                    .members
+                    .iter_mut()
+                    .find(|m| m.path == member)
+                    .ok_or_else(|| Error::usage(format!("workspace not found: {member}")))?;
+                (&mut m.manifest, m.dir.join("package.json"))
+            };
+            let text = edits::apply_text(&manifest.raw.to_string(), &edits)?;
+            let value = serde_json::from_str(&text).map_err(|e| Error::usage(e.to_string()))?;
+            *manifest = fnpm_workspace::PackageJson::from_value(value, &path)?;
+            deferred_edits
+                .by_workspace
+                .entry(member)
+                .or_default()
+                .extend(edits);
+        }
+    }
+
     if let (Some(patch), Some(graph)) = (&opts.patch, lock.graph.as_mut()) {
         (patch.0)(graph);
     }
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
+
+    if opts.dlx.is_some_and(|dlx| dlx.refresh) {
+        let mut names: Vec<_> = lock
+            .graph
+            .as_ref()
+            .into_iter()
+            .flat_map(|g| g.packages.iter().skip(1).map(|p| p.name.clone()))
+            .collect();
+        names.extend(planned.requests.iter().map(|r| r.name.clone()));
+        names.sort();
+        names.dedup();
+        planned.mode = Mode::Update {
+            names,
+            latest: false,
+        };
+    }
 
     // 4. + 5. Resolve, streaming packages to the fetcher.
     let client = project.client()?;
@@ -436,7 +474,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } = out;
 
     // package.json edits, mirrored into the graph so the saved lockfile matches them.
-    let edits = package_json_edits(
+    let mut edits = package_json_edits(
         &opts,
         &config,
         &ws,
@@ -444,6 +482,14 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &resolved_requests,
         &mut graph,
     );
+
+    for (workspace, updates) in deferred_edits.by_workspace {
+        edits
+            .by_workspace
+            .entry(workspace)
+            .or_default()
+            .extend(updates);
+    }
 
     let (mut added, mut updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
     for pkg in &mut added {
@@ -490,18 +536,44 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // The security scanner sees what would be installed before anything is linked.
     if config.security_scanner.is_some() {
         let loaded_fnpm_lock = lock.graph.is_some() && !lock.migrated;
-        let scan_all = resolved_requests.is_empty()
+        let mut requested_ids: Vec<PackageId> =
+            resolved_requests.iter().map(|(_, id)| *id).collect();
+        if opts.command == InstallCommand::Update && !opts.packages.is_empty() {
+            for target in &planned.updates {
+                let owner = if target.workspace.is_empty() {
+                    Some(PackageId::ROOT)
+                } else {
+                    graph.workspaces.get(&target.workspace).copied()
+                };
+                if let Some(owner) = owner {
+                    requested_ids.extend(
+                        graph.packages[owner.index()]
+                            .dependencies
+                            .iter()
+                            .filter(|edge| edge.name == target.name)
+                            .filter_map(|edge| edge.target),
+                    );
+                }
+            }
+        }
+        let scan_all = requested_ids.is_empty()
             || !loaded_fnpm_lock
             || !root.join("node_modules").is_dir()
-            || opts.command == InstallCommand::Remove;
-        let seeds: Option<Vec<PackageId>> =
-            (!scan_all).then(|| resolved_requests.iter().map(|(_, id)| *id).collect());
+            || opts.command == InstallCommand::Remove
+            || requested_ids.iter().any(|id| {
+                matches!(
+                    graph.packages[id.index()].resolution,
+                    Resolution::Symlink { .. }
+                )
+            });
+        let seeds = (!scan_all).then_some(requested_ids);
         let (config, root, graph, env) = (
             config.clone(),
             root.clone(),
             graph.clone(),
             project.env.clone(),
         );
+        let json = opts.pm.json;
         tokio::task::spawn_blocking(move || {
             crate::security::scan_for_install(&crate::security::Scan {
                 config: &config,
@@ -509,6 +581,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 graph: &graph,
                 seeds,
                 env: &env,
+                json,
             })
         })
         .await
@@ -605,7 +678,6 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     // 8. Save (before scripts, so a failing script leaves a consistent lockfile).
-    let mut edits = edits;
     if opts.pm.trust && !trust_names.is_empty() {
         edits.push(
             "",
@@ -1109,10 +1181,19 @@ async fn link(
         let linker = Linker::new(config.clone(), fetcher.store().clone())
             .with_trust(trusted)
             .with_native_dependencies(native_dependencies(config, ws));
-        let view = link_view(graph);
+        let mut view = link_view(graph);
+        // A root scanner remains available even when its devDependency group is
+        // omitted. Only the linking view changes; the saved declaration stays dev.
+        if let Some(scanner) = config.security_scanner.as_deref() {
+            for edge in &mut view.packages[0].dependencies {
+                if edge.name == scanner {
+                    edge.behavior = fnpm_types::Behavior::PROD;
+                }
+            }
+        }
         let layout = plan_layout(&linker, &view, kind, selected.clone());
         let reachable = installable(
-            graph,
+            &view,
             linker.include(),
             selected.as_deref(),
             &config.platform,

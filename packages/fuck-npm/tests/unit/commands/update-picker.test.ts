@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { colorOf, initialState, press, render, targetOf, type PickerRow } from "@/commands/update-picker.ts";
+import { colorOf, initialState, latestIsNewer, press, render, targetOf, type PickerRow } from "@/commands/update-picker.ts";
 
 const rows: PickerRow[] = [
   { name: "b", current: "1.0.0", update: "1.0.1", latest: "2.0.0", dependencyType: "devDependencies" },
@@ -61,6 +61,14 @@ describe("update -i picker", () => {
     expect(press(s, "\x1b[")).toEqual({ result: "noop", used: 0 });
     expect(press(s, "\x1b[5~").used).toBe(4);
     expect(press(s, "\x1b[<65;3;4M").used).toBe(10);
+  });
+
+  test("latest ordering follows prereleases and ignores build metadata", () => {
+    const row = rows[0] as PickerRow;
+    expect(latestIsNewer({ ...row, current: "1.0.0-rc.2", latest: "1.0.0-rc.10" })).toBe(true);
+    expect(latestIsNewer({ ...row, current: "1.0.0-rc.10", latest: "1.0.0" })).toBe(true);
+    expect(latestIsNewer({ ...row, current: "1.0.0", latest: "1.0.0-rc.10" })).toBe(false);
+    expect(latestIsNewer({ ...row, current: "1.0.0+abc", latest: "1.0.0+def" })).toBe(false);
   });
 
   test("colors follow the size of the move", () => {

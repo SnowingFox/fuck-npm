@@ -66,7 +66,8 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
   }
 
   if (ctx.output.mode === "json") {
-    ctx.output.json({ ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
+    const rawDocument = ctx.path.join(" ") === "pm diff" || ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
+    ctx.output.json(rawDocument ? result.data : { ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
     return result.exitCode;
   }
   if (logLevel !== "silent" || head === "run" || head === "exec" || head === "x") {

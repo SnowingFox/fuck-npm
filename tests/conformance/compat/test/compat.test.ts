@@ -129,6 +129,17 @@ test("Glob", () => {
   expect([...new Glob("**/node_modules/*").scanSync({ cwd: dir, onlyFiles: false })]).toEqual(["a/node_modules/x"]);
 });
 
+test.skipIf(process.platform === "win32")("Glob excludes directory symlinks from file scans without following them", () => {
+  const dir = temp({ "source/file.txt": "content" });
+  fs.symlinkSync(join(dir, "source"), join(dir, "directory-link"), "dir");
+  fs.symlinkSync(join(dir, "source/file.txt"), join(dir, "file-link"), "file");
+  const glob = new Glob("**/*");
+  expect([...glob.scanSync({ cwd: dir })].sort()).toEqual(["file-link", "source/file.txt"]);
+  expect([...glob.scanSync({ cwd: dir, onlyFiles: false })].sort()).toEqual([
+    "directory-link", "file-link", "source", "source/file.txt",
+  ]);
+});
+
 describe("bun:test modifiers", () => {
   bunTest.test.if(true)("test.if(true) runs", () => {});
   bunTest.test.skipIf(true)("test.skipIf(true) is skipped", () => {

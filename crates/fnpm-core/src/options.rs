@@ -36,6 +36,8 @@ pub struct PmOptions {
     pub cache_dir: Option<PathBuf>,
     /// `--no-cache`: ignore the manifest cache.
     pub no_cache: bool,
+    /// Keep stdout reserved for the JSON result.
+    pub json: bool,
     /// `--silent` / `--quiet` / `--verbose`.
     pub log_level: LogLevel,
     /// `false` with `--no-progress`.
@@ -103,6 +105,7 @@ impl Default for PmOptions {
             force: false,
             cache_dir: None,
             no_cache: false,
+            json: false,
             log_level: LogLevel::Default,
             progress: true,
             summary: true,
@@ -249,6 +252,12 @@ pub struct InstallOptions {
     /// packages); the lockfile is always saved. Never sent by a CLI.
     #[serde(skip)]
     pub patch: Option<GraphPatch>,
+    /// Interactive picker choices, staged until the install succeeds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interactive_choices: Option<serde_json::Value>,
+    /// Dependency pin edits used for resolution and saved only after a successful scan.
+    #[serde(skip)]
+    pub manifest_updates: std::collections::BTreeMap<String, Vec<(String, String)>>,
 }
 
 /// An edit of the previous graph, see [`InstallOptions::patch`].
@@ -277,6 +286,8 @@ impl Eq for GraphPatch {}
 /// the install replaces once everything is linked.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DlxMode {
+    /// Refresh the full dependency closure while retaining locked content integrities.
+    pub refresh: bool,
     /// Relink every package (bun passes `--force` to the `bun add` it spawns), which repairs a
     /// tree whose install was killed.
     pub relink: bool,

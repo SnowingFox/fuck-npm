@@ -459,7 +459,7 @@ it("fnpm add --analyze should scan dependencies", async () => {
   expect(await exited).toBe(0);
   expect(urls.sort()).toEqual([`${root_url}/bar`, `${root_url}/bar-0.0.2.tgz`]);
   expect(requested).toBe(2);
-  expect(await readdirSorted(join(package_dir, "node_modules"))).toEqual([".cache", "bar"]);
+  expect(await readdirSorted(join(package_dir, "node_modules"))).toEqual([".fnpm", "bar"]);
   expect(await readdirSorted(join(package_dir, "node_modules", "bar"))).toEqual(["package.json"]);
   expect(await file(join(package_dir, "node_modules", "bar", "package.json")).json()).toEqual({
     name: "bar",

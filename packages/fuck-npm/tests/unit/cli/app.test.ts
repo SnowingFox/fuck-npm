@@ -220,8 +220,8 @@ describe("update --interactive", () => {
     expect(await bed.run(["update", "-i", "--latest"])).toBe(0);
 
     expect(bed.core.requests[0]?.command).toEqual(["outdated"]);
-    expect(bed.core.requests[1]?.command).toEqual(["pm", "update-interactive-apply"]);
-    expect(bed.core.requests[1]?.options.choices).toEqual([{ name: "react", version: "19.0.0", inRange: false }]);
+    expect(bed.core.requests).toHaveLength(1);
+    expect(bed.core.installs[0]?.interactiveChoices).toEqual([{ name: "react", version: "19.0.0", inRange: false }]);
     expect(bed.core.installs[0]?.packages).toEqual(["react"]);
     expect(bed.core.installs[0]?.latest).toBe(false);
   });

@@ -17,7 +17,7 @@ import * as bunTest from "./bun-test.ts";
   for (const p of [path, path.posix]) {
     for (const name of ["join", "resolve", "relative", "dirname", "basename", "extname", "normalize", "isAbsolute"] as const) {
       const original = p[name] as (...args: unknown[]) => unknown;
-      (p as Record<string, unknown>)[name] = (...args: unknown[]) => original(...args.map(unwrap));
+      Reflect.set(p, name, (...args: unknown[]) => original(...args.map(unwrap)));
     }
   }
   syncBuiltinESMExports();

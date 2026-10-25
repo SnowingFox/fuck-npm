@@ -8,8 +8,8 @@ import { fnpmEnv, fnpmExe, isDebug, isRoot, isWindows, normalizeFnpmSnapshot, te
 import { chmodSync, existsSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Two versions of one small package, packed with `fnpm pm pack` and served from a
-// local registry, so every mode of `fnpm pm diff` runs offline.
+// Two versions of one small package, archived directly and served from a local
+// registry, so diff tests run offline without depending on pm pack support.
 const v1 = {
   "package.json": JSON.stringify({ name: "diffme", version: "1.0.0", main: "index.js", scripts: { test: "echo ok" } }),
   "index.js": "module.exports = function () {\n  return 1;\n};\n",
@@ -35,19 +35,22 @@ let registry: string;
 let root: ReturnType<typeof tempDir>;
 let tarballs: Record<string, string> = {};
 
-// Packs `dir` into `dest` (outside the folder, so folder-side diffs do not see a stray tarball).
-async function pack(dir: string, dest: string) {
-  await using p = Bun.spawn({
-    cmd: [fnpmExe(), "pm", "pack", "--quiet", "--destination", dest],
-    cwd: dir,
-    env: fnpmEnv,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [, stderr, exitCode] = await Promise.all([p.stdout.text(), p.stderr.text(), p.exited]);
-  const tgz = readdirSync(dest).find(f => f.endsWith(".tgz"));
-  if (exitCode !== 0 || !tgz) throw new Error("pack failed: " + stderr);
-  return join(dest, tgz);
+// Build fixture tarballs independently of the command under test.
+async function pack(dir: string, dest: string, publishedManifest?: string) {
+  const files: Record<string, Uint8Array> = {};
+  function collect(folder: string, prefix = "package") {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const path = join(folder, entry.name);
+      const name = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) collect(path, name);
+      else if (entry.isFile()) files[name] = readFileSync(path);
+    }
+  }
+  collect(dir);
+  if (publishedManifest !== undefined) files["package/package.json"] = Buffer.from(publishedManifest);
+  const path = join(dest, "fixture.tgz");
+  writeFileSync(path, await new Bun.Archive(files).bytes("gzip"));
+  return path;
 }
 
 beforeAll(async () => {
@@ -446,9 +449,18 @@ diffme@1.0.0 → diffme@2.0.0
       "out-root/.keep": "",
     });
     const member = join(String(dir), "packages", "a");
-    const tgz = await pack(member, join(String(dir), "out"));
+    // Build the published form explicitly, so the fixture still catches missing
+    // workspace/catalog transforms without requiring fnpm pm pack to exist.
+    const publishedA = manifest({
+      ...JSON.parse(a),
+      dependencies: { "ws-b": "^1.0.1", diffme: "^1.0.0" },
+      devDependencies: { "ws-c": "2.x", core: "npm:ws-b@~1.0.1" },
+      peerDependencies: { "ws-b": "1.0.1", diffme: "1.0.0" },
+      optionalDependencies: { "ws-d": "~3.0.0", "ws-c": "2.3.4" },
+    });
+    const tgz = await pack(member, join(String(dir), "out"), publishedA);
 
-    // The versions pack just wrote are the ones this folder shows, from inside the package and from the root.
+    // The published versions are the ones this folder must show, from inside the package and from the root.
     expect(await diff([tgz, "."], member)).toEqual({
       stdout: `${tgz} → .\nNo differences (2 files)\n`,
       stderr: "",
@@ -468,7 +480,11 @@ diffme@1.0.0 → diffme@2.0.0
     });
     // The root package itself. The filter is a base name: its own package.json and the five it packs along, which
     // are files like any other and stay as written on both sides.
-    const rootTgz = await pack(String(dir), join(String(dir), "out-root"));
+    const publishedRoot = manifest({
+      ...JSON.parse(readFileSync(join(String(dir), "package.json"), "utf8")),
+      dependencies: { diffme: "^1.0.0", "ws-b": "^1.0.1" },
+    });
+    const rootTgz = await pack(String(dir), join(String(dir), "out-root"), publishedRoot);
     expect((await diff([rootTgz, ".", "package.json"], String(dir))).stdout).toBe(
       `${rootTgz} → .\nNo differences (6 files)\n`,
     );

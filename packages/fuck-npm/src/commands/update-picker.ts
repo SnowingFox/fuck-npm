@@ -34,18 +34,34 @@ export type PickerState = {
   toggleAll: boolean;
 };
 
-type Version = { major: number; minor: number; patch: number };
+type Version = { major: number; minor: number; patch: number; prerelease: string[] };
 
 function parse(v: string): Version | undefined {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
-  return m ? { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) } : undefined;
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v.trim());
+  return m ? { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]), prerelease: m[4]?.split(".") ?? [] } : undefined;
 }
 
 function compare(a: string, b: string): number {
   const x = parse(a);
   const y = parse(b);
   if (!x || !y) return 0;
-  return x.major - y.major || x.minor - y.minor || x.patch - y.patch;
+  const core = x.major - y.major || x.minor - y.minor || x.patch - y.patch;
+  if (core) return core;
+  if (x.prerelease.length === 0 || y.prerelease.length === 0) {
+    return x.prerelease.length === y.prerelease.length ? 0 : x.prerelease.length === 0 ? 1 : -1;
+  }
+  for (let i = 0; i < Math.max(x.prerelease.length, y.prerelease.length); i++) {
+    const l = x.prerelease[i];
+    const r = y.prerelease[i];
+    if (l === r) continue;
+    if (l === undefined || r === undefined) return l === undefined ? -1 : 1;
+    const ln = /^\d+$/.test(l);
+    const rn = /^\d+$/.test(r);
+    if (ln && rn) return l.length - r.length || (l < r ? -1 : 1);
+    if (ln !== rn) return ln ? -1 : 1;
+    return l < r ? -1 : 1;
+  }
+  return 0;
 }
 
 /** A `latest` older than the installed version can't be picked: `fnpm update` doesn't downgrade. */

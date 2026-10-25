@@ -783,3 +783,145 @@ async fn dependencies_of_another_platforms_package_are_not_downloaded() {
     assert_eq!(s.installed_count, 1, "{s:?}");
     assert_eq!(downloaded(&reg), Vec::<String>::new(), "from the lockfile");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_manifest_updates_wait_for_security_scan() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("a", "1.1.0")]).await;
+    let p = Project::new(&reg, json!({"name":"app","dependencies":{"a":"1.0.0"}}));
+    p.install().await;
+    let before = p.read("package.json");
+    let lock = p.read("fnpm.lock");
+    p.write(
+        "bunfig.toml",
+        "[install.security]\nscanner = \"./scan.mjs\"\n",
+    );
+    p.write(
+        "scan.mjs",
+        "export const scanner = {version:'1',scan:()=>[{package:'a',level:'fatal'}]};\n",
+    );
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.manifest_updates
+        .insert(String::new(), vec![("a".into(), "1.1.0".into())]);
+    let error = p.run(opts.clone()).await.unwrap_err();
+    assert_eq!(error.code(), "REPORTED");
+    assert_eq!(p.read("package.json"), before);
+    assert_eq!(p.read("fnpm.lock"), lock);
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    p.write(
+        "scan.mjs",
+        "export const scanner = {version:'1',scan:()=>[]};\n",
+    );
+    p.run(opts).await.unwrap();
+    assert_eq!(p.json("package.json")["dependencies"]["a"], "1.1.0");
+    assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scanner_bootstraps_only_its_declared_dependency_closure() {
+    let mut scanner = Pkg::new("scanner", "1.0.0").dep("helper", "1.0.0");
+    scanner.files=vec![("index.js".into(),"exports.scanner={version:'1',scan:()=>{if(require('helper')!=='helper@1.0.0')throw Error('helper');return []}};".into())];
+    let reg =
+        Registry::start(&[scanner, Pkg::new("helper", "1.0.0"), Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(
+        &reg,
+        json!({"name":"app","dependencies":{"a":"1.0.0"},"devDependencies":{"scanner":"1.0.0"}}),
+    );
+    p.write("bunfig.toml", "[install.security]\nscanner = \"scanner\"\n");
+    p.install().await;
+    assert_eq!(p.installed("scanner").as_deref(), Some("1.0.0"));
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    // A configured scanner still runs when the dependency graph is unchanged.
+    p.write(
+        "fatal.mjs",
+        "export const scanner={version:'1',scan:()=>[{package:'a',level:'fatal'}]};",
+    );
+    p.write(
+        "bunfig.toml",
+        "[install.security]\nscanner = \"./fatal.mjs\"\n",
+    );
+    assert_eq!(
+        p.run(p.opts(InstallCommand::Install, &[]))
+            .await
+            .unwrap_err()
+            .code(),
+        "REPORTED"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn production_retains_dev_scanner_and_its_runtime_dependencies() {
+    let mut scanner = Pkg::new("scanner", "1.0.0").dep("helper", "1.0.0");
+    scanner.files = vec![(
+        "index.js".into(),
+        "exports.scanner={version:'1',scan:()=>{require('helper');return []}};".into(),
+    )];
+    let reg = Registry::start(&[
+        scanner,
+        Pkg::new("helper", "1.0.0"),
+        Pkg::new("a", "1.0.0"),
+        Pkg::new("unrelated", "1.0.0"),
+    ])
+    .await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "a": "1.0.0" }, "devDependencies": { "scanner": "1.0.0", "unrelated": "1.0.0" } }),
+    );
+    p.write("bunfig.toml", "[install.security]\nscanner = \"scanner\"\n");
+    let mut initial = p.opts(InstallCommand::Install, &[]);
+    initial.pm.lockfile_only = true;
+    p.run(initial).await.unwrap();
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.production = true;
+    p.run(opts).await.unwrap();
+    assert_eq!(p.installed("scanner").as_deref(), Some("1.0.0"));
+    assert_eq!(p.installed("helper").as_deref(), Some("1.0.0"));
+    assert!(!exists(&p.path("node_modules/unrelated")));
+    assert!(p.read("fnpm.lock").contains("devDependencies"));
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.production = true;
+    opts.pm.frozen_lockfile = true;
+    p.run(opts).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interactive_updates_wait_for_security_scan_including_catalogs() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("a", "2.0.0")]).await;
+    for catalog in [false, true] {
+        let manifest = if catalog {
+            json!({"name":"app","workspaces":{"packages":[],"catalog":{"a":"1.0.0"}},"dependencies":{"a":"catalog:"}})
+        } else {
+            json!({"name":"app","dependencies":{"a":"1.0.0"}})
+        };
+        let p = Project::new(&reg, manifest);
+        p.install().await;
+        let before = p.read("package.json");
+        let lock = p.read("fnpm.lock");
+        p.write(
+            "bunfig.toml",
+            "[install.security]\nscanner = \"./scan.mjs\"\n",
+        );
+        p.write(
+            "scan.mjs",
+            "export const scanner={version:'1',scan:()=>[{package:'a',level:'fatal'}]};",
+        );
+        let mut opts = p.opts(InstallCommand::Update, &["a"]);
+        let mut choice = json!({"name":"a","version":"2.0.0","inRange":false});
+        if catalog {
+            choice["catalog"] = json!("");
+        }
+        opts.interactive_choices = Some(json!([choice]));
+        assert_eq!(p.run(opts.clone()).await.unwrap_err().code(), "REPORTED");
+        assert_eq!(p.read("package.json"), before);
+        assert_eq!(p.read("fnpm.lock"), lock);
+        assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+        p.write(
+            "scan.mjs",
+            "export const scanner={version:'1',scan:()=>[]};",
+        );
+        p.run(opts).await.unwrap();
+        assert_eq!(p.installed("a").as_deref(), Some("2.0.0"));
+        let mut frozen = p.opts(InstallCommand::Install, &[]);
+        frozen.pm.frozen_lockfile = true;
+        p.run(frozen).await.expect("saved manifests match lockfile");
+    }
+}

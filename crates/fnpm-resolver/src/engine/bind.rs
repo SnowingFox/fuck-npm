@@ -1475,7 +1475,20 @@ impl Engine<'_> {
                                 committish.reference.as_deref().unwrap_or(""),
                             )
                             .await?;
-                        let sha = checked_commit(sha, &format!("github:{owner}/{repo}"))?;
+                        let prefix = format!("{owner}-{repo}-");
+                        let archive_tag = fnpm_registry::git::is_safe_resolved_tag(&sha)
+                            && sha
+                                .get(..prefix.len())
+                                .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+                            && sha.get(prefix.len()..).is_some_and(|c| {
+                                (7..=40).contains(&c.len())
+                                    && c.bytes().all(|b| b.is_ascii_hexdigit())
+                            });
+                        let sha = if archive_tag {
+                            sha
+                        } else {
+                            checked_commit(sha, &format!("github:{owner}/{repo}"))?
+                        };
                         (
                             Resolution::Github {
                                 owner,

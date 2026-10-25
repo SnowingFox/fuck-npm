@@ -9,6 +9,7 @@
 //! pre-rendered human output (plain ASCII tables unless the request sets `options.color`).
 
 mod audit_fix;
+mod diff;
 mod files;
 mod info;
 mod inspect;
@@ -19,6 +20,7 @@ mod scan;
 mod scripts;
 mod table;
 mod update_interactive;
+pub(crate) use update_interactive::edits as interactive_edits;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -269,12 +271,14 @@ pub async fn dispatch(
         ["lock", "dedupe"] => maintenance::dedupe(&cx, true).await,
         ["lock", "audit"] => info::audit(&cx, true).await,
         // Later parity phases (docs/ROADMAP.md P4): a typed error, never a panic.
-        ["patch"] | ["patch-commit"] | ["pack"] | ["publish"] | ["pm", "pack" | "diff"] => {
+        ["patch"] | ["patch-commit"] | ["pack"] | ["publish"] | ["pm", "pack"] => {
             Err(not_implemented(&path))
         }
-        ["pm", "scan"] => scan::scan(&cx),
+        ["pm", "diff"] => diff::run(&cx).await,
+        ["pm", "scan"] => tokio::task::spawn_blocking(move || scan::scan(&cx))
+            .await
+            .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))?,
         // Internal: the package.json edits of `fnpm update -i` (the TS CLI draws the picker).
-        ["pm", "update-interactive-apply"] => update_interactive::apply(&cx),
         ["x" | "dlx"] => x_command(&cx, false).await,
         ["create"] => x_command(&cx, true).await,
         _ => Err(Error::UnknownCommand(command)),

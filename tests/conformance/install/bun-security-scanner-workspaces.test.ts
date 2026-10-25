@@ -93,7 +93,7 @@ describe.concurrent("security scanner workspaces", () => {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
-      env: fnpmEnv,
+      env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
     });
 
     const [stdoutText, stderrText] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
@@ -172,7 +172,7 @@ describe.concurrent("security scanner workspaces", () => {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
-      env: fnpmEnv,
+      env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
     });
 
     const [stdoutText, stderrText] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
@@ -249,7 +249,7 @@ describe.concurrent("security scanner workspaces", () => {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
-      env: fnpmEnv,
+      env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
     });
 
     const [stdoutText, stderrText] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
@@ -315,7 +315,7 @@ describe.concurrent("security scanner workspaces", () => {
           cwd: dir,
           stdout: "pipe",
           stderr: "pipe",
-          env: fnpmEnv,
+          env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
         });
 
         const [stdoutText, stderrText, exitCode] = await Promise.all([
@@ -341,7 +341,7 @@ describe.concurrent("security scanner workspaces", () => {
           cwd: dir,
           stdout: "pipe",
           stderr: "pipe",
-          env: fnpmEnv,
+          env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
         });
 
         const [stdoutText, stderrText, exitCode] = await Promise.all([
@@ -396,7 +396,7 @@ describe.concurrent("security scanner workspaces", () => {
             cwd: dir,
             stdout: "pipe",
             stderr: "pipe",
-            env: fnpmEnv,
+            env: { ...fnpmEnv, FNPM_REGISTRY: registryUrl },
           });
           const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
           return { output: stdout + stderr, exitCode };

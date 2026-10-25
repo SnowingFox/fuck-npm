@@ -498,7 +498,13 @@ async fn audit_store_cache_doctor_and_not_implemented() {
     p.install().await;
     let r = p.invoke(&["audit"], &[], json!({})).await.unwrap();
     assert_eq!(r.exit_code, 0);
-    assert_eq!(r.lines.unwrap().last().unwrap(), "No vulnerabilities found");
+    let lines = r.lines.unwrap();
+    let summary = lines.last().unwrap();
+    assert!(
+        summary.starts_with("No vulnerabilities found (checked 1 package) ["),
+        "{summary}"
+    );
+    assert!(summary.ends_with("ms]"), "{summary}");
     reg.set_advisories(json!({ "b": [{ "id": 1, "title": "Bad b", "severity": "high", "vulnerable_versions": "<2.0.0", "url": "https://github.com/advisories/GHSA-x" }] }));
     let r = p.invoke(&["audit"], &[], json!({})).await.unwrap();
     assert_eq!(r.exit_code, 1);
@@ -735,4 +741,131 @@ async fn link_rejects_names_that_leave_the_registry() {
         .await
         .unwrap_err();
     assert_eq!(err.code(), "USAGE");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn diff_registry_versions_filters_and_installed_side() {
+    let reg = Registry::start(&[Pkg::new("tool", "1.0.0"), Pkg::new("tool", "2.0.0")]).await;
+    let p = Project::new(&reg, json!({"name":"app","dependencies":{"tool":"1.0.0"}}));
+    p.install().await;
+    let result = p
+        .invoke(&["pm", "diff"], &["tool"], json!({}))
+        .await
+        .unwrap();
+    let data = result.data.unwrap();
+    assert_eq!(data["from"], "tool@1.0.0");
+    assert_eq!(data["to"], "tool@2.0.0");
+    assert_eq!(data["totals"]["files"], 2);
+    assert!(
+        result
+            .lines
+            .unwrap()
+            .join("\n")
+            .contains("+module.exports = \"tool@2.0.0\";")
+    );
+    let result = p
+        .invoke(
+            &["pm", "diff"],
+            &["tool@1.0.0:index.js", "2.0.0"],
+            json!({"nameOnly":true}),
+        )
+        .await
+        .unwrap();
+    let files = result.data.unwrap()["files"].as_array().unwrap().clone();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["path"], "index.js");
+    assert!(files[0].get("patch").is_none());
+    assert!(
+        p.invoke(&["pm", "diff"], &["tool@1.0.0:nope", "2.0.0"], json!({}))
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("no file in either side matches nope")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn diff_local_trees_never_runs_scripts_and_reports_binary_hashes() {
+    let reg = Registry::start(&[]).await;
+    let p = Project::new(&reg, json!({"name":"app"}));
+    p.write("a/package.json", r#"{"name":"p","version":"1.0.0"}"#);
+    p.write(
+        "b/package.json",
+        r#"{"name":"p","version":"2.0.0","scripts":{"postinstall":"exit 99"}}"#,
+    );
+    p.write("a/index.js", "module.exports = 1;\n");
+    p.write(
+        "b/index.js",
+        "const cp = require('child_process');\nmodule.exports = 2;\n",
+    );
+    std::fs::write(p.path("b/data.bin"), [0, 255, 128]).unwrap();
+    let result = p
+        .invoke(&["pm", "diff"], &["./a", "./b"], json!({}))
+        .await
+        .unwrap();
+    let data = result.data.unwrap();
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(data["from"], "./a");
+    let binary = data["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["path"] == "data.bin")
+        .unwrap();
+    assert_eq!(binary["binary"], true);
+    assert_eq!(binary["sha256After"].as_str().unwrap().len(), 64);
+    assert!(
+        data["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n == "postinstall script added: exit 99")
+    );
+    assert!(
+        data["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n == "now imports child_process (index.js)")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn audit_fix_rejects_manifest_changes_before_auditing_or_writing() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("a", "1.1.0")]).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "a": "1.0.0" } }),
+    );
+    p.install().await;
+    let lock = p.read("fnpm.lock");
+    let result = p
+        .invoke(&["audit"], &["fix"], json!({ "dryRun": true }))
+        .await
+        .unwrap();
+    assert_eq!(result.exit_code, 0);
+    p.write(
+        "package.json",
+        &json!({ "name": "app", "dependencies": { "a": "1.1.0" } }).to_string(),
+    );
+    let manifest = p.read("package.json");
+    let requests = reg.seen().len();
+    for dry_run in [false, true] {
+        let error = p
+            .invoke(&["audit"], &["fix"], json!({ "dryRun": dry_run }))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("does not match package.json"),
+            "{error}"
+        );
+        assert_eq!(
+            reg.seen().len(),
+            requests,
+            "must refuse before a registry request"
+        );
+        assert_eq!(p.read("fnpm.lock"), lock);
+        assert_eq!(p.read("package.json"), manifest);
+        assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    }
 }

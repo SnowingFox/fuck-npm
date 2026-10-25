@@ -1,15 +1,12 @@
-// The security scanner's process (bun `install/PackageManager/scanner-entry.ts`), run with
-// `node --input-type=module -e`. The core substitutes the placeholders: the scanner module, whether
-// to hide the scanner's own errors, and the files it reads the packages from and writes the
-// answer to (bun uses fds 3 and 4; files work the same on every platform).
+// Node entry for the security scanner. Packages arrive on fd 4; the result goes to fd 3.
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const scannerModuleName = __SCANNER_MODULE__;
 const suppressError = __SUPPRESS_ERROR__;
-const inputPath = __INPUT_PATH__;
-const outputPath = __OUTPUT_PATH__;
+const inputPath = process.platform === "win32" ? process.env.FNPM_SCANNER_INPUT : 4;
+const outputPath = process.platform === "win32" ? process.env.FNPM_SCANNER_OUTPUT : 3;
 
 // Scanners written for bun may call these.
 if (typeof globalThis.Bun === "undefined") {

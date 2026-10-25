@@ -5,6 +5,7 @@
 //! Production uses [`RegistrySource`] (backed by `fnpm-registry` and `fnpm-store`); tests plug in
 //! in-memory fakes so the resolver is exercised without a network.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -73,7 +74,7 @@ pub trait PackageFetcher: Send + Sync {
         committish: &Committish,
     ) -> BoxFuture<fnpm_registry::Result<String>>;
 
-    /// GitHub `owner/repo#committish` to a commit SHA.
+    /// GitHub `owner/repo#committish` to a commit SHA or validated archive root tag.
     fn resolve_github(
         &self,
         owner: &str,
@@ -89,6 +90,8 @@ pub trait PackageFetcher: Send + Sync {
     fn read_package_json(&self, dir: &Path) -> fnpm_registry::Result<Option<PackageJson>>;
 }
 
+type GithubDownloads = HashMap<(String, String, String), FetchedPackage>;
+
 /// The production sources: manifests from [`RegistryClient`], git through `fnpm_registry::git`,
 /// tarballs downloaded and imported into the store so the fetch phase does not download them
 /// again.
@@ -97,6 +100,7 @@ pub struct RegistrySource {
     client: RegistryClient,
     config: Arc<Config>,
     store: Arc<Mutex<Option<fnpm_store::Store>>>,
+    github: Arc<Mutex<GithubDownloads>>,
 }
 
 impl RegistrySource {
@@ -106,6 +110,7 @@ impl RegistrySource {
             client,
             config,
             store: Arc::new(Mutex::new(None)),
+            github: Arc::default(),
         }
     }
 
@@ -193,9 +198,27 @@ impl PackageFetcher for RegistrySource {
         repo: &str,
         committish: &str,
     ) -> BoxFuture<fnpm_registry::Result<String>> {
-        let client = self.client.clone();
+        let this = self.clone();
         let (owner, repo, committish) = (owner.to_owned(), repo.to_owned(), committish.to_owned());
-        Box::pin(async move { client.resolve_github(&owner, &repo, &committish).await })
+        Box::pin(async move {
+            let url = this.client.github_tarball_url(&owner, &repo, &committish);
+            let bytes = this.client.tarball_bytes(&url).await?;
+            tokio::task::spawn_blocking(move || {
+                let tag = crate::tarball::github_tag_from_tgz(&bytes, &owner, &repo).map_err(
+                    |message| fnpm_registry::Error::InvalidManifest {
+                        name: url.clone(),
+                        message,
+                    },
+                )?;
+                let package = this.finish_tarball(&url, &bytes)?;
+                this.github
+                    .lock()
+                    .insert((owner, repo, tag.clone()), package);
+                Ok(tag)
+            })
+            .await
+            .map_err(|e| io_error(e.to_string()))?
+        })
     }
 
     fn fetch(&self, request: FetchRequest) -> BoxFuture<fnpm_registry::Result<FetchedPackage>> {
@@ -211,6 +234,10 @@ impl PackageFetcher for RegistrySource {
                     resolved_commit,
                     ..
                 } => {
+                    let key = (owner.clone(), repo.clone(), resolved_commit.clone());
+                    if let Some(package) = this.github.lock().get(&key).cloned() {
+                        return Ok(package);
+                    }
                     let url = this.client.github_tarball_url(owner, repo, resolved_commit);
                     this.client.tarball_bytes(&url).await?.to_vec()
                 }

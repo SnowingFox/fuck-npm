@@ -640,7 +640,7 @@ mod tests {
                     let mut req = [0u8; 1024];
                     let _ = sock.read(&mut req).await;
                     let _ = sock
-                        .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n")
+                        .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n")
                         .await;
                     for _ in 0..4 {
                         let _ = sock.write_all(b"400\r\n").await;

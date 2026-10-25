@@ -438,10 +438,8 @@ fn flag_value(argv: &[String], i: &mut usize, name: &str) -> Option<Result<Strin
     let value = if rest.is_empty() {
         *i += 1;
         argv.get(*i).cloned().unwrap_or_default()
-    } else if let Some(value) = rest.strip_prefix('=') {
-        value.to_owned()
     } else {
-        return None;
+        rest.strip_prefix('=')?.to_owned()
     };
     if value.is_empty() {
         return Some(Err(format!("{name} requires a value")));
@@ -459,6 +457,14 @@ fn error(message: impl Into<String>) -> Parsed {
 /// Parses the arguments after `x` (global flags typed before `x` included). `cwd` is where
 /// `--cwd` starts from.
 pub fn parse(argv: &[String], cwd: &Path) -> Parsed {
+    parse_mode(argv, cwd, false)
+}
+
+pub(super) fn parse_create(argv: &[String], cwd: &Path) -> Parsed {
+    parse_mode(argv, cwd, true)
+}
+
+fn parse_mode(argv: &[String], cwd: &Path, create: bool) -> Parsed {
     let mut opts = XArgs {
         cwd: cwd.to_path_buf(),
         ..XArgs::default()
@@ -490,6 +496,7 @@ pub fn parse(argv: &[String], cwd: &Path) -> Parsed {
             };
         }
         match arg {
+            "--force" | "--no-git" | "--no-package-json" if create => {}
             "--version" | "-v" => has_version = true,
             "--revision" => has_revision = true,
             "--verbose" => opts.verbose = true,
@@ -574,7 +581,7 @@ pub fn parse(argv: &[String], cwd: &Path) -> Parsed {
     }
     opts.ca_store = ca_stores.first().copied();
 
-    let package = package.filter(|p| !p.is_empty());
+    let package = package.filter(|p| !p.is_empty() || (create && !opts.passthrough.is_empty()));
     if let Some(specified) = opts.specified_package.clone() {
         let Some(bin) = package else {
             return Parsed::Error {

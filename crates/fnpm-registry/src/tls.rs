@@ -260,6 +260,9 @@ pub(crate) fn trust(
     if !config.ca.is_empty() {
         for pem in &config.ca {
             let certs = pem_certs(pem.as_bytes(), "")?;
+            if certs.is_empty() {
+                return Err(tls_error("the CA is invalid: no certificates found".into()));
+            }
             add_all(&mut roots, certs, true, "provided CA")?;
         }
         return Ok(Trust::Rustls(Box::new(rustls_config(roots, identity)?)));
@@ -390,6 +393,21 @@ mod tests {
                 .to_string()
                 .contains("invalid")
         );
+        for ca in [
+            "invalid",
+            "",
+            "-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----",
+        ] {
+            let inline = TlsConfig {
+                reject_unauthorized: true,
+                ca: vec![ca.into()],
+                ..TlsConfig::default()
+            };
+            assert!(
+                trust(&inline, &Env::default(), None).is_err(),
+                "accepted {ca:?}"
+            );
+        }
         let env = Env::from_pairs([(
             "NODE_EXTRA_CA_CERTS",
             tmp.path().join("x.pem").to_string_lossy().into_owned(),

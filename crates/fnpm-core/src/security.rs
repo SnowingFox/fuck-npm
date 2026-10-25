@@ -11,7 +11,9 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(unix))]
+use std::path::PathBuf;
 use std::time::Instant;
 
 use fnpm_config::{Config, LogLevel};
@@ -190,11 +192,14 @@ fn payload(
                 ..
             } => {
                 let commit = if resolved_commit.is_empty() {
-                    committish
+                    committish.as_str()
                 } else {
+                    let prefix = format!("{owner}-{repo}-");
                     resolved_commit
+                        .strip_prefix(&prefix)
+                        .unwrap_or(resolved_commit)
                 };
-                let version = without_credentials(&p.resolution.to_string());
+                let version = without_credentials(&format!("github:{owner}/{repo}#{commit}"));
                 let api = github_api.trim_end_matches('/');
                 (
                     version,
@@ -285,8 +290,11 @@ struct Run<'a> {
     graph: &'a LockGraph,
     collected: Vec<Collected>,
     github_api: String,
+    env: &'a fnpm_config::Env,
+    json: bool,
 }
 
+#[cfg(not(unix))]
 fn temp_file(tag: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
@@ -300,26 +308,86 @@ fn temp_file(tag: &str) -> PathBuf {
     ))
 }
 
-fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options.open(path)?.write_all(data)
-}
-
-/// Removes the temp files when the scan ends.
+#[cfg(not(unix))]
 struct Cleanup(Vec<PathBuf>);
 
+#[cfg(not(unix))]
 impl Drop for Cleanup {
     fn drop(&mut self) {
         for p in &self.0 {
             let _ = std::fs::remove_file(p);
         }
     }
+}
+
+#[cfg(unix)]
+fn exchange(
+    cmd: &mut std::process::Command,
+    json: &[u8],
+) -> std::io::Result<(std::process::ExitStatus, Vec<u8>)> {
+    use std::net::Shutdown;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::net::UnixStream;
+    use std::os::unix::process::CommandExt;
+
+    let (mut input, child_input) = UnixStream::pair()?;
+    let (mut output, child_output) = UnixStream::pair()?;
+    let source_in = rustix::io::fcntl_dupfd_cloexec(&child_input, 5)?;
+    let source_out = rustix::io::fcntl_dupfd_cloexec(&child_output, 5)?;
+    let input_fd = source_in.as_raw_fd();
+    let output_fd = source_out.as_raw_fd();
+    // Sources above 4 prevent one dup2 from overwriting the other's source.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::dup2(input_fd, 4) == -1 || libc::dup2(output_fd, 3) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn()?;
+    drop(source_in);
+    drop(source_out);
+    drop(child_input);
+    drop(child_output);
+    let write_result = input.write_all(json);
+    let _ = input.shutdown(Shutdown::Write);
+    let mut data = Vec::new();
+    let read_result = output.read_to_end(&mut data);
+    let status = child.wait()?;
+    read_result?;
+    if data.is_empty()
+        && let Err(error) = write_result
+        && error.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        return Err(error);
+    }
+    Ok((status, data))
+}
+
+#[cfg(not(unix))]
+fn exchange(
+    cmd: &mut std::process::Command,
+    json: &[u8],
+) -> std::io::Result<(std::process::ExitStatus, Vec<u8>)> {
+    let input = temp_file("in");
+    let output = temp_file("out");
+    let mut paths = Cleanup(Vec::new());
+    for path in [&input, &output] {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        paths.0.push(path.clone());
+        if path == &input {
+            file.write_all(json)?;
+        }
+    }
+    cmd.env("FNPM_SCANNER_INPUT", &input)
+        .env("FNPM_SCANNER_OUTPUT", &output);
+    let status = cmd.status()?;
+    let data = std::fs::read(&output)?;
+    Ok((status, data))
 }
 
 impl Run<'_> {
@@ -334,29 +402,16 @@ impl Run<'_> {
         }
         let start = Instant::now();
         let json = payload(self.graph, &self.collected, self.config, &self.github_api);
-        let input = temp_file("in");
-        let output = temp_file("out");
-        let _cleanup = Cleanup(vec![input.clone(), output.clone()]);
-        write_private(&input, json.as_bytes()).map_err(Error::io(&input))?;
-        // Placeholders are substituted in this order, the scanner name last, so a placeholder
-        // inside the name is never replaced.
         let code = ENTRY
             .replacen(
                 "__SUPPRESS_ERROR__",
                 if verbose { "false" } else { "true" },
                 1,
             )
-            .replacen("__INPUT_PATH__", &json_string(&input.to_string_lossy()), 1)
-            .replacen(
-                "__OUTPUT_PATH__",
-                &json_string(&output.to_string_lossy()),
-                1,
-            )
             .replacen("__SCANNER_MODULE__", &json_string(self.scanner), 1);
-        let node = std::env::var_os("FNPM_NODE")
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| "node".into());
+        let node = self.env.get_not_empty("FNPM_NODE").unwrap_or("node");
         let mut cmd = std::process::Command::new(node);
+        cmd.env_clear().envs(self.env.iter());
         match self.config.network.tls.ca_store.as_deref() {
             Some("system") => {
                 cmd.arg("--use-system-ca");
@@ -371,16 +426,15 @@ impl Run<'_> {
         }
         cmd.args(["--no-warnings", "--input-type=module", "-e", &code])
             .current_dir(self.root);
-        let status = cmd.status().map_err(|e| {
+        if self.json {
+            cmd.stdout(std::process::Stdio::from(std::io::stderr()));
+        }
+        let (status, data) = exchange(&mut cmd, json.as_bytes()).map_err(|e| {
             err(&format!(
                 "failed to start the security scanner with node: {e}"
             ));
             failed("SpawnFailed")
         })?;
-        let mut data = Vec::new();
-        if let Ok(mut f) = std::fs::File::open(&output) {
-            let _ = f.read_to_end(&mut data);
-        }
         if data.is_empty() {
             #[cfg(unix)]
             {
@@ -640,6 +694,158 @@ pub(crate) struct Scan<'a> {
     pub seeds: Option<Vec<PackageId>>,
     /// The environment (for `GITHUB_API_URL`).
     pub env: &'a fnpm_config::Env,
+    /// Reserve stdout for a structured command result.
+    pub json: bool,
+}
+
+fn bootstrap(s: &Scan<'_>, name: &str) -> Result<()> {
+    if !is_package_path(name)
+        || !fnpm_types::name::is_npm_package_name(name)
+        || s.root.join("node_modules").join(name).exists()
+    {
+        return Ok(());
+    }
+    let Some(edge) = s.graph.packages[0]
+        .dependencies
+        .iter()
+        .find(|e| e.name == name)
+    else {
+        return Ok(());
+    };
+    let Some(id) = edge.target else { return Ok(()) };
+    if s.config.log_level != LogLevel::Silent {
+        let line = "Attempting to install security scanner from npm...";
+        if s.json {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
+    }
+    let mut graph = s.graph.clone();
+    graph.workspaces.clear();
+    graph.packages[0].dependencies = vec![edge.clone()];
+    graph.packages[0].dependencies[0].behavior = fnpm_types::Behavior::PROD;
+    let mut selected = HashSet::new();
+    let mut queue = VecDeque::from([id]);
+    while let Some(id) = queue.pop_front() {
+        if !selected.insert(id) {
+            continue;
+        }
+        queue.extend(
+            graph.packages[id.index()]
+                .dependencies
+                .iter()
+                .filter_map(|e| e.target),
+        );
+    }
+    for p in &mut graph.packages {
+        if matches!(p.resolution, Resolution::Workspace { .. }) {
+            p.dependencies.clear();
+        }
+    }
+    let identity = selected
+        .iter()
+        .map(|id| {
+            let p = &graph.packages[id.index()];
+            format!("{}:{}:{:?}", id.0, p.key(), p.resolution)
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let cache = s.config.cache_dir.join("security-scanners").join(format!(
+        "{:016x}",
+        xxhash_rust::xxh3::xxh3_64(identity.as_bytes())
+    ));
+    std::fs::create_dir_all(&cache).map_err(Error::io(&cache))?;
+    let lock_path = cache.join("install.lock");
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(Error::io(&lock_path))?;
+    lock.lock().map_err(Error::io(&lock_path))?;
+    let mut config = s.config.clone();
+    config.production = false;
+    config.omit = fnpm_config::Omit::default();
+    config.ignore_scripts = true;
+    let config = std::sync::Arc::new(config);
+    let store = fnpm_store::Store::open(&config.store_dir)?;
+    let sink: std::sync::Arc<dyn fnpm_types::EventSink> = std::sync::Arc::new(fnpm_types::NoopSink);
+    crate::runtime().block_on(async {
+        let client = fnpm_registry::RegistryClient::with_env(config.clone(), s.env.clone())?;
+        let fetcher = crate::fetch::Fetcher::new(
+            store.clone(),
+            client,
+            s.root.to_owned(),
+            config.cache_dir.clone(),
+            config.verify_integrity,
+            sink.clone(),
+        );
+        for id in &selected {
+            let p = &graph.packages[id.index()];
+            if !crate::fetch::needs_content(&p.resolution) {
+                continue;
+            }
+            fetcher
+                .ensure_package(p)
+                .wait()
+                .await
+                .map_err(|e| Error::Fetch {
+                    package: p.key(),
+                    message: e.message,
+                    code: e.code,
+                })?;
+        }
+        let linker = fnpm_linker::Linker::new(config.clone(), store);
+        let layout = linker.plan(&graph, fnpm_types::NodeLinker::Hoisted);
+        let source = fetcher.source(&graph);
+        linker.link(
+            &cache,
+            &graph,
+            &layout,
+            &source,
+            &fnpm_linker::LinkOptions {
+                threads: 2,
+                global_store: false,
+                ..Default::default()
+            },
+            &*sink,
+        )?;
+        Ok::<_, Error>(())
+    })?;
+    let dest = s.root.join("node_modules").join(name);
+    let parent = dest
+        .parent()
+        .ok_or_else(|| Error::usage("invalid scanner package name"))?;
+    let mut path = s.root.to_owned();
+    for part in Path::new("node_modules")
+        .join(name)
+        .parent()
+        .unwrap_or(Path::new("node_modules"))
+        .components()
+    {
+        path.push(part);
+        if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_symlink()) {
+            return Err(Error::usage(
+                "scanner installation path contains a symbolic link",
+            ));
+        }
+    }
+    std::fs::create_dir_all(parent).map_err(Error::io(parent))?;
+    fnpm_linker::fsutil::replace_symlink_atomic(&cache.join("node_modules").join(name), &dest)
+        .map_err(Error::io(&dest))?;
+    if s.config.log_level != LogLevel::Silent {
+        let line = "Security scanner installed successfully.";
+        if s.json {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
+    }
+    Ok(())
 }
 
 /// Runs the configured scanner. Errors were printed (bun's lines); the error is the last one.
@@ -658,8 +864,11 @@ pub(crate) fn scan(s: &Scan<'_>) -> Result<ScanResults> {
             return Err(Error::Reported);
         }
     }
+    bootstrap(s, scanner)?;
     let run = Run {
         config: s.config,
+        env: s.env,
+        json: s.json,
         scanner,
         root: s.root,
         graph: s.graph,
@@ -756,8 +965,12 @@ pub(crate) fn format_advisories(graph: &LockGraph, results: &ScanResults, color:
 }
 
 /// bun `prompt_for_warnings`: `[y/N]` on a terminal; without one the install is cancelled.
-pub(crate) fn prompt_for_warnings() -> bool {
-    let mut stdout = std::io::stdout();
+pub(crate) fn prompt_for_warnings(json: bool) -> bool {
+    let mut stdout: Box<dyn Write> = if json {
+        Box::new(std::io::stderr())
+    } else {
+        Box::new(std::io::stdout())
+    };
     let tty = std::io::stdin().is_terminal()
         || std::env::var_os("FNPM_INTERNAL_SECURITY_PROMPT_ASSUME_TTY").is_some();
     if !tty {
@@ -790,7 +1003,11 @@ pub(crate) fn scan_for_install(s: &Scan<'_>) -> Result<()> {
         return Ok(());
     }
     let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-    let mut stdout = std::io::stdout();
+    let mut stdout: Box<dyn Write> = if s.json {
+        Box::new(std::io::stderr())
+    } else {
+        Box::new(std::io::stdout())
+    };
     let _ = stdout.write_all(format_advisories(s.graph, &results, color).as_bytes());
     if results.fatal > 0 {
         let line = "Installation aborted due to fatal security advisories";
@@ -803,7 +1020,7 @@ pub(crate) fn scan_for_install(s: &Scan<'_>) -> Result<()> {
         return Err(Error::Reported);
     }
     let _ = stdout.flush();
-    if results.warn > 0 && !prompt_for_warnings() {
+    if results.warn > 0 && !prompt_for_warnings(s.json) {
         return Err(Error::Reported);
     }
     Ok(())
@@ -812,6 +1029,27 @@ pub(crate) fn scan_for_install(s: &Scan<'_>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_ipc_keeps_stdio_separate_and_drains_large_messages() {
+        let mut cmd = std::process::Command::new("node");
+        cmd.args([
+            "--input-type=module",
+            "-e",
+            r#"
+            import fs from 'node:fs';
+            const input = fs.readFileSync(4, 'utf8');
+            fs.writeSync(1, 'scanner stdout');
+            fs.writeFileSync(3, input);
+        "#,
+        ]);
+        cmd.stdout(std::process::Stdio::null());
+        let input = vec![b'x'; 1024 * 1024];
+        let (status, output) = exchange(&mut cmd, &input).unwrap();
+        assert!(status.success());
+        assert_eq!(output, input);
+    }
 
     #[test]
     fn credentials_are_stripped() {

@@ -33,6 +33,8 @@ export type PmOptions = {
   force: boolean;
   cacheDir?: string;
   noCache: boolean;
+  /** Reserve stdout for the JSON result, including scanner subprocesses. */
+  json?: boolean;
   logLevel: LogLevel;
   progress: boolean;
   summary: boolean;
@@ -81,6 +83,8 @@ export type InstallOptions = PmOptions & {
   recursive: boolean;
   updateGroups: { dev: boolean; prod: boolean; noOptional: boolean };
   depth?: 0;
+  /** Picker choices, committed with the successful install. */
+  interactiveChoices?: { name: string; version: string; inRange: boolean; workspace?: string; catalog?: string }[];
 };
 
 export type PackageRef = { name: string; version: string };

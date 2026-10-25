@@ -64,7 +64,9 @@ pub fn bin_of(package_json: &Path, preferred: &str) -> Result<PackageBin, BinErr
                 return Ok(first);
             }
         }
-        Some(Value::String(target)) => {
+        Some(Value::String(target))
+            if !target.is_empty() && !fnpm_linker::bins::bin_target_escapes_package_dir(target) =>
+        {
             // The command of a scoped `@scope/pkg` is its unscoped part.
             if let Some(name) = json
                 .get("name")
@@ -340,6 +342,13 @@ mod tests {
         assert_eq!(bin_of(&pj, "other").unwrap().file, "o.js");
         write(&pj, r#"{"name":"@corp/tool","bin":"cli.js"}"#);
         assert_eq!(bin_of(&pj, "x").unwrap().name, "tool");
+        for target in ["", "../outside", "/outside", "..\\outside", "C:\\outside"] {
+            write(
+                &pj,
+                &serde_json::json!({ "name": "tool", "bin": target }).to_string(),
+            );
+            assert_eq!(bin_of(&pj, "tool"), Err(BinError::NoBin), "{target:?}");
+        }
         write(&pj, r#"{"name":"none"}"#);
         assert_eq!(bin_of(&pj, "x"), Err(BinError::NoBin));
         write(&pj, r#"{"name":"d","directories":{"bin":"bin"}}"#);

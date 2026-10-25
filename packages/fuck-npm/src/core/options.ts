@@ -212,6 +212,7 @@ export function pmOptions(values: Values, startCwd: string, saveDefault = true):
       .map((entry) => entry.trim())
       .filter((entry) => entry !== "");
   }
+  if (read.bool(values, "json")) options.json = true;
   const caStore = caStoreOf(values);
   if (caStore !== undefined) options.caStore = caStore;
   return options;

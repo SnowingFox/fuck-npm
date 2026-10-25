@@ -234,7 +234,7 @@ Conventions:
 - [ ] **pm diff output modes** — `--raw`/`--unformatted`, `--minify`, `--unminify`, `-w`, `--stat`, `--name-only`, `-U <n>`, `--json` · bun: `src/runtime/cli/pm_diff_command.rs` · owner: `fnpm-core`
 - [ ] **pm diff normalization** — JS/JSON/CSS canonical re-print, formatting-only detection, git-applyable patch when piped · bun: `src/runtime/cli/pm_diff_normalize.rs` · owner: `fnpm-core`
 - [ ] **pm diff security notes** — install scripts, new builtins, eval/network growth, executables, bidi/escapes, manifest disagreements · bun: `src/runtime/cli/pm_diff_normalize.rs` · owner: `fnpm-core`
-- [ ] **pm scan** — run security scanner over all lockfile packages; exit 1 on any advisory · bun: `src/runtime/cli/scan_command.rs` · owner: `fnpm-core`
+- [x] **pm scan** — run security scanner over all lockfile packages; exit 1 on any advisory · bun: `src/runtime/cli/scan_command.rs` · owner: `fnpm-core`
 - [ ] **fnpm ./bun.lockb [--hash]** — print binary lockfile as yarn.lock v1, or its hash · bun: `src/runtime/cli/mod.rs` · owner: `fnpm-lockfile`
 
 ### fnpm why

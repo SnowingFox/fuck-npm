@@ -1126,8 +1126,10 @@ export class Glob {
         const full = join(dir, entry.name);
         const rel = relative(cwd, full).split(sep).join("/");
         const hidden = rel.split("/").some(part => part.startsWith("."));
-        const isDir = entry.isDirectory();
-        if (isDir) stack.push(full);
+        const isDir = entry.isDirectory()
+          || (entry.isSymbolicLink() && (() => { try { return fs.statSync(full).isDirectory(); } catch { return false; } })());
+        // Directory links do not count as files; do not follow them into cycles.
+        if (entry.isDirectory()) stack.push(full);
         if (hidden && !opts.dot) continue;
         if (onlyFiles && isDir) continue;
         // path.matchesGlob never matches a dot segment with a wildcard; with `dot`, match it as a plain name.

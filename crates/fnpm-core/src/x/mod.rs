@@ -13,6 +13,7 @@
 
 mod args;
 mod bins;
+mod create;
 
 use std::ffi::{OsStr, OsString};
 use std::io::{IsTerminal, Write};
@@ -171,32 +172,32 @@ pub fn add_create_prefix(input: &str) -> String {
 }
 
 /// `fnpm create <template> [args]`: the arguments of the `fnpm x` it becomes, or the exit code.
-fn create_args(args: &[String], out: &Out) -> Result<Vec<String>, i32> {
+fn create_args(args: &[String], cwd: &Path, out: &Out) -> Result<Vec<String>, i32> {
     if args.is_empty() {
         eprint!("{CREATE_USAGE}");
         return Err(1);
     }
-    let mut template: Option<(String, usize)> = None;
-    let mut dash_dash_bun = false;
-    let mut help = false;
-    for (i, arg) in args.iter().enumerate() {
-        let slice = arg.trim_matches([' ', '\t', '\n']);
-        if slice.is_empty() {
-            continue;
-        }
-        if !slice.starts_with("--") && template.is_none() {
-            template = Some((slice.to_owned(), i + 1));
-        }
-        if slice == "--bun" {
-            dash_dash_bun = true;
-        } else if slice == "--help" || slice == "-h" {
-            help = true;
-        }
-    }
-    let Some((name, rest)) = template.filter(|_| !help) else {
+    if args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
+    {
         eprint!("{CREATE_USAGE}");
         return Err(0);
+    }
+    let opts = match args::parse_create(args, cwd) {
+        Parsed::Run(opts) => opts,
+        Parsed::Error { message, .. } => {
+            out.error(&message);
+            return Err(1);
+        }
+        _ => {
+            eprint!("{CREATE_USAGE}");
+            return Err(0);
+        }
     };
+    let index = args.len() - opts.passthrough.len() - 1;
+    let name = opts.package_name.trim_matches([' ', '\t', '\n']);
+    let rest = index + 1;
     if name == "react" {
         eprintln!(
             "The \"react\" template has been deprecated.\nIt is recommended to use \"react-app\" or \"vite\" instead.\n\nTo create a project using Create React App, run\n\n  fnpm create react-app\n\nTo create a React project using Vite, run\n\n  fnpm create vite\n\nThen select \"React\" from the list of frameworks.\n"
@@ -207,8 +208,7 @@ fn create_args(args: &[String], out: &Out) -> Result<Vec<String>, i32> {
         out.warn("No template create-next found.\nTo create a project with the official Next.js scaffolding tool, run\n  fnpm create next-app [destination]");
         return Err(1);
     }
-    let uses_x =
-        !NON_X_TEMPLATES.contains(&name.as_str()) && (!name.contains('/') || name.starts_with('@'));
+    let uses_x = !NON_X_TEMPLATES.contains(&name) && (!name.contains('/') || name.starts_with('@'));
     if !uses_x {
         out.error(&format!(
             "fnpm create does not support GitHub or local folder templates yet: {name}"
@@ -217,10 +217,13 @@ fn create_args(args: &[String], out: &Out) -> Result<Vec<String>, i32> {
         return Err(1);
     }
     let mut x = Vec::with_capacity(args.len() + 1);
-    if dash_dash_bun {
-        x.push("--bun".to_owned());
-    }
-    x.push(add_create_prefix(&name));
+    x.extend(
+        args[..index]
+            .iter()
+            .filter(|arg| !matches!(arg.as_str(), "--force" | "--no-git" | "--no-package-json"))
+            .cloned(),
+    );
+    x.push(add_create_prefix(name));
     x.extend(args[rest..].iter().cloned());
     Ok(x)
 }
@@ -372,14 +375,33 @@ impl EventSink for DiagnosticSink {
 fn unanswered(error: &crate::Error) -> bool {
     use fnpm_registry::Error as R;
     let registry = |e: &R| match e {
-        R::Network { .. } => true,
+        R::Network { message, .. } => {
+            let message = message.to_ascii_lowercase();
+            ![
+                "certificate",
+                "unknownissuer",
+                "invalid peer",
+                "the ca",
+                "ca file",
+                "tls",
+                "redirect",
+            ]
+            .iter()
+            .any(|reason| message.contains(reason))
+        }
         R::Status { status, .. } | R::Registry { status, .. } => {
             matches!(status, 500..=599 | 429 | 408)
         }
         _ => false,
     };
     match error {
-        crate::Error::Fetch { .. } => true,
+        crate::Error::Fetch { code, message, .. } => {
+            matches!(*code, "NETWORK" | "NOT_FOUND")
+                && registry(&R::Network {
+                    url: String::new(),
+                    message: message.clone(),
+                })
+        }
         crate::Error::Registry(e) | crate::Error::Resolve(fnpm_resolver::Error::Registry(e)) => {
             registry(e)
         }
@@ -432,8 +454,24 @@ impl InstallLock {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let file = options.open(PathBuf::from(path)).ok()?;
-        file.lock().ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let primary = options
+            .open(PathBuf::from(path))
+            .ok()
+            .filter(|file| file.lock().is_ok());
+        // A directory at the usual lock path must not force an unlocked install.
+        // Linux can lock the tree directory itself, preserving a stable lock inode.
+        #[cfg(target_os = "linux")]
+        let primary = primary.or_else(|| {
+            std::fs::File::open(tree)
+                .ok()
+                .filter(|file| file.lock().is_ok())
+        });
+        let file = primary?;
         Some(Self { _file: file })
     }
 }
@@ -495,7 +533,9 @@ fn target(opts: &XArgs) -> Result<Target, String> {
     };
     // `@latest` is left out when the user did not type it: without an explicit tag, `fnpm add`
     // does not pick a deprecated `latest`.
-    let install_param = if positional.literal.is_empty() {
+    let install_param = if positional.name.is_none() {
+        positional.input.clone()
+    } else if positional.literal.is_empty() {
         package.clone()
     } else {
         format!("{package}@{display_version}")
@@ -529,8 +569,13 @@ fn exec(program: PathBuf, opts: &XArgs, env: &EnvMap) -> Outcome {
 /// Resolves what `req` runs, installing the package into the cache when needed.
 pub fn plan(req: &Request) -> Outcome {
     let out = Out::new();
+    if req.create
+        && let Some(code) = create::maybe_run(req, &out)
+    {
+        return Outcome::Exit(code);
+    }
     let args = if req.create {
-        match create_args(&req.args, &out) {
+        match create_args(&req.args, &req.cwd, &out) {
             Ok(args) => args,
             Err(code) => return Outcome::Exit(code),
         }
@@ -752,9 +797,12 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         out.error(&format!("{}: {e}", tree_dir.display()));
         return Err(1);
     }
-    // Held during the install and the lookups, until the bin runs. Without it, install
-    // anyway.
+    // Never mutate a shared tree without owning its installation lock.
     let mut lock = InstallLock::acquire(&tree_dir);
+    if lock.is_none() {
+        out.error("failed to lock execution cache installation");
+        return Err(1);
+    }
 
     // Checked under the lock: the run that held it may have just installed the tree.
     let tree = bins::tree_state(&tree_dir);
@@ -784,12 +832,6 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         .filter(|c| c.len() > DlxMode::UNFINISHED.len());
     if finished.is_none() {
         let _ = std::fs::write(&package_json, DlxMode::UNFINISHED);
-    }
-    if tree == Tree::Stale {
-        // The lockfile would pin what the refresh is meant to update.
-        for lockfile in ["fnpm.lock", "bun.lock", "bun.lockb"] {
-            let _ = std::fs::remove_file(tree_dir.join(lockfile));
-        }
     }
     // A refresh of a fresh tree only updates the requested package, so package.json gets its
     // old times back afterward: the dependencies' refresh is not postponed.
@@ -836,6 +878,7 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         command: InstallCommand::Add,
         packages: vec![target.install_param.clone()],
         dlx: Some(DlxMode {
+            refresh: tree == Tree::Stale,
             relink: installed.is_none(),
         }),
         ..InstallOptions::default()
@@ -966,19 +1009,45 @@ mod tests {
     fn create_arguments() {
         let out = Out { color: false };
         let s = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert_eq!(create_args(&s(&[]), &out), Err(1));
-        assert_eq!(create_args(&s(&[""]), &out), Err(0));
-        assert_eq!(create_args(&s(&["--"]), &out), Err(0));
-        assert_eq!(create_args(&s(&["--help"]), &out), Err(0));
+        assert_eq!(create_args(&s(&[]), Path::new("/"), &out), Err(1));
+        assert_eq!(create_args(&s(&[""]), Path::new("/"), &out), Err(0));
+        assert_eq!(create_args(&s(&["--"]), Path::new("/"), &out), Err(0));
+        assert_eq!(create_args(&s(&["--help"]), Path::new("/"), &out), Err(0));
         assert_eq!(
-            create_args(&s(&["vite", "my-app", "--template", "react"]), &out),
+            create_args(
+                &s(&["vite", "my-app", "--template", "react"]),
+                Path::new("/"),
+                &out
+            ),
             Ok(s(&["create-vite", "my-app", "--template", "react"]))
         );
         assert_eq!(
-            create_args(&s(&["--bun", "@org/x"]), &out),
+            create_args(&s(&["--bun", "@org/x"]), Path::new("/"), &out),
             Ok(s(&["--bun", "@org/create-x"]))
         );
-        assert_eq!(create_args(&s(&["react"]), &out), Err(1));
+        assert_eq!(
+            create_args(
+                &s(&[
+                    "--cwd",
+                    "/",
+                    "--registry",
+                    "https://registry.example/",
+                    "vite",
+                    "app"
+                ]),
+                Path::new("/"),
+                &out
+            ),
+            Ok(s(&[
+                "--cwd",
+                "/",
+                "--registry",
+                "https://registry.example/",
+                "create-vite",
+                "app"
+            ]))
+        );
+        assert_eq!(create_args(&s(&["react"]), Path::new("/"), &out), Err(1));
     }
 
     #[test]
@@ -1009,6 +1078,15 @@ mod tests {
         let t = x("github:owner/cowsay");
         assert_eq!(t.initial_bin_name, "cowsay");
         assert_eq!(t.version_tag, "github");
+        assert_eq!(t.install_param, "github:owner/cowsay");
+        assert_eq!(
+            x("https://example.test/tool.tgz").install_param,
+            "https://example.test/tool.tgz"
+        );
+        assert_eq!(
+            x("github:owner/cowsay#v1").install_param,
+            "github:owner/cowsay#v1"
+        );
     }
 
     #[test]
@@ -1024,6 +1102,31 @@ mod tests {
         assert!(unanswered(&status(429)));
         assert!(!unanswered(&status(404)));
         assert!(!unanswered(&status(403)));
+        for message in [
+            "the CA is invalid",
+            "invalid peer certificate: UnknownIssuer",
+            "TLS handshake failed",
+        ] {
+            assert!(!unanswered(&crate::Error::Registry(R::Network {
+                url: "https://example.test/tool".into(),
+                message: message.into(),
+            })));
+        }
+        for (code, fallback) in [
+            ("NETWORK", true),
+            ("NOT_FOUND", true),
+            ("INTEGRITY", false),
+            ("CORE_ERROR", false),
+        ] {
+            assert_eq!(
+                unanswered(&crate::Error::Fetch {
+                    package: "tool@1".into(),
+                    message: "fetch failed".into(),
+                    code,
+                }),
+                fallback
+            );
+        }
         assert_eq!(
             install_error(
                 &crate::Error::Resolve(fnpm_resolver::Error::NotFound("@a/b".into())),

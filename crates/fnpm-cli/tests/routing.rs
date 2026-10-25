@@ -100,7 +100,6 @@ fn help_tree_and_other_commands_go_to_node() {
         &["pm", "cache", "rm"],
         &["pm", "--version"],
         &["run", "build", "--", "install"],
-        &["x", "install"],
         &["why", "react"],
         &["whoami"],
         &["migrate"],
@@ -200,4 +199,16 @@ fn foreign_flags_are_translated_in_the_plan() {
     };
     // On update, --save-dev is dropped and --production keeps selecting update groups.
     assert_eq!(invocation.own, ["--production"]);
+}
+
+#[test]
+fn package_execution_keeps_arguments_raw() {
+    let args = ["--cwd", "app", "x", "pkg", "--", "--help"].map(str::to_owned);
+    match fnpm_cli::plan::route(Bin::Fnpm.def(), &args) {
+        fnpm_cli::plan::Route::Exec { create, args } => {
+            assert!(!create);
+            assert_eq!(args, ["--cwd", "app", "pkg", "--", "--help"]);
+        }
+        route => panic!("unexpected route: {route:?}"),
+    }
 }

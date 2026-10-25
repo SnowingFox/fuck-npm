@@ -335,7 +335,7 @@ async function configureScanner(dir: string, server: Registry, fatal: string[] =
        version: "1",
        scan(payload: { packages: { name: string; version: string }[] }) {
          const packages = payload.packages.map(p => p.name + "@" + p.version).sort();
-         writeFileSync(join(BUN_TEST_DIR, "scanned.json"), JSON.stringify(packages));
+         writeFileSync(${JSON.stringify(join(dir, "scanned.json"))}, JSON.stringify(packages));
          console.error("SCANNER_RAN");
          return packages
            .filter(p => ${JSON.stringify(fatal)}.includes(p))

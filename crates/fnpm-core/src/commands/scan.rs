@@ -15,7 +15,12 @@ To use 'fnpm pm scan', configure a security scanner in bunfig.toml:
 Security scanners can be npm packages that export a scanner object.";
 
 pub(crate) fn scan(cx: &Ctx) -> Result<CoreResult> {
-    let project = cx.project()?;
+    let project = cx.project().map_err(|e| match e {
+        Error::Workspace(fnpm_workspace::Error::NoProject(_)) => {
+            Error::usage("No package.json was found")
+        }
+        other => other,
+    })?;
     if project.config.security_scanner.is_none() {
         eprintln!("error: no security scanner configured");
         return Ok(exit(
@@ -39,6 +44,7 @@ pub(crate) fn scan(cx: &Ctx) -> Result<CoreResult> {
         graph: &graph,
         seeds: None,
         env: &project.env,
+        json: cx.req.json,
     })?;
     let data = json!({
         "advisories": results.advisories.iter().map(|a| json!({

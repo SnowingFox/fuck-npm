@@ -111,19 +111,10 @@ export async function runInteractiveUpdate(ctx: CommandContext): Promise<number>
   }
 
   ctx.output.line(`\n${pc.cyan("Installing updates...")}`);
-  await core.invoke({
-    command: ["pm", "update-interactive-apply"],
-    cwd: options.cwd,
-    positionals: [],
-    passthrough: [],
-    options: { ...options, choices },
-    json: true,
-  });
-  // package.json already names the chosen versions; `--latest` would re-pin every row.
-  const install =
-    names.length > 0
-      ? { ...options, latest: false, packages: names }
-      : { ...options, command: "install" as const, latest: false, packages: [] };
+  // Resolve using the choices in memory; the core saves manifests after the scan succeeds.
+  const install = names.length > 0
+    ? { ...options, latest: false, packages: names, interactiveChoices: choices }
+    : { ...options, command: "install" as const, latest: false, packages: [], interactiveChoices: choices };
   const listener = startListener(ctx, install);
   let summary: InstallSummary;
   try {

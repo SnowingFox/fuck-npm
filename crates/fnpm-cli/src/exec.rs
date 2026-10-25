@@ -160,6 +160,46 @@ fn launch(bin: &BinDef, args: &[OsString], env: &Env, mut command: Command) -> i
     }
 }
 
+/// `fnpm x` / `fnpm create` / `fnpmx`: resolve (and install) the bin with `fnpm_core::x`, then
+/// replace this process with it (Unix) or run it and exit with its status.
+pub fn run_x(args: Vec<String>, create: bool) -> i32 {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let request = fnpm_core::x::Request {
+        args,
+        cwd,
+        create,
+        version: crate::spec::VERSION.to_owned(),
+    };
+    match fnpm_core::x::plan(&request) {
+        fnpm_core::x::Outcome::Exit(code) => code,
+        fnpm_core::x::Outcome::Run(run) => exec_bin(&run),
+    }
+}
+
+#[cfg(unix)]
+fn exec_bin(run: &fnpm_core::x::Exec) -> i32 {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    let _ = std::io::stdout().flush();
+    let error = Command::new(&run.program)
+        .args(&run.args)
+        .current_dir(&run.cwd)
+        .env_clear()
+        .envs(run.env.iter().map(|(k, v)| (k, v)))
+        .exec();
+    eprintln!("error: failed to run {}: {error}", run.program.display());
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        126
+    } else {
+        1
+    }
+}
+
+#[cfg(not(unix))]
+fn exec_bin(run: &fnpm_core::x::Exec) -> i32 {
+    fnpm_core::x::spawn(run)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,44 +268,4 @@ mod tests {
             "fnpm-lock: 'migrate' needs Node.js 20.19 or newer, and FNPM_NODE (/opt/node) was not found\n"
         );
     }
-}
-
-/// `fnpm x` / `fnpm create` / `fnpmx`: resolve (and install) the bin with `fnpm_core::x`, then
-/// replace this process with it (Unix) or run it and exit with its status.
-pub fn run_x(args: Vec<String>, create: bool) -> i32 {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let request = fnpm_core::x::Request {
-        args,
-        cwd,
-        create,
-        version: crate::spec::VERSION.to_owned(),
-    };
-    match fnpm_core::x::plan(&request) {
-        fnpm_core::x::Outcome::Exit(code) => code,
-        fnpm_core::x::Outcome::Run(run) => exec_bin(&run),
-    }
-}
-
-#[cfg(unix)]
-fn exec_bin(run: &fnpm_core::x::Exec) -> i32 {
-    use std::io::Write;
-    use std::os::unix::process::CommandExt;
-    let _ = std::io::stdout().flush();
-    let error = Command::new(&run.program)
-        .args(&run.args)
-        .current_dir(&run.cwd)
-        .env_clear()
-        .envs(run.env.iter().map(|(k, v)| (k, v)))
-        .exec();
-    eprintln!("error: failed to run {}: {error}", run.program.display());
-    if error.kind() == std::io::ErrorKind::PermissionDenied {
-        126
-    } else {
-        1
-    }
-}
-
-#[cfg(not(unix))]
-fn exec_bin(run: &fnpm_core::x::Exec) -> i32 {
-    fnpm_core::x::spawn(run)
 }
