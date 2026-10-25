@@ -176,6 +176,25 @@ pub fn main_lock() -> i32 {
     }
 }
 
+/// End the process with `code` once stdout is flushed, skipping `atexit` handlers.
+///
+/// The only one registered is mimalloc's `mi_process_done`, which force-collects every heap
+/// (`madvise(MADV_DONTNEED)` over everything allocated) right before the kernel tears the
+/// address space down anyway: measurable on a ~2 ms no-op. Nothing else runs at exit: Rust
+/// does not run destructors on `std::process::exit` either, and stderr is unbuffered.
+pub fn exit(code: i32) -> ! {
+    use std::io::Write;
+    let _ = std::io::stdout().lock().flush();
+    #[cfg(unix)]
+    {
+        // SAFETY: `_exit` ends the process; stdout has been flushed and nothing else is
+        // buffered in this process (see above).
+        unsafe { libc::_exit(code) }
+    }
+    #[cfg(not(unix))]
+    std::process::exit(code)
+}
+
 /// `--version`: no environment snapshot and no terminal probing for the one invocation
 /// scripts loop on.
 fn print_version() -> i32 {

@@ -546,6 +546,7 @@ dependencies = [
  "fnpm-config",
  "fnpm-core",
  "fnpm-types",
+ "libc",
  "libmimalloc-sys",
  "mimalloc",
  "rustix",
