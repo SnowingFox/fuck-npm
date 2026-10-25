@@ -1812,10 +1812,10 @@ a cold install, which is the only number that sees clones, and an `lstat` walk o
 and the tool's store/cache counting physical blocks with hardlinked inodes once. Results go to
 `bench/results/<date>-<os>-<arch>.{json,md}`. `bench/gate.ts` exits 1 when fnpm is slower than
 bun (beyond `--tolerance`, default 0) in any fixture/scenario bun has a result for, or when fnpm
-failed or has no result. fnpm currently runs as `node packages/fuck-npm/dist/fnpm.js` with
-`FNPM_STORE_DIR`/`FNPM_CACHE_DIR` pointed at bench-owned directories; once `fnpm-cli` exists
-the harness runs the native binary (`target/release/fnpm`), which is what users get after the
-postinstall swap. Full methodology: `bench/README.md`.
+failed or has no result. fnpm runs as the native binary (`FNPM_BIN`, else
+`$CARGO_TARGET_DIR/release/fnpm`), which is what users get after the postinstall swap, with
+`FNPM_STORE_DIR`/`FNPM_CACHE_DIR` pointed at bench-owned directories; without a native build it
+falls back to `node packages/fuck-npm/dist/fnpm.js`. Full methodology: `bench/README.md`.
 
 ## tests/registry and tests/conformance
 

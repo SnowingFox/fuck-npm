@@ -54,9 +54,10 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-linker: hoisted and isolated layouts, global virtual store, bins | `feat/linker` | merged |
 | fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | merged |
 | Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
-| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | in progress (skeleton with `todo!()` on `main`) |
-| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | in progress (skeleton with `todo!()` on `main`) |
+| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (P4 commands return `NOT_IMPLEMENTED`) |
+| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done (the 8-target `napi.yml` matrix has not run on GitHub yet) |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
+| Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
 | Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | harness switched (`FNPM_BIN` or `target/release/fnpm`); numbers not committed |
 
 Known gaps in the merged crates (PARITY rows left open for these):
