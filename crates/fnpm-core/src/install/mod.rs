@@ -59,6 +59,38 @@ pub fn config_hash(config: &Config) -> u64 {
     xxhash_rust::xxh3::xxh3_64(value.to_string().as_bytes())
 }
 
+/// `FNPM_TIMING=1`: phase timings on stderr (perf work; never part of normal output).
+struct Phases {
+    on: bool,
+    last: Instant,
+    start: Instant,
+}
+
+impl Phases {
+    fn new(env: &Env) -> Self {
+        let now = Instant::now();
+        Self {
+            on: env
+                .get("FNPM_TIMING")
+                .is_some_and(|v| !v.is_empty() && v != "0"),
+            last: now,
+            start: now,
+        }
+    }
+
+    fn mark(&mut self, phase: &str) {
+        if self.on {
+            let now = Instant::now();
+            eprintln!(
+                "[fnpm timing] {phase:<12} {:>8.2} ms (total {:.2} ms)",
+                (now - self.last).as_secs_f64() * 1000.0,
+                (now - self.start).as_secs_f64() * 1000.0
+            );
+            self.last = now;
+        }
+    }
+}
+
 /// The relative paths of every manifest the fast path watches.
 fn manifest_paths(ws: &Workspace) -> Vec<String> {
     let mut v = vec!["package.json".to_owned()];
@@ -109,13 +141,43 @@ pub(crate) fn edit_package_json_text(text: &str, edits: &[Edit]) -> Result<Strin
     edits::apply_text(text, edits)
 }
 
-/// Runs one install command.
-pub(crate) async fn run(
+/// The synchronous first part of an install: options checked, project found, configuration
+/// loaded and the no-op fast path checked. Needs no runtime, so a launcher can answer a no-op
+/// install before it starts any thread ([`crate::prepare_install`]).
+pub struct PreparedInstall {
     opts: InstallOptions,
-    events: Arc<dyn EventSink>,
-    env: Env,
-) -> Result<InstallSummary> {
+    project: Project,
+    hash: u64,
+    start: Instant,
+    phases: Phases,
+    noop: Option<InstallSummary>,
+}
+
+impl PreparedInstall {
+    /// The summary of a no-op install (nothing changed since the last one), if this is one.
+    pub fn noop(&self) -> Option<&InstallSummary> {
+        self.noop.as_ref()
+    }
+
+    /// Non-fatal configuration diagnostics (also emitted as warn events by [`Self::run`]).
+    pub fn warnings(&self) -> &[String] {
+        &self.project.config.warnings
+    }
+
+    /// The rest of the pipeline (returns the no-op summary right away for a no-op).
+    pub async fn run(self, events: Arc<dyn EventSink>) -> Result<InstallSummary> {
+        self.project.report_warnings(&*events);
+        if let Some(s) = self.noop {
+            return Ok(s);
+        }
+        execute(self, events).await
+    }
+}
+
+/// Checks the options, loads the project and its configuration and runs the fast path.
+pub(crate) fn prepare(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
     let start = Instant::now();
+    let mut phases = Phases::new(&env);
     if opts.analyze {
         // `install --analyze <files>` scans imports; it belongs to a later parity phase.
         return Err(Error::NotImplemented {
@@ -130,12 +192,12 @@ pub(crate) async fn run(
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
     let project = Project::load(&opts.pm.cwd, cli, env, is_add)?;
-    project.report_warnings(&*events);
-    let config = project.config.clone();
-    let root = project.root_dir.clone();
+    phases.mark("config");
 
     // 1. Fast path.
-    let hash = config_hash(&config);
+    let config = &project.config;
+    let hash = config_hash(config);
+    let mut noop = None;
     if opts.command == InstallCommand::Install
         && opts.packages.is_empty()
         && opts.filter.is_empty()
@@ -143,9 +205,9 @@ pub(crate) async fn run(
         && !opts.pm.lockfile_only
         && !opts.pm.trust
         && config.install_packages
-        && let Check::Noop { packages } = fast_path::check(&root, hash)
+        && let Check::Noop { packages } = fast_path::check(&project.root_dir, hash)
     {
-        return Ok(InstallSummary {
+        noop = Some(InstallSummary {
             checked: Some(CheckedCount {
                 installs: packages,
                 packages,
@@ -155,9 +217,41 @@ pub(crate) async fn run(
             ..InstallSummary::default()
         });
     }
+    phases.mark("fast path");
+    Ok(PreparedInstall {
+        opts,
+        project,
+        hash,
+        start,
+        phases,
+        noop,
+    })
+}
 
+/// Runs one install command.
+pub(crate) async fn run(
+    opts: InstallOptions,
+    events: Arc<dyn EventSink>,
+    env: Env,
+) -> Result<InstallSummary> {
+    prepare(opts, env)?.run(events).await
+}
+
+/// Steps 2-8.
+async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Result<InstallSummary> {
+    let PreparedInstall {
+        opts,
+        project,
+        hash,
+        start,
+        mut phases,
+        ..
+    } = prepared;
+    let config = project.config.clone();
+    let root = project.root_dir.clone();
     // 2. Workspace.
     let mut ws = project.workspace(&*events)?;
+    phases.mark("workspace");
 
     // 3. Lockfile.
     let lock = lock::load(&config, &ws)?;
@@ -165,6 +259,7 @@ pub(crate) async fn run(
         events.emit(Event::warn(w.clone(), None));
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
+    phases.mark("lockfile");
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
@@ -231,6 +326,7 @@ pub(crate) async fn run(
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
+    phases.mark("resolve");
     let ResolveOutput {
         mut graph,
         changed,
@@ -307,6 +403,7 @@ pub(crate) async fn run(
         &events,
     )
     .await?;
+    phases.mark("link");
     summary.installed_count = linked.report.installed;
     summary.removed_count = linked.report.removed;
     summary.failed_count = linked.failed;
@@ -349,7 +446,7 @@ pub(crate) async fn run(
             .get_or_insert_with(Default::default);
         set.extend(trust_names.iter().cloned());
     }
-    save(
+    let saved = save(
         &root,
         &config,
         &ws,
@@ -359,23 +456,56 @@ pub(crate) async fn run(
         lockfile_dirty || integrity_filled,
         &*events,
     )?;
+    phases.mark("save");
+    // Caches and the store's project record, off the critical path (awaited before the
+    // state file).
     let packages = fetcher.store_dir_names(&graph, &linked.reachable).await;
-    let _ = store.set_project_packages(&root, packages);
+    let background = {
+        let (store, root, config) = (store.clone(), root.clone(), config.clone());
+        let restore = !saved && lock.from_cached_sidecar;
+        let loaded =
+            (!saved && lock.sidecar_missing && !restore && lock.format == Some(Format::Fnpm))
+                .then(|| lock.graph.clone().zip(lock.hash))
+                .flatten();
+        tokio::task::spawn_blocking(move || {
+            let _ = store.set_project_packages(&root, packages);
+            if saved {
+                lock::mirror_sidecar(&config, &root);
+            } else if restore {
+                lock::restore_sidecar(&config, &root);
+            } else if let Some((graph, hash)) = loaded {
+                lock::save_sidecars(&config, &root, hash, &graph, true);
+            }
+        })
+    };
+    phases.mark("register");
 
     // 7. Lifecycle scripts.
     let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
+    phases.mark("scripts");
     summary.blocked_scripts = blocked.0;
     summary.failed_count += blocked.1;
 
+    let _ = background.await;
     // The state file goes last, after everything succeeded.
     // Not when this run left the lockfile or package.json behind node_modules (`--no-save`,
     // a frozen install never changes either).
     let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
         && (config.save_package_json || edits.is_empty());
     if planned.selected.is_none() && saved_everything {
+        // Directories the linker moved aside are deleted in the background; their removal
+        // would change node_modules' mtime after the state recorded it.
+        if linked.report.removed > 0 || linked.report.installed > 0 {
+            let _ = tokio::task::spawn_blocking(fnpm_linker::flush_background_deletes).await;
+        }
         write_state(&root, &ws, hash, &linked.linker, graph.len() as u32);
     }
+    phases.mark("state");
     client.flush_cache_writes().await;
+    phases.mark("flush");
+    if phases.on {
+        eprintln!("[fnpm timing] registry {:?}", client.stats());
+    }
     summary.elapsed_ms = start.elapsed().as_millis() as u64;
     Ok(summary)
 }
@@ -810,14 +940,14 @@ fn save(
     graph: &LockGraph,
     dirty: bool,
     events: &dyn EventSink,
-) -> Result<()> {
+) -> Result<bool> {
     if config.save_package_json && !edits.is_empty() {
         edits.apply(root, ws)?;
     }
     let save_lock =
         config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());
     if !save_lock {
-        return Ok(());
+        return Ok(false);
     }
     if config.save_package_json && !lock.write_back.is_empty() {
         for line in lock::write_back(root, ws, &lock.write_back)? {
@@ -835,7 +965,7 @@ fn save(
             },
         )?;
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns

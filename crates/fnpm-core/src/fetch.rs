@@ -138,21 +138,13 @@ impl Fetcher {
         slots.insert(key, slot.clone());
         drop(slots);
         self.inner.counters.total.fetch_add(1, Ordering::Relaxed);
-        let (inner, s) = (self.inner.clone(), slot.clone());
-        let (name, version, resolution) = (name.to_owned(), version.to_owned(), resolution.clone());
-        self.inner.handle.spawn(async move {
-            let outcome = fetch_one(&inner, &name, &version, &resolution).await;
-            let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
-            if inner.events.enabled() {
-                inner.events.emit(Event::Download {
-                    done,
-                    total: inner.counters.total.load(Ordering::Relaxed),
-                    bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
-                    name: Some(name.clone()),
-                });
-            }
-            s.set(outcome);
-        });
+        start_fetch(
+            &self.inner,
+            slot.clone(),
+            name.to_owned(),
+            version.to_owned(),
+            resolution.clone(),
+        );
         slot
     }
 
@@ -193,6 +185,31 @@ impl Fetcher {
             patched: Mutex::new(HashMap::new()),
         }
     }
+}
+
+/// Runs the fetch of one package on the runtime and fills `slot`.
+fn start_fetch(
+    inner: &Arc<Inner>,
+    slot: Arc<Slot>,
+    name: String,
+    version: String,
+    resolution: Resolution,
+) {
+    let task_inner = inner.clone();
+    inner.handle.spawn(async move {
+        let inner = task_inner;
+        let outcome = fetch_one(&inner, &name, &version, &resolution).await;
+        let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
+        if inner.events.enabled() {
+            inner.events.emit(Event::Download {
+                done,
+                total: inner.counters.total.load(Ordering::Relaxed),
+                bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
+                name: Some(name.clone()),
+            });
+        }
+        slot.set(outcome);
+    });
 }
 
 fn to_io(e: fnpm_registry::Error) -> std::io::Error {

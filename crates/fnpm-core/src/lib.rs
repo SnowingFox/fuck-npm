@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 use fnpm_config::Env;
 use fnpm_types::{EventSink, InstallSummary};
 
-pub use install::config_hash;
+pub use install::{PreparedInstall, config_hash};
 pub use options::{CoreRequest, CoreResult, InstallOptions, PmOptions};
 
 /// Errors carry a stable `code` the CLI maps to messages and exit codes.
@@ -135,15 +135,28 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Worker threads of [`runtime`]: `FNPM_IO_THREADS` if set (1-64), else `min(cpus, 4)`. The
+/// workers only drive network I/O and the pipeline; CPU work (extraction, hashing, linking)
+/// runs on rayon pools, so more workers only add thread start-up cost.
+pub fn io_threads() -> usize {
+    std::env::var("FNPM_IO_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| (1..=64).contains(n))
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map_or(4, |n| n.get())
+                .clamp(1, 4)
+        })
+}
+
 /// The process-wide runtime: tokio multi-thread for network and file I/O, plus the global
-/// rayon pool for CPU work. Created on first use (`min(cpus, 8)` workers); the napi layer and
+/// rayon pool for CPU work. Created on first use ([`io_threads`] workers); the napi layer and
 /// the native launcher call into it.
 pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
-        let workers = std::thread::available_parallelism()
-            .map_or(4, |n| n.get())
-            .clamp(1, 8);
+        let workers = io_threads();
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(workers)
             .thread_name("fnpm-io")
@@ -168,6 +181,13 @@ pub async fn install_with_env(
     env: Env,
 ) -> Result<InstallSummary> {
     install::run(opts, events, env).await
+}
+
+/// The synchronous start of [`install`]: options, project, configuration and the no-op check,
+/// with no runtime. A launcher answers a no-op install from [`PreparedInstall::noop`] without
+/// starting [`runtime`]; otherwise it continues with [`PreparedInstall::run`] on the runtime.
+pub fn prepare_install(opts: InstallOptions, env: Env) -> Result<PreparedInstall> {
+    install::prepare(opts, env)
 }
 
 /// Every other command, dispatched on `request.command` (see `commands`).

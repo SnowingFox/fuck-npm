@@ -491,3 +491,52 @@ async fn local_folder_dependency() {
     assert_eq!(p.installed("local").as_deref(), Some("0.0.1"));
     assert_eq!(p.installed("b").as_deref(), Some("1.0.0"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn prepare_answers_a_noop_without_a_runtime() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    let (opts, env) = (p.opts(InstallCommand::Install, &[]), p.env());
+    // A plain thread: no tokio context at all.
+    let prepared = std::thread::spawn(move || fnpm_core::prepare_install(opts, env).unwrap())
+        .join()
+        .unwrap();
+    let noop = prepared.noop().expect("no-op");
+    assert_eq!(noop.checked.unwrap().packages, 2);
+    // Not a no-op: `run` continues the pipeline.
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let prepared =
+        fnpm_core::prepare_install(p.opts(InstallCommand::Install, &[]), p.env()).unwrap();
+    assert!(prepared.noop().is_none());
+    let s = prepared
+        .run(std::sync::Arc::new(fnpm_types::NoopSink))
+        .await
+        .unwrap();
+    assert_eq!(s.installed_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn parsed_lockfile_survives_node_modules_removal() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.install().await;
+    let sidecar = p.path("node_modules/.fnpm/lock.bin");
+    assert!(exists(&sidecar));
+    let cached: Vec<_> = std::fs::read_dir(p.tmp.path().join("fnpm-home/cache/lockfile-sidecars"))
+        .expect("cached sidecar dir")
+        .flatten()
+        .collect();
+    assert_eq!(cached.len(), 1);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    let s = p.install().await;
+    assert_eq!(s.installed_count, 2);
+    assert!(exists(&sidecar), "restored from the cached copy");
+    assert!(p.install().await.noop);
+    // A changed lockfile never uses a stale copy.
+    let lock = p.read("fnpm.lock").replace("\"^1.0.0\"", "\"^1.0.0\" ");
+    p.write("fnpm.lock", &lock);
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert_eq!(p.installed("a").as_deref(), Some("1.1.0"));
+}

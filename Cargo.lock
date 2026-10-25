@@ -554,6 +554,7 @@ name = "fnpm-core"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
  "crossbeam-channel",
  "flate2",
  "fnpm-config",
@@ -567,6 +568,7 @@ dependencies = [
  "fnpm-types",
  "fnpm-workspace",
  "futures-util",
+ "mimalloc",
  "parking_lot",
  "rayon",
  "serde",
