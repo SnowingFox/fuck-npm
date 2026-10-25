@@ -690,10 +690,9 @@ name = "fnpm-scripts"
 version = "0.1.0"
 dependencies = [
  "fnpm-config",
- "fnpm-lockfile",
  "fnpm-types",
- "fnpm-workspace",
  "parking_lot",
+ "rustix",
  "serde_json",
  "tempfile",
  "thiserror",
