@@ -23,7 +23,7 @@ pub const SIDECAR: &str = "node_modules/.fnpm/lock.bin";
 
 const MAGIC: &[u8; 8] = b"FNPMLCK\0";
 /// Bump when mirror types or cached binding semantics change.
-const IMAGE_VERSION: u32 = 2;
+const IMAGE_VERSION: u32 = 3;
 const HEADER: usize = 24;
 
 #[derive(Archive, Serialize, Deserialize)]
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(decode(&bytes, 42).as_ref(), Some(&g));
         assert!(decode(&bytes, 43).is_none());
         let mut bad = bytes.clone();
-        bad[8] = 9;
+        bad[8..12].copy_from_slice(&(IMAGE_VERSION - 1).to_le_bytes());
         assert!(decode(&bad, 42).is_none());
         assert!(decode(&bytes[..bytes.len() / 2], 42).is_none());
         assert!(decode(b"short", 42).is_none());

@@ -17,7 +17,7 @@ pub const STATE_FILE: &str = "node_modules/.fnpm/.state/state";
 /// The state file of fnpm versions before `.state/` (deleted with the current one).
 const LEGACY_STATE_FILE: &str = "node_modules/.fnpm/state";
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 3;
+pub const STATE_VERSION: u32 = 4;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -318,6 +318,10 @@ mod tests {
         let dir = project();
         assert_eq!(check(dir.path(), 7), Check::Changed(None));
         let mut s = state_for(dir.path());
+        s.version = STATE_VERSION - 1;
+        write(dir.path(), &s).unwrap();
+        assert!(matches!(check(dir.path(), 7), Check::Changed(Some(_))));
+        s.version = STATE_VERSION;
         s.fnpm_version = "0.0.0-other".into();
         write(dir.path(), &s).unwrap();
         assert!(matches!(check(dir.path(), 7), Check::Changed(Some(_))));

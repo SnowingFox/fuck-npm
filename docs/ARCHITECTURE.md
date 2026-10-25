@@ -1418,7 +1418,7 @@ re-resolve without the previous graph and relink. `install --analyze` is `NOT_IM
 and the package's own name) must be valid package names: they become paths under the link
 registry.
 
-**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 3): `version`,
+**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 4): `version`,
 `fnpmVersion`, `lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs,
 xxh3]` per package.json, `pnpm-workspace.yaml` when present (a new one invalidates), the
 package.json of every directory the workspace globs select, and the `patchedDependencies`
