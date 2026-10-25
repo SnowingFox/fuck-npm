@@ -155,6 +155,70 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
     Ok(state)
 }
 
+/// Migrates one of `names` (in order; bun.lock, bun.lockb and the foreign lockfiles) for
+/// `fnpm migrate` / `fnpm-lock migrate`, even when fnpm.lock exists. A file that fails is
+/// reported and the next one tried; the last error is returned.
+pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> Result<LockState> {
+    let dir = &ws.root_dir;
+    let mut state = LockState::default();
+    let found: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|n| dir.join(n).exists())
+        .collect();
+    let files = DiskFiles;
+    let mut last: Option<Error> = None;
+    for (i, name) in found.iter().enumerate() {
+        let next = found.get(i + 1).copied();
+        let path = dir.join(name);
+        let attempt: Result<Attempt> = if matches!(*name, "bun.lock" | "bun.lockb") {
+            let opts = LoadOptions {
+                lockfile_path: Some(path.clone()),
+                parse: parse_options(config),
+                no_sidecar: true,
+            };
+            fnpm_lockfile::load_with(dir, ws, &opts)
+                .map_err(Error::from)
+                .and_then(|l| {
+                    l.map(|l| (l.graph, l.format, Vec::new(), l.warnings))
+                        .ok_or_else(|| Error::usage(format!("{name} is empty")))
+                })
+        } else {
+            std::fs::read(&path)
+                .map_err(Error::io(&path))
+                .and_then(|bytes| {
+                    migrate_one(config, ws, &files, name, &bytes, next).map_err(Error::from)
+                })
+        };
+        match attempt {
+            Ok((mut graph, format, write_back, warnings)) => {
+                state.warnings.extend(warnings);
+                if !matches!(format, Format::BunText | Format::BunBinary) {
+                    fnpm_lockfile::migration::finish_migration(&mut graph, ws);
+                }
+                state.graph = Some(graph);
+                state.format = Some(format);
+                state.path = Some(path);
+                state.migrated = true;
+                state.write_back = write_back;
+                return Ok(state);
+            }
+            Err(e) => {
+                if let Some(next) = next {
+                    state
+                        .warnings
+                        .push(format!("cannot migrate {name} ({e}), trying {next}"));
+                }
+                last = Some(e);
+            }
+        }
+    }
+    match last {
+        Some(e) => Err(e),
+        None => Ok(state),
+    }
+}
+
 type Attempt = (LockGraph, Format, Vec<PackageJsonWriteBack>, Vec<String>);
 
 fn migrate_one(
