@@ -12,6 +12,7 @@ pub(crate) mod install;
 pub mod options;
 pub mod project;
 pub mod spec;
+pub mod x;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};

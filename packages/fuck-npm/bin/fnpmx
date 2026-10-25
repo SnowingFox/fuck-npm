@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// Replaced by a link to the native fnpm executable on install (scripts/postinstall.js), which
+// runs `fnpm x` when started as fnpmx. Until then: see lib/shim.cjs.
+require("../lib/shim.cjs").main("fnpmx");

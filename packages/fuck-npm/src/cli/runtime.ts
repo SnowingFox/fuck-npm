@@ -89,7 +89,9 @@ export async function runParsedCli(
     const positionals =
       leaf.passthrough === undefined ? [...parsed.positionals, ...plan.forwarded] : parsed.positionals;
     const passthrough = leaf.passthrough === undefined ? [] : plan.forwarded;
-    requirePositionals(registry, leaf, path, positionals);
+    if (leaf.rawArgs !== true) {
+      requirePositionals(registry, leaf, path, positionals);
+    }
 
     const output = createOutput(runtime, resolveMode(runtime, plan.wantsJson));
     const handler = await loadHandler(registry.bin, path);

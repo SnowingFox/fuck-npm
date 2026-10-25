@@ -466,6 +466,7 @@ pub fn install_options(
         recursive: values.bool("recursive") && !global,
         update_groups,
         depth,
+        dlx: None,
     })
 }
 

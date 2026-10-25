@@ -221,7 +221,7 @@ pub(crate) fn prepare(
     cli.update = opts.command == InstallCommand::Update;
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
-    let project = Project::load(&opts.pm.cwd, cli, env, is_add)?;
+    let project = Project::load_with_root(&opts.pm.cwd, cli, env, is_add, opts.dlx.is_some())?;
     phases.mark("config");
 
     // 1. Fast path.
@@ -466,6 +466,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         selected_ids.clone(),
         &trust_names,
         &events,
+        opts.dlx,
     )
     .await?;
     phases.mark("link");
@@ -978,6 +979,7 @@ async fn link(
     selected: Option<Vec<PackageId>>,
     trust_names: &[String],
     events: &Arc<dyn EventSink>,
+    dlx: Option<crate::options::DlxMode>,
 ) -> Result<Linked> {
     let config = &project.config;
     let root = project.root_dir.clone();
@@ -1016,9 +1018,30 @@ async fn link(
                 fetcher.ensure_package(p);
             }
         }
+        if dlx.is_some() {
+            // `fnpm x`: nothing is linked until every package is in the store, so a refresh
+            // that cannot download a package leaves the tree that runs as it was.
+            for (i, p) in graph.packages.iter().enumerate() {
+                if !reachable[i] || !fetches(p) {
+                    continue;
+                }
+                if let Err(f) = fetcher.ensure_package(p).wait().await
+                    && !optional_only(graph, PackageId(i as u32))
+                {
+                    return Err(Error::Fetch {
+                        package: p.key(),
+                        message: f.message,
+                        code: f.code,
+                    });
+                }
+            }
+            let package_json = root.join("package.json");
+            std::fs::write(&package_json, crate::options::DlxMode::UNFINISHED)
+                .map_err(Error::io(&package_json))?;
+        }
         let link_opts = LinkOptions {
             backend: config.backend.unwrap_or_else(fnpm_linker::default_backend),
-            force: config.force,
+            force: config.force || dlx.is_some_and(|d| d.relink),
             fresh: !root.join("node_modules").exists(),
             global_store: config.global_store,
             check_unpatched: lock

@@ -242,6 +242,27 @@ pub struct InstallOptions {
     pub update_groups: UpdateGroups,
     /// `update --depth 0`.
     pub depth: Option<u32>,
+    /// Set by `fnpm x` for the install into one of its cached trees; never sent by a CLI.
+    #[serde(skip)]
+    pub dlx: Option<DlxMode>,
+}
+
+/// How `fnpm x` installs into its tree (bun `BUN_INTERNAL_BUNX_INSTALL`).
+///
+/// The tree is the project root (nothing above it is a workspace root), every download
+/// finishes before anything is linked (so a failed refresh leaves the old tree as it was),
+/// and right before linking the tree's package.json becomes [`DlxMode::UNFINISHED`], which
+/// the install replaces once everything is linked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DlxMode {
+    /// Relink every package (bun passes `--force` to the `bun add` it spawns), which repairs a
+    /// tree whose install was killed.
+    pub relink: bool,
+}
+
+impl DlxMode {
+    /// The package.json of a tree whose install did not finish.
+    pub const UNFINISHED: &'static [u8] = b"{}\n";
 }
 
 /// `CoreRequest`: the payload of [`crate::invoke`].

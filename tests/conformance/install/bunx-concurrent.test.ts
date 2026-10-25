@@ -132,6 +132,8 @@ test("concurrent bunx spawns of the same package do not corrupt the shared insta
     TEMP: String(tmp),
     FNPM_CACHE_DIR: String(cache),
     npm_config_registry: `http://localhost:${server.port}/`,
+    FNPM_REGISTRY: undefined,
+    BUN_INSTALL_CACHE_DIR: undefined,
   };
 
   const CONCURRENCY = 8;

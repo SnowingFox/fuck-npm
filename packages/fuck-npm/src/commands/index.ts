@@ -17,6 +17,9 @@ export async function loadHandler(bin: string, path: string[]): Promise<Handler>
     if (INSTALL_FAMILY.has(key)) {
       return (await import("./install.ts")).runInstallFamily;
     }
+    if (key === "x" || key === "create") {
+      return (await import("./x.ts")).runX;
+    }
     if (key === "completions") {
       return (await import("./completions.ts")).runCompletions;
     }

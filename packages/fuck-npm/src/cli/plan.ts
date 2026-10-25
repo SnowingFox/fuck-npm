@@ -140,6 +140,21 @@ export function planInvocation(argv: string[], registry: Registry): Invocation {
   }
   rest.push(...head.slice(index));
 
+  if (node.kind === "leaf" && node.rawArgs === true) {
+    return {
+      node,
+      matched,
+      ...(viaAlias ? { viaAlias } : {}),
+      own: [],
+      forwarded: dashIndex === -1 ? rest : [...rest, "--", ...tail],
+      wantsHelp: false,
+      wantsTree: false,
+      wantsVersion: false,
+      wantsJson: false,
+      cacArgv: [...argv.slice(0, 2), ...matched],
+    };
+  }
+
   let tokens = rest;
   let forwarded: string[] = [];
   if (node.kind === "leaf") {

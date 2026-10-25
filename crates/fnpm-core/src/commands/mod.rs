@@ -190,6 +190,29 @@ pub(crate) fn exit(code: i32, data: Value, lines: Vec<String>) -> CoreResult {
     }
 }
 
+/// `fnpm x` / `fnpm create` for the TS CLI: the arguments come raw (in `passthrough`), and the
+/// bin runs as a child of this process with inherited stdio.
+async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
+    let mut args = cx.req.positionals.clone();
+    args.extend(cx.req.passthrough.iter().cloned());
+    let req = crate::x::Request {
+        args,
+        cwd: cx.req.cwd.clone(),
+        create,
+        version: cx
+            .string("cliVersion")
+            .unwrap_or_else(|| crate::version().to_owned()),
+    };
+    let code = tokio::task::spawn_blocking(move || crate::x::run(&req))
+        .await
+        .map_err(|e| Error::usage(format!("fnpm x failed: {e}")))?;
+    Ok(exit(
+        code,
+        serde_json::json!({ "exitCode": code }),
+        Vec::new(),
+    ))
+}
+
 fn not_implemented(path: &[&str]) -> Error {
     Error::NotImplemented {
         command: path.join(" "),
@@ -247,9 +270,9 @@ pub async fn dispatch(
         | ["patch-commit"]
         | ["pack"]
         | ["publish"]
-        | ["x" | "dlx"]
-        | ["create"]
         | ["pm", "pack" | "diff" | "scan"] => Err(not_implemented(&path)),
+        ["x" | "dlx"] => x_command(&cx, false).await,
+        ["create"] => x_command(&cx, true).await,
         _ => Err(Error::UnknownCommand(command)),
     }
 }

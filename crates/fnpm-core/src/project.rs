@@ -50,10 +50,27 @@ impl Project {
         env: Env,
         create_package_json: bool,
     ) -> Result<Self> {
+        Self::load_with_root(cwd, cli, env, create_package_json, false)
+    }
+
+    /// [`Project::load`]; with `cwd_is_root` the project is `cwd` itself, whatever is above it
+    /// (`fnpm x` installs into a tree below the user's cache and home).
+    pub fn load_with_root(
+        cwd: &Path,
+        cli: CliOverrides,
+        env: Env,
+        create_package_json: bool,
+        cwd_is_root: bool,
+    ) -> Result<Self> {
         let cwd = absolute_cwd(cwd);
         let global = cli.global;
         let root = if global {
             None
+        } else if cwd_is_root {
+            if !cwd.join("package.json").exists() {
+                write_new_package_json(&cwd)?;
+            }
+            Some(cwd.clone())
         } else {
             match Workspace::find_root(&cwd) {
                 Ok(root) => Some(root),
