@@ -10,7 +10,7 @@ import { exists, rm, symlink } from "../compat/fs-promises.ts";
 import {
   fnpmExe,
   nodeExe,
-  fnpmEnv as env,
+  fnpmEnv,
   isLinux,
   isWindows,
   normalizeFnpmSnapshot,
@@ -24,6 +24,10 @@ import {
 } from "../harness.ts";
 import { delimiter, join } from "path";
 import { TestRegistry } from "../compat/registry.ts";
+
+// bun's tests take the registry from the bunfig.toml (or .npmrc) that each one writes. fnpmEnv points
+// FNPM_REGISTRY at the shared fixture registry, which would take precedence over those files.
+const env: Record<string, string | undefined> = { ...fnpmEnv, FNPM_REGISTRY: undefined };
 
 const registry = new TestRegistry();
 
@@ -157,7 +161,7 @@ function mockBunfig(mock: MockRegistry) {
 
 const userAgent = expect.stringMatching(
   new RegExp(
-    `^Bun/${Bun.version.replaceAll(".", "\\.")} ${process.platform} ${process.arch} workspaces/false( ci/\\S+)?$`,
+    `^fnpm/${Bun.version.replaceAll(".", "\\.")} ${process.platform} ${process.arch} workspaces/false( ci/\\S+)?$`,
   ),
 );
 
@@ -639,7 +643,7 @@ describe.concurrent("otp", () => {
 
        + otp-pkg-4@4.4.4"
     `);
-    const ciUserAgent = `Bun/${Bun.version} ${process.platform} ${process.arch} workspaces/false ci/${ci}`;
+    const ciUserAgent = `fnpm/${Bun.version} ${process.platform} ${process.arch} workspaces/false ci/${ci}`;
     expect(mock.requests).toEqual([
       request("PUT", "/otp-pkg-4", { userAgent: ciUserAgent }),
       request("GET", "/done", { userAgent: ciUserAgent }),
@@ -1748,7 +1752,7 @@ describe.concurrent("credentials in the registry url", () => {
       Unpacked size: 56B
       Packed size: <size>"
     `);
-    expect(err).toBe("error: missing authentication (run `bunx npm login`)\n");
+    expect(err).toBe("error: missing authentication (run `fnpm x npm login`)\n");
     expect(mock.requests).toEqual([]);
     expect(exitCode).toBe(1);
   });
@@ -1778,7 +1782,7 @@ describe.concurrent("credentials in the registry url", () => {
       Unpacked size: 64B
       Packed size: <size>"
     `);
-    expect(err).toBe("error: missing authentication (run `bunx npm login`)\n");
+    expect(err).toBe("error: missing authentication (run `fnpm x npm login`)\n");
     expect(mock.requests).toEqual([]);
     expect(exitCode).toBe(1);
   });
@@ -3405,7 +3409,7 @@ describe.concurrent("basic auth", () => {
 
   test("still refuses to publish without any credentials", async () => {
     const { out, err, exitCode, requests } = await publishWith(host => ({ ".npmrc": `registry=http://${host}/\n` }));
-    expect(err).toContain("error: missing authentication (run `bunx npm login`)");
+    expect(err).toContain("error: missing authentication (run `fnpm x npm login`)");
     expect(out).not.toContain(" + basic-auth-pkg@1.0.0");
     expect(requests).toEqual([]);
     expect(exitCode).toBe(1);
@@ -3850,7 +3854,7 @@ describe.concurrent("--recursive and --filter", () => {
     );
 
     const { out, err, exitCode } = await publish(env, String(dir), "-r");
-    expect(lines(err).at(-1)).toBe("error: missing authentication (run `bunx npm login`)");
+    expect(lines(err).at(-1)).toBe("error: missing authentication (run `fnpm x npm login`)");
     expect(registry.asked.filter(request => !request.startsWith("GET rec-"))).toEqual([]);
     expect(published(out)).toEqual([]);
     expect(exitCode).toBe(1);
@@ -3883,7 +3887,7 @@ describe.concurrent("--recursive and --filter", () => {
       const [flag] = flags.split(" ");
       expect(err).toBe(
         `error: refusing to publish: ${flag} must come after "publish"\n` +
-          `note: use fnpm publish ${flag}, or bun run --filter='*' publish to run "publish" scripts\n`,
+          `note: use fnpm publish ${flag}, or fnpm run --filter='*' publish to run "publish" scripts\n`,
       );
       expect(published(out)).toEqual([]);
       expect(registry.asked).toEqual([]);

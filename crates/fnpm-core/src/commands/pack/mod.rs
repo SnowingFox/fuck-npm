@@ -26,8 +26,6 @@ pub(crate) struct Packed {
     pub version: String,
     /// The gzipped tarball (empty for a dry run).
     pub tarball: Vec<u8>,
-    pub shasum: [u8; 20],
-    pub integrity: [u8; 64],
     /// The packed package.json, specs replaced.
     pub manifest: Json,
     /// The tarball's paths below `package/`.
@@ -36,7 +34,6 @@ pub(crate) struct Packed {
     pub readme: Option<(String, String)>,
     pub publish_script: Option<String>,
     pub postpublish_script: Option<String>,
-    pub package_dir: PathBuf,
 }
 
 /// Publish's checks, run by `pack` where bun runs them.
@@ -361,12 +358,9 @@ fn print_summary(
     out.print(&text);
 }
 
-pub(crate) fn integrity_sri(integrity: &[u8; 64]) -> String {
+pub(crate) fn integrity_b64(integrity: &[u8; 64]) -> String {
     use base64::Engine as _;
-    format!(
-        "sha512-{}",
-        base64::engine::general_purpose::STANDARD.encode(integrity)
-    )
+    base64::engine::general_purpose::STANDARD.encode(integrity)
 }
 
 fn short_integrity(integrity: &[u8; 64]) -> String {
@@ -643,14 +637,11 @@ pub(crate) async fn pack(
             name,
             version,
             tarball: Vec::new(),
-            shasum: [0; 20],
-            integrity: [0; 64],
             manifest,
             files,
             readme,
             publish_script,
             postpublish_script,
-            package_dir,
         });
     }
 
@@ -831,14 +822,11 @@ pub(crate) async fn pack(
         name,
         version,
         tarball: tarball_bytes,
-        shasum: finished.shasum,
-        integrity: finished.integrity,
         manifest,
         files,
         readme,
         publish_script,
         postpublish_script,
-        package_dir,
     })
 }
 

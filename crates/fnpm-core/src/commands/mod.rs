@@ -15,6 +15,7 @@ mod link;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
+mod publish;
 mod scripts;
 mod table;
 
@@ -245,12 +246,10 @@ pub async fn dispatch(
         ["lock", "audit"] => info::audit(&cx, true).await,
         // Later parity phases (docs/ROADMAP.md P4): a typed error, never a panic.
         ["pack"] | ["pm", "pack"] => pack::run(&cx).await,
-        ["patch"]
-        | ["patch-commit"]
-        | ["publish"]
-        | ["x" | "dlx"]
-        | ["create"]
-        | ["pm", "diff" | "scan"] => Err(not_implemented(&path)),
+        ["publish"] => publish::run(&cx).await,
+        ["patch"] | ["patch-commit"] | ["x" | "dlx"] | ["create"] | ["pm", "diff" | "scan"] => {
+            Err(not_implemented(&path))
+        }
         _ => Err(Error::UnknownCommand(command)),
     }
 }

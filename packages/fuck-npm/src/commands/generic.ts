@@ -35,6 +35,23 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     options.dryRun = true;
   }
   options.cliVersion = getCliVersion();
+  if (head === "publish") {
+    options.nodeVersion = process.versions.node;
+    // bun: `fnpm --filter='*' publish` runs the workspaces' `publish` scripts, it does not publish them.
+    const argv = process.argv.slice(2);
+    const before = argv.slice(0, Math.max(argv.indexOf("publish"), 0));
+    const flag = before.find(
+      (arg) => arg === "-r" || arg === "--recursive" || arg === "--filter" || arg.startsWith("--filter=") || arg.startsWith("-F"),
+    );
+    if (flag !== undefined) {
+      const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
+      ctx.runtime.stderr.write(
+        `error: refusing to publish: ${flag} must come after "publish"\n` +
+          `note: use ${pc.bold(`fnpm publish ${flag}`)}, or ${pc.bold("fnpm run --filter='*' publish")} to run "publish" scripts\n`,
+      );
+      return 1;
+    }
+  }
   const logLevel = logLevelOf(ctx.values);
 
   if (head === "outdated" && ctx.output.mode !== "json" && logLevel !== "silent") {

@@ -80,6 +80,9 @@ pub enum Error {
     /// A 2xx response whose body is not what the endpoint returns.
     #[error("{url}: {message}")]
     InvalidResponse { url: String, message: String },
+    /// The web login of a publish answered with a token that cannot be used.
+    #[error("WebLogin: {0}")]
+    WebLogin(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -281,6 +284,33 @@ impl RegistryClient {
     /// `--tolerate-republish`: whether the registry already has `name@version`.
     pub async fn version_exists(&self, name: &str, version: &str) -> bool {
         self.inner.version_exists(name, version).await
+    }
+
+    /// [`RegistryClient::version_exists`], handing the response's `npm-notice` to `notice`.
+    pub async fn version_exists_noticed(
+        &self,
+        name: &str,
+        version: &str,
+        notice: &(dyn Fn(&str) + Send + Sync),
+    ) -> bool {
+        self.inner
+            .version_exists_noticed(name, version, notice)
+            .await
+    }
+
+    /// The scheme, host and path of the registry `name` publishes to, without userinfo (the
+    /// configured URL when it does not parse).
+    pub fn publish_registry_href(&self, name: &str) -> String {
+        let scope = self.inner.scopes.for_package(name);
+        match &scope.url {
+            Some(url) => {
+                let mut url = url.clone();
+                let _ = url.set_username("");
+                let _ = url.set_password(None);
+                url.to_string()
+            }
+            None => scope.configured.clone(),
+        }
     }
 
     /// Waits for background manifest-cache writes (call before the process exits).

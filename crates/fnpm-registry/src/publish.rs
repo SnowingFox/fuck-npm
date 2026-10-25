@@ -30,6 +30,9 @@ pub trait OtpPrompt: Send + Sync {
     fn web_login(&self, auth_url: &str);
     /// "This operation requires a one-time password." `None` cancels.
     fn read_otp(&self) -> BoxFuture<'_, Option<String>>;
+    /// The `npm-notice` of a response that is not the final one (a 401, a web-login poll, an
+    /// error), as soon as it arrives. The final one is [`Published::notice`].
+    fn notice(&self, _notice: &str) {}
 }
 
 /// Publish settings (`publishConfig` merged with flags).
@@ -45,6 +48,8 @@ pub struct PublishOptions {
     pub otp: Option<String>,
     /// `--filter` / `--recursive`: reported in the user agent.
     pub workspaces: bool,
+    /// Replaces the client's user agent before `<os> <arch> workspaces/..`.
+    pub user_agent: Option<String>,
 }
 
 /// One package to publish.
@@ -362,16 +367,27 @@ impl Inner {
             put(&mut h, "npm-otp", otp);
         }
         put(&mut h, "npm-command", "publish");
-        put(
-            &mut h,
-            "user-agent",
-            &self.npm_user_agent(options.workspaces),
-        );
+        let user_agent = match &options.user_agent {
+            Some(base) => self.npm_user_agent_with(base, options.workspaces),
+            None => self.npm_user_agent(options.workspaces),
+        };
+        put(&mut h, "user-agent", &user_agent);
         h
     }
 
     /// The registry already has `name@version` (`--tolerate-republish`).
     pub async fn version_exists(&self, name: &str, version: &str) -> bool {
+        self.version_exists_noticed(name, version, &|notice| self.warn(notice.to_owned()))
+            .await
+    }
+
+    /// [`Inner::version_exists`], handing the `npm-notice` of the response to `notice`.
+    pub async fn version_exists_noticed(
+        &self,
+        name: &str,
+        version: &str,
+        notice: &(dyn Fn(&str) + Send + Sync),
+    ) -> bool {
         let scope = self.scopes.for_package(name);
         let Some(base) = &scope.url else {
             return false;
@@ -401,8 +417,8 @@ impl Inner {
         let Ok(f) = self.fetch(&spec).await else {
             return false;
         };
-        if let Some(notice) = npm_notice(&f) {
-            self.warn(notice);
+        if let Some(n) = npm_notice(&f) {
+            notice(&n);
         }
         if f.status != 200 {
             return false;
@@ -463,24 +479,23 @@ impl Inner {
                 notice: npm_notice(&f),
             });
         }
+        if let Some(n) = npm_notice(&f) {
+            prompt.notice(&n);
+        }
         if f.status != 401 {
             return Err(publish_error(&url, &f, pkg.name, pkg.version, false));
         }
         match challenge(&f) {
             Challenge::Otp => {}
             Challenge::IpAddress => {
-                return Err(Error::Registry {
-                    url: redact_url(url.as_str()),
-                    status: 401,
-                    message: "login is not allowed from your IP address".to_owned(),
-                });
+                return Err(Error::NeedAuth(
+                    "login is not allowed from your IP address".to_owned(),
+                ));
             }
             Challenge::Other(need) if !need.is_empty() => {
-                return Err(Error::Registry {
-                    url: redact_url(url.as_str()),
-                    status: 401,
-                    message: format!("unable to authenticate, need: {need}"),
-                });
+                return Err(Error::NeedAuth(format!(
+                    "unable to authenticate, need: {need}"
+                )));
             }
             Challenge::Other(_) => {
                 return Err(publish_error(&url, &f, pkg.name, pkg.version, false));
@@ -489,6 +504,9 @@ impl Inner {
         let otp = self.get_otp(&f, &base, &auth, options, prompt, pkg).await?;
         let f = self.fetch(&spec(Some(&otp))).await?;
         if f.status >= 400 {
+            if let Some(n) = npm_notice(&f) {
+                prompt.notice(&n);
+            }
             return Err(publish_error(&url, &f, pkg.name, pkg.version, true));
         }
         Ok(Published {
@@ -530,6 +548,9 @@ impl Inner {
                     what: "web login".to_owned(),
                 };
                 let f = self.fetch(&spec).await?;
+                if let Some(n) = npm_notice(&f) {
+                    prompt.notice(&n);
+                }
                 match f.status {
                     202 => {
                         let wait = f
@@ -542,22 +563,17 @@ impl Inner {
                     }
                     200 => {
                         let v: Value = serde_json::from_slice(&f.body).map_err(|_| {
-                            Error::InvalidResponse {
-                                url: redact_url(done_url.as_str()),
-                                message: "failed to parse response json".to_owned(),
-                            }
+                            Error::WebLogin("failed to parse response json".to_owned())
                         })?;
                         let Some(token) = v.get("token").and_then(Value::as_str) else {
-                            return Err(Error::InvalidResponse {
-                                url: redact_url(done_url.as_str()),
-                                message: "missing `token` field in reponse json".to_owned(),
-                            });
+                            return Err(Error::WebLogin(
+                                "missing `token` field in reponse json".to_owned(),
+                            ));
                         };
                         if token.bytes().any(|b| b == b'\r' || b == b'\n' || b == 0) {
-                            return Err(Error::InvalidResponse {
-                                url: redact_url(done_url.as_str()),
-                                message: "invalid `token` field in response json".to_owned(),
-                            });
+                            return Err(Error::WebLogin(
+                                "invalid `token` field in response json".to_owned(),
+                            ));
                         }
                         return Ok(token.to_owned());
                     }

@@ -73,23 +73,6 @@ impl Json {
         }
     }
 
-    /// From `serde_json` (arrays print on one line).
-    pub fn from_value(value: &serde_json::Value) -> Json {
-        use serde_json::Value;
-        match value {
-            Value::Null => Json::Null,
-            Value::Bool(b) => Json::Bool(*b),
-            Value::Number(n) => Json::Number(n.as_f64().unwrap_or_default()),
-            Value::String(s) => Json::String(s.clone()),
-            Value::Array(items) => Json::Array(items.iter().map(Json::from_value).collect(), true),
-            Value::Object(map) => Json::Object(
-                map.iter()
-                    .map(|(k, v)| (k.clone(), Json::from_value(v)))
-                    .collect(),
-            ),
-        }
-    }
-
     /// JS truthiness.
     pub fn is_truthy(&self) -> bool {
         match self {
