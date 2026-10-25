@@ -354,6 +354,7 @@ pub(crate) fn clone_registry_error(e: &fnpm_registry::Error) -> fnpm_registry::E
             message: message.clone(),
         },
         E::NeedAuth(m) => E::NeedAuth(m.clone()),
+        E::WebLogin(m) => E::WebLogin(m.clone()),
         E::InvalidResponse { url, message } => E::InvalidResponse {
             url: url.clone(),
             message: message.clone(),

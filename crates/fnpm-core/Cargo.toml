@@ -27,10 +27,15 @@ serde.workspace = true
 serde_json.workspace = true
 xxhash-rust.workspace = true
 thiserror.workspace = true
+flate2.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
 mimalloc.workspace = true
 tempfile.workspace = true
 axum.workspace = true
-flate2.workspace = true

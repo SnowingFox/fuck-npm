@@ -230,9 +230,8 @@ const PATCH: CommandLeaf = {
   name: "patch",
   description: "Prepare a package for patching",
   positionals: [
-    pos("package", '"name" (or name@version, or path) of the package to patch', {
-      required: true,
-    }),
+    // Checked by the core, which prints bun's usage example.
+    pos("package", '"name" (or name@version, or path) of the package to patch'),
   ],
   flags: F.PATCH,
   ignoresRuntimeFlags: true,
@@ -242,7 +241,7 @@ const PATCH_COMMIT: CommandLeaf = {
   kind: "leaf",
   name: "patch-commit",
   description: "Save the changes made to a patched package",
-  positionals: [pos("dir", '"dir" containing changes to a package', { required: true })],
+  positionals: [pos("dir", '"dir" containing changes to a package')],
   flags: F.PATCH_COMMIT,
   ignoresRuntimeFlags: true,
 };

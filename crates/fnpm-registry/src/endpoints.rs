@@ -82,9 +82,13 @@ fn parse_url(url: &str) -> Result<Url> {
 impl Inner {
     /// `<ua> <os> <arch> workspaces/<bool>[ ci/<name>]`, as npm sends for publish and whoami.
     pub fn npm_user_agent(&self, workspaces: bool) -> String {
+        self.npm_user_agent_with(&self.user_agent, workspaces)
+    }
+
+    /// [`Inner::npm_user_agent`] with `base` in place of the client's user agent.
+    pub fn npm_user_agent_with(&self, base: &str, workspaces: bool) -> String {
         let mut ua = format!(
-            "{} {} {} workspaces/{workspaces}",
-            self.user_agent,
+            "{base} {} {} workspaces/{workspaces}",
             os_name(),
             arch_name()
         );

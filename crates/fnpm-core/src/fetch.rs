@@ -248,8 +248,8 @@ impl Fetcher {
                 },
             };
             names.push(key.dir_name());
-            let spec = format!("{}@{}", p.name, p.version);
-            if let Some(patch) = graph.patched_dependencies.get(&spec)
+            let patch_key = p.patch_key();
+            if let Some(patch) = graph.patched_dependencies.get(&patch_key)
                 && let Ok((hash, _)) = read_patch(&self.inner.root_dir, patch)
             {
                 names.push(key.patched_dir_name(hash));
@@ -344,7 +344,18 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             remote(inner, name, version, &url, *integrity).await
         }
         Resolution::LocalTarball { path, integrity } => {
-            let file = inner.root_dir.join(path);
+            // Resolution labels preserve the requested spelling, including redundant
+            // components. Normalise before opening so a long label remains a valid path.
+            let mut file = PathBuf::new();
+            for component in inner.root_dir.join(path).components() {
+                match component {
+                    std::path::Component::CurDir => {}
+                    std::path::Component::ParentDir => {
+                        file.pop();
+                    }
+                    other => file.push(other.as_os_str()),
+                }
+            }
             if let Some(hit) = cached(inner, name, version, *integrity) {
                 return Ok(hit);
             }
@@ -529,7 +540,7 @@ pub(crate) struct GraphSource<'g> {
 
 impl GraphSource<'_> {
     fn patch(&self, pkg: &Package, base: Fetched) -> Result<PackageEntry, String> {
-        let key = format!("{}@{}", pkg.name, pkg.version);
+        let key = pkg.patch_key();
         let Some(patch) = self.graph.patched_dependencies.get(&key) else {
             return Ok(base.entry);
         };
@@ -579,10 +590,7 @@ impl fnpm_linker::PackageSource for GraphSource<'_> {
             return None;
         }
         let pkg = self.graph.get(id)?;
-        let patch = self
-            .graph
-            .patched_dependencies
-            .get(&format!("{}@{}", pkg.name, pkg.version))?;
+        let patch = self.graph.patched_dependencies.get(&pkg.patch_key())?;
         // A patch file that cannot be read fails in `wait`; no tag then.
         let (hash, _) = read_patch(&self.fetcher.inner.root_dir, patch).ok()?;
         Some(format!("{hash:016x}"))

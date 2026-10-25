@@ -1426,7 +1426,25 @@ re-resolve without the previous graph and relink. `install --analyze` is `NOT_IM
 | `pm untrusted`, `pm trust`, `pm default-trusted` | `fnpm_scripts::pm` over the installed layout | `commands/scripts.rs` |
 | `init`, `pm pkg get/set/delete/fix`, `pm version` | package.json via `PackageJsonEditor`; `pm version` as bun: `--dry-run` only prints, hooks run with the `fnpm run` environment unless `--ignore-scripts`, commit and `v<version>` tag only when the package directory has a `.git` (dirty tree is an error without `--force`), `from-git` uses `--match=*.*.*` | `commands/files.rs` |
 | `pm cache [path]/rm/prune/pack/unpack`, `store path/status/prune`, `pm fetch`, `pm bin`, `pm hash*`, `pm licenses`, `doctor` | store / cache maintenance and diagnostics | `commands/maintenance.rs`, `inspect.rs` |
-| `patch`, `patch-commit`, `pack`, `publish`, `x`/`dlx`, `create`, `pm pack/diff/scan`, `audit fix` | P4: `Error::NotImplemented` (`NOT_IMPLEMENTED`) | `commands/mod.rs` |
+| `pack`, `pm pack` | streaming tar/gzip, file/ignore rules, bins, bundled dependencies, workspace/catalog rewriting, lifecycle scripts, atomic output | `commands/pack/` |
+| `publish` | directory or existing tarball, publishConfig, lifecycle scripts, registry PUT, OTP/browser authentication, recursive dependency order | `commands/publish.rs`, `fnpm-registry/src/publish.rs` |
+| `patch`, `patch --commit`, `patch-commit` | editable store copy, verified Git diff, patchedDependencies, install-time application; pending patch persistence waits for resolution | `commands/patch.rs`, `install/mod.rs`, `fetch.rs` |
+| `x`/`dlx`, `create`, `pm diff/scan`, `audit fix` | P4: `Error::NotImplemented` (`NOT_IMPLEMENTED`) | `commands/mod.rs` |
+
+Pack, publish and patch print directly to process stdout/stderr and return the exit code
+with no structured `CoreResult.data` or `lines`. Their conformance ports use the local test
+registry. Full parity remains open: pack has install/`pm diff` blockers and an unavailable
+subprocess memory API in the Node adapter; patch still has workspace/peer target-selection,
+global-store conformance, scanner, and failure-rollback gaps. Patch preparation keeps local
+isolated links and replaces global-store links with editable copies whose node_modules reaches
+the original sibling dependencies. Bundled entries win, and paths outside the project's
+node_modules are refused. Patch commit preserves the manifest, lockfile, previous patch and
+edited folder on resolution failure. Ordinary link/save errors restore patch-file, manifest
+and lockfile writes, but node_modules is not rolled back and there is no crash journal. After
+a successful save, lifecycle failures keep the saved metadata. Diff preparation does not
+follow dependency-directory symlinks; bin mode/shebang normalization uses a disposable private
+baseline and leaves the shared store intact. The independent pack glob matcher does not
+implement extglobs or numeric brace ranges.
 
 `info <pkg>`, `whoami`, `pm cache`, `store`, `doctor` and `pm bin -g` also work outside a project
 (`Project::load_anywhere`: the configuration for `cwd`). `link` / `unlink` names (positionals

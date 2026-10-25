@@ -20,8 +20,9 @@ import {
 } from "fs";
 import { chmod, exists, lstat, readdir, rm, symlink, truncate, writeFile } from "../compat/fs-promises.ts";
 import {
-  fnpmEnv,
+  fnpmEnv as sharedFnpmEnv,
   fnpmExe,
+  nodeExe,
   DirectoryTree,
   isASAN,
   isDebug,
@@ -40,6 +41,8 @@ import {
 import { mkfifo } from "../compat/mkfifo.ts";
 import { constants } from "os";
 import { join } from "path";
+
+const fnpmEnv: Record<string, string | undefined> = { ...sharedFnpmEnv, FNPM_REGISTRY: undefined };
 
 // Runs `fnpm pm pack` for the package in `dir`, from `cwd`.
 // `out` and `err` are normalized for inline snapshots. The shasum, the integrity
@@ -354,7 +357,7 @@ describe.concurrent("package.json names and versions", () => {
     const { out, err, exitCode } = await runPack(dir);
     expect(err).toMatchInlineSnapshot(`
       "error: No package.json was found for directory "<dir>"
-      note: Run "bun init" to initialize a project"
+      note: Run "fnpm init" to initialize a project"
     `);
     expect(out).toMatchInlineSnapshot(`""`);
     expect(exitCode).toBe(1);
@@ -1826,7 +1829,7 @@ describe.concurrent("workspaces", () => {
         JSON.stringify({
           name: "app",
           version: "1.0.0",
-          scripts: { prepack: `${fnpmExe()} bump-pkg1.js` },
+          scripts: { prepack: `${nodeExe()} bump-pkg1.js` },
           dependencies: { "pkg1": "workspace:*" },
         }),
       ),
@@ -2261,9 +2264,9 @@ tarball: \${fs.existsSync("pack-lifecycle-order-1.1.1.tgz")}\`)`;
       name: "pack-lifecycle-order",
       version: "1.1.1",
       scripts: {
-        prepack: `${fnpmExe()} script.js prepack`,
-        postpack: `${fnpmExe()} script.js postpack`,
-        prepare: `${fnpmExe()} script.js prepare`,
+        prepack: `${nodeExe()} script.js prepack`,
+        postpack: `${nodeExe()} script.js postpack`,
+        prepare: `${nodeExe()} script.js prepare`,
       },
     }),
     "script.js": script,
@@ -2271,7 +2274,7 @@ tarball: \${fs.existsSync("pack-lifecycle-order-1.1.1.tgz")}\`)`;
 
   const { out, stderr, exitCode } = await runPack(dir);
   expect(stderr).toBe(
-    [`$ ${fnpmExe()} script.js prepack`, `$ ${fnpmExe()} script.js prepare`, `$ ${fnpmExe()} script.js postpack`, ""].join(
+    [`$ ${nodeExe()} script.js prepack`, `$ ${nodeExe()} script.js prepare`, `$ ${nodeExe()} script.js postpack`, ""].join(
       "\n",
     ),
   );
@@ -2378,7 +2381,7 @@ test.concurrent("lifecycle script modifying version updates tarball filename (#1
       name: "pack-version-update",
       version: "1.0.0",
       scripts: {
-        prepack: `${fnpmExe()} update-version.js`,
+        prepack: `${nodeExe()} update-version.js`,
       },
     }),
     "update-version.js": updateScript,
@@ -2386,7 +2389,7 @@ test.concurrent("lifecycle script modifying version updates tarball filename (#1
   });
 
   const { out, stderr, exitCode } = await runPack(dir);
-  expect(stderr).toBe(`$ ${fnpmExe()} update-version.js\n`);
+  expect(stderr).toBe(`$ ${nodeExe()} update-version.js\n`);
   // The tarball filename uses the version prepack wrote.
   // package.json embeds the path to bun, so its size differs between machines.
   expect(out.split("\n")).toEqual([
@@ -2418,7 +2421,7 @@ test.concurrent("lifecycle script modifying version updates tarball filename (#1
     name: "pack-version-update",
     version: "2.0.0-snapshot.test",
     scripts: {
-      prepack: `${fnpmExe()} update-version.js`,
+      prepack: `${nodeExe()} update-version.js`,
     },
   });
 });
@@ -2440,7 +2443,7 @@ describe.concurrent("package.json that cannot be loaded", () => {
       "package.json": JSON.stringify({
         name: "pack-prepack-removes",
         version: "1.0.0",
-        scripts: { prepack: `${fnpmExe()} remove.js` },
+        scripts: { prepack: `${nodeExe()} remove.js` },
       }),
       "remove.js": `require("fs").unlinkSync("package.json");`,
     });
@@ -2455,7 +2458,7 @@ describe.concurrent("package.json that cannot be loaded", () => {
       "package.json": JSON.stringify({
         name: "pack-prepack-breaks",
         version: "1.0.0",
-        scripts: { prepack: `${fnpmExe()} break.js` },
+        scripts: { prepack: `${nodeExe()} break.js` },
       }),
       "break.js": `require("fs").writeFileSync("package.json", "{ broken\\n");`,
     });

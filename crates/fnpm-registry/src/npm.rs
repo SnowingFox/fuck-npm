@@ -196,6 +196,7 @@ impl Error {
                 message: message.clone(),
             },
             Error::NeedAuth(s) => Error::NeedAuth(s.clone()),
+            Error::WebLogin(s) => Error::WebLogin(s.clone()),
             Error::InvalidResponse { url, message } => Error::InvalidResponse {
                 url: url.clone(),
                 message: message.clone(),

@@ -204,49 +204,10 @@ fn bin_key(bin: &Bin) -> &'static str {
 
 /// `git+<repo>#<commit>` / `github:<owner>/<repo>#<commit>` (bun `Repository::fmt`).
 pub(crate) fn repository_label(res: &Resolution) -> String {
-    let (label, owner, repo, committish, resolved) = match res {
-        Resolution::Git {
-            url,
-            committish,
-            resolved_commit,
-            ..
-        } => ("git+", "", url.as_str(), committish, resolved_commit),
-        Resolution::Github {
-            owner,
-            repo,
-            committish,
-            resolved_commit,
-            ..
-        } => (
-            "github:",
-            owner.as_str(),
-            repo.as_str(),
-            committish,
-            resolved_commit,
-        ),
-        _ => return String::new(),
-    };
-    let mut s = String::with_capacity(label.len() + owner.len() + repo.len() + 48);
-    s.push_str(label);
-    if !owner.is_empty() {
-        s.push_str(owner);
-        s.push('/');
-    } else if fnpm_types::spec::is_scp_like_path(repo) {
-        s.push_str("ssh://");
+    match res {
+        Resolution::Git { .. } | Resolution::Github { .. } => res.patch_label(),
+        _ => String::new(),
     }
-    s.push_str(repo);
-    if !resolved.is_empty() {
-        s.push('#');
-        s.push_str(
-            resolved
-                .rsplit_once('-')
-                .map_or(resolved.as_str(), |(_, c)| c),
-        );
-    } else if !committish.is_empty() {
-        s.push('#');
-        s.push_str(committish);
-    }
-    s
 }
 
 /// bun `Stringifier::version_to_write`.
@@ -803,10 +764,7 @@ impl W<'_, '_> {
 /// `name@<version>` of a package for `patchedDependencies` keys (bun uses the workspace's
 /// version for workspaces and the resolution text otherwise).
 fn patch_key(p: &Package) -> String {
-    match &p.resolution {
-        Resolution::Workspace { .. } => format!("{}@{}", p.name, p.version),
-        r => format!("{}@{}", p.name, crate::hash::resolution_text(r)),
-    }
+    p.patch_key()
 }
 
 /// Serialises `graph` (hoisting it first).

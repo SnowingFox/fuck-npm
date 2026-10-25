@@ -341,11 +341,7 @@ export function requestOptions(
     if (!/^\d+$/.test(elideLines)) throw invalid(`invalid --elide-lines value: ${elideLines}`);
     out.elideLines = Number(elideLines);
   }
-  const gzip = read.string(values, "gzipLevel");
-  if (gzip !== undefined) {
-    if (!/^[0-9]$/.test(gzip)) throw invalid(`compression level must be between 0 and 9, received ${gzip}`);
-    out.gzipLevel = Number(gzip);
-  }
+  // `--gzip-level` is checked by the core, after the scripts that run before packing (bun).
   const gitTag = read.string(values, "gitTagVersion");
   if (gitTag !== undefined) {
     if (gitTag !== "true" && gitTag !== "false") throw invalid(`invalid --git-tag-version value: ${gitTag}`);

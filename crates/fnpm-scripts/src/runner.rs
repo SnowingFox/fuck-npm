@@ -432,6 +432,7 @@ async fn spawn_script(
     })
     .stdout(output())
     .stderr(output());
+    keep_stdio(&mut cmd);
     set_parent_death_signal(&mut cmd);
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take();
@@ -454,6 +455,33 @@ pub(crate) fn shell_command(shell: &Shell, command: &str) -> tokio::process::Com
     // A NUL cannot be passed in argv; bun's C string of the script ends there too.
     cmd.arg(crate::env::until_nul(command));
     cmd
+}
+
+/// Clears `FD_CLOEXEC` on fds 0-2 in the child. `Stdio::inherit` leaves the parent's fds as
+/// they are, and node (which hosts the napi core) marks its stdio close-on-exec, so a script
+/// started from there would run without a stdout.
+pub(crate) fn keep_stdio(cmd: &mut tokio::process::Command) {
+    #[cfg(unix)]
+    {
+        // SAFETY: the closure runs in the forked child before exec and only makes the
+        // async-signal-safe `fcntl` calls on fds that are borrowed for the call.
+        unsafe {
+            cmd.pre_exec(|| {
+                for fd in 0..=2 {
+                    let borrowed = std::os::fd::BorrowedFd::borrow_raw(fd);
+                    if let Ok(flags) = rustix::io::fcntl_getfd(borrowed) {
+                        let _ = rustix::io::fcntl_setfd(
+                            borrowed,
+                            flags.difference(rustix::io::FdFlags::CLOEXEC),
+                        );
+                    }
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = cmd;
 }
 
 /// The kernel kills the child when its parent dies, so no script outlives the install

@@ -2,12 +2,49 @@
  * vitest setup for the conformance suite: the `Bun` global, and the matchers that bun:test has and vitest does not
  * (`toBeTrue`, `toEndWith`, ... plus the harness matchers `toHaveBins`, `toBeValidBin`, `toBeWorkspaceLink`, `toMatchNodeModulesAt`).
  */
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
 import { expect } from "vitest";
 import { toBeValidBin, toBeWorkspaceLink, toHaveBins, toMatchNodeModulesAt } from "../harness.ts";
 import { Bun } from "./bun.ts";
 import * as bunTest from "./bun-test.ts";
 
 (globalThis as { Bun?: unknown }).Bun = Bun;
+
+// `tempDir` returns a `String` object (it has to carry `Symbol.dispose`). bun's path and fs functions take it as a
+// path; node's check `typeof value === "string"`. Unwrap `String` objects in the arguments of node:path, node:fs and
+// node:fs/promises, then update their named ESM exports.
+const unwrap = (value: unknown) => (value instanceof String ? value.valueOf() : value);
+type Fn = ((...args: unknown[]) => unknown) & { __unwraps?: true };
+const wrappers = new WeakMap<Fn, Fn>();
+function unwrapping(original: Fn): Fn {
+  if (original.__unwraps) return original;
+  const known = wrappers.get(original);
+  if (known) return known;
+  const wrapped: Fn = function (this: unknown, ...args: unknown[]) {
+    return original.apply(this, args.map(unwrap));
+  };
+  wrappers.set(original, wrapped);
+  for (const key of Reflect.ownKeys(original)) {
+    if (key === "length" || key === "name" || key === "prototype" || key === "arguments" || key === "caller") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(original, key)!;
+    if (typeof descriptor.value === "function") descriptor.value = unwrapping(descriptor.value as Fn);
+    Object.defineProperty(wrapped, key, descriptor);
+  }
+  wrapped.__unwraps = true;
+  return wrapped;
+}
+function coercePathArguments(module: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(module)) {
+    if (typeof value !== "function" || /^[A-Z]/.test(key)) continue;
+    Object.defineProperty(module, key, { value: unwrapping(value as Fn), writable: true, configurable: true, enumerable: true });
+  }
+}
+for (const module of [path, path.posix, fs, fs.promises]) {
+  coercePathArguments(module as unknown as Record<string, unknown>);
+}
+syncBuiltinESMExports();
 // bun:test names are globals in bun; vitest `globals: true` installs its own, replace them with the bun flavour.
 Object.assign(globalThis, {
   test: bunTest.test,

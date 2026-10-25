@@ -27,6 +27,7 @@ import {
 import {
   fnpmEnv,
   fnpmExe,
+  nodeExe,
   DirectoryTree,
   isLinux,
   isMusl,
@@ -2631,7 +2632,7 @@ describe.concurrent("isolated linker: a package that the project links", () => {
             name: "w",
             version: "1.0.0",
             dependencies: { "has-bin-entries": "1.0.0" },
-            scripts: { postinstall: `${fnpmExe()} postinstall.js` },
+            scripts: { postinstall: `${nodeExe()} postinstall.js` },
           }),
           "packages/w/postinstall.js": `require("fs").writeFileSync("postinstall.txt", String(require("has-bin-entries").patched));`,
         },

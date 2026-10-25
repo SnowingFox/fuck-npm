@@ -200,14 +200,121 @@ pub(crate) fn load_identity(
     Ok((certs, key))
 }
 
+/// webpki verification, plus what OpenSSL (and so node and bun) also accepts: a server whose
+/// certificate is itself one of the configured CA certificates (a self-signed certificate
+/// given with `ca` / `cafile`). Only webpki's CA-as-server rejection is bypassed, after
+/// its validity checks; certificate purpose, name and handshake signatures are still checked.
+#[derive(Debug)]
+struct PinnedSelfSigned {
+    inner: Arc<rustls::client::WebPkiServerVerifier>,
+    pinned: Vec<CertificateDer<'static>>,
+}
+
+impl rustls::client::danger::ServerCertVerifier for PinnedSelfSigned {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &rustls::pki_types::ServerName<'_>,
+        ocsp_response: &[u8],
+        now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        match self.inner.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            ocsp_response,
+            now,
+        ) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                let ca_as_server = matches!(
+                    &e,
+                    rustls::Error::InvalidCertificate(rustls::CertificateError::Other(other))
+                        if other.0.downcast_ref::<webpki::Error>()
+                            == Some(&webpki::Error::CaUsedAsEndEntity)
+                );
+                if !ca_as_server
+                    || !self
+                        .pinned
+                        .iter()
+                        .any(|c| c.as_ref() == end_entity.as_ref())
+                {
+                    return Err(e);
+                }
+                // WebPKI checks EKU after basic constraints, so the rejected CA leaf has
+                // not yet been checked for server authentication. Parse that extension
+                // separately instead of letting a client-only CA become a server.
+                let (_, cert) =
+                    x509_parser::parse_x509_certificate(end_entity.as_ref()).map_err(|_| {
+                        rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding)
+                    })?;
+                let usage = cert.extended_key_usage().map_err(|_| {
+                    rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding)
+                })?;
+                if usage.is_some_and(|eku| !eku.value.server_auth) {
+                    return Err(rustls::Error::InvalidCertificate(
+                        rustls::CertificateError::InvalidPurpose,
+                    ));
+                }
+                let parsed = rustls::server::ParsedCertificate::try_from(end_entity)?;
+                rustls::client::verify_server_name(&parsed, server_name)?;
+                Ok(rustls::client::danger::ServerCertVerified::assertion())
+            }
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
 fn rustls_config(
     roots: RootCertStore,
     identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
 ) -> Result<rustls::ClientConfig> {
-    let builder = rustls::ClientConfig::builder_with_provider(provider())
+    rustls_config_pinned(roots, identity, Vec::new())
+}
+
+fn rustls_config_pinned(
+    roots: RootCertStore,
+    identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
+    pinned: Vec<CertificateDer<'static>>,
+) -> Result<rustls::ClientConfig> {
+    let versions = rustls::ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
-        .map_err(|e| tls_error(format!("TLS setup failed: {e}")))?
-        .with_root_certificates(roots);
+        .map_err(|e| tls_error(format!("TLS setup failed: {e}")))?;
+    let builder = if pinned.is_empty() {
+        versions.with_root_certificates(roots)
+    } else {
+        let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            provider(),
+        )
+        .build()
+        .map_err(|e| tls_error(format!("TLS setup failed: {e}")))?;
+        versions
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(PinnedSelfSigned { inner, pinned }))
+    };
     let mut config = match identity {
         Some((certs, key)) => builder
             .with_client_auth_cert(certs, key)
@@ -254,15 +361,21 @@ pub(crate) fn trust(
                 file.display()
             )));
         }
-        add_all(&mut roots, certs, true, "CA file")?;
-        return Ok(Trust::Rustls(Box::new(rustls_config(roots, identity)?)));
+        add_all(&mut roots, certs.clone(), true, "CA file")?;
+        return Ok(Trust::Rustls(Box::new(rustls_config_pinned(
+            roots, identity, certs,
+        )?)));
     }
     if !config.ca.is_empty() {
+        let mut pinned = Vec::new();
         for pem in &config.ca {
             let certs = pem_certs(pem.as_bytes(), "")?;
-            add_all(&mut roots, certs, true, "provided CA")?;
+            add_all(&mut roots, certs.clone(), true, "provided CA")?;
+            pinned.extend(certs);
         }
-        return Ok(Trust::Rustls(Box::new(rustls_config(roots, identity)?)));
+        return Ok(Trust::Rustls(Box::new(rustls_config_pinned(
+            roots, identity, pinned,
+        )?)));
     }
     let extra = extra_ca_certs(env)?;
     match ca_store(config, env)? {
@@ -288,6 +401,104 @@ pub(crate) fn trust(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_ca_server_keeps_time_and_name_checks() {
+        use rustls::client::danger::ServerCertVerifier;
+        use rustls::pki_types::{ServerName, UnixTime};
+        use std::time::Duration;
+
+        let cert =
+            CertificateDer::from_pem_slice(include_bytes!("../tests/fixtures/pinned-server.pem"))
+                .unwrap();
+        let mut roots = RootCertStore::empty();
+        roots.add(cert.clone()).unwrap();
+        let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            provider(),
+        )
+        .build()
+        .unwrap();
+        let verifier = PinnedSelfSigned {
+            inner,
+            pinned: vec![cert.clone()],
+        };
+        let localhost = ServerName::try_from("localhost").unwrap();
+        let time = |seconds| UnixTime::since_unix_epoch(Duration::from_secs(seconds));
+        assert!(
+            verifier
+                .verify_server_cert(&cert, &[], &localhost, &[], time(1_800_000_000))
+                .is_ok()
+        );
+        for (seconds, expected) in [(0, "NotValidYet"), (6_000_000_000, "Expired")] {
+            let err = verifier
+                .verify_server_cert(&cert, &[], &localhost, &[], time(seconds))
+                .unwrap_err();
+            assert!(format!("{err:?}").contains(expected), "{err:?}");
+        }
+        let wrong_name = ServerName::try_from("wrong.example").unwrap();
+        let err = verifier
+            .verify_server_cert(&cert, &[], &wrong_name, &[], time(1_800_000_000))
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::NotValidForNameContext { .. }
+                )
+            ),
+            "{err:?}"
+        );
+        let unpinned = PinnedSelfSigned {
+            pinned: Vec::new(),
+            ..verifier
+        };
+        assert!(
+            unpinned
+                .verify_server_cert(&cert, &[], &localhost, &[], time(1_800_000_000))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn pinned_client_only_ca_is_not_a_server() {
+        use rustls::client::danger::ServerCertVerifier;
+        use rustls::pki_types::{ServerName, UnixTime};
+        use std::time::Duration;
+
+        let cert = CertificateDer::from_pem_slice(include_bytes!(
+            "../tests/fixtures/pinned-client-only.pem"
+        ))
+        .unwrap();
+        let mut roots = RootCertStore::empty();
+        roots.add(cert.clone()).unwrap();
+        let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            provider(),
+        )
+        .build()
+        .unwrap();
+        let verifier = PinnedSelfSigned {
+            inner,
+            pinned: vec![cert.clone()],
+        };
+        let err = verifier
+            .verify_server_cert(
+                &cert,
+                &[],
+                &ServerName::try_from("localhost").unwrap(),
+                &[],
+                UnixTime::since_unix_epoch(Duration::from_secs(1_800_000_000)),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                rustls::Error::InvalidCertificate(rustls::CertificateError::InvalidPurpose)
+            ),
+            "{err:?}"
+        );
+    }
 
     #[test]
     fn store_selection() {

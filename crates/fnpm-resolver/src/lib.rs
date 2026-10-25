@@ -250,6 +250,7 @@ pub struct Resolver {
     config: Arc<Config>,
     manifests: Arc<dyn ManifestSource>,
     fetcher: Arc<dyn PackageFetcher>,
+    patch_hashes: std::collections::BTreeMap<String, String>,
 }
 
 impl Resolver {
@@ -261,6 +262,7 @@ impl Resolver {
             config,
             manifests: source.clone(),
             fetcher: source,
+            patch_hashes: Default::default(),
         }
     }
 
@@ -274,7 +276,14 @@ impl Resolver {
             config,
             manifests,
             fetcher,
+            patch_hashes: Default::default(),
         }
+    }
+
+    /// Supplies hashes for patch files a command will write after resolution succeeds.
+    pub fn with_patch_hashes(mut self, hashes: std::collections::BTreeMap<String, String>) -> Self {
+        self.patch_hashes = hashes;
+        self
     }
 
     /// Resolves the whole graph. `tx` receives [`Resolved`] events as packages become final;
@@ -351,6 +360,7 @@ impl Resolver {
         };
         let engine = engine::Engine::new(engine::EngineInput {
             cfg,
+            patch_hashes: &self.patch_hashes,
             ws: workspace,
             prev: previous,
             mode,
@@ -402,7 +412,10 @@ impl Resolver {
     ) -> Result<ResolveOutput> {
         let mut graph = prev.clone();
         for (key, patch) in &mut graph.patched_dependencies {
-            patch.hash = Some(engine::patch_hash(&workspace.root_dir, key, &patch.path)?);
+            patch.hash = Some(match self.patch_hashes.get(key) {
+                Some(hash) => hash.clone(),
+                None => engine::patch_hash(&workspace.root_dir, key, &patch.path)?,
+            });
         }
         frozen::emit_all(&graph, &self.config, tx.as_ref());
         if events.enabled() {

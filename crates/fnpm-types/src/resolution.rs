@@ -47,7 +47,8 @@ pub enum Resolution {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         integrity: Option<Integrity>,
     },
-    /// A `.tgz` on disk, relative to the project root, `/`-separated.
+    /// A `.tgz` on disk, relative to the project root, `/`-separated. Root
+    /// declarations preserve their requested spelling for lockfile and patch labels.
     LocalTarball {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +83,53 @@ impl Resolution {
             tarball_url: None,
             integrity,
         }
+    }
+
+    /// The label used in patchedDependencies (local tarballs omit the file: prefix).
+    pub fn patch_label(&self) -> String {
+        let (prefix, owner, repo, requested, resolved) = match self {
+            Self::LocalTarball { path, .. } | Self::Folder { path } => return path.clone(),
+            Self::Git {
+                url,
+                committish,
+                resolved_commit,
+                ..
+            } => ("git+", "", url.as_str(), committish, resolved_commit),
+            Self::Github {
+                owner,
+                repo,
+                committish,
+                resolved_commit,
+                ..
+            } => (
+                "github:",
+                owner.as_str(),
+                repo.as_str(),
+                committish,
+                resolved_commit,
+            ),
+            other => return other.to_string(),
+        };
+        let mut label = prefix.to_owned();
+        if !owner.is_empty() {
+            label.push_str(owner);
+            label.push('/');
+        } else if crate::spec::is_scp_like_path(repo) {
+            label.push_str("ssh://");
+        }
+        label.push_str(repo);
+        let commit = if resolved.is_empty() {
+            requested.as_str()
+        } else {
+            resolved
+                .rsplit_once('-')
+                .map_or(resolved.as_str(), |(_, c)| c)
+        };
+        if !commit.is_empty() {
+            label.push('#');
+            label.push_str(commit);
+        }
+        label
     }
 
     pub fn tag(&self) -> ResolutionTag {
@@ -211,6 +259,22 @@ mod tests {
             integrity: None,
         };
         assert_eq!(gh.to_string(), "github:u/r#abc");
+        assert_eq!(gh.patch_label(), "github:u/r#abc");
+        let tgz = Resolution::LocalTarball {
+            path: "./pkg.tgz".into(),
+            integrity: None,
+        };
+        assert_eq!(tgz.patch_label(), "./pkg.tgz");
+        let git = Resolution::Git {
+            url: "git@example.invalid:repo.git".into(),
+            committish: "main".into(),
+            resolved_commit: "abc123".into(),
+            integrity: None,
+        };
+        assert_eq!(
+            git.patch_label(),
+            "git+ssh://git@example.invalid:repo.git#abc123"
+        );
         assert_eq!(gh.tag(), ResolutionTag::Github);
         assert!(Resolution::Root.is_local_tree());
         assert!(
