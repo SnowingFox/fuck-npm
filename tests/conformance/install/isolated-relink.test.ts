@@ -276,7 +276,7 @@ test.concurrent.skipIf(!isWindows)("junction-mode warm install reports no change
   expect(await layout(packageDir)).toEqual(oneRangeDepLayout("1.1.0"));
 });
 
-test.concurrent("the orphaned store entry survives the re-link until bun prune", async () => {
+test.concurrent("the orphaned store entry survives the re-link until fnpm prune", async () => {
   using packageDir = project(oneRangeDep());
 
   expect(await install(packageDir)).toEqual(installed("+ one-range-dep@1.0.0\n\n2 packages installed"));
@@ -288,7 +288,7 @@ test.concurrent("the orphaned store entry survives the re-link until bun prune",
 
   const { out, err, exitCode } = await prune(packageDir);
   expect(out).toMatchInlineSnapshot(`
-    "bun prune <version> (<revision>)
+    "fnpm prune <version> (<revision>)
 
     - no-deps@1.1.0
     1 package removed (checked 4 installed packages)"

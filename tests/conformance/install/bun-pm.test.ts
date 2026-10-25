@@ -267,7 +267,7 @@ it("should not list packages missing from node_modules", async () => {
 `);
     expect(await exited).toBe(0);
   }
-  // simulates `bun prune --production` or a platform-mismatched optional
+  // simulates `fnpm prune --production` or a platform-mismatched optional
   // dependency: the package is in the lockfile but not on disk
   await rm(join(package_dir, "node_modules", "bar"), { recursive: true });
   {

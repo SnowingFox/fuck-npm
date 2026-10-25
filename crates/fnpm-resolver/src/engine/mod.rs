@@ -172,6 +172,9 @@ pub(crate) struct Engine<'a> {
     pub requests: Vec<Request>,
     pub request_targets: Vec<Option<PackageId>>,
     pub kept_patched: Vec<String>,
+    /// `(package, deprecated warning)` of the registry packages resolved from a manifest by
+    /// this run; [`Engine::finish`] reports what the project asks for.
+    pub deprecated: Vec<(PackageId, String)>,
     pub warnings: Vec<String>,
     pub peer_askers: Option<peers::Askers>,
     /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
@@ -318,6 +321,7 @@ impl<'a> Engine<'a> {
             requests,
             request_targets: Vec::new(),
             kept_patched: Vec::new(),
+            deprecated: Vec::new(),
             warnings: Vec::new(),
             peer_askers: None,
             parents: None,

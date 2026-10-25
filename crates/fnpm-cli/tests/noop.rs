@@ -77,10 +77,8 @@ fn a_repeat_install_is_a_noop() {
         assert_eq!(again["ok"], true, "{args:?}");
         assert_eq!(again["command"], "install", "{args:?}");
         assert_eq!(again["summary"]["noop"], true, "{args:?}");
-        assert_eq!(
-            again["summary"]["checked"],
-            serde_json::json!({ "installs": 1, "packages": 1 })
-        );
+        // Nothing to check in a project without dependencies (bun: `[1.00ms] done`).
+        assert_eq!(again["summary"].get("checked"), None, "{args:?}");
     }
 
     // Anything that may change node_modules is not a no-op.
@@ -140,10 +138,7 @@ fn a_noop_still_reports_configuration_warnings() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(
-        stdout.contains("Checked 1 install across 1 package (no changes)"),
-        "{stdout}"
-    );
+    assert!(stdout.ends_with("] done\n"), "{stdout}");
     assert!(
         stderr.contains("warn: ") && stderr.contains("certfile is not supported"),
         "{stderr}"

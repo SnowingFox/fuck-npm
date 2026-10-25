@@ -202,6 +202,16 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     let optional = optional_only(cx.graph);
     let installed = AtomicU32::new(0);
     let skipped = AtomicU32::new(0);
+    let written: Vec<std::sync::atomic::AtomicBool> = (0..cx.graph.packages.len())
+        .map(|_| Default::default())
+        .collect();
+    let installed_packages = AtomicU32::new(0);
+    let count_written = |id: PackageId| {
+        installed.fetch_add(1, Ordering::Relaxed);
+        if !written[id.index()].swap(true, Ordering::Relaxed) {
+            installed_packages.fetch_add(1, Ordering::Relaxed);
+        }
+    };
     let dirs: Mutex<Vec<(PackageId, PathBuf)>> = Mutex::new(Vec::new());
     let force = cx.opts.force;
     let staging_suffix = fsutil::random_suffix();
@@ -249,7 +259,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                     if !st.skipped.load(Ordering::Relaxed) {
                         *st.real_entry_dir.lock() = Some(staging);
                         st.built.store(true, Ordering::Relaxed);
-                        installed.fetch_add(1, Ordering::Relaxed);
+                        count_written(e.package);
                     }
                     Ok(())
                 }
@@ -277,7 +287,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                     install(cx, e.package, &pkg_dir, &optional, st, &skipped)?;
                     if !st.skipped.load(Ordering::Relaxed) {
                         st.built.store(true, Ordering::Relaxed);
-                        installed.fetch_add(1, Ordering::Relaxed);
+                        count_written(e.package);
                         dirs.lock().push((e.package, pkg_dir));
                     }
                     Ok(())
@@ -396,10 +406,15 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
 
     let mut dirs = dirs.into_inner();
     dirs.sort();
+    let installed = installed.load(Ordering::Relaxed);
+    let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
-        installed: installed.load(Ordering::Relaxed),
+        installed,
+        installed_packages: installed_packages.load(Ordering::Relaxed),
+        // Every entry that was neither written nor skipped for the platform was checked.
+        verified: (layout.entries.len() as u32).saturating_sub(installed + skipped),
         removed,
-        skipped: skipped.load(Ordering::Relaxed),
+        skipped,
         dirs,
         backend_used: None,
     })

@@ -3700,7 +3700,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).toContain("Saved lockfile");
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "2 packages installed",
       ]);
@@ -3806,7 +3806,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ all-lifecycle-scripts@1.0.0",
         "",
@@ -3855,7 +3855,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("Checked 1 install across 2 packages (no changes)"),
       ]);
@@ -3902,7 +3902,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ what-bin@1.0.0"),
         "",
@@ -3931,7 +3931,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -3965,7 +3965,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ what-bin@1.0.0"),
         "",
@@ -3992,7 +3992,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -4030,7 +4030,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -4068,7 +4068,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       var err = await stderr.text();
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ lifecycle-postinstall@1.0.0",
         "",
@@ -4095,7 +4095,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       err = await stderr.text();
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ lifecycle-postinstall@1.0.0",
         "",
@@ -4321,7 +4321,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ another-init-cwd@1.0.0",
         "+ lifecycle-init-cwd@1.0.0",
@@ -4368,7 +4368,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), verdaccio.registryUrl());
 
       const out = await stdout.text();
-      expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(out).toEqual(expect.stringContaining("fnpm install v"));
     });
 
     test("failing root lifecycle script should print output correctly", async () => {
@@ -4398,7 +4398,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(await exited).toBe(1);
       assertManifestsPopulated(join(packageDir, ".bun-cache"), verdaccio.registryUrl());
 
-      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v1."));
+      expect(await stdout.text()).toEqual(expect.stringContaining("fnpm install v"));
       const err = await stderr.text();
       expect(err).toContain("error: Oops!");
       expect(err).toContain('error: preinstall script from "fooooooooo" exited with 1');
@@ -4437,7 +4437,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("done"),
         "",
@@ -4478,7 +4478,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("hello");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ lifecycle-failing-postinstall@1.0.0",
         "",
@@ -4520,7 +4520,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ binding-gyp-scripts@1.5.0",
         "",
@@ -4561,7 +4561,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ binding-gyp-scripts@1.5.0",
         "",
@@ -4633,7 +4633,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(splitErrLines(err).filter(line => line.startsWith("$ "))).toEqual(["$ node-gyp rebuild"]);
       let out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ node-gyp@1.5.0",
         "",
@@ -4710,7 +4710,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ node-gyp@1.5.0",
         "",
@@ -4824,7 +4824,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("error:");
         const out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           "+ node-gyp@1.5.0",
           "",
@@ -4872,7 +4872,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         `+ lifecycle-install-test@github:${githubOwner}/${githubRepo}#${githubCommit.slice(0, 7)}`,
         "",
@@ -4969,7 +4969,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ uses-what-bin-slow@1.0.0",
         "",
@@ -5077,7 +5077,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       expect(out).not.toContain("Blocked");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         ...dependenciesList.map(dep => `+ ${dep}@${dep}`),
         "",
@@ -5120,7 +5120,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       expect(out).not.toContain("Blocked");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         ...dependenciesList.map(dep => `+ ${dep}@${dep}`).sort((a, b) => a.localeCompare(b)),
         "",
@@ -5172,7 +5172,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ uses-what-bin@1.0.0"),
         "+ what-bin@1.5.0",
@@ -5256,7 +5256,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ uses-what-bin@1.5.0"),
         expect.stringContaining("+ what-bin@1.0.0"),
@@ -5361,7 +5361,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ electron@1.0.0",
         "",
@@ -5504,7 +5504,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ electron@1.0.0",
         expect.stringContaining("+ uses-what-bin@1.0.0"),
@@ -5554,7 +5554,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ electron@1.0.0",
         expect.stringContaining("+ uses-what-bin@1.0.0"),
@@ -5604,7 +5604,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ electron@1.0.0",
         expect.stringContaining("+ uses-what-bin@1.0.0"),
@@ -5672,7 +5672,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ esbuild@local-esbuild",
         "",
@@ -5732,7 +5732,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ esbuild@local-esbuild",
         "",
@@ -5875,7 +5875,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       var out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "+ electron@1.0.0",
         "",
@@ -5917,7 +5917,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("error:");
       out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -6201,7 +6201,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           let out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             "installed uses-what-bin@1.0.0",
             "",
@@ -6234,7 +6234,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             "Checked 2 installs across 3 packages (no changes)",
           ]);
@@ -6270,7 +6270,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           const out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             "installed no-deps@1.0.0",
             "",
@@ -6312,7 +6312,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           let out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             "installed no-deps@2.0.0",
             "",
@@ -6349,7 +6349,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("error:");
           out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm add v1."),
+            expect.stringContaining("fnpm add v"),
             "",
             "installed no-deps@2.0.0",
             "",
@@ -6401,7 +6401,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         let out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           expect.stringContaining("+ uses-what-bin@1.0.0"),
           "",
@@ -6436,7 +6436,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           "Checked 2 installs across 3 packages (no changes)",
         ]);
@@ -6476,7 +6476,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         let out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           expect.stringContaining("+ uses-what-bin@1.0.0"),
           "",
@@ -6523,7 +6523,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           "Checked 2 installs across 3 packages (no changes)",
         ]);
@@ -6570,7 +6570,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         let out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           "+ electron@1.0.0",
           "",
@@ -6619,7 +6619,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
         expect(err).not.toContain("warn:");
         out = await stdout.text();
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           "Checked 1 install across 2 packages (no changes)",
         ]);
@@ -6726,7 +6726,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       expect(err).not.toContain("warn:");
       let out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ uses-what-bin@1.5.0"),
         "",
@@ -6809,7 +6809,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           let out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             expect.stringContaining("+ no-deps@1.0.0"),
             expect.stringContaining("+ uses-what-bin@1.0.0"),
@@ -6896,7 +6896,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           let expected = withRm
             ? ["", "Checked 1 install across 2 packages (no changes)"]
             : ["", expect.stringContaining("1 package removed")];
-          expected = [expect.stringContaining("fnpm install v1."), ...expected];
+          expected = [expect.stringContaining("fnpm install v"), ...expected];
           expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual(expected);
           expect(await exited).toBe(0);
           expect(await readdirSorted(join(packageDir, "node_modules"))).toEqual([".bin", "no-deps"]);
@@ -6929,7 +6929,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           expect(err).not.toContain("warn:");
           out = await stdout.text();
           expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-            expect.stringContaining("fnpm install v1."),
+            expect.stringContaining("fnpm install v"),
             "",
             expect.stringContaining("+ uses-what-bin@1.0.0"),
             "",
@@ -7118,7 +7118,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       ]);
       const out = await stdout.text();
       expect(out.split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "install stdout 🚀",
         "prepare stdout done ✅",
         "",
@@ -7175,7 +7175,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
       ]);
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "install stdout 🚀",
         "prepare stdout done ✅",
         "",

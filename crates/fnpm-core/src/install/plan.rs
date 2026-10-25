@@ -135,19 +135,24 @@ fn targets(
                 ..SelectOptions::default()
             },
         );
-        let positive: Vec<&String> = opts.filter.iter().filter(|f| !f.starts_with('!')).collect();
-        for &i in &sel.unmatched_patterns {
-            if let Some(p) = positive.get(i) {
-                events.emit(Event::warn(
-                    fnpm_workspace::unmatched_message(&[p.as_str()]),
-                    None,
-                ));
-            }
-        }
+        // Like bun: no target at all is an error naming every filter; otherwise the
+        // patterns that matched nothing get one warning.
         if sel.selected.is_empty() {
             return Err(Error::usage(fnpm_workspace::unmatched_message(
                 &opts.filter,
             )));
+        }
+        let positive: Vec<&String> = opts.filter.iter().filter(|f| !f.starts_with('!')).collect();
+        let unmatched: Vec<&str> = sel
+            .unmatched_patterns
+            .iter()
+            .filter_map(|&i| positive.get(i).map(|p| p.as_str()))
+            .collect();
+        if !unmatched.is_empty() {
+            events.emit(Event::warn(
+                fnpm_workspace::unmatched_message(&unmatched),
+                None,
+            ));
         }
         return Ok((sel.selected.into_iter().map(path_of).collect(), true));
     }

@@ -2778,7 +2778,7 @@ describe.concurrent("optionalDependencies", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ no-deps@1.0.0"),
       "",
@@ -2895,7 +2895,7 @@ test.concurrent("disabled dev/peer/optional dependencies are still included in t
   expect(err).not.toContain("error:");
   // nothing to install, so there is no summary
   expect(out.split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringMatching(/^\[[0-9.]+m?s\] done$/),
     "",
@@ -2923,7 +2923,7 @@ test.concurrent("disabled dev/peer/optional dependencies are still included in t
   expect(err).not.toContain("error:");
   // the summary follows the lockfile's order: devDependencies, optionalDependencies, peerDependencies
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ no-deps@1.0.0",
     "+ basic-1@1.0.0",
@@ -3203,7 +3203,7 @@ test.concurrent("hardlinks on windows dont fail with long paths", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@a-package",
     "",
@@ -3239,7 +3239,7 @@ test.concurrent("basic 1", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ basic-1@1.0.0",
     "",
@@ -3270,7 +3270,7 @@ test.concurrent("basic 1", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ basic-1@1.0.0",
     "",
@@ -3368,7 +3368,7 @@ test.concurrent("dependency from root satisfies range from dependency", async ()
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "+ one-range-dep@1.0.0",
@@ -3399,7 +3399,7 @@ test.concurrent("dependency from root satisfies range from dependency", async ()
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "+ one-range-dep@1.0.0",
@@ -3612,7 +3612,7 @@ test.concurrent(
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ no-deps@1.0.0"),
       "+ peer-deps-fixed@1.0.0",
@@ -3657,7 +3657,7 @@ test.concurrent(
     } as any);
     expect(await exists(join(packageDir, "node_modules", "peer-deps-fixed", "node_modules"))).toBeFalse();
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ no-deps@1.0.1"),
       "",
@@ -3696,7 +3696,7 @@ test.concurrent("package added after install", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ one-range-dep@1.0.0",
     "",
@@ -3738,7 +3738,7 @@ test.concurrent("package added after install", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "",
@@ -3774,7 +3774,7 @@ test.concurrent("package added after install", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "+ one-range-dep@1.0.0",
@@ -3836,7 +3836,7 @@ test.concurrent("--production excludes devDependencies in workspaces", async () 
   assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "",
@@ -3856,7 +3856,7 @@ test.concurrent("--production excludes devDependencies in workspaces", async () 
   assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ a1@1.0.0",
     expect.stringContaining("+ no-deps@1.0.0"),
@@ -3868,7 +3868,7 @@ test.concurrent("--production excludes devDependencies in workspaces", async () 
   assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "",
@@ -3910,7 +3910,7 @@ test.concurrent("--production without a lockfile will install and not save lockf
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ no-deps@1.0.0"),
     "",
@@ -4301,7 +4301,7 @@ describe.concurrent("binaries", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ uses-what-bin@1.5.0"),
       expect.stringContaining("+ what-bin@1.0.0"),
@@ -4331,7 +4331,7 @@ describe.concurrent("binaries", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ uses-what-bin@1.5.0"),
       expect.stringContaining("+ what-bin@1.0.0"),
@@ -4427,7 +4427,7 @@ describe.concurrent("binaries", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ bin-change-dir@1.0.0"),
       "",
@@ -4468,7 +4468,7 @@ describe.concurrent("binaries", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ bin-change-dir@1.0.1"),
       "",
@@ -4586,7 +4586,7 @@ describe.concurrent("binaries", () => {
       const [out, err, exitCode] = await Promise.all([stdout.text(), stderr.text(), exited]);
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm add v1."),
+        expect.stringContaining("fnpm add v"),
         "",
         "installed dep-with-file-bin@1.0.0 with binaries:",
         " - dep-with-file-bin",
@@ -5244,7 +5244,7 @@ describe.concurrent("binaries", () => {
     expect(err).toContain("Saved lockfile");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ missing-directory-bin@missing-directory-bin-1.1.1.tgz",
       "",
@@ -5989,7 +5989,7 @@ test.concurrent("--config cli flag works", async () => {
   expect(err).toContain("Saved lockfile");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     expect.stringContaining("+ a-dep@1.0.1"),
     expect.stringContaining("+ no-deps@1.0.0"),
@@ -6017,7 +6017,7 @@ test.concurrent("--config cli flag works", async () => {
   expect(err).not.toContain("Saved lockfile");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ no-deps@1.0.0",
     "",
@@ -6141,7 +6141,7 @@ test.concurrent("it should install with missing bun.lockb, node_modules, and/or 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ dep-loop-entry@1.0.0",
     expect.stringContaining("+ dep-with-tags@3.0.0"),
@@ -6185,7 +6185,7 @@ test.concurrent("it should install with missing bun.lockb, node_modules, and/or 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ dep-loop-entry@1.0.0",
     expect.stringContaining("+ dep-with-tags@3.0.0"),
@@ -6244,7 +6244,7 @@ test.concurrent("it should install with missing bun.lockb, node_modules, and/or 
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       checkedCountWithOptionalNative,
     ]);
@@ -6271,7 +6271,7 @@ test.concurrent("it should install with missing bun.lockb, node_modules, and/or 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     checkedCountWithOptionalNative,
   ]);
@@ -6300,7 +6300,7 @@ test.concurrent("it should install with missing bun.lockb, node_modules, and/or 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     checkedCountWithOptionalNative,
   ]);
@@ -7098,7 +7098,7 @@ describe.concurrent("hoisting", async () => {
     expect(err).not.toContain("error:");
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ no-deps@2.0.0",
       "",
@@ -7154,7 +7154,7 @@ describe.concurrent("hoisting", async () => {
 
     let out = await stdout.text();
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "3 packages installed",
     ]);
@@ -7182,7 +7182,7 @@ describe.concurrent("hoisting", async () => {
 
     out = await stdout.text();
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ no-deps@2.0.0",
       "",
@@ -7274,7 +7274,7 @@ describe.concurrent("hoisting", async () => {
     expect(err).not.toContain("error:");
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ no-deps@1.0.0"),
       "",
@@ -8191,7 +8191,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "14 packages installed",
     ]);
@@ -8206,7 +8206,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "14 packages installed",
     ]);
@@ -8217,7 +8217,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "1 package installed",
     ]);
@@ -8232,7 +8232,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8252,7 +8252,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "1 package installed",
     ]);
@@ -8263,7 +8263,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8328,7 +8328,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.1",
       "+ @scoped/file-dep@1.0.1",
@@ -8351,7 +8351,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.1",
       "+ @scoped/file-dep@1.0.1",
@@ -8370,7 +8370,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "1 package installed",
     ]);
@@ -8386,7 +8386,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8405,7 +8405,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "1 package installed",
     ]);
@@ -8417,7 +8417,7 @@ describe.concurrent("transitive file dependencies", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8475,7 +8475,7 @@ describe.concurrent("transitive file dependencies", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("panic:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8518,7 +8518,7 @@ describe.concurrent("transitive file dependencies", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("panic:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "1 package installed",
     ]);
@@ -8545,7 +8545,7 @@ describe.concurrent("transitive file dependencies", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("panic:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ @another-scope/file-dep@1.0.0",
       "+ @scoped/file-dep@1.0.0",
@@ -8618,7 +8618,7 @@ describe.concurrent("transitive file dependencies", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("panic:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ pkg0@pkg0",
       "+ pkg1@pkg1",
@@ -9041,7 +9041,7 @@ describe.concurrent("update", () => {
 
       let { out } = await runFnpmUpdate(env, packageDir);
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         // The exact pin doesn't move, so the minified package.json written above isn't rewritten.
         "Checked 1 install across 2 packages (no changes)",
@@ -9051,7 +9051,7 @@ describe.concurrent("update", () => {
       // Naming the exact pin does not move it either.
       ({ out } = await runFnpmUpdate(env, packageDir, [dependency]));
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -9060,7 +9060,7 @@ describe.concurrent("update", () => {
       // this will actually update the package, but the version should remain exact
       ({ out } = await runFnpmUpdate(env, packageDir, ["--latest"]));
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         `^ ${dependency} 1.0.1 -> 1.0.10`,
         "",
@@ -9094,7 +9094,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "Checked 1 install across 2 packages (up to date, package.json synced)",
       ]);
@@ -9110,7 +9110,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "Checked 1 install across 2 packages (no changes)",
       ]);
@@ -9255,7 +9255,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toStrictEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "Checked 2 installs across 3 packages (up to date, package.json synced)",
       ]);
@@ -9272,7 +9272,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toStrictEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "^ no-deps 1.0.1 -> 2.0.0",
         "",
@@ -9371,7 +9371,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "^ aliased-dep 5.0.0-alpha.150 -> 5.0.0-alpha.153",
         "",
@@ -9525,7 +9525,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       expect.stringContaining("+ a-dep@1.0.1"),
       "",
@@ -9552,7 +9552,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       expect.stringContaining("+ a-dep@1.0.10"),
       "",
@@ -9570,7 +9570,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       "Checked 1 install across 2 packages (up to date, package.json synced)",
     ]);
@@ -9689,7 +9689,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       "+ a-dep@1.0.10",
       "+ dep-loop-entry@1.0.0",
@@ -9746,7 +9746,7 @@ describe.concurrent("update", () => {
 
     // what-bin and uses-what-bin already resolve to the hoisted 1.5.0, so only the a-dep pin moves
     expect(out).toStrictEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       "^ a-dep 1.0.10 -> 1.0.5 (v1.0.10 available)",
       "",
@@ -9834,7 +9834,7 @@ describe.concurrent("update", () => {
       assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
       expect(out).toStrictEqual([
-        expect.stringContaining("fnpm update v1."),
+        expect.stringContaining("fnpm update v"),
         "",
         "+ a-dep@1.0.10",
         "",
@@ -9905,7 +9905,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toStrictEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       "Checked 5 installs across 6 packages (no changes)",
     ]);
@@ -9956,7 +9956,7 @@ describe.concurrent("update", () => {
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
     expect(out).toStrictEqual([
-      expect.stringContaining("fnpm update v1."),
+      expect.stringContaining("fnpm update v"),
       "",
       "^ no-deps 1.0.0 -> 1.1.0 (v2.0.0 available)",
       "",
@@ -10048,7 +10048,7 @@ test.concurrent("it should re-populate .bin folder if package is reinstalled", a
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ what-bin@1.5.0",
     "",
@@ -10085,7 +10085,7 @@ test.concurrent("it should re-populate .bin folder if package is reinstalled", a
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ what-bin@1.5.0",
     "",
@@ -10130,7 +10130,7 @@ test.concurrent("one version with binary map", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ map-bin@1.0.2",
     "",
@@ -10171,7 +10171,7 @@ test.concurrent("multiple versions with binary map", async () => {
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ map-bin-multiple@1.0.2",
     "",
@@ -10265,7 +10265,7 @@ test.concurrent("missing package on reinstall, some with binaries", async () => 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ dep-loop-entry@1.0.0",
     expect.stringContaining("+ dep-with-tags@3.0.0"),
@@ -10319,7 +10319,7 @@ test.concurrent("missing package on reinstall, some with binaries", async () => 
   expect(err).not.toContain("not found");
   expect(err).not.toContain("error:");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ dep-loop-entry@1.0.0",
     "+ left-pad@1.0.0",
@@ -10429,7 +10429,7 @@ describe.concurrent("pm trust", async () => {
       expect(err).not.toContain("warn:");
       let out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]$/m, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining("+ uses-what-bin@1.0.0"),
         "",
@@ -10507,7 +10507,7 @@ test.concurrent(
     expect(err).not.toContain("error:");
     const out = await stdout.text();
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       expect.stringContaining("+ what-bin@1.0.0"),
       "",
@@ -10681,7 +10681,7 @@ describe.concurrent("semver", () => {
       expect(err).not.toContain("not found");
       expect(err).not.toContain("error:");
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm install v1."),
+        expect.stringContaining("fnpm install v"),
         "",
         expect.stringContaining(`+ dep-with-tags@${expected}`),
         "",
@@ -10725,7 +10725,7 @@ describe.concurrent("semver", () => {
     expect(await exited).toBe(1);
     assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
 
-    expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+    expect(out).toEqual(expect.stringContaining("fnpm install v"));
   });
 });
 
@@ -10916,7 +10916,7 @@ for (let i = 0; i < prereleaseTests.length; i++) {
         expect(err).not.toContain("not found");
         expect(err).not.toContain("error:");
         expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-          expect.stringContaining("fnpm install v1."),
+          expect.stringContaining("fnpm install v"),
           "",
           `+ ${depName}@${expected}`,
           "",
@@ -11059,7 +11059,7 @@ for (let i = 0; i < prereleaseFailTests.length; i++) {
 
         const err = await stderr.text();
         const out = await stdout.text();
-        expect(out).toEqual(expect.stringContaining("fnpm install v1."));
+        expect(out).toEqual(expect.stringContaining("fnpm install v"));
         expect(err).toContain(`No version matching "${depVersion}" found for specifier "${depName}"`);
         expect(await exited).toBe(1);
         assertManifestsPopulated(join(packageDir, ".bun-cache"), registryUrl());
@@ -11098,7 +11098,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ dragon-test-1-d@1.0.0",
       "+ dragon-test-1-e@1.0.0",
@@ -11189,7 +11189,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ dragon-test-2-a@workspace:dragon-test-2-a",
       "",
@@ -11237,7 +11237,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ dragon-test-3-a@1.0.0",
       "",
@@ -11305,7 +11305,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "3 packages installed",
     ]);
@@ -11379,7 +11379,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "5 packages installed",
     ]);
@@ -11511,7 +11511,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ a@workspace:packages/a",
       "+ b@workspace:packages/b",
@@ -11558,7 +11558,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ dragon-test-7-a@1.0.0",
       "+ dragon-test-7-b@2.0.0",
@@ -11642,7 +11642,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ dragon-test-8-a@1.0.0",
       "+ dragon-test-8-b@1.0.0",
@@ -11684,7 +11684,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("not found");
     expect(err).not.toContain("error:");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ first@1.0.0",
       expect.stringContaining("+ no-deps@1.0.0"),
@@ -11763,7 +11763,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("not found");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ a@workspace:packages/a",
       "+ b@workspace:packages/b",
@@ -11827,7 +11827,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("not found");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "4 packages installed",
     ]);
@@ -12302,7 +12302,7 @@ describe.concurrent("yarn tests", () => {
     expect(err).not.toContain("error:");
     expect(err).not.toContain("not found");
     expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-      expect.stringContaining("fnpm install v1."),
+      expect.stringContaining("fnpm install v"),
       "",
       "+ no-deps-scripted@1.0.0",
       "+ one-dep-scripted@1.5.0",
@@ -12672,7 +12672,7 @@ describe.concurrent("outdated", () => {
     return out;
   }
 
-  // Returns the output after the `fnpm outdated v1.x` line, one entry per line.
+  // Returns the output after the `fnpm outdated vx` line, one entry per line.
   const tableLines = (out: string) =>
     out
       .slice(out.indexOf("\n") + 1)
@@ -13702,7 +13702,7 @@ describe.concurrent("windows bin linking shim should work", async () => {
   expect(err).not.toContain("panic:");
   expect(err).not.toContain("not found");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ bunx-bins@1.0.0",
     "",

@@ -8,10 +8,37 @@ use crate::color::{Colors, to_fixed};
 
 /// `[12.34ms]` up to 1500 ms, `[1.23s]` above.
 pub fn format_elapsed(ms: f64) -> String {
+    format!("[{}]", elapsed_value(ms))
+}
+
+fn elapsed_value(ms: f64) -> String {
     if ms <= 1500.0 {
-        format!("[{}ms]", to_fixed(ms, 2))
+        format!("{}ms", to_fixed(ms, 2))
     } else {
-        format!("[{}s]", to_fixed(ms / 1000.0, 2))
+        format!("{}s", to_fixed(ms / 1000.0, 2))
+    }
+}
+
+/// bun's `<d>[<b>12.00ms<r><d>]<r>`.
+fn time_of(ms: f64, pc: Colors) -> String {
+    format!(
+        "{}{}{}",
+        pc.dim("["),
+        pc.bold(&elapsed_value(ms)),
+        pc.dim("]")
+    )
+}
+
+/// bun's ` <d>(<blue>v1.2.4 available<r><d>)<r>`.
+fn available_of(version: &Option<String>, pc: Colors) -> String {
+    match version {
+        Some(version) if !version.is_empty() => format!(
+            " {}{}{}",
+            pc.dim("("),
+            pc.blue(&format!("v{version} available")),
+            pc.dim(")")
+        ),
+        _ => String::new(),
     }
 }
 
@@ -27,13 +54,22 @@ pub fn format_install_summary(
     pc: Colors,
     color: bool,
 ) -> Vec<String> {
+    format_install_summary_at(summary, command, pc, color, summary.elapsed_ms as f64)
+}
+
+/// [`format_install_summary`] with the time measured by the caller (fractional
+/// milliseconds: a no-op install takes less than one).
+pub fn format_install_summary_at(
+    summary: &InstallSummary,
+    command: InstallCommand,
+    pc: Colors,
+    color: bool,
+    elapsed_ms: f64,
+) -> Vec<String> {
     // bun's tree printer opens with a newline; the header above ends with one.
     let mut lines = vec![String::new()];
-    let time = pc.dim(&format_elapsed(summary.elapsed_ms as f64));
-    let available = |version: &Option<String>| match version {
-        Some(version) if !version.is_empty() => pc.dim(&format!(" (v{version} available)")),
-        _ => String::new(),
-    };
+    let time = time_of(elapsed_ms, pc);
+    let available = |version: &Option<String>| available_of(version, pc);
 
     // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
     // (its update requests; `update` lists them): an add shows them once, in the `installed`
@@ -50,7 +86,7 @@ pub fn format_install_summary(
         lines.push(format!(
             "{} {}{}{}",
             pc.green("+"),
-            pkg.name,
+            pc.bold(&pkg.name),
             pc.dim(&format!("@{}", pkg.version)),
             available(&pkg.available_version)
         ));
@@ -58,12 +94,16 @@ pub fn format_install_summary(
     }
     let (arrow_up, arrow) = if color { ("↑", "→") } else { ("^", "->") };
     for pkg in &summary.updated {
+        let to = if color {
+            pc.bold(&pc.cyan(&pkg.to))
+        } else {
+            pc.bold(&pkg.to)
+        };
         lines.push(format!(
-            "{} {} {} {arrow} {}{}",
+            "{} {} {} {to}{}",
             pc.cyan(arrow_up),
-            pkg.name,
-            pc.dim(&pkg.from),
-            pkg.to,
+            pc.bold(&pkg.name),
+            pc.dim(&format!("{} {arrow}", pkg.from)),
             available(&pkg.available_version)
         ));
         rows += 1;
@@ -76,30 +116,34 @@ pub fn format_install_summary(
         && matches!(command, InstallCommand::Add | InstallCommand::Update)
     {
         for pkg in &summary.requested {
-            let shown = match &pkg.real_name {
-                Some(real) if !real.is_empty() => format!("{}@npm:{real}", pkg.name),
-                _ => pkg.name.clone(),
-            };
             if pkg.skipped == Some(true) {
                 lines.push(format!(
-                    "{} {shown}@{} {}",
+                    "{} {}{} {}",
                     pc.yellow("skipped"),
-                    pkg.version,
+                    pc.bold(&pkg.name),
+                    pc.dim(&format!("@{}", pkg.version)),
                     pc.dim("(unsupported platform)")
                 ));
                 continue;
             }
+            // bun: `<green>installed<r> <b>alias<r><d>@npm:<r><b>name<r><d>@1.0.0<r>`.
+            let shown = match &pkg.real_name {
+                Some(real) if !real.is_empty() => {
+                    format!("{}{}{}", pc.bold(&pkg.name), pc.dim("@npm:"), pc.bold(real))
+                }
+                _ => pc.bold(&pkg.name),
+            };
             let installed = format!(
-                "{} {}",
+                "{} {shown}{}",
                 pc.green("installed"),
-                pc.bold(&format!("{shown}@{}", pkg.version))
+                pc.dim(&format!("@{}", pkg.version))
             );
             if pkg.bins.is_empty() {
                 lines.push(installed);
             } else {
                 lines.push(format!("{installed} with binaries:"));
                 for bin in &pkg.bins {
-                    lines.push(format!("  {} {}", pc.dim("-"), pc.bold(bin)));
+                    lines.push(format!(" {}{}", pc.dim("- "), pc.bold(bin)));
                 }
             }
         }
@@ -151,18 +195,29 @@ pub fn format_install_summary(
         ));
         blocked(&mut lines);
     } else if let Some(checked) = summary.checked.filter(|_| summary.failed_count == 0) {
-        lines.push(format!(
-            "Checked {} {} across {} {} {} {time}",
-            pc.green(&checked.installs.to_string()),
-            if checked.installs == 1 {
-                "install"
-            } else {
-                "installs"
-            },
-            checked.packages,
-            noun(checked.packages),
-            pc.dim("(no changes)"),
-        ));
+        // bun shortens the line when every package has exactly one place.
+        if checked.installs == checked.packages {
+            lines.push(format!(
+                "{}! Checked {} {} {} {time}",
+                pc.green("Done"),
+                checked.installs,
+                noun(checked.installs),
+                pc.dim("(no changes)"),
+            ));
+        } else {
+            lines.push(format!(
+                "Checked {} {} across {} {} {} {time}",
+                pc.green(&checked.installs.to_string()),
+                if checked.installs == 1 {
+                    "install"
+                } else {
+                    "installs"
+                },
+                checked.packages,
+                noun(checked.packages),
+                pc.dim("(no changes)"),
+            ));
+        }
         blocked(&mut lines);
     } else {
         timed = false;

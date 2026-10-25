@@ -121,6 +121,11 @@ export type CoreEvent =
     }
   | { type: "warn"; message: string; code?: string }
   | { type: "error"; message: string; code?: string }
+  /**
+   * A line bun prints on stderr when it shows no progress bar (`Resolving dependencies`,
+   * `Resolved, downloaded and extracted [N]`, `Saved lockfile`). The progress line ignores it.
+   */
+  | { type: "status"; message: string }
   | { type: "summary"; summary: InstallSummary };
 
 export type EventSink = (event: CoreEvent) => void;

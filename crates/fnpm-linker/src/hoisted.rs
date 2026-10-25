@@ -192,6 +192,10 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
 
 struct Out {
     installed: AtomicU32,
+    /// Per package: written by this run (`installed_packages` counts each once).
+    written: Vec<std::sync::atomic::AtomicBool>,
+    installed_packages: AtomicU32,
+    verified: AtomicU32,
     removed: AtomicU32,
     skipped: AtomicU32,
     dirs: Mutex<Vec<(PackageId, PathBuf)>>,
@@ -241,6 +245,11 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
 
     let out = Out {
         installed: AtomicU32::new(0),
+        written: (0..cx.graph.packages.len())
+            .map(|_| Default::default())
+            .collect(),
+        installed_packages: AtomicU32::new(0),
+        verified: AtomicU32::new(0),
         removed: AtomicU32::new(0),
         skipped: AtomicU32::new(0),
         dirs: Mutex::new(Vec::new()),
@@ -295,6 +304,8 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     dirs.sort();
     Ok(LinkReport {
         installed: out.installed.load(Ordering::Relaxed),
+        installed_packages: out.installed_packages.load(Ordering::Relaxed),
+        verified: out.verified.load(Ordering::Relaxed),
         removed: out.removed.load(Ordering::Relaxed),
         skipped: out.skipped.load(Ordering::Relaxed),
         dirs,
@@ -346,6 +357,7 @@ fn place_node<'s>(
                     && fsutil::kind(dest) == Kind::Symlink
                     && verify::same_file(dest, target)
                 {
+                    out.verified.fetch_add(1, Ordering::Relaxed);
                     return Ok(Some(false));
                 }
                 if !parent_fresh {
@@ -363,6 +375,8 @@ fn place_node<'s>(
                         source,
                     },
                 )?;
+                // bun never counts a workspace link as installed.
+                out.verified.fetch_add(1, Ordering::Relaxed);
                 Ok(Some(true))
             }
             Place::Copy => {
@@ -392,6 +406,7 @@ fn place_node<'s>(
                                 );
                             }
                         }
+                        out.verified.fetch_add(1, Ordering::Relaxed);
                         return Ok(Some(false));
                     }
                     unplant()?;
@@ -409,6 +424,9 @@ fn place_node<'s>(
                     Err(e) => return Err(e),
                 }
                 out.installed.fetch_add(1, Ordering::Relaxed);
+                if !out.written[node.package.index()].swap(true, Ordering::Relaxed) {
+                    out.installed_packages.fetch_add(1, Ordering::Relaxed);
+                }
                 out.dirs.lock().push((node.package, dest.clone()));
                 Ok(Some(true))
             }

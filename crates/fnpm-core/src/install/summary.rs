@@ -86,6 +86,56 @@ pub(crate) fn changes(
     (added, updated, removed)
 }
 
+/// bun's `(v1.2.4 available)`: the `latest` of a manifest this run loaded, when it is newer
+/// than the registry release that was picked (prereleases get no hint).
+pub(crate) fn later_version(
+    graph: &LockGraph,
+    client: &fnpm_registry::RegistryClient,
+    config: &fnpm_config::Config,
+    name: &str,
+    version: &str,
+) -> Option<String> {
+    let installed = fnpm_semver::Version::parse(version).ok()?;
+    if installed.is_prerelease() {
+        return None;
+    }
+    let npm = graph.packages.iter().any(|p| {
+        p.name == name && p.version == version && matches!(p.resolution, Resolution::Npm { .. })
+    });
+    if !npm {
+        return None;
+    }
+    let manifest = client.cached_manifest(name)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let excludes = config
+        .minimum_release_age_ms
+        .filter(|ms| *ms > 0)
+        .map(|ms| {
+            let (excludes, _) = fnpm_resolver::options::ReleaseAgeExcludes::parse(
+                &config.minimum_release_age_excludes,
+            );
+            (ms, excludes)
+        });
+    let gate = excludes
+        .as_ref()
+        .map(|(ms, excludes)| fnpm_resolver::pick::AgeGate {
+            min_age_ms: *ms,
+            now_ms,
+            excludes,
+        });
+    let latest =
+        match fnpm_resolver::pick::find_by_dist_tag_with_filter(&manifest, "latest", gate.as_ref())
+        {
+            fnpm_resolver::pick::Picked::Found(v)
+            | fnpm_resolver::pick::Picked::FoundWithFilter { result: v, .. } => v,
+            fnpm_resolver::pick::Picked::Err(_) => return None,
+        };
+    (latest.version.cmp(&installed) == std::cmp::Ordering::Greater)
+        .then(|| latest.version.to_string())
+}
+
 /// `requested`: what each `add` / `update` request resolved to, with its bins.
 pub(crate) fn requested(
     graph: &LockGraph,

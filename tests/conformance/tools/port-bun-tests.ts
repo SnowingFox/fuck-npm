@@ -25,7 +25,10 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const conformanceDir = resolve(here, "..");
 const repoRoot = resolve(conformanceDir, "..", "..");
-const sourceRoot = join(repoRoot, "submodule", "bun", "test", "cli", "install");
+/** The submodule, where the ported files point to; FNPM_BUN_DIR reads another checkout of the same commit. */
+const submoduleRoot = join(repoRoot, "submodule", "bun");
+const bunRoot = process.env.FNPM_BUN_DIR ?? submoduleRoot;
+const sourceRoot = join(bunRoot, "test", "cli", "install");
 const outputRoot = join(conformanceDir, "install");
 
 /** Tests that are not ported, with the reason. */
@@ -65,11 +68,15 @@ const renames: [RegExp, string][] = [
 ];
 
 const pmCommands =
-  "install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|x|i|a|rm|ci";
+  "install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|prune|dedupe|x|i|a|rm|ci";
 
 const textChanges: [RegExp, string][] = [
   [/\bbun\.lock(?![b\w])/g, "fnpm.lock"],
   [new RegExp(`\\bbun (${pmCommands})\\b`, "g"), "fnpm $1"],
+  // bun's header is `bun install v1.x.y`; fnpm has its own version (`fnpm install v0.0.1`).
+  [/\bfnpm (install|add|update|remove|link|unlink|outdated) v1\./g, "fnpm $1 v"],
+  // A header built from a variable: `bun ${command} <version> (<revision>)`.
+  [/\bbun (\$\{\w+\}) <version>/g, "fnpm $1 <version>"],
   [/\bBUN_INSTALL_CACHE_DIR\b/g, "FNPM_CACHE_DIR"],
   [/\bBUN_CONFIG_/g, "FNPM_CONFIG_"],
   [/node_modules\/\.bun\//g, "node_modules/.fnpm/"],
@@ -83,6 +90,9 @@ function transformText(text: string): string {
 }
 
 function rel(fromFile: string, toFile: string): string {
+  // A file of the bun checkout is referenced through the submodule path, wherever it was read.
+  const inBun = relative(bunRoot, toFile);
+  if (!inBun.startsWith("..")) toFile = join(submoduleRoot, inBun);
   let path = relative(dirname(fromFile), toFile).split("\\").join("/");
   if (!path.startsWith(".")) path = `./${path}`;
   return path;

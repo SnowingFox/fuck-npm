@@ -120,6 +120,33 @@ impl Engine<'_> {
         }
     }
 
+    /// bun's `deprecated name@version: message`, once per version, for the versions a
+    /// package.json of the project depends on (every one with `--verbose`).
+    fn warn_deprecated(&mut self) {
+        if self.deprecated.is_empty() {
+            return;
+        }
+        let verbose = self.cfg.log_level == fnpm_config::LogLevel::Verbose;
+        let mut direct = vec![false; self.graph.len()];
+        for (i, p) in self.graph.packages.iter().enumerate() {
+            if self.st.get(i).is_none_or(|s| s.kind != Kind::Project) {
+                continue;
+            }
+            for e in &p.dependencies {
+                if let Some(t) = e.target
+                    && let Some(d) = direct.get_mut(t.index())
+                {
+                    *d = true;
+                }
+            }
+        }
+        for (id, line) in std::mem::take(&mut self.deprecated) {
+            if verbose || direct.get(id.index()).copied().unwrap_or(false) {
+                self.warnings.push(line);
+            }
+        }
+    }
+
     pub(crate) fn finish(mut self) -> Result<EngineOutput> {
         self.bind_optional_peers();
         self.parents = None;
@@ -128,6 +155,7 @@ impl Engine<'_> {
             .iter()
             .map(|s| s.loaded || (s.kind == Kind::Project && self.prev.is_some()))
             .collect();
+        self.warn_deprecated();
         let _ = crate::dedupe::collapse_appended(&mut self.graph, &loaded);
         self.warn_incorrect_peers();
         self.warn_missing_peers();

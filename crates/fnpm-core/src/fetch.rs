@@ -275,10 +275,17 @@ fn start_fetch(
         let outcome = fetch_one(&inner, &name, &version, &resolution).await;
         let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;
         if inner.events.enabled() {
+            let total = inner.counters.total.load(Ordering::Relaxed);
             inner.events.emit(Event::Download {
                 done,
-                total: inner.counters.total.load(Ordering::Relaxed),
+                total,
                 bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
+                name: Some(name.clone()),
+            });
+            // The tarball is extracted while it streams in: a finished fetch is both.
+            inner.events.emit(Event::Extract {
+                done,
+                total,
                 name: Some(name.clone()),
             });
         }

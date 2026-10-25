@@ -1231,7 +1231,7 @@ describe.concurrent("version-scoped targets", () => {
       });
 
       // one-dep pins no-deps@1.0.1, which is also what the catalog has for no-deps. The alias stays on its own entry.
-      test("bun dedupe leaves the alias on the version of its catalog entry", async () => {
+      test("fnpm dedupe leaves the alias on the version of its catalog entry", async () => {
         const dir = await project({
           workspaces: [],
           catalog: { "my-alias": "npm:no-deps@1.0.0", "no-deps": "1.0.1" },
@@ -2939,7 +2939,7 @@ describe.concurrent("flat override fixes", () => {
 });
 
 describe.concurrent("per-edge effective range", () => {
-  test("bun dedupe does not collapse edges whose scoped rules pin different versions", async () => {
+  test("fnpm dedupe does not collapse edges whose scoped rules pin different versions", async () => {
     const dir = await project({
       dependencies: twoParents,
       overrides: { "one-fixed-dep@1": { "no-deps": "1.1.0" }, "one-fixed-dep@2": { "no-deps": "1.0.0" } },

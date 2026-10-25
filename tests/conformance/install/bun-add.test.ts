@@ -125,7 +125,7 @@ it("should add existing package", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     `installed foo@${add_path.replace(/\\/g, "/")}`,
     "",
@@ -173,7 +173,7 @@ it("should add a folder whose package.json has no name under the folder's name",
   expect(err).not.toContain("warn:");
   expect(err).toContain("Saved lockfile");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     `installed pkg-without-name@${add_path}`,
     "",
@@ -216,7 +216,7 @@ it("should reject missing package", async () => {
   expect(err).toContain("failed to resolve");
 
   const out = await stdout.text();
-  expect(out).toEqual(expect.stringContaining("fnpm add v1."));
+  expect(out).toEqual(expect.stringContaining("fnpm add v"));
   expect(await exited).toBe(1);
   expect(await file(join(package_dir, "package.json")).text()).toEqual(
     JSON.stringify({
@@ -251,7 +251,7 @@ it("fnpm add --only-missing should not install existing package", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -450,7 +450,7 @@ it("fnpm add --analyze should scan dependencies", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -539,7 +539,7 @@ for (const pathType of ["absolute", "relative"]) {
       expect(err).toContain("Saved lockfile");
       const out = await stdout.text();
       expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-        expect.stringContaining("fnpm add v1."),
+        expect.stringContaining("fnpm add v"),
         "",
         `installed foo@${add_path_rel.replace(/\\/g, "/")}`,
         "",
@@ -580,7 +580,7 @@ it.each(["fileblah://"])("should reject invalid path without segfault: %s", asyn
   expect(err).toContain(`error: unrecognised dependency format: ${dep}`);
 
   const out = await stdout.text();
-  expect(out).toEqual(expect.stringContaining("fnpm add v1."));
+  expect(out).toEqual(expect.stringContaining("fnpm add v"));
   expect(await exited).toBe(1);
   expect(await file(join(package_dir, "package.json")).text()).toEqual(
     JSON.stringify({
@@ -614,7 +614,7 @@ it("should reject positionals longer than 2048 bytes without stack overflow", as
   expect(err).toContain(`error: unrecognised dependency format: ${dep}`);
 
   const out = await stdout.text();
-  expect(out).toEqual(expect.stringContaining("fnpm add v1."));
+  expect(out).toEqual(expect.stringContaining("fnpm add v"));
   expect(await exited).toBe(1);
   expect(await file(join(package_dir, "package.json")).text()).toEqual(
     JSON.stringify({
@@ -672,7 +672,7 @@ it("should handle semver-like names", async () => {
   });
   const err = await stderr.text();
   expect(err.split(/\r?\n/)).toContain(`error: GET http://localhost:${port}/1.2.3 - 404`);
-  expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v1."));
+  expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v"));
   expect(await exited).toBe(1);
   expect(urls.sort()).toEqual([`${root_url}/1.2.3`]);
   expect(requested).toBe(1);
@@ -713,7 +713,7 @@ it("should handle @scoped names", async () => {
   });
   const err = await stderr.text();
   expect(err.split(/\r?\n/)).toContain(`error: GET http://localhost:${port}/@bar%2fbaz - 404`);
-  expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v1."));
+  expect(await stdout.text()).toEqual(expect.stringContaining("fnpm add v"));
   expect(await exited).toBe(1);
   expect(urls.sort()).toEqual([`${root_url}/@bar%2fbaz`]);
   expect(requested).toBe(1);
@@ -748,7 +748,7 @@ it("should add dependency with capital letters", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -802,7 +802,7 @@ it("should add exact version with --exact", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -855,7 +855,7 @@ it("should add to devDependencies with --dev", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -909,7 +909,7 @@ it("should add to optionalDependencies with --optional", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -962,7 +962,7 @@ it("should add to peerDependencies with --peer", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -1017,7 +1017,7 @@ it("should add exact version with install.exact", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -1070,7 +1070,7 @@ it("should add exact version with -E", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed BaR@0.0.2",
     "",
@@ -1184,7 +1184,7 @@ it("should add dependency with package.json in it and http tarball", async () =>
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     expect.stringContaining("+ booop@http://"),
     "",
@@ -1250,7 +1250,7 @@ it("should add dependency with specified semver", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@0.0.3 with binaries:",
     " - baz-run",
@@ -1358,7 +1358,7 @@ it("should add dependency (GitHub)", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed uglify-js@github:mishoo/UglifyJS#e219a9a with binaries:",
     " - uglifyjs",
@@ -1447,7 +1447,7 @@ it("should add dependency alongside workspaces", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@0.0.3 with binaries:",
     " - baz-run",
@@ -1519,7 +1519,7 @@ it("should add aliased dependency (npm)", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@npm:baz@0.0.3 with binaries:",
     " - baz-run",
@@ -1578,7 +1578,7 @@ it("should print the npm: alias for an added aliased dependency without binaries
   expect(err).not.toContain("error:");
   expect(err).toContain("Saved lockfile");
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toStrictEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed not-bar@npm:bar@0.0.2",
     "",
@@ -1771,7 +1771,7 @@ it("should add aliased dependency (GitHub)", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed uglify@github:mishoo/UglifyJS#e219a9a with binaries:",
     " - uglifyjs",
@@ -1965,7 +1965,7 @@ it("should let you add the same package twice", async () => {
   expect(err1).toContain("Saved lockfile");
   const out1 = await new Response(stdout1).text();
   expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@0.0.3",
     "",
@@ -2015,7 +2015,7 @@ it("should let you add the same package twice", async () => {
   expect(err2).toContain("Saved lockfile");
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\[[0-9\.]+m?s\]/, "[]").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@0.0.3",
     "",
@@ -2084,7 +2084,7 @@ it("should install version tagged with `latest` by default", async () => {
   expect(err1).not.toContain("error:");
   expect(err1).toContain("Saved lockfile");
   expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@0.0.3",
     "",
@@ -2134,7 +2134,7 @@ it("should install version tagged with `latest` by default", async () => {
   expect(err2).not.toContain("error:");
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "+ baz@0.0.3",
     "",
@@ -2197,7 +2197,7 @@ it("should handle Git URL in dependencies (SCP-style)", async () => {
   out1 = out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "");
   out1 = out1.replace(/(\.git)#[a-f0-9]+/, "$1");
   expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed uglify-js@git+ssh://***@github.com:mishoo/UglifyJS.git with binaries:",
     " - uglifyjs",
@@ -2260,7 +2260,7 @@ it("should handle Git URL in dependencies (SCP-style)", async () => {
   expect(err2).not.toContain("Saved lockfile");
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "Checked 1 install across 2 packages (no changes)",
   ]);
@@ -2341,7 +2341,7 @@ it("should prefer optionalDependencies over dependencies of the same name", asyn
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -2400,7 +2400,7 @@ it("should prefer dependencies over peerDependencies of the same name", async ()
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -2457,7 +2457,7 @@ it("should add dependency without duplication", async () => {
   expect(err1).toContain("Saved lockfile");
   const out1 = await new Response(stdout1).text();
   expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -2510,7 +2510,7 @@ it("should add dependency without duplication", async () => {
   expect(err2).not.toContain("Saved lockfile");
 
   expect(out2.replace(/\s*\[[0-9\.]+m?s\] done\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
   ]);
@@ -2563,7 +2563,7 @@ it("should add dependency without duplication (GitHub)", async () => {
   expect(err1).toContain("Saved lockfile");
   const out1 = await new Response(stdout1).text();
   expect(out1.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed uglify-js@github:mishoo/UglifyJS#e219a9a with binaries:",
     " - uglifyjs",
@@ -2626,7 +2626,7 @@ it("should add dependency without duplication (GitHub)", async () => {
 
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\] done\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed uglify-js@github:mishoo/UglifyJS#e219a9a with binaries:",
     " - uglifyjs",
@@ -2705,7 +2705,7 @@ it("should add dependencies to workspaces directly", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     `installed foo@${relative(package_dir, add_dir).replace(/\\/g, "/")}`,
     "",
@@ -2771,7 +2771,7 @@ async function installRedirectsToAdd(saveFlagFirst: boolean) {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     `installed foo@${add_path.replace(/\\/g, "/")}`,
     "",
@@ -2806,7 +2806,7 @@ it("should add dependency alongside peerDependencies", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed bar@0.0.2",
     "",
@@ -2855,7 +2855,7 @@ it("should add local tarball dependency", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@baz-0.0.3.tgz with binaries:",
     " - baz-run",
@@ -3524,7 +3524,7 @@ it("should add multiple dependencies specified on command line", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await new Response(stdout).text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringMatching(/^fnpm add v1./),
+    expect.stringMatching(/^fnpm add v/),
     "",
     expect.stringMatching(/^installed baz@http:\/\/.* with binaries:$/),
     " - baz-run",
@@ -3719,7 +3719,7 @@ it("should add an uncompressed .tar local tarball", async () => {
   expect(err).toContain("Saved lockfile");
   const out = await stdout.text();
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toStrictEqual([
-    expect.stringContaining("fnpm add v1."),
+    expect.stringContaining("fnpm add v"),
     "",
     "installed baz@baz-0.0.3.tar with binaries:",
     " - baz-run",

@@ -107,6 +107,7 @@ fn cli_cases_match_the_ts_cli() {
             stdout_is_tty: case["stdoutIsTTY"].as_bool().unwrap_or(false),
             stderr_is_tty: case["stderrIsTTY"].as_bool().unwrap_or(false),
             columns: case["columns"].as_u64().unwrap_or(120) as usize,
+            started: None,
         };
         let core = FakeCore {
             events: serde_json::from_value(
@@ -263,6 +264,7 @@ fn fuzzed_invocations_match_the_ts_cli() {
             stdout_is_tty: tty["stdoutIsTTY"].as_bool().unwrap(),
             stderr_is_tty: tty["stderrIsTTY"].as_bool().unwrap(),
             columns: 120,
+            started: None,
         };
         let core = FakeCore {
             events: Vec::new(),

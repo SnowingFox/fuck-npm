@@ -40,16 +40,16 @@ export async function runInstallFamily(ctx: CommandContext): Promise<number> {
 }
 
 /**
- * `fnpm add v0.1.0` on stderr, like bun's header. One newline: the summary opens with the
- * blank line (bun's tree printer starts with `\n`), so there is exactly one blank line
- * between them, as in bun's output.
+ * `fnpm add v0.1.0` on stdout, like bun's header (`<b>bun add <r><d>v1.2.3<r>`). One newline:
+ * the summary opens with the blank line (bun's tree printer starts with `\n`), so there is
+ * exactly one blank line between them, as in bun's output.
  */
 export function printHeader(ctx: CommandContext, options: InstallOptions, label: string): void {
   if (ctx.output.mode === "json" || options.logLevel === "silent" || !options.summary) {
     return;
   }
-  const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
-  ctx.runtime.stderr.write(`${pc.bold(`fnpm ${label}`)} ${pc.dim(`v${getCliVersion()}`)}\n`);
+  const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY));
+  ctx.runtime.stdout.write(`${pc.bold(`fnpm ${label} `)}${pc.dim(`v${getCliVersion()}`)}\n`);
 }
 
 /**
@@ -90,7 +90,9 @@ export function finishInstall(
   }
   if (options.logLevel !== "silent" && options.summary) {
     const color = ctx.output.mode === "rich" && colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY);
-    for (const line of formatInstallSummary(summary, options.command, ctx.output.colors, { color })) {
+    // Like bun, the time since the process started.
+    const elapsedMs = Math.max(summary.elapsedMs, ctx.runtime.now());
+    for (const line of formatInstallSummary({ ...summary, elapsedMs }, options.command, ctx.output.colors, { color })) {
       ctx.output.line(line);
     }
   }

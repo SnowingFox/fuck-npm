@@ -93,7 +93,7 @@ it("should link and unlink workspace package", async () => {
   let { out, err } = await runFnpmInstall(env, link_dir);
   expect(err.split(/\r?\n/).slice(-2)).toEqual(["Saved lockfile", ""]);
   expect(out.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "Done! Checked 3 packages (no changes)",
   ]);
@@ -124,7 +124,7 @@ it("should link and unlink workspace package", async () => {
   err = await stderr.text();
   expect(err.split(/\r?\n/)).toEqual([""]);
   expect((await stdout.text()).replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm link v1."),
+    expect.stringContaining("fnpm link v"),
     "",
     `installed moo@link:moo`,
     "",
@@ -178,7 +178,7 @@ it("should link and unlink workspace package", async () => {
   err = await stderr.text();
   expect(err.split(/\r?\n/)).toEqual([""]);
   expect((await stdout.text()).replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm link v1."),
+    expect.stringContaining("fnpm link v"),
     "",
     `installed foo@link:foo`,
     "",
@@ -257,7 +257,7 @@ it("should link package", async () => {
   expect(err2.split(/\r?\n/)).toEqual([""]);
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm link v1."),
+    expect.stringContaining("fnpm link v"),
     "",
     `installed ${link_name}@link:${link_name}`,
     "",
@@ -296,7 +296,7 @@ it("should link package", async () => {
   });
   const err4 = await new Response(stderr4).text();
   expect(err4).toContain(`error: Package "${link_name}" is not linked`);
-  expect(await new Response(stdout4).text()).toEqual(expect.stringContaining("fnpm link v1."));
+  expect(await new Response(stdout4).text()).toEqual(expect.stringContaining("fnpm link v"));
   expect(await exited4).toBe(1);
 });
 
@@ -350,7 +350,7 @@ it("should link scoped package", async () => {
   expect(err2.split(/\r?\n/)).toEqual([""]);
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm link v1."),
+    expect.stringContaining("fnpm link v"),
     "",
     `installed ${link_name}@link:${link_name}`,
     "",
@@ -389,7 +389,7 @@ it("should link scoped package", async () => {
   });
   const err4 = await new Response(stderr4).text();
   expect(err4).toContain(`error: Package "${link_name}" is not linked`);
-  expect((await new Response(stdout4).text()).split(/\r?\n/)).toEqual([expect.stringContaining("fnpm link v1."), ""]);
+  expect((await new Response(stdout4).text()).split(/\r?\n/)).toEqual([expect.stringContaining("fnpm link v"), ""]);
   expect(await exited4).toBe(1);
 });
 
@@ -440,7 +440,7 @@ it("should link dependency without crashing", async () => {
   expect(err2.split(/\r?\n/).slice(-2)).toEqual(["Saved lockfile", ""]);
   const out2 = await new Response(stdout2).text();
   expect(out2.replace(/\s*\[[0-9\.]+m?s\]\s*$/, "").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     `+ ${link_name}@link:${link_name}`,
     "",
@@ -500,7 +500,7 @@ it("should link dependency without crashing", async () => {
   ]);
   const out4 = await new Response(stdout4).text();
   expect(out4.replace(/\[[0-9\.]+m?s\]/, "[]").split(/\r?\n/)).toEqual([
-    expect.stringContaining("fnpm install v1."),
+    expect.stringContaining("fnpm install v"),
     "",
     "Failed to install 1 package",
     "[] done",

@@ -33,7 +33,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** The repository root (tests/registry/../..). */
 export const repoRoot = resolve(here, "..", "..");
 /** The install tests of bun, the source of the fixtures. */
-export const bunInstallTestDir = join(repoRoot, "submodule", "bun", "test", "cli", "install");
+export const bunInstallTestDir = join(process.env.FNPM_BUN_DIR ?? join(repoRoot, "submodule", "bun"), "test", "cli", "install");
 /** Verdaccio-layout fixture packages that the bun install tests share. */
 export const fixturePackagesDir = join(bunInstallTestDir, "registry", "packages");
 

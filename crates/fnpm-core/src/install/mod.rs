@@ -235,13 +235,11 @@ pub(crate) fn prepare(
         && !opts.pm.lockfile_only
         && !opts.pm.trust
         && config.install_packages
-        && let Check::Noop { packages } = fast_path::check(&project.root_dir, hash)
+        && let Check::Noop { packages, installs } = fast_path::check(&project.root_dir, hash)
     {
         noop = Some(InstallSummary {
-            checked: Some(CheckedCount {
-                installs: packages,
-                packages,
-            }),
+            // A project without dependencies checks nothing: bun prints `[1.00ms] done`.
+            checked: (installs > 0).then_some(CheckedCount { installs, packages }),
             elapsed_ms: start.elapsed().as_millis() as u64,
             noop: true,
             ..InstallSummary::default()
@@ -381,6 +379,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         )
         .await?;
     }
+    // bun announces the resolve when it had to ask the network; its warnings follow.
+    let mut announced = false;
+    announce_resolving(&client, &*events, &mut announced);
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
@@ -402,7 +403,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &mut graph,
     );
 
-    let (added, updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
+    let (mut added, mut updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
+    for pkg in &mut added {
+        pkg.available_version =
+            summary::later_version(&graph, &client, &config, &pkg.name, &pkg.version);
+    }
+    for pkg in &mut updated {
+        pkg.available_version =
+            summary::later_version(&graph, &client, &config, &pkg.name, &pkg.to);
+    }
     let requested = summary::requested(&graph, &resolved_requests, &config.platform);
     let mut summary = InstallSummary {
         added,
@@ -414,6 +423,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let lockfile_dirty = changed || lock.migrated || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
 
     if opts.pm.lockfile_only || !config.install_packages {
+        announce_resolved(&client, &*events, announced);
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.
         if opts.pm.lockfile_only && !config.dry_run {
             save(
@@ -469,9 +479,26 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     )
     .await?;
     phases.mark("link");
-    summary.installed_count = linked.report.installed;
+    // bun counts each package once, however many places it was copied to.
+    summary.installed_count = linked.report.installed_packages;
     summary.removed_count = linked.report.removed;
     summary.failed_count = linked.failed;
+    // Nothing written: bun reports the places it checked (`Checked 4 installs across 3
+    // packages`), for `install` and `update` (not for an `add` or `remove`).
+    if summary.installed_count == 0
+        && summary.removed_count == 0
+        && summary.failed_count == 0
+        && (linked.report.verified > 0 || !opts.filter.is_empty())
+        && matches!(
+            opts.command,
+            InstallCommand::Install | InstallCommand::Update
+        )
+    {
+        summary.checked = Some(CheckedCount {
+            installs: linked.report.verified,
+            packages: graph.len() as u32,
+        });
+    }
 
     // Integrity the lockfile did not have (migrations, URL tarballs) comes from the imports.
     let mut integrity_filled = false;
@@ -494,6 +521,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             integrity_filled = true;
         }
     }
+
+    // Every download is done (the link waited for them).
+    announce_resolved(&client, &*events, announced);
 
     // Global installs link the direct dependencies' bins into the global bin directory.
     if config.global {
@@ -567,7 +597,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         if linked.report.removed > 0 || linked.report.installed > 0 {
             let _ = tokio::task::spawn_blocking(fnpm_linker::flush_background_deletes).await;
         }
-        write_state(&root, &ws, &graph, hash, &linked.linker);
+        let installs = linked.report.installed + linked.report.verified;
+        write_state(&root, &ws, &graph, hash, &linked.linker, installs);
     }
     phases.mark("state");
     client.flush_cache_writes().await;
@@ -1143,6 +1174,7 @@ fn save(
         }
     }
     fnpm_lockfile::save(root, graph)?;
+    events.emit(Event::status("Saved lockfile"));
     if config.lockfile.print_yarn {
         fnpm_lockfile::save_yarn(
             root,
@@ -1154,6 +1186,44 @@ fn save(
         )?;
     }
     Ok(true)
+}
+
+/// Requests that went to the network so far: bun's task count (a manifest, a tarball and its
+/// extraction are one task each).
+fn network_tasks(client: &fnpm_registry::RegistryClient) -> u64 {
+    let stats = client.stats();
+    stats.manifest_requests + 2 * stats.tarball_requests
+}
+
+/// bun's `Resolving dependencies` (on stderr, without a progress bar), once, when the install
+/// had to ask the network.
+fn announce_resolving(
+    client: &fnpm_registry::RegistryClient,
+    events: &dyn EventSink,
+    announced: &mut bool,
+) {
+    if !*announced && network_tasks(client) > 0 {
+        events.emit(Event::status("Resolving dependencies"));
+        *announced = true;
+    }
+}
+
+/// bun's `Resolved, downloaded and extracted [N]`, after the downloads.
+fn announce_resolved(
+    client: &fnpm_registry::RegistryClient,
+    events: &dyn EventSink,
+    announced: bool,
+) {
+    let tasks = network_tasks(client);
+    if tasks == 0 {
+        return;
+    }
+    if !announced {
+        events.emit(Event::status("Resolving dependencies"));
+    }
+    events.emit(Event::status(format!(
+        "Resolved, downloaded and extracted [{tasks}]"
+    )));
 }
 
 /// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns
@@ -1224,6 +1294,7 @@ fn write_state(
     graph: &LockGraph,
     config_hash: u64,
     linker: &NodeLinker,
+    installs: u32,
 ) {
     let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
         return;
@@ -1246,6 +1317,7 @@ fn write_state(
             NodeLinker::Isolated => "isolated".into(),
         },
         packages: graph.len() as u32,
+        installs,
         workspace_patterns,
         workspace_dirs,
     };

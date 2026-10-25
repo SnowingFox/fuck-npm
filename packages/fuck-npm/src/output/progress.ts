@@ -154,6 +154,7 @@ export function createProgress(runtime: CliRuntime): Progress {
       case "error":
         above(`${pc.red("error:")} ${event.message}`);
         return;
+      case "status":
       case "summary":
         return;
     }
@@ -184,5 +185,6 @@ export function diagnosticsSink(runtime: CliRuntime, silent: boolean): EventSink
     if (silent) return;
     if (event.type === "warn") runtime.stderr.write(`${pc.yellow("warn:")} ${event.message}\n`);
     else if (event.type === "error") runtime.stderr.write(`${pc.red("error:")} ${event.message}\n`);
+    else if (event.type === "status") runtime.stderr.write(`${event.message}\n`);
   };
 }
