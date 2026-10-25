@@ -497,7 +497,7 @@ pub(crate) async fn pack(
             hooks.apply(out, &json, &name)?;
         }
     }
-    if let Some(hooks) = publish.as_deref_mut() {
+    if let Some(hooks) = publish.as_mut() {
         version =
             published_version(&version).ok_or_else(|| name_error(NameError::InvalidVersion))?;
         hooks.refuse_tag(out, &version)?;

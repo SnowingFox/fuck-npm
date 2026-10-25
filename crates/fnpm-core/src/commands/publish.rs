@@ -150,7 +150,7 @@ impl Target {
         let in_env = ["NPM_CONFIG_PROVENANCE", "npm_config_provenance"]
             .iter()
             .filter_map(|k| self.env.get(k).filter(|v| !v.is_empty()))
-            .map(|v| fnpm_config::npmrc::npm_config_bool(&v))
+            .map(fnpm_config::npmrc::npm_config_bool)
             .max();
         let npmrc = if in_env.is_none() {
             self.base.provenance
@@ -463,6 +463,7 @@ fn registry_href(client: &RegistryClient, name: &str) -> String {
 }
 
 /// bun `normalized_package`, printed minified.
+#[allow(clippy::too_many_arguments)]
 fn normalized_manifest(
     out: &Out,
     target: &Target,

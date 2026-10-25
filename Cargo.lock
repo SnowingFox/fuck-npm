@@ -577,6 +577,7 @@ name = "fnpm-core"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "bytes",
  "crossbeam-channel",
  "flate2",
@@ -591,11 +592,15 @@ dependencies = [
  "fnpm-types",
  "fnpm-workspace",
  "futures-util",
+ "hex",
+ "libc",
  "mimalloc",
  "parking_lot",
  "rayon",
  "serde",
  "serde_json",
+ "sha1",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",

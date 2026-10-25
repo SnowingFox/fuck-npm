@@ -69,7 +69,7 @@ impl Out {
 
     /// bun `Output::err_generic`: `error: <message>`.
     pub fn error(&self, message: &str) -> Fatal {
-        let message = escape_control(message);
+        let message = escape_message(message);
         Fatal(format!(
             "{}{} {message}",
             self.paint_err("31", "error"),
@@ -79,7 +79,7 @@ impl Out {
 
     /// bun `Output::err` with an error name: `<NAME>: <message>`.
     pub fn named(&self, name: &str, message: &str) -> Fatal {
-        let message = escape_control(message);
+        let message = escape_message(message);
         Fatal(format!(
             "{}{} {message}",
             self.paint_err("31", name),
@@ -90,7 +90,7 @@ impl Out {
     /// bun `Output::err` with a system error: `ENOENT: No such file or directory: <message>
     /// (open)`.
     pub fn sys(&self, err: &std::io::Error, syscall: &str, message: &str) -> Fatal {
-        let message = escape_control(message);
+        let message = escape_message(message);
         let (name, label) = errno_text(err);
         let mut text = format!(
             "{}{} ",
@@ -159,6 +159,14 @@ pub(crate) fn escape_control(text: &str) -> String {
         }
     }
     out
+}
+
+/// [`escape_control`] that keeps the line breaks of a message with several lines.
+fn escape_message(text: &str) -> String {
+    text.split('\n')
+        .map(escape_control)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A path for display: invalid UTF-8 is shown lossily.

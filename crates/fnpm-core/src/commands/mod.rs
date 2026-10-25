@@ -15,6 +15,7 @@ mod link;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
+mod patch;
 mod publish;
 mod scripts;
 mod table;
@@ -247,9 +248,9 @@ pub async fn dispatch(
         // Later parity phases (docs/ROADMAP.md P4): a typed error, never a panic.
         ["pack"] | ["pm", "pack"] => pack::run(&cx).await,
         ["publish"] => publish::run(&cx).await,
-        ["patch"] | ["patch-commit"] | ["x" | "dlx"] | ["create"] | ["pm", "diff" | "scan"] => {
-            Err(not_implemented(&path))
-        }
+        ["patch"] => patch::run(&cx, false).await,
+        ["patch-commit"] => patch::run(&cx, true).await,
+        ["x" | "dlx"] | ["create"] | ["pm", "diff" | "scan"] => Err(not_implemented(&path)),
         _ => Err(Error::UnknownCommand(command)),
     }
 }
