@@ -70,14 +70,18 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
 
 2026-10-25.
 
-- **Decision:** the store keeps file blobs addressed by SHA-512
-  (`store/v1/files/<2 hex>/<hash>[-x]`); package directories in `store/v1/pkgs/` are hardlinks to
+- **Decision:** the store keeps file blobs addressed by BLAKE3 with a 64-byte output
+  (`store/v1/files/<2 hex>/<128 hex>[-x]`); package directories in `store/v1/pkgs/` are hardlinks to
   those blobs plus a precomputed file index (`index.bin`). Projects get files by clonefile,
   FICLONE or hardlink, copy only as a last resort.
 - **Why:** bun's cache is per package, so two versions of a package store every file twice; a
   per-file store shares unchanged files across versions (pnpm's insight), which is how fnpm
   targets less disk than both. The file index means linking needs no `readdir`. Because package
   directories still exist, macOS can clone a whole package directory in one call.
+- **Why BLAKE3:** every file of every imported package is hashed, which is the one cost fnpm
+  has over an extractor that only writes files. BLAKE3 runs at several GB/s per core (SHA-512
+  is under 1 GB/s) and is cryptographically strong, so a crafted file cannot take another
+  file's blob. The registry's SHA-512/SHA-1 tarball integrity is still verified (with ring).
 - **Cost:** extraction hashes every file and writes two levels (blob, then package directory);
   `fnpm store prune` needs reference counting across projects (`projects.json`).
 

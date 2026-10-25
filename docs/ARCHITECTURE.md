@@ -87,7 +87,7 @@ fnpm-registry     fnpm-store      fnpm-workspace
 | fnpm-semver | types | thiserror |
 | fnpm-config | types, semver | toml, serde_json, url |
 | fnpm-registry | types, semver, config | tokio, reqwest (h2 + rustls), sonic-rs, rkyv, xxhash |
-| fnpm-store | types, semver, config | tokio, flate2 (zlib-rs), libdeflater, rayon, rustix, reflink-copy, rkyv |
+| fnpm-store | types, semver, config | tokio, flate2 (zlib-rs), libdeflater, rayon, rustix, reflink-copy, rkyv, blake3, ring |
 | fnpm-workspace | types, semver, config | globset, rayon, serde_json, serde_yaml_ng |
 | fnpm-resolver | types, semver, config, registry, store, workspace | tokio, rayon, parking_lot |
 | fnpm-lockfile | types, semver, config, workspace | serde_json, serde_yaml_ng, sonic-rs, rkyv, xxhash |
@@ -132,7 +132,7 @@ both lockfile serialisation and the hoisted linker need it.
 ```text
 ~/.fnpm/
   store/v1/                  FNPM_STORE_DIR overrides ~/.fnpm/store (v1 is appended)
-    files/<2 hex>/<128 hex>[-x]   CAS blobs: SHA-512 of the file contents; -x = executable
+    files/<2 hex>/<128 hex>[-x]   CAS blobs: BLAKE3 (64-byte output) of the file contents; -x = executable
     pkgs/<name>@<version>-<16 hex>/
       package/...                 hardlinks to blobs, the package root
       index.bin                   rkyv FileIndex (dirs, files, sizes, modes, digests, package.json)
@@ -843,7 +843,8 @@ pub mod fsops {
 **Import algorithm.** (1) Stream bytes through the integrity hasher and a zlib-rs inflater
 into `TarParser` in one pass (bun `TarballStream.rs`, `extract_tarball.rs`); tarballs whose
 `Content-Length` is under 2 MiB are buffered and inflated in one shot with libdeflate.
-(2) For each file: SHA-512 the contents, write the blob to `files/<2>/<hex>[-x]` with
+(2) For each file: BLAKE3 the contents (64-byte extended output, 128 hex digits; the
+tarball's own SHA-512/SHA-1 integrity is checked separately with ring), write the blob to `files/<2>/<hex>[-x]` with
 `O_EXCL` (exists = already stored, skip), and record it in the index. Hashing and blob writes
 fan out to rayon for files > 64 KiB. (3) Build `tmp/<random>/package/` with hardlinks to the
 blobs (directories first, from the index), write `index.bin`, then `rename` into
@@ -879,7 +880,7 @@ hashing and writes on rayon (or one `spawn_blocking` per package for the one-sho
 `bun-install-cache-publish.test.ts`, `bun-prune.test.ts`.
 
 **Perf.** Extraction of a 1 MB tarball with 100 files < 8 ms on one core (zlib-rs inflate
-~1 GB/s, SHA-512 ~800 MB/s). A store hit (`get`) is one `stat` plus an index read (< 50 µs).
+~1 GB/s, BLAKE3 several GB/s per core). A store hit (`get`) is one `stat` plus an index read (< 50 µs).
 Disk: identical files across versions are stored once; `fnpm store status` reports physical
 bytes.
 ## fnpm-workspace
@@ -1101,7 +1102,7 @@ foreign file is left in place and `fnpm.lock` is written on the first successful
 | package-lock v1-v3 | yes | yes (v3) | tree paths -> graph via `resolve_paths`; `link: true` = workspace |
 | yarn.lock v1 | yes | yes | needs workspace for `workspace:`/file entries; integrity from `integrity` field |
 | yarn berry | yes | no | `resolution`/`checksum` (`yarn_berry.rs`, builtin extensions) |
-| pnpm-lock v5.4/v6/v9 | yes | yes (v9) | `importers`, `packages`, `snapshots`, catalogs, overrides, patchedDependencies, onlyBuiltDependencies |
+| pnpm-lock lockfileVersion 7-11 (older rejected, as bun) | yes | yes (v9) | `importers`, `packages`, `snapshots`, catalogs, overrides, patchedDependencies, onlyBuiltDependencies |
 
 Data a format lacks (bin, os/cpu, hasInstallScript for yarn v1) stays default and is filled
 from the store's `index.bin` package.json on install; the next save writes it, so after one

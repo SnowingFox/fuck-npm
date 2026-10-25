@@ -9,8 +9,8 @@ Every phase runs the same loop: one implementer per crate or command group on it
 an adversarial review (correctness, cross-platform behaviour, performance), then merge, the
 conformance files for the phase, and the benchmark gate.
 
-Status as of 2026-10-25. Legend: **done**, **reviewed** (implemented and reviewed on its branch,
-not merged), **in progress**, **not started**.
+Status as of 2026-10-25. Legend: **done**, **merged** (implemented, reviewed and on `main`; crate tests green, the
+command is not wired end to end yet), **in progress**, **not started**.
 
 ## Gates used below
 
@@ -42,22 +42,40 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 
 | deliverable | branch | status |
 |---|---|---|
-| fnpm-semver: npm versions and ranges, bun's satisfies/pick-best | `feat/semver` | reviewed |
-| fnpm-config: `.npmrc`, bunfig/fnpm.toml, env, CLI precedence, proxies | `feat/config` | reviewed |
-| fnpm-registry: HTTP/2 client, manifest cache, auth, throttling | `feat/registry` | reviewed |
-| fnpm-store: CAS, streaming extraction, file index, fs ops, prune | `feat/store` | reviewed |
-| fnpm-workspace: discovery, `--filter`, topo order, package.json editor | `feat/workspace` | reviewed |
-| fnpm-resolver: dependency resolver ported from bun | `feat/resolver` | reviewed |
-| fnpm-lockfile: fnpm.lock / bun.lock reader and writer, hoisting, sidecar | `feat/lockfile` | reviewed |
-| fnpm-lockfile: npm and bun (text and binary) migration, npm/bun export | `feat/migrate-npm-bun` | reviewed |
-| fnpm-lockfile: yarn v1, yarn berry, pnpm migration, yarn/pnpm export | `feat/migrate-yarn-pnpm` | reviewed |
-| fnpm-linker: hoisted and isolated layouts, global virtual store, bins | `feat/linker` | reviewed |
-| fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | reviewed |
-| Merge the 11 branches into `main`, resolve contract drift, `cargo test --workspace` green | `integrate` | in progress (branch created, no commits yet) |
-| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | in progress (no commits yet; skeleton on `main`) |
-| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | in progress (no commits yet; skeleton on `main`) |
+| fnpm-semver: npm versions and ranges, bun's satisfies/pick-best | `feat/semver` | merged |
+| fnpm-config: `.npmrc`, bunfig/fnpm.toml, env, CLI precedence, proxies | `feat/config` | merged |
+| fnpm-registry: HTTP/2 client, manifest cache, auth, throttling | `feat/registry` | merged |
+| fnpm-store: CAS, streaming extraction, file index, fs ops, prune | `feat/store` | merged |
+| fnpm-workspace: discovery, `--filter`, topo order, package.json editor | `feat/workspace` | merged |
+| fnpm-resolver: dependency resolver ported from bun | `feat/resolver` | merged |
+| fnpm-lockfile: fnpm.lock / bun.lock reader and writer, hoisting, sidecar | `feat/lockfile` | merged |
+| fnpm-lockfile: npm and bun (text and binary) migration, npm/bun export | `feat/migrate-npm-bun` | merged |
+| fnpm-lockfile: yarn v1, yarn berry, pnpm migration, yarn/pnpm export | `feat/migrate-yarn-pnpm` | merged |
+| fnpm-linker: hoisted and isolated layouts, global virtual store, bins | `feat/linker` | merged |
+| fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | merged |
+| Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
+| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | in progress (skeleton with `todo!()` on `main`) |
+| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | in progress (skeleton with `todo!()` on `main`) |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | in progress (no commits yet; crate not created) |
 | Bench harness runs the native binary; first fnpm numbers committed | | not started |
+
+Known gaps in the merged crates (PARITY rows left open for these):
+
+- semver: `Range::has_prerelease` is rebuilt from comparators (`^1.2-beta` edge case);
+  `Range::parse("^1.2.3")` ~150 ns vs the 100 ns target.
+- config: no mTLS; `publishConfig` registry-source edge case approximated.
+- registry: `_DNS_TIME_TO_LIVE_SECONDS` ignored; one TLS handshake per origin not enforced;
+  manifest cache load ~0.75 ms (owned `PackageManifest` strings); local version parsing in
+  `semver_ext.rs`.
+- store: bun's cache-folder name printers; Windows junctions; macOS/Windows paths never built.
+- resolver: "reuse cached versions" only covers locked/pinned versions; production sources
+  (`RegistrySource`, git, store import) first exercised by fnpm-core.
+- lockfile: two bun.lock readers (`text`, used by `load`/`parse`/`serialize`, and
+  `formats::bun_text`, used by migration reports) should become one; post-migration steps
+  and `fnpm ./bun.lockb` are core work; `out_of_sync` ignores `packageExtensions`.
+- linker: isolated step order not interleaved with scripts; Windows `.exe` shims.
+- scripts: `--no-orphans` is only the Linux parent-death signal; local package.json/semver
+  helpers instead of fnpm-workspace/fnpm-semver.
 
 Exit criteria:
 
@@ -76,7 +94,7 @@ Exit criteria:
 
 | deliverable | status |
 |---|---|
-| Isolated layout and global virtual store end to end (default for workspaces) | not started (linker side reviewed in P1) |
+| Isolated layout and global virtual store end to end (default for workspaces) | not started (linker side merged in P1) |
 | Workspaces, `workspace:` protocol, `--filter`, `-r`, catalogs | not started |
 | Overrides and nested overrides, `packageExtensions`, patches applied at install | not started |
 | Lifecycle scripts in dependency order, trusted dependencies, postinstall optimizer, native binlink | not started |
@@ -99,7 +117,7 @@ Exit criteria:
 
 | deliverable | status |
 |---|---|
-| First-install migration from package-lock / shrinkwrap, yarn.lock (v1, berry), pnpm-lock.yaml, bun.lock, bun.lockb, carrying pnpm workspace config | not started (format code reviewed in P1) |
+| First-install migration from package-lock / shrinkwrap, yarn.lock (v1, berry), pnpm-lock.yaml, bun.lock, bun.lockb, carrying pnpm workspace config | not started (format code merged in P1) |
 | `fnpm migrate`, `fnpm-lock migrate / export / verify / diff / why / dedupe / audit / print` | not started |
 | Golden tests: real lockfiles from each tool for every fixture; migrate, install, compare resolved versions with the source tool's `ls --json` | not started |
 
