@@ -20,7 +20,7 @@ import {
 } from "fs";
 import { chmod, exists, lstat, readdir, rm, symlink, truncate, writeFile } from "../compat/fs-promises.ts";
 import {
-  fnpmEnv,
+  fnpmEnv as sharedFnpmEnv,
   fnpmExe,
   nodeExe,
   DirectoryTree,
@@ -41,6 +41,8 @@ import {
 import { mkfifo } from "../compat/mkfifo.ts";
 import { constants } from "os";
 import { join } from "path";
+
+const fnpmEnv: Record<string, string | undefined> = { ...sharedFnpmEnv, FNPM_REGISTRY: undefined };
 
 // Runs `fnpm pm pack` for the package in `dir`, from `cwd`.
 // `out` and `err` are normalized for inline snapshots. The shasum, the integrity

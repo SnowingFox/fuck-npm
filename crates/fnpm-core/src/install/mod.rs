@@ -175,6 +175,7 @@ pub struct PreparedInstall {
     /// The workspace (with its warnings) and the previous lockfile, read while the runtime and
     /// the link pool start on other threads. `None` for a no-op.
     loaded: Option<(Workspace, Vec<String>, lock::LockState)>,
+    pending_patch: Option<crate::commands::patch::PendingCommit>,
 }
 
 impl PreparedInstall {
@@ -206,6 +207,15 @@ pub(crate) fn prepare(
     env: Env,
     start_runtime: bool,
 ) -> Result<PreparedInstall> {
+    prepare_with_patch(opts, env, start_runtime, None)
+}
+
+fn prepare_with_patch(
+    opts: InstallOptions,
+    env: Env,
+    start_runtime: bool,
+    pending_patch: Option<crate::commands::patch::PendingCommit>,
+) -> Result<PreparedInstall> {
     let start = Instant::now();
     let mut phases = Phases::new(&env);
     if opts.analyze {
@@ -228,7 +238,8 @@ pub(crate) fn prepare(
     let config = &project.config;
     let hash = config_hash(config);
     let mut noop = None;
-    if opts.command == InstallCommand::Install
+    if pending_patch.is_none()
+        && opts.command == InstallCommand::Install
         && opts.packages.is_empty()
         && opts.filter.is_empty()
         && !config.force
@@ -272,6 +283,7 @@ pub(crate) fn prepare(
         phases,
         noop,
         loaded,
+        pending_patch,
     })
 }
 
@@ -284,6 +296,17 @@ pub(crate) async fn run(
     prepare(opts, env, false)?.run(events).await
 }
 
+pub(crate) async fn run_with_patch(
+    opts: InstallOptions,
+    events: Arc<dyn EventSink>,
+    env: Env,
+    pending: crate::commands::patch::PendingCommit,
+) -> Result<InstallSummary> {
+    prepare_with_patch(opts, env, false, Some(pending))?
+        .run(events)
+        .await
+}
+
 /// Steps 2-8.
 async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Result<InstallSummary> {
     let PreparedInstall {
@@ -293,6 +316,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         start,
         mut phases,
         loaded,
+        pending_patch,
         ..
     } = prepared;
     let config = project.config.clone();
@@ -313,6 +337,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.emit(Event::warn(w.clone(), None));
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
+    if let Some(pending) = &pending_patch {
+        ws.root = fnpm_workspace::PackageJson::parse(&pending.manifest)?;
+    }
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
@@ -336,7 +363,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         lock.graph.as_ref()
     };
-    let resolver = Resolver::new(config.clone(), client.clone());
+    let resolver = Resolver::new(config.clone(), client.clone()).with_patch_hashes(
+        pending_patch
+            .as_ref()
+            .map(|p| p.patch_hashes())
+            .unwrap_or_default(),
+    );
     let skip = Arc::new(if stream {
         not_fetched(previous, &config)
     } else {
@@ -411,11 +443,42 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         requested,
         ..InstallSummary::default()
     };
-    let lockfile_dirty = changed || lock.migrated || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
+    let lockfile_dirty = pending_patch.is_some()
+        || changed
+        || lock.migrated
+        || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
+
+    let mut patch_rollback = if !config.dry_run {
+        pending_patch
+            .as_ref()
+            .map(|pending| {
+                crate::commands::patch::CommitRollback::new(
+                    &root,
+                    pending,
+                    config.lockfile.print_yarn,
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    if !config.dry_run
+        && let Some(pending) = &pending_patch
+    {
+        pending.write_patch()?;
+    }
 
     if opts.pm.lockfile_only || !config.install_packages {
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.
         if opts.pm.lockfile_only && !config.dry_run {
+            if config.save_package_json
+                && let Some(pending) = &pending_patch
+            {
+                crate::project::write_atomic(
+                    &root.join("package.json"),
+                    pending.manifest.as_bytes(),
+                )?;
+            }
             save(
                 &root,
                 &config,
@@ -426,6 +489,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 lockfile_dirty,
                 &*events,
             )?;
+        }
+        if let Some(rollback) = &mut patch_rollback {
+            rollback.finish();
         }
         summary.elapsed_ms = start.elapsed().as_millis() as u64;
         client.flush_cache_writes().await;
@@ -514,6 +580,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .get_or_insert_with(Default::default);
         set.extend(trust_names.iter().cloned());
     }
+    if config.save_package_json
+        && let Some(pending) = &pending_patch
+    {
+        crate::project::write_atomic(&root.join("package.json"), pending.manifest.as_bytes())?;
+    }
     let saved = save(
         &root,
         &config,
@@ -524,6 +595,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lockfile_dirty || integrity_filled,
         &*events,
     )?;
+    if let Some(rollback) = &mut patch_rollback {
+        rollback.finish();
+    }
     phases.mark("save");
     // Caches and the store's project record, off the critical path (awaited before the
     // state file).

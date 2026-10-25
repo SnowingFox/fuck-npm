@@ -65,7 +65,7 @@ const renames: [RegExp, string][] = [
 ];
 
 const pmCommands =
-  "install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|x|i|a|rm|ci";
+  "init|install|add|remove|update|outdated|link|unlink|pm|patch|patch-commit|publish|audit|info|why|pack|create|x|i|a|rm|ci";
 
 const textChanges: [RegExp, string][] = [
   [/\bbun\.lock(?![b\w])/g, "fnpm.lock"],
@@ -161,6 +161,35 @@ function prelude(code: string, relPath: string, outFile: string): string {
   return parts.length ? `${parts.join("\n")}\n` : "";
 }
 
+/** Preserve the publishing tests' runtime and registry adaptations when regenerating them. */
+function publishingAdaptations(code: string, relPath: string): string {
+  if (!["bun-pack.test.ts", "bun-publish.test.ts", "bun-patch.test.ts"].includes(relPath)) return code;
+  // fnpm is a package manager; fixture lifecycle scripts run with Node.
+  code = code.replace(/\$\{fnpmExe\(\)\}(?= [\w-]+\.js\b)/g, "${nodeExe()}");
+  code = code.replace(/^(\s*)fnpmExe,$/m, "$1fnpmExe,\n$1nodeExe,");
+  if (relPath === "bun-pack.test.ts") {
+    code = code.replace(/^(\s*)fnpmEnv,$/m, "$1fnpmEnv as sharedFnpmEnv,");
+    code = code.replace(
+      "// Runs `fnpm pm pack`",
+      "const fnpmEnv: Record<string, string | undefined> = { ...sharedFnpmEnv, FNPM_REGISTRY: undefined };\n\n// Runs `fnpm pm pack`",
+    );
+  }
+  if (relPath === "bun-publish.test.ts") {
+    code = code.replace(/^(\s*)fnpmEnv as env,$/m, "$1fnpmEnv,");
+    code = code.replace(
+      "const registry = new TestRegistry();",
+      "// Each test's bunfig.toml or .npmrc chooses its publishing registry.\n" +
+        "const env: Record<string, string | undefined> = { ...fnpmEnv, FNPM_REGISTRY: undefined };\n\n" +
+        "const registry = new TestRegistry();",
+    );
+    code = code.replaceAll("Bun/${Bun.version", "fnpm/${Bun.version");
+    code = code.replaceAll("bunx npm login", "fnpm x npm login");
+    code = code.replaceAll("bun run --filter", "fnpm run --filter");
+    code = code.replace(String.raw`/^fnpm publish v\S+ \(\S+\)\n$/`, String.raw`/^fnpm publish v\S+(?: \(\S+\))?\n$/`);
+  }
+  return code;
+}
+
 function port(relPath: string, kind: "test" | "helper"): { out: string; tests: number } {
   const sourceFile = join(sourceRoot, relPath);
   const outFile = join(outputRoot, relPath);
@@ -174,7 +203,7 @@ function port(relPath: string, kind: "test" | "helper"): { out: string; tests: n
     .replace(/import\.meta\.require\b/g, "require");
   const before = prelude(code, relPath, outFile);
   code = rewriteImports(code, sourceFile, outFile);
-  code = transformText(code);
+  code = publishingAdaptations(transformText(code), relPath);
   // A shebang must stay on the first line.
   let shebang = "";
   if (code.startsWith("#!")) {

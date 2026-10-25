@@ -43,6 +43,8 @@ pub(crate) trait PublishHooks: Send {
     fn apply(&mut self, out: &Out, json: &Json, name: &str) -> FResult<()>;
     /// After the scripts: the tag must not be a version, a prerelease needs a tag.
     fn refuse_tag(&mut self, out: &Out, version: &str) -> FResult<()>;
+    /// Reads the folder-only fields of the registry manifest before printing packed files.
+    fn prepare_manifest(&mut self, out: &Out, json: &Json, dir: &Path) -> FResult<()>;
 }
 
 pub(crate) struct PackOptions {
@@ -776,6 +778,9 @@ pub(crate) async fn pack(
         .map_err(|e| tarball::fail_write_tarball(out, &e, &shown_dest()))?;
     stats.packed_size = finished.packed_size;
 
+    if let Some(hooks) = publish.as_mut() {
+        hooks.prepare_manifest(out, &manifest, &package_dir)?;
+    }
     let mut tarball_bytes = Vec::new();
     match (finished.sink, temp, &dest) {
         (tarball::Sink::File(file), Some(temp), Some(dest)) => {
@@ -833,7 +838,7 @@ pub(crate) async fn pack(
 /// npm's `{README,README.*}`, case-insensitively: the first regular file `readdir` returns.
 pub(crate) fn is_readme_filename(name: &str) -> bool {
     name.len() >= 6
-        && name[..6].eq_ignore_ascii_case("README")
+        && name.as_bytes()[..6].eq_ignore_ascii_case(b"README")
         && (name.len() == 6 || name.as_bytes()[6] == b'.')
 }
 
@@ -879,5 +884,6 @@ mod tests {
             Err(NameError::MissingName)
         ));
         assert!(is_readme_filename("readme.md") && !is_readme_filename("READMEX"));
+        assert!(!is_readme_filename("abcdeé.md"));
     }
 }

@@ -120,6 +120,8 @@ struct Target {
     env: fnpm_config::Env,
     tag: Option<String>,
     access: Option<String>,
+    folder_bins: Option<serde_json::Value>,
+    folder_bin_warning: Option<String>,
 }
 
 impl Target {
@@ -128,6 +130,8 @@ impl Target {
             config: base.clone(),
             tag: cli.tag.clone(),
             access: cli.access.clone(),
+            folder_bins: None,
+            folder_bin_warning: None,
             base,
             cli,
             env,
@@ -266,6 +270,56 @@ impl PublishHooks for Target {
 
     fn refuse_tag(&mut self, out: &Out, version: &str) -> FResult<()> {
         self.refuse_tag_for(out, version)
+    }
+
+    fn prepare_manifest(&mut self, out: &Out, json: &Json, dir: &Path) -> FResult<()> {
+        use super::pack::walk::{self, BinType, Kind};
+        self.folder_bins = None;
+        self.folder_bin_warning = None;
+        if walk::non_empty_bin(json).is_some() {
+            return Ok(());
+        }
+        let Some(typed) = json
+            .get("directories")
+            .and_then(|d| d.get("bin"))
+            .and_then(Json::as_str)
+        else {
+            return Ok(());
+        };
+        let Some(path) = walk::bin_subpath(typed, BinType::Dir) else {
+            return Ok(());
+        };
+        let kind = walk::bin_kind_without_following_symlinks(out, dir, &path)?;
+        if kind != Some(Kind::Dir) {
+            let why = if kind.is_none() {
+                "does not exist"
+            } else {
+                "is not a directory"
+            };
+            self.folder_bin_warning = Some(format!(
+                "bin directory '{}' {why}",
+                String::from_utf8_lossy(&path)
+            ));
+            return Ok(());
+        }
+        let mut props = serde_json::Map::new();
+        let mut dirs = vec![path];
+        while let Some(subpath) = dirs.pop() {
+            for entry in walk::read_dir(out, &dir.join(walk::bytes_path(&subpath)), &subpath)? {
+                let mut path = subpath.clone();
+                path.push(b'/');
+                path.extend_from_slice(&entry.name);
+                props.insert(
+                    String::from_utf8_lossy(&entry.name).into_owned(),
+                    serde_json::Value::String(String::from_utf8_lossy(&path).into_owned()),
+                );
+                if entry.kind == Kind::Dir {
+                    dirs.push(path);
+                }
+            }
+        }
+        self.folder_bins = Some(serde_json::Value::Object(props));
+        Ok(())
     }
 }
 
@@ -495,6 +549,16 @@ fn normalized_manifest(
             serde_json::Value::String(node.clone()),
         );
     }
+    if let Some(bins) = &target.folder_bins
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert("bin".into(), bins.clone());
+    }
+    let mut warnings = warnings;
+    if target.folder_bins.is_some() || target.folder_bin_warning.is_some() {
+        warnings.retain(|w| !w.starts_with("bin directory '"));
+    }
+    warnings.extend(target.folder_bin_warning.iter().cloned());
     for mut w in warnings {
         // A folder's `directories.bin` that is there but is no directory (a symlink, a file).
         if let Some(dir) = package_dir

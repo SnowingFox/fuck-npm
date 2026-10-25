@@ -15,7 +15,7 @@ mod link;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
-mod patch;
+pub(crate) mod patch;
 mod publish;
 mod scripts;
 mod table;

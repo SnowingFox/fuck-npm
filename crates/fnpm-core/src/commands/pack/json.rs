@@ -182,9 +182,7 @@ impl Parser<'_> {
                 }
                 Some(&b) if b >= 0x80 => {
                     // U+00A0, U+FEFF and the other Unicode spaces bun's lexer skips.
-                    let rest = std::str::from_utf8(&self.text[self.pos..])
-                        .ok()
-                        .or_else(|| std::str::from_utf8(&self.text[self.pos..self.pos + 3]).ok());
+                    let rest = std::str::from_utf8(&self.text[self.pos..]).ok();
                     let Some(c) = rest.and_then(|s| s.chars().next()) else {
                         return Ok(newline);
                     };

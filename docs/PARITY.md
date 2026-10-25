@@ -184,26 +184,26 @@ Conventions:
 - [ ] **--tag <tag>** — default latest; version-like tag invalid; prerelease without tag error · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
 - [x] **--otp <code> / --auth-type web|legacy** — OTP header; auth type default web · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-registry`
 - [ ] **--gzip-level, --ignore-scripts, --dry-run, --registry** — as pack; dry run prints ` + name@version (dry-run)` · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
-- [ ] **--tolerate-republish** — existing version → warn and exit 0 · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
-- [ ] **--provenance / --no-provenance / --provenance-file** — provenance requested from any source is refused `not supported yet` (fnpm may implement later) · bun: `src/runtime/cli/publish_command.rs` · owner: `cli`
+- [x] **--tolerate-republish** — existing version → warn and exit 0 · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
+- [x] **--provenance / --no-provenance / --provenance-file** — provenance requested from any source is refused `not supported yet` (fnpm may implement later) · bun: `src/runtime/cli/publish_command.rs` · owner: `cli`
 - [ ] **-r, --recursive / -F, --filter** — dependency order, skip private and already-published, pack all then publish; flags must follow `publish` · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-workspace`
-- [ ] **Publish validation** — name/version required, valid semver, private refused · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
+- [x] **Publish validation** — name/version required, valid semver, private refused · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-core`
 - [x] **Request body** — `_id`, dist-tags, normalized manifest (`_integrity`, dist, bin object, readme), base64 `_attachments` · bun: `src/runtime/cli/publish_command.rs` · owner: `fnpm-registry`
 - [ ] **publishConfig** — tag/access unless CLI; registry and `@scope:registry` replace defaults unless `--registry`; no env expansion · bun: `src/install/PackageManager/PackageManagerOptions.rs` · owner: `fnpm-config`
 
 ### fnpm pm pack
 
-- [ ] **--destination <dir> / --filename <name>** — mutually exclusive; destination created · bun: `src/runtime/cli/pack_command.rs` · owner: `cli`
-- [ ] **--gzip-level <0-9>** — default 9; invalid errors · bun: `src/runtime/cli/pack_command.rs` · owner: `cli`
-- [ ] **--quiet / --silent / --dry-run / --ignore-scripts** — quiet prints only tarball path; dry run computes sizes without tarball · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
-- [ ] **Pack scripts** — prepack, prepare, postpack with npm_* env; re-read package.json after · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-scripts`
+- [x] **--destination <dir> / --filename <name>** — mutually exclusive; destination created · bun: `src/runtime/cli/pack_command.rs` · owner: `cli`
+- [x] **--gzip-level <0-9>** — default 9; invalid errors · bun: `src/runtime/cli/pack_command.rs` · owner: `cli`
+- [x] **--quiet / --silent / --dry-run / --ignore-scripts** — quiet prints only tarball path; dry run computes sizes without tarball · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
+- [x] **Pack scripts** — prepack, prepare, postpack with npm_* env; re-read package.json after · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-scripts`
 - [ ] **Tarball name and output** — `<scope>-<name>-<version>.tgz`; file list, shasum, integrity, sizes, bundled deps · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 - [ ] **File selection** — `files` field, `.npmignore` else `.gitignore`, default ignores, always-included README/LICENSE, lockfiles never packed · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 - [ ] **Bins in tarball** — `bin`/`directories.bin` added with +x; must stay inside package · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 - [ ] **bundledDependencies** — bool or array; resolve via node_modules ancestry, nest transitive deps, cycle error · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 - [ ] **workspace:/catalog: substitution** — rewrite specs to concrete versions in packed package.json; failure crashes · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 - [x] **Deterministic tarball** — pax + gzip, fixed mtime 1985-10-26, `package/` prefix, package.json first · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-store`
-- [ ] **Atomic tarball write** — temp file + rename; symlink/FIFO handling · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
+- [x] **Atomic tarball write** — temp file + rename; symlink/FIFO handling · bun: `src/runtime/cli/pack_command.rs` · owner: `fnpm-core`
 
 ### fnpm pm (dispatcher and subcommands)
 

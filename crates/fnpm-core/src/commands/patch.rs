@@ -94,13 +94,13 @@ fn read_name_and_version(out: &Out, folder: &Path) -> FResult<(String, String)> 
 /// The resolution label patch keys use: the version for npm packages.
 fn label(p: &Package) -> String {
     match &p.resolution {
-        Resolution::Npm { version, .. } => version.clone(),
-        other => other.to_string(),
+        Resolution::Workspace { .. } => p.version.clone(),
+        other => other.patch_label(),
     }
 }
 
 fn patch_key(p: &Package) -> String {
-    format!("{}@{}", p.name, label(p))
+    p.patch_key()
 }
 
 /// The packages installed in node_modules (not only shipped inside another's tarball).
@@ -170,8 +170,8 @@ fn node_modules_entries(dir: &Path) -> Vec<(String, PathBuf)> {
 }
 
 /// The first folder, breadth first from the root's and the workspaces' node_modules, that
-/// holds `name` at `version` under the folder name `alias`. A link (the isolated linker) is
-/// resolved and the store folder returned.
+/// holds `name` at `version` under the folder name `alias`. The displayed path stays at
+/// the link position; the editable folder is selected after target lookup.
 fn find_folder(
     root: &Path,
     members: &[PathBuf],
@@ -189,22 +189,12 @@ fn find_folder(
             continue;
         }
         for (dir_name, path) in node_modules_entries(&nm) {
-            // A link is followed lexically, so a folder in the isolated store keeps its path
-            // in the project even when the store entry links into the global store.
-            let real = if is_link(&path) {
-                match std::fs::read_link(&path) {
-                    Ok(t) => lexical(&path.parent().unwrap_or(Path::new("/")).join(t)),
-                    Err(_) => continue,
-                }
-            } else {
-                path.clone()
-            };
             if aliases.contains(&dir_name)
-                && let Ok(text) = std::fs::read_to_string(real.join("package.json"))
+                && let Ok(text) = std::fs::read_to_string(path.join("package.json"))
                 && let Ok(j) = json::parse(&text)
-                && j.get("version").and_then(Json::as_str) == Some(version)
+                && (version.is_empty() || j.get("version").and_then(Json::as_str) == Some(version))
             {
-                return Some(real);
+                return Some(path);
             }
             if !is_link(&path) {
                 queue.push_back(path.join("node_modules"));
@@ -237,7 +227,7 @@ fn inside(root: &Path, path: &Path) -> bool {
 /// Replaces each link on the way from `root` to `folder` that leads out of the project (into
 /// the global store) with a real directory of links to the entries of its target, so the
 /// package's folder can be replaced without touching the shared store.
-fn materialize(root: &Path, folder: &Path) -> std::io::Result<()> {
+fn materialize(root: &Path, folder: &Path, global_links: &Path) -> std::io::Result<()> {
     let Ok(rel) = folder.strip_prefix(root) else {
         return Ok(());
     };
@@ -253,6 +243,14 @@ fn materialize(root: &Path, folder: &Path) -> std::io::Result<()> {
         if inside(root, &target) {
             continue;
         }
+        let global_links =
+            std::fs::canonicalize(global_links).unwrap_or_else(|_| global_links.to_path_buf());
+        if !target.starts_with(&global_links) {
+            return Err(std::io::Error::other(format!(
+                "refusing to prepare a package through unmanaged symlink {}",
+                cur.display()
+            )));
+        }
         let staging = temp_sibling(&cur);
         std::fs::create_dir_all(&staging)?;
         for e in std::fs::read_dir(&target)? {
@@ -260,8 +258,14 @@ fn materialize(root: &Path, folder: &Path) -> std::io::Result<()> {
             #[cfg(unix)]
             std::os::unix::fs::symlink(e.path(), staging.join(e.file_name()))?;
         }
-        std::fs::remove_file(&cur)?;
-        std::fs::rename(&staging, &cur)?;
+        let old = temp_sibling(&cur);
+        std::fs::rename(&cur, &old)?;
+        if let Err(e) = std::fs::rename(&staging, &cur) {
+            let _ = std::fs::rename(&old, &cur);
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
+        std::fs::remove_file(&old)?;
     }
     Ok(())
 }
@@ -492,7 +496,31 @@ fn resolve_target(
     } else {
         root.join(&folder)
     };
-    let real = lexical(&abs);
+    let mut real = lexical(&abs);
+    let root_real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let managed = [root, root_real.as_path()].into_iter().any(|base| {
+        real.strip_prefix(base).is_ok_and(|rel| {
+            rel.components()
+                .any(|part| part.as_os_str() == "node_modules")
+        })
+    });
+    if !managed {
+        return Err(out.error(&format!(
+            "refusing to patch {}: the folder is outside the project's node_modules",
+            escape_control(&folder)
+        )));
+    }
+    // The local isolated layout needs the editable copy at the store position so
+    // dependencies next to it stay reachable. A link into the shared global store
+    // or an external checkout is replaced at its project-owned link position.
+    if let Ok(link) = std::fs::read_link(&real) {
+        let destination = lexical(&real.parent().unwrap_or(root).join(link));
+        if destination.starts_with(root.join("node_modules/.fnpm"))
+            && std::fs::canonicalize(&destination).is_ok_and(|p| inside(root, &p))
+        {
+            real = destination;
+        }
+    }
     Ok(Target {
         id,
         folder,
@@ -535,41 +563,138 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Replaces `folder` with a copy of `entry`, keeping the packages the hoisted linker nested
-/// in its node_modules. The copy is made next to it and renamed into place.
-fn replace_with_copy(entry: &Path, folder: &Path) -> std::io::Result<()> {
+fn remove_path(path: &Path) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(path)?.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
+}
+
+fn copy_missing(from: &Path, to: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(to) {
+        Ok(meta) if !meta.is_dir() => return Ok(()),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir_all(to)?,
+        Err(e) => return Err(e),
+    }
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let dest = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        match std::fs::symlink_metadata(&dest) {
+            Ok(meta) if kind.is_dir() && meta.is_dir() => copy_missing(&entry.path(), &dest)?,
+            Ok(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if kind.is_dir() {
+                    copy_tree(&entry.path(), &dest)?;
+                } else if kind.is_symlink() {
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(std::fs::read_link(entry.path())?, &dest)?;
+                } else {
+                    std::fs::copy(entry.path(), &dest)?;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Dependencies live beside a package in the global virtual store. Its editable copy
+/// needs those links inside its own node_modules; bundled entries in the copy take priority.
+fn link_store_siblings(global_links: &Path, folder: &Path, staging: &Path) -> std::io::Result<()> {
+    let package = std::fs::canonicalize(folder)?;
+    let Ok(global_links) = std::fs::canonicalize(global_links) else {
+        return Ok(());
+    };
+    if !package.starts_with(global_links) {
+        return Ok(());
+    }
+    let Some(mut siblings) = package.parent() else {
+        return Ok(());
+    };
+    if siblings
+        .file_name()
+        .is_some_and(|s| s.to_string_lossy().starts_with('@'))
+    {
+        let Some(parent) = siblings.parent() else {
+            return Ok(());
+        };
+        siblings = parent;
+    }
+    link_sibling_entries(siblings, &staging.join("node_modules"), &package)
+}
+
+fn link_sibling_entries(from: &Path, to: &Path, except: &Path) -> std::io::Result<()> {
+    // Never descend through a bundled symlink or replace an existing bundled file.
+    match std::fs::symlink_metadata(to) {
+        Ok(meta) if !meta.is_dir() => return Ok(()),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir_all(to)?,
+        Err(e) => return Err(e),
+    }
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = entry.path();
+        if target == except {
+            continue;
+        }
+        let link = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() && entry.file_name().to_string_lossy().starts_with('@') {
+            link_sibling_entries(&target, &link, except)?;
+            continue;
+        }
+        #[cfg(unix)]
+        let result = std::os::unix::fs::symlink(&target, &link);
+        #[cfg(windows)]
+        let result = std::os::windows::fs::symlink_dir(&target, &link);
+        match result {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Stages the entire replacement, including nested dependencies, before moving the old folder.
+fn replace_with_copy(entry: &Path, folder: &Path, global_links: &Path) -> std::io::Result<()> {
     let staging = temp_sibling(folder);
-    if let Err(e) = copy_tree(entry, &staging) {
+    let staged = copy_tree(entry, &staging).and_then(|()| {
+        let nested = folder.join("node_modules");
+        if is_link(folder) {
+            link_store_siblings(global_links, folder, &staging)?;
+        } else if nested.is_dir() {
+            copy_missing(&nested, &staging.join("node_modules"))?;
+        }
+        Ok(())
+    });
+    if let Err(e) = staged {
         let _ = std::fs::remove_dir_all(&staging);
         return Err(e);
     }
-    let nested = folder.join("node_modules");
-    if nested.is_dir() && !is_link(folder) {
-        let to = staging.join("node_modules");
-        std::fs::create_dir_all(&to)?;
-        for e in std::fs::read_dir(&nested)? {
-            let e = e?;
-            let dest = to.join(e.file_name());
-            if !dest.exists() {
-                let _ = std::fs::rename(e.path(), dest);
-            }
-        }
-    }
     let old = temp_sibling(folder);
-    let had_old = std::fs::rename(folder, &old).is_ok();
+    let had_old = match std::fs::rename(folder, &old) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
+    };
     if let Err(e) = std::fs::rename(&staging, folder) {
-        if had_old {
-            let _ = std::fs::rename(&old, folder);
+        if had_old && let Err(restore) = std::fs::rename(&old, folder) {
+            return Err(std::io::Error::other(format!(
+                "{e}; original folder retained at {}: {restore}",
+                old.display()
+            )));
         }
         let _ = std::fs::remove_dir_all(&staging);
         return Err(e);
     }
     if had_old {
-        if is_link(&old) {
-            let _ = std::fs::remove_file(&old);
-        } else {
-            let _ = std::fs::remove_dir_all(&old);
-        }
+        let _ = remove_path(&old);
     }
     Ok(())
 }
@@ -583,7 +708,7 @@ async fn store_entry(
     graph: &LockGraph,
     p: &Package,
     patched: bool,
-) -> FResult<PathBuf> {
+) -> FResult<PreparedEntry> {
     let fetcher = Fetcher::new(
         project.store().map_err(|e| out.error(&e.to_string()))?,
         project.client().map_err(|e| out.error(&e.to_string()))?,
@@ -598,21 +723,58 @@ async fn store_entry(
         .await
         .map_err(|e| out.error(&format!("{} not in cache, re-download failed: {e}", p.name)))?;
     if !patched {
-        return Ok(fetched.entry.root);
+        return prepare_entry(out, &project.root_dir, fetched.entry.root, p);
     }
     let Some(patch) = graph.patched_dependencies.get(&patch_key(p)) else {
-        return Ok(fetched.entry.root);
+        return prepare_entry(out, &project.root_dir, fetched.entry.root, p);
     };
     let (hash, text) =
         crate::fetch::read_patch(&project.root_dir, patch).map_err(|e| out.error(&e))?;
     let store = fetcher.store();
     if let Ok(Some(entry)) = store.get_patched(&fetched.key, hash) {
-        return Ok(entry.root);
+        return prepare_entry(out, &project.root_dir, entry.root, p);
     }
     let applied = store
         .import_patched(&fetched.key, &fetched.entry, &text, hash)
         .map_err(|e| out.error(&format!("failed applying patch file: {e}")))?;
-    Ok(applied.entry.root)
+    prepare_entry(out, &project.root_dir, applied.entry.root, p)
+}
+
+struct PreparedEntry {
+    root: PathBuf,
+    temporary: bool,
+}
+
+impl Drop for PreparedEntry {
+    fn drop(&mut self) {
+        if self.temporary {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+}
+
+fn prepare_entry(out: &Out, root: &Path, entry: PathBuf, p: &Package) -> FResult<PreparedEntry> {
+    if p.bin.is_none() {
+        return Ok(PreparedEntry {
+            root: entry,
+            temporary: false,
+        });
+    }
+    // Bin linking adjusts modes and CRLF shebangs. Do that on a private baseline so
+    // neither package contents nor their file index in the shared store can change.
+    let prepared = PreparedEntry {
+        root: temp_sibling(&root.join("node_modules/patch-entry")),
+        temporary: true,
+    };
+    copy_tree(&entry, &prepared.root)
+        .map_err(|e| out.error(&format!("failed copying patch baseline: {e}")))?;
+    let bins = PreparedEntry {
+        root: temp_sibling(&root.join("node_modules/patch-bins")),
+        temporary: true,
+    };
+    fnpm_linker::bins::link_bins(&p.name, &p.bin, &prepared.root, &bins.root)
+        .map_err(|e| out.error(&format!("failed preparing patch baseline bins: {e}")))?;
+    Ok(prepared)
 }
 
 fn missing_argument(out: &Out, commit: bool, patch_commit: bool) -> Fatal {
@@ -713,8 +875,12 @@ async fn patch(cx: &Ctx, out: &Out, commit_command: bool) -> FResult<i32> {
         return Ok(0);
     }
     let entry = store_entry(out, cx, &project, &graph, &p, true).await?;
-    materialize(&root, &folder)
-        .and_then(|()| replace_with_copy(&entry, &folder))
+    let global_links = project
+        .store()
+        .map_err(|e| out.error(&e.to_string()))?
+        .links_dir();
+    materialize(&root, &folder, &global_links)
+        .and_then(|()| replace_with_copy(&entry.root, &folder, &global_links))
         .map_err(|e| {
             out.error(&format!(
                 "error overwriting folder in node_modules: {}",
@@ -776,7 +942,6 @@ fn without_url_credentials(key: &str) -> String {
 /// Moves what is not part of the package (fnpm's tag files, the dependencies the linker put in
 /// its node_modules) out of `folder` for the diff; moved back when dropped.
 struct HiddenFromDiff {
-    folder: PathBuf,
     stash: PathBuf,
     moved: Vec<(PathBuf, PathBuf)>,
 }
@@ -786,7 +951,6 @@ impl HiddenFromDiff {
         let stash = temp_sibling(folder);
         std::fs::create_dir_all(&stash)?;
         let mut hidden = Self {
-            folder: folder.to_path_buf(),
             stash,
             moved: Vec::new(),
         };
@@ -794,22 +958,58 @@ impl HiddenFromDiff {
             let e = e?;
             let name = e.file_name();
             if !e.file_type()?.is_dir() && name.to_string_lossy().starts_with(".fnpm-") {
-                hidden.hide(&e.path(), &name.to_string_lossy())?;
+                hidden.hide(&e.path(), Path::new(&name))?;
             }
         }
         let nested = folder.join("node_modules");
-        if nested.is_dir() {
-            let bundled = pristine.join("node_modules");
-            for (name, path) in node_modules_entries_all(&nested) {
-                if !bundled.join(&name).exists() {
-                    hidden.hide(&path, &format!("node_modules/{name}"))?;
-                }
+        match std::fs::symlink_metadata(&nested) {
+            Ok(meta) if meta.is_dir() => {
+                hidden.hide_dependencies(
+                    &pristine.join("node_modules"),
+                    &nested,
+                    Path::new("node_modules"),
+                    true,
+                )?;
             }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
         }
         Ok(hidden)
     }
 
-    fn hide(&mut self, path: &Path, rel: &str) -> std::io::Result<()> {
+    fn hide_dependencies(
+        &mut self,
+        pristine: &Path,
+        folder: &Path,
+        rel: &Path,
+        merge_groups: bool,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(folder)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let reference = pristine.join(&name);
+            let subpath = rel.join(&name);
+            match std::fs::symlink_metadata(&reference) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    self.hide(&entry.path(), &subpath)?;
+                }
+                Err(e) => return Err(e),
+                Ok(meta)
+                    if merge_groups
+                        && (name.to_string_lossy().starts_with('@') || name == ".bin")
+                        && meta.is_dir()
+                        && entry.file_type()?.is_dir() =>
+                {
+                    self.hide_dependencies(&reference, &entry.path(), &subpath, false)?;
+                }
+                Ok(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn hide(&mut self, path: &Path, rel: &Path) -> std::io::Result<()> {
         let dest = self.stash.join(rel);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
@@ -820,28 +1020,42 @@ impl HiddenFromDiff {
     }
 }
 
-/// [`node_modules_entries`] including `.bin` (a dotted entry the linker makes).
-fn node_modules_entries_all(dir: &Path) -> Vec<(String, PathBuf)> {
-    let mut entries = node_modules_entries(dir);
-    for special in [".bin", ".fnpm"] {
-        let p = dir.join(special);
-        if std::fs::symlink_metadata(&p).is_ok() {
-            entries.push((special.to_owned(), p));
+impl HiddenFromDiff {
+    fn restore(&mut self) -> std::io::Result<()> {
+        let mut error = None;
+        for (orig, dest) in self.moved.iter().rev() {
+            if std::fs::symlink_metadata(dest).is_err() {
+                continue;
+            }
+            let result = (|| {
+                if let Some(parent) = orig.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::rename(dest, orig)
+            })();
+            if let Err(e) = result {
+                error.get_or_insert(e);
+            }
         }
+        if let Some(e) = error {
+            return Err(std::io::Error::other(format!(
+                "{e}; hidden package files retained at {}",
+                self.stash.display()
+            )));
+        }
+        self.moved.clear();
+        std::fs::remove_dir_all(&self.stash)
     }
-    entries
 }
 
 impl Drop for HiddenFromDiff {
     fn drop(&mut self) {
-        for (orig, dest) in self.moved.drain(..).rev() {
-            if let Some(parent) = orig.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::rename(&dest, &orig);
+        if !self.stash.exists() {
+            return;
         }
-        let _ = std::fs::remove_dir_all(&self.stash);
-        let _ = &self.folder;
+        if let Err(e) = self.restore() {
+            eprintln!("warn: failed restoring package files after diff: {e}");
+        }
     }
 }
 
@@ -1059,7 +1273,7 @@ fn patch_applies(out: &Out, pristine: &Path, folder: &Path, patch: &[u8]) -> FRe
 }
 
 /// Sets (or with `None` removes) `patchedDependencies[key]` in the root package.json.
-fn edit_package_json(out: &Out, root: &Path, key: &str, path: Option<&str>) -> FResult<()> {
+fn edited_package_json(out: &Out, root: &Path, key: &str, path: Option<&str>) -> FResult<String> {
     let file = root.join("package.json");
     let (text, mut json) = super::pack::read_package_json(out, &file)?;
     let Json::Object(props) = &mut json else {
@@ -1099,7 +1313,7 @@ fn edit_package_json(out: &Out, root: &Path, key: &str, path: Option<&str>) -> F
         json::guess_indentation(text.as_bytes()),
         text.ends_with('\n'),
     );
-    crate::project::write_atomic(&file, printed.as_bytes()).map_err(|e| out.error(&e.to_string()))
+    Ok(printed)
 }
 
 /// bun's install summary count line (`N packages installed`, `Checked N installs across M
@@ -1169,6 +1383,151 @@ async fn install(cx: &Ctx, out: &Out, quiet: bool) -> FResult<()> {
     }
 }
 
+pub(crate) struct PendingCommit {
+    pub key: String,
+    pub manifest: String,
+    pub patch: Option<(PathBuf, Vec<u8>)>,
+}
+
+impl PendingCommit {
+    pub fn patch_hashes(&self) -> std::collections::BTreeMap<String, String> {
+        self.patch
+            .as_ref()
+            .map(|(_, contents)| {
+                (
+                    self.key.clone(),
+                    fnpm_types::Integrity::compute(fnpm_types::HashAlgorithm::Sha256, contents)
+                        .to_hex(),
+                )
+            })
+            .into_iter()
+            .collect()
+    }
+
+    pub fn write_patch(&self) -> Result<()> {
+        if let Some((path, contents)) = &self.patch {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir).map_err(crate::Error::io(dir))?;
+            }
+            crate::project::write_atomic(path, contents).map_err(|e| crate::Error::Usage {
+                message: format!("failed renaming patch file to patches dir: {e}"),
+            })?;
+        }
+        Ok(())
+    }
+}
+
+enum OriginalFile {
+    Missing,
+    File(Vec<u8>, std::fs::Permissions),
+    Symlink(PathBuf),
+}
+
+pub(crate) struct CommitRollback {
+    originals: Vec<(PathBuf, OriginalFile)>,
+    armed: bool,
+}
+
+impl CommitRollback {
+    pub fn new(root: &Path, pending: &PendingCommit, yarn: bool) -> Result<Self> {
+        let mut paths = vec![
+            root.join("package.json"),
+            root.join(fnpm_lockfile::FNPM_LOCK),
+        ];
+        if yarn {
+            paths.push(root.join("yarn.lock"));
+        }
+        if let Some((path, _)) = &pending.patch {
+            paths.push(path.clone());
+        }
+        let mut originals = Vec::new();
+        for path in paths {
+            if originals.iter().any(|(saved, _)| saved == &path) {
+                continue;
+            }
+            let original = match std::fs::symlink_metadata(&path) {
+                Ok(meta) if meta.is_file() => OriginalFile::File(
+                    std::fs::read(&path).map_err(crate::Error::io(&path))?,
+                    meta.permissions(),
+                ),
+                Ok(meta) if meta.is_symlink() => OriginalFile::Symlink(
+                    std::fs::read_link(&path).map_err(crate::Error::io(&path))?,
+                ),
+                // Atomic file writes cannot replace a directory or special entry.
+                Ok(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => OriginalFile::Missing,
+                Err(e) => return Err(crate::Error::io(&path)(e)),
+            };
+            originals.push((path, original));
+        }
+        Ok(Self {
+            originals,
+            armed: true,
+        })
+    }
+
+    pub fn finish(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CommitRollback {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        for (path, original) in self.originals.iter().rev() {
+            let restored: std::io::Result<()> = (|| match original {
+                OriginalFile::Missing => match std::fs::remove_file(path) {
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    result => result,
+                },
+                OriginalFile::File(bytes, permissions) => {
+                    if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+                        && std::fs::read(path).is_ok_and(|current| current == *bytes)
+                    {
+                        return Ok(());
+                    }
+                    fnpm_store::fsops::write_atomic(path, bytes)?;
+                    std::fs::set_permissions(path, permissions.clone())
+                }
+                OriginalFile::Symlink(target) => {
+                    if std::fs::read_link(path).is_ok_and(|current| current == *target) {
+                        return Ok(());
+                    }
+                    match std::fs::remove_file(path) {
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                        result => result?,
+                    }
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(target, path)?;
+                    #[cfg(windows)]
+                    std::os::windows::fs::symlink_file(target, path)?;
+                    Ok(())
+                }
+            })();
+            if let Err(e) = restored {
+                eprintln!(
+                    "warn: failed restoring {} after patch commit: {e}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+async fn install_commit(cx: &Ctx, out: &Out, pending: PendingCommit) -> FResult<()> {
+    let opts = crate::options::InstallOptions {
+        pm: cx.pm.clone(),
+        ..crate::options::InstallOptions::default()
+    };
+    let summary = crate::install::run_with_patch(opts, cx.events.clone(), cx.env.clone(), pending)
+        .await
+        .map_err(|e| out.error(&e.to_string()))?;
+    print_summary(out, &summary);
+    Ok(())
+}
+
 async fn commit_patch(
     cx: &Ctx,
     out: &Out,
@@ -1197,13 +1556,17 @@ async fn commit_patch(
         ));
     }
     let patch = {
-        let _hidden = HiddenFromDiff::new(&pristine, &new_folder).map_err(|e| {
+        let mut hidden = HiddenFromDiff::new(&pristine.root, &new_folder).map_err(|e| {
             out.named(
                 &super::pack::out::errno_name(&e),
                 &format!("failed to prepare {} for the diff", new_folder.display()),
             )
         })?;
-        git_diff(out, root, &pristine, &new_folder)?
+        let result = git_diff(out, root, &pristine.root, &new_folder);
+        hidden
+            .restore()
+            .map_err(|e| out.error(&format!("failed restoring package files: {e}")))?;
+        result?
     };
 
     if patch.is_empty() {
@@ -1217,12 +1580,26 @@ async fn commit_patch(
                 ));
                 return Ok(0);
             }
-            edit_package_json(out, root, &key, None)?;
-            install(cx, out, false).await?;
-            let shared = graph
-                .patched_dependencies
-                .iter()
-                .any(|(k, other)| *k != key && other.path == existing.path);
+            let manifest = edited_package_json(out, root, &key, None)?;
+            install_commit(
+                cx,
+                out,
+                PendingCommit {
+                    key: key.clone(),
+                    manifest,
+                    patch: None,
+                },
+            )
+            .await?;
+            let shared = graph.patched_dependencies.iter().any(|(k, other)| {
+                *k != key
+                    && (other.path == existing.path || {
+                        std::fs::canonicalize(root.join(&other.path))
+                            .ok()
+                            .zip(std::fs::canonicalize(root.join(&existing.path)).ok())
+                            .is_some_and(|(a, b)| a == b)
+                    })
+            });
             let file = root.join(&existing.path);
             let inside = std::fs::canonicalize(&file)
                 .ok()
@@ -1245,7 +1622,7 @@ async fn commit_patch(
         }
         out.print(&format!(
             "\nNo changes detected, comparing {} to {}\n",
-            out.paint("31", &pristine.display().to_string()),
+            out.paint("31", &pristine.root.display().to_string()),
             out.paint("32", &target.folder)
         ));
         return Ok(0);
@@ -1275,7 +1652,7 @@ async fn commit_patch(
     }
 
     let filename = escape_patch_filename(&format!("{}.patch", without_url_credentials(&key)));
-    if let Err(f) = patch_applies(out, &pristine, &new_folder, &patch) {
+    if let Err(f) = patch_applies(out, &pristine.root, &new_folder, &patch) {
         return Err(Fatal(format!(
             "{}\n{}",
             f.0,
@@ -1292,18 +1669,17 @@ async fn commit_patch(
     let typed = cx
         .string("patchesDir")
         .unwrap_or_else(|| "patches".to_owned());
-    let mut patches_dir = typed.replace('\\', "/");
-    let root_s = root.to_string_lossy().replace('\\', "/");
-    if Path::new(&patches_dir).is_absolute()
-        && let Some(rel) = patches_dir.strip_prefix(&root_s)
-    {
-        patches_dir = rel.trim_start_matches('/').to_owned();
-        if patches_dir.is_empty() {
-            patches_dir = ".".to_owned();
-        }
-    }
-    let joined = super::pack::walk::normalize_posix(format!("{patches_dir}/{filename}").as_bytes());
-    let patch_path = String::from_utf8_lossy(&joined).into_owned();
+    let patches_dir = typed.replace('\\', "/");
+    let absolute_patch = lexical(&root.join(&patches_dir)).join(&filename);
+    let written = if Path::new(&patches_dir).is_absolute() {
+        absolute_patch
+            .strip_prefix(root)
+            .unwrap_or(&absolute_patch)
+            .to_path_buf()
+    } else {
+        fnpm_linker::fsutil::relative(root, &absolute_patch)
+    };
+    let patch_path = written.to_string_lossy().replace('\\', "/");
 
     if cx.pm.dry_run {
         out.println(&format!(
@@ -1320,18 +1696,17 @@ async fn commit_patch(
     } else {
         root.join(&patch_path)
     };
-    if let Some(dir) = abs_patch.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| {
-            out.sys(
-                &e,
-                "mkdir",
-                &format!("failed to make patches dir \"{}\"", patches_dir),
-            )
-        })?;
-    }
-    crate::project::write_atomic(&abs_patch, &patch).map_err(|e| out.error(&e.to_string()))?;
-    edit_package_json(out, root, &key, Some(&patch_path))?;
-    install(cx, out, false).await?;
+    let manifest = edited_package_json(out, root, &key, Some(&patch_path))?;
+    install_commit(
+        cx,
+        out,
+        PendingCommit {
+            key,
+            manifest,
+            patch: Some((abs_patch, patch)),
+        },
+    )
+    .await?;
     Ok(0)
 }
 
@@ -1356,6 +1731,169 @@ mod tests {
             "x@https://host/a.tgz"
         );
         assert_eq!(from_cwd(Path::new("/a/b"), Path::new("/a/c/d")), "./../c/d");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn global_copy_keeps_bundled_entries_and_external_checkout_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let links = tmp.path().join("links");
+        let siblings = links.join("entry/node_modules");
+        let package = siblings.join("a");
+        let pristine = tmp.path().join("pristine");
+        let outside = tmp.path().join("outside");
+        for dir in [
+            package.clone(),
+            siblings.join("b"),
+            siblings.join("c"),
+            siblings.join("@deps/b"),
+            siblings.join("@outside/d"),
+            pristine.join("node_modules/b"),
+            pristine.join("node_modules/@deps/b"),
+            outside.clone(),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(pristine.join("node_modules/b/index.js"), "bundled b").unwrap();
+        std::fs::write(
+            pristine.join("node_modules/@deps/b/index.js"),
+            "bundled scoped b",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, pristine.join("node_modules/@outside")).unwrap();
+        let folder = tmp.path().join("editable");
+        std::os::unix::fs::symlink(&package, &folder).unwrap();
+        replace_with_copy(&pristine, &folder, &links).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(folder.join("node_modules/b/index.js")).unwrap(),
+            "bundled b"
+        );
+        assert_eq!(
+            std::fs::read_to_string(folder.join("node_modules/@deps/b/index.js")).unwrap(),
+            "bundled scoped b"
+        );
+        assert_eq!(
+            std::fs::canonicalize(folder.join("node_modules/c")).unwrap(),
+            siblings.join("c")
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        let external_link = tmp.path().join("external-link");
+        std::os::unix::fs::symlink(&outside, &external_link).unwrap();
+        replace_with_copy(&pristine, &external_link, &links).unwrap();
+        assert!(!external_link.join("node_modules/c").exists());
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_copy_does_not_write_through_a_bundled_node_modules_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let outside = tmp.path().join("outside");
+        let destination = tmp.path().join("destination");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(source.join("index.js"), "nested dependency").unwrap();
+        std::os::unix::fs::symlink(&outside, &destination).unwrap();
+        copy_missing(&source, &destination).unwrap();
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        assert!(is_link(&destination));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn diff_hiding_does_not_move_entries_through_dependency_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pristine = tmp.path().join("pristine");
+        let folder = tmp.path().join("editable");
+        let outside = tmp.path().join("outside");
+        for dir in [&pristine, &folder, &outside] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(outside.join("keep"), "shared dependency").unwrap();
+        std::os::unix::fs::symlink(&outside, folder.join("node_modules")).unwrap();
+        let mut hidden = HiddenFromDiff::new(&pristine, &folder).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(outside.join("keep")).unwrap(),
+            "shared dependency"
+        );
+        hidden.restore().unwrap();
+        assert!(is_link(&folder.join("node_modules")));
+
+        std::fs::remove_file(folder.join("node_modules")).unwrap();
+        std::fs::create_dir(folder.join("node_modules")).unwrap();
+        std::os::unix::fs::symlink(&outside, folder.join("node_modules/@scope")).unwrap();
+        let mut hidden = HiddenFromDiff::new(&pristine, &folder).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(outside.join("keep")).unwrap(),
+            "shared dependency"
+        );
+        hidden.restore().unwrap();
+        assert!(is_link(&folder.join("node_modules/@scope")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn diff_hiding_merges_bundled_and_linker_bins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pristine = tmp.path().join("pristine");
+        let folder = tmp.path().join("editable");
+        for base in [&pristine, &folder] {
+            std::fs::create_dir_all(base.join("node_modules/.bin")).unwrap();
+            std::fs::write(base.join("node_modules/.bin/bundled"), "bundled bin").unwrap();
+        }
+        let added = folder.join("node_modules/.bin/linked");
+        std::os::unix::fs::symlink("../dependency/cli.js", &added).unwrap();
+        let mut hidden = HiddenFromDiff::new(&pristine, &folder).unwrap();
+        assert!(std::fs::symlink_metadata(&added).is_err());
+        assert!(folder.join("node_modules/.bin/bundled").is_file());
+        hidden.restore().unwrap();
+        assert_eq!(
+            std::fs::read_link(&added).unwrap(),
+            Path::new("../dependency/cli.js")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn patch_baseline_bin_normalization_keeps_store_contents_and_modes() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        let entry = tmp.path().join("store/package");
+        std::fs::create_dir_all(project.join("node_modules")).unwrap();
+        std::fs::create_dir_all(&entry).unwrap();
+        let original = b"#!/usr/bin/env node\r\nconsole.log('bin');\r\n";
+        std::fs::write(entry.join("cli.js"), original).unwrap();
+        std::fs::set_permissions(entry.join("cli.js"), std::fs::Permissions::from_mode(0o644))
+            .unwrap();
+        let mut p = Package::new("a", "1.0.0", Resolution::Root);
+        p.bin = fnpm_types::Bin::File {
+            path: "cli.js".into(),
+        };
+        let prepared = prepare_entry(&Out::new(), &project, entry.clone(), &p).unwrap();
+        assert_eq!(std::fs::read(entry.join("cli.js")).unwrap(), original);
+        assert_eq!(
+            std::fs::metadata(entry.join("cli.js"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+        let normalized = prepared.root.join("cli.js");
+        assert!(
+            std::fs::read(&normalized)
+                .unwrap()
+                .starts_with(b"#!/usr/bin/env node\n")
+        );
+        assert_ne!(
+            std::fs::metadata(&normalized).unwrap().permissions().mode() & 0o111,
+            0
+        );
+        let scratch = prepared.root.clone();
+        drop(prepared);
+        assert!(!scratch.exists());
     }
 
     #[test]

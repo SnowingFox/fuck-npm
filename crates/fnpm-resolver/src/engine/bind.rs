@@ -1309,10 +1309,17 @@ impl Engine<'_> {
                         .unwrap_or_else(|| self.root_dir().to_path_buf())
                 };
                 let abs = normalize_join(&base, path);
-                RemoteKind::LocalTarball {
-                    rel: relative_to(self.root_dir(), &abs),
-                    abs,
-                }
+                // Keep the root's requested spelling for lockfile/patch labels. The
+                // filesystem path is normalised separately (a label may exceed PATH_MAX).
+                let rel = if base == self.root_dir()
+                    && !Path::new(path).is_absolute()
+                    && !path.starts_with("~/")
+                {
+                    path.replace('\\', "/")
+                } else {
+                    relative_to(self.root_dir(), &abs)
+                };
+                RemoteKind::LocalTarball { rel, abs }
             }
             DependencySpec::Git(spec) => RemoteKind::Git {
                 url: spec.url.clone(),

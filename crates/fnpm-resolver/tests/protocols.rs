@@ -358,7 +358,7 @@ async fn local_tarballs_relative_to_the_project() {
     let ws = workspace(json!({"dependencies": {"x": "./pkgs/x.tgz"}}), &[]);
     let g = h.install(&ws).await.graph;
     assert!(
-        matches!(&dep(&g, PackageId::ROOT, "x").unwrap().resolution, Resolution::LocalTarball { path, .. } if path == "pkgs/x.tgz")
+        matches!(&dep(&g, PackageId::ROOT, "x").unwrap().resolution, Resolution::LocalTarball { path, .. } if path == "./pkgs/x.tgz")
     );
     // A published package may not name a local tarball.
     h.registry.add(

@@ -637,17 +637,22 @@ mod tests {
                     return;
                 };
                 tokio::spawn(async move {
-                    let mut req = [0u8; 1024];
-                    let _ = sock.read(&mut req).await;
+                    let mut req = Vec::new();
+                    while !req.ends_with(b"\r\n\r\n") {
+                        let mut byte = [0u8; 1];
+                        if sock.read_exact(&mut byte).await.is_err() {
+                            return;
+                        }
+                        req.push(byte[0]);
+                    }
                     let _ = sock
-                        .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n")
+                        .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n")
                         .await;
                     for _ in 0..4 {
                         let _ = sock.write_all(b"400\r\n").await;
                         let _ = sock.write_all(&[b'x'; 0x400]).await;
                         let _ = sock.write_all(b"\r\n").await;
                         let _ = sock.flush().await;
-                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                     }
                     let _ = sock.write_all(b"0\r\n\r\n").await;
                 });

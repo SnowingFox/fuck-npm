@@ -736,3 +736,528 @@ async fn link_rejects_names_that_leave_the_registry() {
         .unwrap_err();
     assert_eq!(err.code(), "USAGE");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_commit_waits_for_resolution_and_preserves_existing_patch() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    p.install().await;
+    let options = json!({"logLevel": "silent", "ignoreScripts": true});
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    let edited = "module.exports = 'first edit';\n";
+    p.write("node_modules/a/index.js", edited);
+    assert_eq!(
+        p.invoke(&["patch-commit"], &["node_modules/a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert_eq!(p.read("node_modules/a/index.js"), edited);
+    let patch = p.read("patches/a@1.0.0.patch");
+    assert!(patch.contains("first edit"));
+    assert_eq!(
+        p.json("package.json")["patchedDependencies"]["a@1.0.0"],
+        "patches/a@1.0.0.patch"
+    );
+
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'second edit';\n",
+    );
+    let mut manifest = p.json("package.json");
+    manifest["dependencies"]["missing"] = json!("1.0.0");
+    p.write(
+        "package.json",
+        &serde_json::to_string_pretty(&manifest).unwrap(),
+    );
+    let manifest_before = p.read("package.json");
+    let lock_before = p.read("fnpm.lock");
+    let result = p
+        .invoke(&["patch-commit"], &["node_modules/a"], options.clone())
+        .await
+        .unwrap();
+    assert_eq!(result.exit_code, 1);
+    assert_eq!(p.read("package.json"), manifest_before);
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+    assert_eq!(p.read("patches/a@1.0.0.patch"), patch);
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'second edit';\n"
+    );
+
+    manifest["dependencies"]
+        .as_object_mut()
+        .unwrap()
+        .remove("missing");
+    p.write(
+        "package.json",
+        &serde_json::to_string_pretty(&manifest).unwrap(),
+    );
+    assert_eq!(
+        p.invoke(
+            &["patch-commit"],
+            &["node_modules/a"],
+            json!({
+                "ignoreScripts": true, "logLevel": "silent", "lockfileOnly": true
+            })
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        0
+    );
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'second edit';\n"
+    );
+    assert!(p.read("patches/a@1.0.0.patch").contains("second edit"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_local_tarball_survives_clean_install() {
+    let reg = Registry::start(&[]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "./a.tgz"}}));
+    std::fs::write(p.path("a.tgz"), Pkg::new("a", "1.0.0").tgz()).unwrap();
+    p.install().await;
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], json!({"ignoreScripts": true}))
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'patched tarball';\n",
+    );
+    assert_eq!(
+        p.invoke(
+            &["patch-commit"],
+            &["node_modules/a"],
+            json!({"ignoreScripts": true})
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        0
+    );
+    let patched = p.json("package.json")["patchedDependencies"]
+        .as_object()
+        .unwrap()
+        .clone();
+    assert_eq!(patched.len(), 1);
+    assert!(patched.contains_key("a@./a.tgz"));
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'patched tarball';\n"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_accepts_long_tarball_label_and_failed_commit_keeps_manifest() {
+    let reg = Registry::start(&[]).await;
+    let spec = format!("./{}a.tgz", "x/../".repeat(260));
+    let p = Project::new(&reg, json!({"dependencies": {"a": spec}}));
+    std::fs::write(p.path("a.tgz"), Pkg::new("a", "1.0.0").tgz()).unwrap();
+    p.install().await;
+    let manifest_before = p.read("package.json");
+    let lock_before = p.read("fnpm.lock");
+    assert_eq!(
+        p.invoke(
+            &["patch"],
+            &[&format!("a@{spec}")],
+            json!({"ignoreScripts": true})
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'long label';\n",
+    );
+    assert_eq!(
+        p.invoke(
+            &["patch-commit"],
+            &["node_modules/a"],
+            json!({"ignoreScripts": true})
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        1
+    );
+    assert_eq!(p.read("package.json"), manifest_before);
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'long label';\n"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_copy_backend_keeps_bins_executable_without_mode_diff() {
+    use std::os::unix::fs::PermissionsExt;
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0").bin("tool", "cli.js")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    let options = json!({"backend": "copyfile", "ignoreScripts": true});
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert_ne!(
+        std::fs::metadata(p.path("node_modules/a/cli.js"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o111,
+        0
+    );
+    p.write("node_modules/a/added.js", "module.exports = 'edit';\n");
+    assert_eq!(
+        p.invoke(&["patch-commit"], &["a"], options)
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    let patch = p.read("patches/a@1.0.0.patch");
+    assert!(patch.contains("diff --git a/added.js b/added.js"));
+    assert!(
+        !patch.contains("cli.js"),
+        "bin mode is not an edit: {patch}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_keeps_absolute_patches_dir_next_to_project() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    let outside = p.dir.with_file_name("app-patches");
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], json!({"ignoreScripts": true}))
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'outside patch';\n",
+    );
+    assert_eq!(
+        p.invoke(
+            &["patch-commit"],
+            &["a"],
+            json!({"ignoreScripts": true, "patchesDir": outside})
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        0
+    );
+    let expected = outside.join("a@1.0.0.patch");
+    assert!(expected.exists());
+    assert_eq!(
+        p.json("package.json")["patchedDependencies"]["a@1.0.0"],
+        expected.to_string_lossy().replace('\\', "/")
+    );
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'outside patch';\n"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_keeps_isolated_project_link_for_name_and_path_arguments() {
+    let reg = Registry::start(&[
+        Pkg::new("a", "1.0.0").dep("b", "1.0.0"),
+        Pkg::new("b", "1.0.0"),
+    ])
+    .await;
+    for arg in ["a", "node_modules/a"] {
+        let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+        p.write("bunfig.toml", "[install]\nglobalStore = false\n");
+        let options = json!({"linker": "isolated", "ignoreScripts": true});
+        assert_eq!(
+            p.invoke(&["patch"], &[arg], options.clone())
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+        let link = p.path("node_modules/a");
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        let destination = std::fs::canonicalize(&link).unwrap();
+        assert!(destination.starts_with(p.path("node_modules/.fnpm")));
+        let sibling = destination.parent().unwrap().join("b/package.json");
+        assert!(
+            sibling.exists(),
+            "the package still reaches its isolated dependency"
+        );
+        p.write(
+            "node_modules/a/index.js",
+            "module.exports = 'isolated edit';\n",
+        );
+        assert_eq!(
+            p.invoke(&["patch-commit"], &[arg], options)
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(
+            p.read("node_modules/a/index.js"),
+            "module.exports = 'isolated edit';\n"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_global_copy_keeps_sibling_dependencies_and_store_untouched() {
+    let reg = Registry::start(&[
+        Pkg::new("a", "1.0.0")
+            .dep("b", "1.0.0")
+            .dep("@deps/c", "1.0.0"),
+        Pkg::new("@scope/a", "1.0.0")
+            .dep("b", "1.0.0")
+            .dep("@deps/c", "1.0.0"),
+        Pkg::new("b", "1.0.0"),
+        Pkg::new("@deps/c", "1.0.0"),
+    ])
+    .await;
+    for name in ["a", "@scope/a"] {
+        let p = Project::new(&reg, json!({"dependencies": {name: "1.0.0"}}));
+        p.write("bunfig.toml", "[install]\nglobalStore = true\n");
+        let options = json!({"linker": "isolated", "ignoreScripts": true});
+        let mut install = p.opts(InstallCommand::Install, &[]);
+        install.pm.linker = Some(fnpm_config::LinkerSetting::Isolated);
+        p.run(install).await.unwrap();
+        let folder = p.path(&format!("node_modules/{name}"));
+        assert!(std::fs::symlink_metadata(&folder).unwrap().is_symlink());
+        let original = std::fs::canonicalize(&folder).unwrap();
+        assert!(!original.starts_with(&p.dir));
+        let original_text = std::fs::read_to_string(original.join("index.js")).unwrap();
+        let mut siblings = original.parent().unwrap();
+        if name.starts_with('@') {
+            siblings = siblings.parent().unwrap();
+        }
+        let expected_b = std::fs::canonicalize(siblings.join("b")).unwrap();
+        let expected_c = std::fs::canonicalize(siblings.join("@deps/c")).unwrap();
+        assert_eq!(
+            p.invoke(&["patch"], &[name], options.clone())
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+        assert!(std::fs::symlink_metadata(&folder).unwrap().is_dir());
+        assert_eq!(
+            std::fs::canonicalize(folder.join("node_modules/b")).unwrap(),
+            expected_b
+        );
+        assert_eq!(
+            std::fs::canonicalize(folder.join("node_modules/@deps/c")).unwrap(),
+            expected_c
+        );
+        assert!(!folder.join("node_modules").join(name).exists());
+        std::fs::write(folder.join("index.js"), "module.exports = 'global edit';\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(original.join("index.js")).unwrap(),
+            original_text
+        );
+        assert_eq!(
+            p.invoke(&["patch-commit"], &[name], options)
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+        let manifest = p.json("package.json");
+        let patch_path = manifest["patchedDependencies"][format!("{name}@1.0.0")]
+            .as_str()
+            .unwrap();
+        let patch = p.read(patch_path);
+        assert!(patch.contains("diff --git a/index.js b/index.js"));
+        assert!(
+            !patch.contains("node_modules/"),
+            "dependency links are not edits: {patch}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(original.join("index.js")).unwrap(),
+            original_text
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_refuses_an_absolute_package_path_outside_the_project() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    p.install().await;
+    let outside = tempfile::tempdir().unwrap();
+    let package = outside.path().join("node_modules/a");
+    std::fs::create_dir_all(&package).unwrap();
+    let manifest = r#"{"name":"a","version":"1.0.0"}"#;
+    std::fs::write(package.join("package.json"), manifest).unwrap();
+    std::fs::write(package.join("index.js"), "outside package").unwrap();
+    assert_eq!(
+        p.invoke(
+            &["patch"],
+            &[package.to_str().unwrap()],
+            json!({"ignoreScripts": true})
+        )
+        .await
+        .unwrap()
+        .exit_code,
+        1
+    );
+    assert_eq!(
+        std::fs::read_to_string(package.join("index.js")).unwrap(),
+        "outside package"
+    );
+    assert_eq!(
+        std::fs::read_to_string(package.join("package.json")).unwrap(),
+        manifest
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_replaces_external_link_without_editing_checkout() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    p.install().await;
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(
+        outside.path().join("package.json"),
+        r#"{"name":"a","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(outside.path().join("index.js"), "outside checkout").unwrap();
+    std::fs::remove_dir_all(p.path("node_modules/a")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), p.path("node_modules/a")).unwrap();
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], json!({"ignoreScripts": true}))
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert!(
+        !std::fs::symlink_metadata(p.path("node_modules/a"))
+            .unwrap()
+            .is_symlink()
+    );
+    p.write("node_modules/a/index.js", "prepared edit");
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("index.js")).unwrap(),
+        "outside checkout"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn patch_commit_failed_save_preserves_patch_manifest_and_lock() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0")]).await;
+    let p = Project::new(&reg, json!({"dependencies": {"a": "1.0.0"}}));
+    let options = json!({"ignoreScripts": true, "logLevel": "silent"});
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'first edit';\n",
+    );
+    assert_eq!(
+        p.invoke(&["patch-commit"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert_eq!(
+        p.invoke(&["patch"], &["a"], options.clone())
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    p.write(
+        "node_modules/a/index.js",
+        "module.exports = 'second edit';\n",
+    );
+    let manifest = p.read("package.json");
+    let lock = p.read("fnpm.lock");
+    let patch = p.read("patches/a@1.0.0.patch");
+    p.write("yarn.lock/keep", "unrelated directory");
+    let result = p
+        .invoke(
+            &["patch-commit"],
+            &["a"],
+            json!({
+                "ignoreScripts": true, "logLevel": "silent", "yarn": true
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.exit_code, 1);
+    assert_eq!(p.read("package.json"), manifest);
+    assert_eq!(p.read("fnpm.lock"), lock);
+    assert_eq!(p.read("patches/a@1.0.0.patch"), patch);
+    assert_eq!(p.read("yarn.lock/keep"), "unrelated directory");
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'second edit';\n"
+    );
+    std::fs::remove_dir_all(p.path("yarn.lock")).unwrap();
+    assert_eq!(
+        p.invoke(&["patch-commit"], &["a"], options)
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    let current = p.read("patches/a@1.0.0.patch");
+    assert!(current.contains("second edit"));
+    let saved = fnpm_lockfile::formats::fnpm::parse(p.read("fnpm.lock").as_bytes()).unwrap();
+    assert_eq!(
+        saved.patched_dependencies["a@1.0.0"].path,
+        "patches/a@1.0.0.patch"
+    );
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert_eq!(
+        p.read("node_modules/a/index.js"),
+        "module.exports = 'second edit';\n"
+    );
+}

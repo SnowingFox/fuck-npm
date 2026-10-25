@@ -161,6 +161,15 @@ impl Package {
         !self.platform.matches(platform)
     }
 
+    /// The key of this package in patchedDependencies.
+    pub fn patch_key(&self) -> String {
+        let label = match &self.resolution {
+            Resolution::Workspace { .. } => self.version.clone(),
+            resolution => resolution.patch_label(),
+        };
+        format!("{}@{label}", self.name)
+    }
+
     /// `name@resolution`, the key bun.lock and the isolated store use.
     pub fn key(&self) -> String {
         format!("{}@{}", self.name, self.resolution)

@@ -126,6 +126,7 @@ pub(crate) struct UpdatePlan {
 
 pub(crate) struct Engine<'a> {
     pub cfg: &'a Config,
+    pub patch_hashes: &'a std::collections::BTreeMap<String, String>,
     pub ws: &'a Workspace,
     pub prev: Option<&'a LockGraph>,
     pub manifests: Arc<dyn ManifestSource>,
@@ -182,6 +183,7 @@ pub(crate) struct Engine<'a> {
 
 pub(crate) struct EngineInput<'a> {
     pub cfg: &'a Config,
+    pub patch_hashes: &'a std::collections::BTreeMap<String, String>,
     pub ws: &'a Workspace,
     pub prev: Option<&'a LockGraph>,
     pub mode: Mode,
@@ -254,6 +256,7 @@ impl<'a> Engine<'a> {
     pub(crate) fn new(input: EngineInput<'a>) -> Result<Self> {
         let EngineInput {
             cfg,
+            patch_hashes,
             ws,
             prev,
             mode,
@@ -280,6 +283,7 @@ impl<'a> Engine<'a> {
         });
         let mut engine = Engine {
             cfg,
+            patch_hashes,
             ws,
             prev,
             manifests,
@@ -411,7 +415,10 @@ impl<'a> Engine<'a> {
                 ));
                 continue;
             }
-            let hash = patch_hash(&self.ws.root_dir, key, path)?;
+            let hash = match self.patch_hashes.get(key) {
+                Some(hash) => hash.clone(),
+                None => patch_hash(&self.ws.root_dir, key, path)?,
+            };
             out.insert(
                 key.clone(),
                 PatchedDependency {

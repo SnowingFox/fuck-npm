@@ -9,7 +9,7 @@ Every phase runs the same loop: one implementer per crate or command group on it
 an adversarial review (correctness, cross-platform behaviour, performance), then merge, the
 conformance files for the phase, and the benchmark gate.
 
-Status as of 2026-10-25. Legend: **done**, **merged** (implemented, reviewed and on `main`; crate tests green, the
+Status as of 2026-10-26. Legend: **done**, **merged** (implemented, reviewed and on `main`; crate tests green, the
 command is not wired end to end yet), **in progress**, **not started**.
 
 ## Gates used below
@@ -54,7 +54,7 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-linker: hoisted and isolated layouts, global virtual store, bins | `feat/linker` | merged |
 | fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | merged |
 | Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
-| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (P4 commands return `NOT_IMPLEMENTED`) |
+| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (some P4 commands still return `NOT_IMPLEMENTED`) |
 | fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done (the 8-target `napi.yml` matrix has not run on GitHub yet) |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
 | Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
@@ -130,13 +130,67 @@ Exit criteria:
   same lockfile.
 - Platforms: as P2.
 
-## P4: Remaining commands (not started)
+## P4: Remaining commands (in progress)
 
 `outdated`, `why`, `ls`, `info`, `dedupe`, `prune`, `link` / `unlink`, `patch` / `patch-commit`,
 `audit` (+ `fix`), `pack`, `publish`, `run`, `exec`, `x` / `dlx` / `fnpmx`, `create`, `init`,
 `store`, the `pm` subcommands (`cache`, `pkg`, `trust`, `version`, ...), `doctor`, `whoami`,
 `completions`. All run through the TS CLI
 and `fnpm_core::invoke`.
+
+Publishing commands are implemented on `feat/cmds-publish`: `pack` / `pm pack`, `publish`,
+`patch`, `patch --commit` and `patch-commit`, including workspace/catalog rewriting and patch
+application during install. They have not met the phase exit criteria. Latest Linux debug
+conformance results for this track:
+
+| suite | passed | failed | skipped |
+|---|---:|---:|---:|
+| `bun-pack` | 349 | 32 | 1 |
+| `bun-publish` | 262 | 17 | 1 |
+| `bun-patch` | 80 | 152 | 5 |
+| `bun-install-patch` | 0 | 53 | 0 |
+
+The 17 publish failures stop at a subsequent install assertion for `Saved lockfile`; these
+whole tests remain failing. All install-patch cases also fail at output or diagnostic
+assertions, so later patch behavior in those cases remains unverified. Pack has workspace-install
+and `pm diff` blockers, and the Node subprocess adapter lacks `resourceUsage()` for the memory
+test. Patch has further command gaps in target selection and scanner checks. Patch-file,
+manifest and lockfile writes are restored on ordinary link/save failures; this is not a crash
+journal and does not roll back node_modules. Lifecycle failures after a successful save retain
+the saved metadata, as the install pipeline does. Resolution-refusal preservation, local-tarball patch reinstallation,
+long tarball labels, local isolated links, copy-backend bin permissions, external-checkout
+isolation and absolute patch directories have passing Rust regressions. Scoped and unscoped
+global-store copies retain sibling dependency links without modifying the shared store or
+including those links in the patch; bundled entries win and nested copying does not write
+through their symlinks. Paths outside the project's node_modules are refused. The review's
+final workspace Rust run passed 1,308 tests with 13 ignored across 74 targets (two test threads
+per target); workspace clippy with warnings denied, formatting, debug CLI/NAPI builds, CLI
+build/type checking, adapter type checking, and 641 TypeScript CLI tests passed. The registry
+harness passed 49 tests, with one expected failure, two skips and one todo. The repaired
+body-limit fixture also passed five isolated repeat runs. A separate registry priority test
+failed once under heavier contention and passed in the final workspace run; its timing-based
+queue setup remains a potential source of flakes. These checks do not establish Bun parity,
+a speed advantage, or disk savings. A separate Linux
+`wait4` measurement of the debug CLI reported peak RSS of 69,586,944 bytes for a 1 MiB
+input and 69,242,880 bytes for a 32 MiB input (`pm pack --quiet --gzip-level=0`), a delta
+of -344,064 bytes within the conformance assertion's 8 MiB allowance. The ported memory
+test itself remains blocked by the adapter API.
+
+The follow-up adversarial review fixed diff preparation that moved entries through symlinked
+node_modules/scope directories, separated linker-generated bins from bundled `.bin` entries,
+and moved bin mode/shebang normalization to a disposable copy instead of altering the shared
+store. Regression coverage also checks restoration after a failed Yarn lockfile export and a
+subsequent successful commit followed by a clean reinstall. Patch commits force the save path,
+including an explicitly requested Yarn export, when only an existing patch's contents changed.
+The registry body-limit fixture now consumes the full request and declares `Connection: close`
+before closing its one-response socket; previously a pooled second request could be reset.
+
+A fresh Linux `wait4` remeasurement (three runs per case, fnpm debug CLI and Bun 1.4.4) found
+median peak RSS of 67,977,216 bytes at 1 MiB and 68,050,944 bytes at 32 MiB: +73,728 bytes.
+Bun's medians were 22,495,232 and 22,491,136 bytes. Median elapsed times were 139.61/484.22 ms
+for fnpm and 81.22/315.24 ms for Bun. These shared-devbox debug measurements are a streaming
+memory check, not a release benchmark or evidence of a speed advantage. No install/disk matrix
+or platform matrix was rerun by this review.
 
 Exit criteria:
 
