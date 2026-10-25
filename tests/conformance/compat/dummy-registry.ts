@@ -1,6 +1,6 @@
 /**
  * Ported from bun test/cli/install/dummy.registry.ts (MIT): Bun.serve -> compat serve (node:http), bun:test -> vitest.
- * dummyBeforeAll() also points fnpmEnv.FNPM_REGISTRY at this server.
+ * dummyBeforeAll() removes fnpmEnv.FNPM_REGISTRY: every test's bunfig.toml names the registry.
  *
  * ## Concurrent Test Support
  *
@@ -444,7 +444,9 @@ export function dummyBeforeAll() {
     port: 0,
   });
   root_url = `http://localhost:${server.port}`;
-  fnpmEnv.FNPM_REGISTRY = `${root_url}/`;
+  // Each test's bunfig.toml names its registry (the server, or the server with a context prefix), as in bun's
+  // harness. The environment would win over bunfig.toml, so it must not name one.
+  delete fnpmEnv.FNPM_REGISTRY;
 }
 
 export function dummyAfterAll() {

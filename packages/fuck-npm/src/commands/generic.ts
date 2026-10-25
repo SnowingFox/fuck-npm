@@ -36,9 +36,10 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
   }
   const logLevel = logLevelOf(ctx.values);
 
-  if (head === "outdated" && ctx.output.mode !== "json" && logLevel !== "silent") {
+  const header = head === "outdated" ? "fnpm outdated" : ctx.path.join(" ") === "pm scan" ? "fnpm pm scan" : undefined;
+  if (header !== undefined && ctx.output.mode !== "json" && logLevel !== "silent") {
     const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
-    ctx.runtime.stderr.write(`${pc.bold("fnpm outdated")} ${pc.dim(`v${getCliVersion()}`)}\n`);
+    ctx.runtime.stderr.write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
   }
 
   const request: CoreRequest = {

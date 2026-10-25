@@ -543,7 +543,8 @@ class ShellPromise implements PromiseLike<ShellOutput> {
   }
 
   cwd(dir: string) {
-    this.#state.cwd = dir;
+    // `tempDir()` returns a String object; node wants a primitive.
+    this.#state.cwd = dir === undefined ? dir : String(dir);
     return this;
   }
   env(env: Env) {
@@ -630,7 +631,7 @@ function shellTag(strings: TemplateStringsArray, ...values: unknown[]): ShellPro
 
 export const $ = Object.assign(shellTag, {
   cwd(dir?: string) {
-    shellDefaults.cwd = dir;
+    shellDefaults.cwd = dir === undefined ? dir : String(dir);
     return $;
   },
   env(env?: Env) {

@@ -432,6 +432,34 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         return Ok(summary);
     }
 
+    // The security scanner sees what would be installed before anything is linked.
+    if config.security_scanner.is_some() {
+        let loaded_fnpm_lock = lock.graph.is_some() && !lock.migrated;
+        let scan_all = resolved_requests.is_empty()
+            || !loaded_fnpm_lock
+            || !root.join("node_modules").is_dir()
+            || opts.command == InstallCommand::Remove;
+        let seeds: Option<Vec<PackageId>> =
+            (!scan_all).then(|| resolved_requests.iter().map(|(_, id)| *id).collect());
+        let (config, root, graph, env) = (
+            config.clone(),
+            root.clone(),
+            graph.clone(),
+            project.env.clone(),
+        );
+        tokio::task::spawn_blocking(move || {
+            crate::security::scan_for_install(&crate::security::Scan {
+                config: &config,
+                root: &root,
+                graph: &graph,
+                seeds,
+                env: &env,
+            })
+        })
+        .await
+        .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))??;
+    }
+
     // 6. Link, overlapping the downloads still in flight.
     fast_path::remove(&root);
     if config.global {

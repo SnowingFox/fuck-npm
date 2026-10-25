@@ -298,6 +298,10 @@ pub fn report_error(
         terminal.stdout.write(&format!("{payload}\n"));
         return 1;
     }
+    if error.code == "REPORTED" {
+        // The core already printed why.
+        return 1;
+    }
     let mut text = format!("error: {}\n", error.message);
     if error.kind == ErrorKind::Usage {
         text.push_str(&format!(

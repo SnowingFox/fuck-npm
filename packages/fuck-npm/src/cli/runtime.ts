@@ -165,6 +165,10 @@ function reportError(
     runtime.stdout.write(`${JSON.stringify({ ok: false, error: { code: errorCode(error), message } })}\n`);
     return 1;
   }
+  if (errorCode(error) === "REPORTED") {
+    // The core already printed why.
+    return 1;
+  }
   runtime.stderr.write(`error: ${message}\n`);
   if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {
     const path = plan?.matched ?? [];
