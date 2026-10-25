@@ -35,7 +35,15 @@
       ],
       "install": "npm ci --no-audit --no-fund",
       "verify": "npm run build",
-      "baseline": "tests/e2e/baselines/uptime-kuma.json"
+      "baseline": "tests/e2e/baselines/uptime-kuma.json",
+      "fnpm": {
+        "allow": {
+          "missing": [
+            "^cpu-features@"
+          ]
+        }
+      },
+      "notes": "cpu-features (optional, node-gyp) is deleted after its install script fails: fnpm's node-gyp shim runs `fnpm x node-gyp`, NOT_IMPLEMENTED on main. npm builds it with its bundled node-gyp."
     },
     {
       "name": "socket-io",
@@ -112,7 +120,10 @@
       "verify": "yarn jest test/unitCases --testPathIgnorePatterns 'printer\\.unittest|BinCompileCache|LoaderRunner|ProfilingPlugin|css-data'",
       "baseline": "tests/e2e/baselines/webpack.json",
       "verifyTimeoutSec": 600,
-      "notes": "Six unitCases suites fail upstream on this machine with yarn's own install too (printer snapshots, BinCompileCache, LoaderRunner, ProfilingPlugin, css-data); they are excluded from verify."
+      "notes": "Six unitCases suites fail upstream on this machine with yarn's own install too (printer snapshots, BinCompileCache, LoaderRunner, ProfilingPlugin, css-data); they are excluded from verify.",
+      "fnpm": {
+        "known": "bun parity: the hoisted tree puts ajv-keywords@5 at the top level next to ajv@6 (its ajv@8 peer stays nested under schema-utils), so 15 unitCases suites fail with \"Cannot find module ajv/dist/compile/codegen\". bun 1.4.4 builds the same tree from this yarn.lock."
+      }
     },
     {
       "name": "prettier",
@@ -180,7 +191,8 @@
       "verify": "yarn gulp build-dev && yarn jest packages/babel-parser",
       "baseline": "tests/e2e/baselines/babel.json",
       "fnpm": {
-        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" gulp build-dev && PATH=\"$PWD/node_modules/.bin:$PATH\" jest packages/babel-parser"
+        "verify": "PATH=\"$PWD/node_modules/.bin:$PATH\" gulp build-dev && PATH=\"$PWD/node_modules/.bin:$PATH\" jest packages/babel-parser",
+        "known": "bun parity: the yarn.lock migration is refused (the root pins the @babel/cli workspace to a registry package), and the fallback resolve fails on yarn catalogs in .yarnrc.yml (catalog: entries such as @cspotcode/source-map-support). bun 1.4.4 fails the same way."
       },
       "verifyTimeoutSec": 600,
       "notes": "yarn 4 refuses `yarn run` on a tree it did not install (no .yarn/install-state.gz), so the fnpm verify calls the same bins directly."
@@ -203,7 +215,10 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm vitest run --project unit packages/shared packages/reactivity",
-      "baseline": "tests/e2e/baselines/vue-core.json"
+      "baseline": "tests/e2e/baselines/vue-core.json",
+      "fnpm": {
+        "known": "blocked on fnpm x: the root preinstall is `npx only-allow pnpm`, which fnpm (like bun) runs as `fnpm x`; x/dlx return NOT_IMPLEMENTED on main (implemented on feat/cmds-exec). only-allow would then reject fnpm anyway, as it rejects bun."
+      }
     },
     {
       "name": "trpc",
@@ -228,7 +243,10 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm turbo --filter=@trpc/server build",
-      "baseline": "tests/e2e/baselines/trpc.json"
+      "baseline": "tests/e2e/baselines/trpc.json",
+      "fnpm": {
+        "known": "blocked on fnpm run through the JS CLI: a workspace postinstall runs npm-run-all, which calls `fnpm run`; on main the TS CLI needs the napi binding and its children's output is lost (fixed on feat/cmds-exec)."
+      }
     },
     {
       "name": "create-t3-turbo",
@@ -269,7 +287,10 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "cd pkgs/core && pnpm vitest run --project main src/addDays src/format src/parse",
-      "baseline": "tests/e2e/baselines/date-fns.json"
+      "baseline": "tests/e2e/baselines/date-fns.json",
+      "fnpm": {
+        "known": "bun parity: pnpm-lock.yaml resolves @jsr/* packages from npm.jsr.io, which pnpm uses by default for the @jsr scope. fnpm and bun 1.4.4 fetch them from the configured registry (404). Workaround: @jsr:registry=https://npm.jsr.io/ in .npmrc."
+      }
     },
     {
       "name": "vitest",
@@ -290,7 +311,10 @@
       ],
       "install": "pnpm install --frozen-lockfile",
       "verify": "pnpm --filter @vitest/utils --filter @vitest/pretty-format build",
-      "baseline": "tests/e2e/baselines/vitest.json"
+      "baseline": "tests/e2e/baselines/vitest.json",
+      "fnpm": {
+        "known": "bun parity: two workspaces share the name @vitest/test-integration-dts-exact-optional-property; fnpm and bun 1.4.4 both refuse duplicate workspace names (pnpm allows them)."
+      }
     },
     {
       "name": "hono",
