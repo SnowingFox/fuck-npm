@@ -16,56 +16,67 @@ thread_local! {
 
 const CACHE_LIMIT: usize = 1 << 16;
 
-fn with_version<R>(s: &str, f: impl FnOnce(Option<&fnpm_semver::Version>) -> R) -> R {
-    VERSIONS.with(|c| {
-        let mut c = c.borrow_mut();
-        if !c.contains_key(s) {
-            if c.len() >= CACHE_LIMIT {
-                c.clear();
-            }
-            c.insert(s.to_owned(), fnpm_semver::Version::parse(s).ok());
+/// Looks `key` up in a per-thread cache, parsing and inserting it on a miss.
+fn cached<'c, T>(
+    cache: &'c mut HashMap<String, Option<T>>,
+    key: &str,
+    parse: impl FnOnce(&str) -> Option<T>,
+) -> Option<&'c T> {
+    if !cache.contains_key(key) {
+        if cache.len() >= CACHE_LIMIT {
+            cache.clear();
         }
-        f(c.get(s).and_then(Option::as_ref))
-    })
+        cache.insert(key.to_owned(), parse(key));
+    }
+    cache.get(key).and_then(Option::as_ref)
 }
 
-fn with_range<R>(s: &str, f: impl FnOnce(Option<&fnpm_semver::Range>) -> R) -> R {
-    RANGES.with(|c| {
-        let mut c = c.borrow_mut();
-        if !c.contains_key(s) {
-            if c.len() >= CACHE_LIMIT {
-                c.clear();
-            }
-            c.insert(s.to_owned(), fnpm_semver::Range::parse(s).ok());
-        }
-        f(c.get(s).and_then(Option::as_ref))
-    })
+fn parse_version(s: &str) -> Option<fnpm_semver::Version> {
+    fnpm_semver::Version::parse(s).ok()
+}
+
+fn parse_range(s: &str) -> Option<fnpm_semver::Range> {
+    fnpm_semver::Range::parse(s).ok()
 }
 
 mod real {
     use super::*;
 
     pub fn is_version(s: &str) -> bool {
-        with_version(s, |v| v.is_some())
+        VERSIONS.with(|c| cached(&mut c.borrow_mut(), s, parse_version).is_some())
     }
 
     pub fn cmp(a: &str, b: &str) -> Ordering {
-        with_version(a, |va| {
-            let va = va.cloned();
-            with_version(b, |vb| match (va.as_ref(), vb) {
-                (Some(a), Some(b)) => a.cmp(b),
-                (Some(_), None) => Ordering::Greater,
-                (None, Some(_)) => Ordering::Less,
-                (None, None) => Ordering::Equal,
+        // One borrow for both lookups: the cache is a `RefCell`, so looking `b` up from inside
+        // `a`'s lookup would be a second mutable borrow.
+        VERSIONS
+            .with(|c| {
+                let mut c = c.borrow_mut();
+                let a_ok = cached(&mut c, a, parse_version).is_some();
+                let b_ok = cached(&mut c, b, parse_version).is_some();
+                match (a_ok, b_ok) {
+                    (true, true) => {
+                        let va = c.get(a).and_then(Option::as_ref);
+                        let vb = c.get(b).and_then(Option::as_ref);
+                        va.cmp(&vb)
+                    }
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    (false, false) => Ordering::Equal,
+                }
             })
-        })
-        .then_with(|| a.cmp(b))
+            .then_with(|| a.cmp(b))
     }
 
     pub fn satisfies(range: &str, version: &str) -> bool {
-        with_version(version, |v| {
-            let Some(v) = v.cloned() else { return false };
-            with_range(range, |r| r.is_some_and(|r| r.satisfies(&v)))
+        VERSIONS.with(|vc| {
+            let mut vc = vc.borrow_mut();
+            let Some(v) = cached(&mut vc, version, parse_version) else {
+                return false;
+            };
+            RANGES.with(|rc| {
+                cached(&mut rc.borrow_mut(), range, parse_range).is_some_and(|r| r.satisfies(v))
+            })
         })
     }
 }
@@ -466,5 +477,23 @@ mod tests {
         assert!(satisfies("^1.0.0", "1.2.3"));
         assert_eq!(cmp("1.0.0", "2.0.0"), Ordering::Less);
         assert!(is_star("*") && is_star("") && !is_star("^1"));
+    }
+
+    /// The production path, once `fnpm-semver` is usable (it used to borrow its cache twice in
+    /// `cmp`, which panics with "already borrowed" on every call).
+    #[test]
+    fn real_shim_answers_without_panicking() {
+        if !fallback::real_available() {
+            return;
+        }
+        assert!(real::is_version("1.2.3") && !real::is_version("1.2"));
+        assert_eq!(real::cmp("1.0.0", "2.0.0"), Ordering::Less);
+        assert_eq!(real::cmp("2.0.0", "1.0.0"), Ordering::Greater);
+        assert_eq!(real::cmp("1.0.0", "1.0.0"), Ordering::Equal);
+        assert_eq!(real::cmp("1.0.0", "1.0.0-rc.1"), Ordering::Greater);
+        assert_eq!(real::cmp("1.0.0", "nope"), Ordering::Greater);
+        assert!(real::satisfies("^1.0.0", "1.2.3"));
+        assert!(!real::satisfies("^2.0.0", "1.2.3"));
+        assert!(!real::satisfies("^1.0.0", "nope"));
     }
 }
