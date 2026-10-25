@@ -75,8 +75,9 @@ const textChanges: [RegExp, string][] = [
   [new RegExp(`\\bbun (${pmCommands})\\b`, "g"), "fnpm $1"],
   // bun's header is `bun install v1.x.y`; fnpm has its own version (`fnpm install v0.0.1`).
   [/\bfnpm (install|add|update|remove|link|unlink|outdated) v1\./g, "fnpm $1 v"],
-  // A header built from a variable: `bun ${command} <version> (<revision>)`.
-  [/\bbun (\$\{\w+\}) <version>/g, "fnpm $1 <version>"],
+  // A command name in a variable: `bun ${command} has no --x flag`, `bun ${command} <version> (<revision>)`
+  // (not `bun ${script}.js`, which runs a file).
+  [/\bbun (\$\{(?:command|header|cmd|subcommand)\})/g, "fnpm $1"],
   [/\bBUN_INSTALL_CACHE_DIR\b/g, "FNPM_CACHE_DIR"],
   [/\bBUN_CONFIG_/g, "FNPM_CONFIG_"],
   [/node_modules\/\.bun\//g, "node_modules/.fnpm/"],

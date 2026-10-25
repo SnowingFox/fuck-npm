@@ -411,6 +411,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     Ok(LinkReport {
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
+        written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
         // Every entry that was neither written nor skipped for the platform was checked.
         verified: (layout.entries.len() as u32).saturating_sub(installed + skipped),
         removed,

@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { statSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import cac from "cac";
 import { errorCode, formatError, SilentError } from "../errors.ts";
 import { loadHandler } from "../commands/index.ts";
@@ -5,7 +8,7 @@ import { createColors } from "picocolors";
 import { colorEnabled, createOutput, resolveMode } from "../output/output.ts";
 import type { CliRuntime } from "../runtime/types.ts";
 import { parseFlags } from "./parse-flags.ts";
-import { planInvocation, rejectUnknownFlags, type Invocation } from "./plan.ts";
+import { planInvocation, rejectUnknownFlags, unknownFlagCommand, type Invocation } from "./plan.ts";
 import { setCurrentArgv } from "./raw-flags.ts";
 import { registerGlobalFlags, registerNode } from "./register.ts";
 import { flagSpecsFor } from "./registry.ts";
@@ -20,6 +23,25 @@ import { getCliVersion } from "./version.ts";
  * unknown flags, flag parsing and required positionals, and only then the
  * handler. Nothing before the handler loads the native core.
  */
+const SCRIPT_EXTENSIONS = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"];
+
+/** An existing file with a JavaScript or TypeScript extension. */
+function isScriptFile(cwd: string, name: string): boolean {
+  if (!SCRIPT_EXTENSIONS.some((ext) => name.endsWith(ext))) return false;
+  try {
+    return statSync(resolvePath(cwd, name)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Runs `file` with the current Node, with inherited stdio; its exit status is fnpm's. */
+function runScriptFile(runtime: CliRuntime, file: string, args: string[]): number {
+  const result = spawnSync(process.execPath, [file, ...args], { cwd: runtime.cwd, env: runtime.env, stdio: "inherit" });
+  if (result.error) throw result.error;
+  return result.status ?? 1;
+}
+
 export async function runParsedCli(
   registry: Registry,
   argv: string[],
@@ -56,6 +78,10 @@ export async function runParsedCli(
       if (typed === undefined) {
         // Only global flags (`fnpm --json`): there is nothing to run.
         return await writeHelp(registry, runtime);
+      }
+      // `fnpm script.js`, like `bun script.js`: a file in place of a command runs with Node.
+      if (argv[2] === typed && isScriptFile(runtime.cwd, typed)) {
+        return runScriptFile(runtime, typed, argv.slice(3));
       }
       throw new SilentError(`Unknown command: ${typed}`, { code: "UNKNOWN_COMMAND" });
     }
@@ -164,7 +190,9 @@ function reportError(
     return 1;
   }
   runtime.stderr.write(`error: ${message}\n`);
-  if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {
+  if (error instanceof SilentError && error.code === "UNKNOWN_FLAG") {
+    runtime.stderr.write(`note: Run '${unknownFlagCommand(registry, plan?.matched ?? [])} --help' for more information\n`);
+  } else if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {
     const path = plan?.matched ?? [];
     runtime.stderr.write(
       path.length === 0

@@ -1162,7 +1162,11 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         Some(v) => env_path(&cwd, v, h).join("v1"),
         None => fnpm_home.join("store").join("v1"),
     };
-    let cache_dir = if let Some(dir) = cache_dir_flag {
+    let cache_dir = if cache_disabled {
+        // bun: with the cache off, downloads go to the project's `node_modules/.cache`,
+        // whatever directory is configured.
+        project_dir.join("node_modules").join(".cache")
+    } else if let Some(dir) = cache_dir_flag {
         dir
     } else if let Some(v) = env.get_not_empty(crate::env::names::CACHE_DIR) {
         env_path(&cwd, v, h)

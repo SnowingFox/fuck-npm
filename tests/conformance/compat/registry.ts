@@ -1,11 +1,11 @@
 /**
  * The `registry` module of bun's tests (test/packages/registry/test-registry.ts) for the conformance suite:
  * `TestRegistry` serves bun's fixture packages from tests/registry (node:http). `start()` also points
- * fnpmEnv.FNPM_REGISTRY at it.
+ * the default registry (setDefaultRegistry) at it.
  */
 import { join } from "node:path";
 import { Registry, type RegistryOptions } from "../../registry/src/registry.ts";
-import { fnpmEnv, tempDir, type DirectoryTree } from "../harness.ts";
+import { setDefaultRegistry, tempDir, type DirectoryTree } from "../harness.ts";
 import { TOML, write } from "./bun.ts";
 import { bunInstallTestDir, fixturePackagesDir } from "../../registry/index.ts";
 
@@ -45,7 +45,7 @@ export class TestRegistry extends Registry {
 
   override start(): this {
     super.start();
-    fnpmEnv.FNPM_REGISTRY = this.url;
+    setDefaultRegistry(this.url);
     return this;
   }
 

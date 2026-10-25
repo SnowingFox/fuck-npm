@@ -4,7 +4,6 @@ import {
   allowedFlagNames,
   findAlias,
   flagSpecsFor,
-  flagOwners,
   longName,
   matchesSegment,
   shortName,
@@ -242,7 +241,7 @@ export function flagName(token: string): string | undefined {
   return name === "" ? undefined : name;
 }
 
-const spell = (name: string): string => (name.length > 1 ? `\`--${name}\`` : `\`-${name}\``);
+const spell = (name: string): string => (name.length > 1 ? `--${name}` : `-${name}`);
 
 /**
  * Reject flags the resolved command does not accept.
@@ -252,13 +251,20 @@ const spell = (name: string): string => (name.length > 1 ? `\`--${name}\`` : `\`
  * the flag. A flag declared elsewhere gets a pointer to its owner (bun's
  * "is only supported by `bun pm cache`"); a flag nothing declares is a typo.
  */
+/** `fnpm install` for `fnpm ci`, `fnpm pm` for `fnpm pm ls`: the name bun's unknown-flag error uses. */
+export function unknownFlagCommand(registry: Registry, matched: readonly string[]): string {
+  const top = matched[0] === "ci" ? "install" : matched[0];
+  return top === undefined ? registry.bin : `${registry.bin} ${top}`;
+}
+
 export function rejectUnknownFlags(plan: Invocation, registry: Registry): void {
   if (plan.own.length === 0) {
     return;
   }
   const allowed = allowedFlagNames(plan.node, registry);
   const specs = flagSpecsFor(plan.node, registry);
-  const command = [registry.bin, ...plan.matched].join(" ");
+  // bun names the command (`fnpm pm has no --nope flag.`), even when another command has the flag.
+  const command = unknownFlagCommand(registry, plan.matched);
 
   for (let index = 0; index < plan.own.length; index += 1) {
     const token = plan.own[index] as string;
@@ -271,15 +277,7 @@ export function rejectUnknownFlags(plan: Invocation, registry: Registry): void {
       if (allowed.has(candidate)) {
         continue;
       }
-      const owners = flagOwners(registry).get(candidate);
-      if (owners !== undefined && owners.length > 0) {
-        const belongs = owners.map((path) => `\`${registry.bin} ${path}\``).join(" or ");
-        throw new SilentError(
-          `${spell(candidate)} is not a flag of \`${command}\`. It belongs to ${belongs}.`,
-          { code: "UNKNOWN_FLAG" },
-        );
-      }
-      throw new SilentError(`\`${command}\` has no ${spell(candidate)} flag.`, {
+      throw new SilentError(`${command} has no ${spell(candidate)} flag.`, {
         code: "UNKNOWN_FLAG",
       });
     }

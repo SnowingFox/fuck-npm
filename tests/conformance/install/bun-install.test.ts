@@ -16751,7 +16751,7 @@ describe.concurrent("a long flag the command does not have", () => {
     });
   const rejected = (command: string, flag = "--nope") => ({
     stdout: "",
-    stderr: `error: bun ${command} has no ${flag} flag.\nnote: Run 'bun ${command} --help' for more information\n`,
+    stderr: `error: fnpm ${command} has no ${flag} flag.\nnote: Run 'fnpm ${command} --help' for more information\n`,
     exitCode: 1,
   });
 
@@ -17152,7 +17152,7 @@ describe.concurrent("the flags of npm, yarn and pnpm", () => {
   ] as [string[], string, string][])("bun %j is still an error", async (cmd, command, flag) => {
     const { stderr, packageJson, exitCode } = await outcome(cmd);
     expect(stderr).toBe(
-      `error: bun ${command} has no ${flag} flag.\nnote: Run 'bun ${command} --help' for more information\n`,
+      `error: fnpm ${command} has no ${flag} flag.\nnote: Run 'fnpm ${command} --help' for more information\n`,
     );
     expect(packageJson).toEqual({ name: "foo", version: "0.0.1", ...groups });
     expect(exitCode).toBe(1);

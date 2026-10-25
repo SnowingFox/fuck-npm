@@ -403,10 +403,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &mut graph,
     );
 
+    // Without a link (`--lockfile-only`, `--dry-run`) the rows are what the lockfile gained.
     let (mut added, mut updated, removed) = summary::changes(lock.graph.as_ref(), &graph);
     for pkg in &mut added {
         pkg.available_version =
             summary::later_version(&graph, &client, &config, &pkg.name, &pkg.version);
+    }
+    // bun lists `↑` rows only for `update`; an install shows what it wrote as `+` rows.
+    if opts.command != InstallCommand::Update {
+        updated.clear();
     }
     for pkg in &mut updated {
         pkg.available_version =
@@ -440,6 +445,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         summary.elapsed_ms = start.elapsed().as_millis() as u64;
         client.flush_cache_writes().await;
         return Ok(summary);
+    }
+
+    // A name fnpm.lock carries (the resolver reused it) is checked like a resolved one.
+    if let Some(bad) = unsafe_dependency_name(&graph) {
+        return Err(Error::UnsafeName(fnpm_types::text::escape_control_chars(
+            &bad,
+        )));
     }
 
     // 6. Link, overlapping the downloads still in flight.
@@ -479,6 +491,30 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     )
     .await?;
     phases.mark("link");
+    // `+` rows: the direct dependencies of the cwd's workspace that this run wrote.
+    let ws_path = ws
+        .member_for_dir(&project.cwd)
+        .map(|m| m.path.clone())
+        .unwrap_or_default();
+    summary.added = summary::installed_direct(&graph, &ws_path, &linked.report.written)
+        .into_iter()
+        .filter(|pkg| !summary.updated.iter().any(|u| u.name == pkg.name))
+        .collect();
+    for pkg in &mut summary.added {
+        let real = pkg.alias.as_ref().and(
+            graph
+                .workspaces
+                .get(&ws_path)
+                .and_then(|id| graph.get(*id))
+                .and_then(|p| p.dependencies.iter().find(|e| e.name == pkg.name))
+                .and_then(|e| e.target)
+                .and_then(|t| graph.get(t))
+                .map(|t| t.name.clone()),
+        );
+        let name = real.unwrap_or_else(|| pkg.name.clone());
+        pkg.available_version =
+            summary::later_version(&graph, &client, &config, &name, &pkg.version);
+    }
     // bun counts each package once, however many places it was copied to.
     summary.installed_count = linked.report.installed_packages;
     summary.removed_count = linked.report.removed;
@@ -1186,6 +1222,21 @@ fn save(
         )?;
     }
     Ok(true)
+}
+
+/// The first edge whose name cannot be a folder under `node_modules` (workspace links aside).
+fn unsafe_dependency_name(graph: &LockGraph) -> Option<String> {
+    for p in &graph.packages {
+        for e in &p.dependencies {
+            if e.target.is_some()
+                && !e.behavior.is_workspace()
+                && !fnpm_types::name::alias_is_safe_install_target(&e.name)
+            {
+                return Some(e.name.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Requests that went to the network so far: bun's task count (a manifest, a tarball and its

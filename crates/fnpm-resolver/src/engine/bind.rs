@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use fnpm_registry::PackageManifest;
 use fnpm_semver::{Range, Version};
-use fnpm_types::name::{is_npm_package_name, is_safe_install_folder_name};
+use fnpm_types::name::{alias_is_safe_install_target, is_npm_package_name};
 use fnpm_types::spec::{is_link_path, link_path_for_lockfile};
 use fnpm_types::{
     DepEdge, DependencySpec, Package, PackageId, Resolution, TarballUri, WorkspaceSpec,
@@ -281,18 +281,13 @@ impl Engine<'_> {
             Ok(None) => return Ok(Step::Done),
             Err(e) => return self.fail(row, &edge, e),
         };
-        if !is_safe_install_folder_name(&edge.name)
-            || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name))
-        {
-            let bad = if is_safe_install_folder_name(&edge.name) {
-                &asked.name
-            } else {
-                &edge.name
-            };
-            let err = Error::InvalidSpec {
-                name: edge.name.clone(),
-                spec: edge.literal.clone(),
-                message: format!("invalid dependency name \"{bad}\""),
+        let alias_ok = alias_is_safe_install_target(&edge.name);
+        if !alias_ok || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name)) {
+            let bad = if alias_ok { &asked.name } else { &edge.name };
+            let err = Error::InvalidName {
+                name: fnpm_types::text::escape_control_chars(&edge.name),
+                spec: fnpm_types::text::escape_control_chars(&edge.literal),
+                bad: fnpm_types::text::escape_control_chars(bad),
             };
             return self.fail(row, &edge, err);
         }

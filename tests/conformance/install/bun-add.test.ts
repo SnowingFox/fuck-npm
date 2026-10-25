@@ -3873,7 +3873,7 @@ describe("should move existing dependency when an explicit group flag is given",
     });
     const [err, , exitCode] = await Promise.all([proc.stderr.text(), proc.stdout.text(), proc.exited]);
     expect(err).toBe(
-      `error: bun ${command} has no --save-prod flag.\nnote: Run 'bun ${command} --help' for more information\n`,
+      `error: fnpm ${command} has no --save-prod flag.\nnote: Run 'fnpm ${command} --help' for more information\n`,
     );
     expect(await file(join(package_dir, "package.json")).text()).toBe(initial);
     expect(exitCode).toBe(1);

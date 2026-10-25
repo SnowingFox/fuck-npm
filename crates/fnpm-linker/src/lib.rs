@@ -246,6 +246,8 @@ pub struct LinkReport {
     /// Places that were already up to date, workspace links included: bun's `skipped`, the
     /// `Checked N installs` of a run that changed nothing.
     pub verified: u32,
+    /// Per package id: written by this run (bun's `successfully_installed`, the `+` rows).
+    pub written: Vec<bool>,
     /// Directories removed because they are no longer in the layout.
     pub removed: u32,
     /// Packages skipped because they do not match the platform.

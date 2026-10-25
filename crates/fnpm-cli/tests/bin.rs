@@ -168,7 +168,7 @@ fn usage_errors_never_need_node() {
     assert_eq!(stdout(&output), "");
     assert_eq!(
         stderr(&output),
-        "error: `fnpm install` has no `--bogus` flag.\nRun 'fnpm install --help' for detailed usage.\n"
+        "error: fnpm install has no --bogus flag.\nnote: Run 'fnpm install --help' for more information\n"
     );
 
     let output = run(FNPM, &["add", "--json"], &[("FNPM_NODE", &missing)]);

@@ -308,7 +308,13 @@ pub fn report_error(
         return 1;
     }
     let mut text = format!("error: {}\n", error.message);
-    if error.kind == ErrorKind::Usage {
+    if error.code == "UNKNOWN_FLAG" {
+        text.push_str(&format!(
+            "note: Run '{} {} --help' for more information\n",
+            bin.name,
+            crate::parse::help_command(leaf.name)
+        ));
+    } else if error.kind == ErrorKind::Usage {
         text.push_str(&format!(
             "Run '{} {} --help' for detailed usage.\n",
             bin.name, leaf.name

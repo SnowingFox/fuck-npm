@@ -108,6 +108,15 @@ export function sharedRegistryUrl(): string | undefined {
   }
 }
 
+/** The user .npmrc of this worker; [`setDefaultRegistry`] writes its `registry=`. */
+const defaultRegistryNpmrc = join(workerRoot, "user.npmrc");
+
+/** Points the fixture registry every fnpm falls back to (no registry in bunfig.toml or .npmrc) at `url`. */
+export function setDefaultRegistry(url: string | undefined) {
+  fs.writeFileSync(defaultRegistryNpmrc, url ? `registry=${url}\n` : "");
+}
+setDefaultRegistry(sharedRegistryUrl());
+
 function buildEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -119,7 +128,6 @@ function buildEnv(): Record<string, string | undefined> {
     AGENT: "false",
     FNPM_STORE_DIR: join(workerRoot, "store"),
     FNPM_CACHE_DIR: join(workerRoot, "cache"),
-    FNPM_REGISTRY: sharedRegistryUrl(),
     // bun's env for the same purpose, in case fnpm reads it for compatibility.
     BUN_INSTALL_CACHE_DIR: join(workerRoot, "cache"),
     // retry backoff of 1ms, like BUN_CONFIG_HTTP_RETRY_BACKOFF in bun's harness
@@ -133,6 +141,10 @@ function buildEnv(): Record<string, string | undefined> {
       delete env[key];
     }
   }
+  // The default registry goes in a user .npmrc: like bun's harness, a test's bunfig.toml or .npmrc wins over it
+  // (an FNPM_REGISTRY variable would win over both).
+  env.NPM_CONFIG_USERCONFIG = defaultRegistryNpmrc;
+  delete env.FNPM_REGISTRY;
   delete env.NODE_ENV;
   delete env.NODE_OPTIONS;
   delete env.VITEST;
@@ -141,7 +153,7 @@ function buildEnv(): Record<string, string | undefined> {
   return env;
 }
 
-/** The environment for every spawned fnpm (bunEnv). Mutable: a test file that starts a registry repoints FNPM_REGISTRY. */
+/** The environment for every spawned fnpm (bunEnv). A test file that starts a registry repoints the default with setDefaultRegistry. */
 export const fnpmEnv: Record<string, string | undefined> = buildEnv();
 
 /** bunEnv/installEnv with a cache of its own under `dir`. */

@@ -1191,7 +1191,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `--bogus` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no --bogus flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1205,7 +1205,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `--max-age` is not a flag of `fnpm install`. It belongs to `fnpm pm cache prune`.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no --max-age flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1218,7 +1218,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `-q` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no -q flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1231,7 +1231,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `-q` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no -q flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1245,7 +1245,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `--dev` is not a flag of `fnpm remove`. It belongs to `fnpm install` or `fnpm ci` or `fnpm add` or `fnpm update` or `fnpm pm licenses`.\nRun 'fnpm remove --help' for detailed usage.\n",
+        "stderr": "error: fnpm remove has no --dev flag.\nnote: Run 'fnpm remove --help' for more information\n",
         "install": null
       }
     },
@@ -1259,7 +1259,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `--latest` is not a flag of `fnpm add`. It belongs to `fnpm update` or `fnpm audit`.\nRun 'fnpm add --help' for detailed usage.\n",
+        "stderr": "error: fnpm add has no --latest flag.\nnote: Run 'fnpm add --help' for more information\n",
         "install": null
       }
     },
@@ -1272,7 +1272,7 @@
       ],
       "expected": {
         "exit": 1,
-        "stdout": "{\"ok\":false,\"error\":{\"code\":\"UNKNOWN_FLAG\",\"message\":\"`fnpm install` has no `--bogus` flag.\"}}\n",
+        "stdout": "{\"ok\":false,\"error\":{\"code\":\"UNKNOWN_FLAG\",\"message\":\"fnpm install has no --bogus flag.\"}}\n",
         "stderr": "",
         "install": null
       }
@@ -1286,7 +1286,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Unknown flag `--noSave`.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Unknown flag `--noSave`.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1299,7 +1299,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `--interactive` is not a flag of `fnpm ci`. It belongs to `fnpm update`.\nRun 'fnpm ci --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no --interactive flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -1312,7 +1312,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `-Z` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no -Z flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -3036,7 +3036,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `--hot` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no --hot flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -5712,7 +5712,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `-r` is not a flag of `fnpm install`. It belongs to `fnpm update` or `fnpm outdated` or `fnpm publish`.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no -r flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     },
@@ -8586,7 +8586,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: `fnpm install` has no `--bogus` flag.\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: fnpm install has no --bogus flag.\nnote: Run 'fnpm install --help' for more information\n",
         "install": null
       }
     }

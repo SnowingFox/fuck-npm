@@ -86,6 +86,44 @@ pub(crate) fn changes(
     (added, updated, removed)
 }
 
+/// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
+/// run wrote (`written`, per package id), workspace links excluded, by name.
+pub(crate) fn installed_direct(
+    graph: &LockGraph,
+    ws_path: &str,
+    written: &[bool],
+) -> Vec<AddedPackage> {
+    let mut out: Vec<AddedPackage> = Vec::new();
+    let Some(pkg) = graph.workspaces.get(ws_path).and_then(|id| graph.get(*id)) else {
+        return out;
+    };
+    let mut edges: Vec<_> = pkg.dependencies.iter().collect();
+    edges.sort_by(|a, b| a.name.cmp(&b.name));
+    for edge in edges {
+        let Some(id) = edge.target else { continue };
+        if !written.get(id.index()).copied().unwrap_or(false) {
+            continue;
+        }
+        let Some(t) = graph.get(id) else { continue };
+        if matches!(
+            t.resolution,
+            Resolution::Workspace { .. } | Resolution::Root
+        ) {
+            continue;
+        }
+        let entry = AddedPackage {
+            name: edge.name.clone(),
+            version: version_of(t),
+            alias: (edge.name != t.name).then(|| edge.name.clone()),
+            available_version: None,
+        };
+        if !out.iter().any(|e| e.name == entry.name) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
 /// bun's `(v1.2.4 available)`: the `latest` of a manifest this run loaded, when it is newer
 /// than the registry release that was picked (prereleases get no hint).
 pub(crate) fn later_version(

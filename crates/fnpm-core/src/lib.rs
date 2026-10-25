@@ -77,6 +77,10 @@ pub enum Error {
         /// The code of the underlying failure (`INTEGRITY`, `NETWORK`, `NOT_FOUND`, ...).
         code: &'static str,
     },
+    /// A dependency name in the graph (from fnpm.lock) that cannot be a folder under
+    /// `node_modules` (bun's tree builder refuses it before anything is installed).
+    #[error("invalid dependency name \"{0}\"")]
+    UnsafeName(String),
     /// A command that belongs to a later parity phase (see `docs/ROADMAP.md`).
     #[error("`fnpm {command}` is not implemented in the native core yet")]
     NotImplemented {

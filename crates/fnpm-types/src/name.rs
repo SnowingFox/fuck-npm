@@ -385,6 +385,23 @@ pub fn is_safe_install_folder_name(name: &str) -> bool {
     safe(&b[start..])
 }
 
+/// bun's `alias_is_safe_install_target`: `node_modules/<alias>` is deleted and made again, so
+/// it must be one package folder (`name` or `@scope/name`) and none the installer owns
+/// (`.bin`, a dot entry, `node_modules` in any case, a bare `@scope`).
+pub fn alias_is_safe_install_target(alias: &str) -> bool {
+    if alias.len() >= 4096 || !is_safe_install_folder_name(alias) {
+        return false;
+    }
+    let name = match alias.split_once('/') {
+        Some((scope, name)) if scope.len() > 1 && scope.starts_with('@') && !name.contains('/') => {
+            name
+        }
+        None if !alias.starts_with('@') => alias,
+        _ => return false,
+    };
+    !name.starts_with('.') && !name.eq_ignore_ascii_case("node_modules")
+}
+
 /// A name that a lockfile's `"<name>@<resolution>"` keys can round-trip.
 pub fn is_safe_lockfile_package_name(name: &str) -> bool {
     is_safe_install_folder_name(name) && !name[1..].contains('@')

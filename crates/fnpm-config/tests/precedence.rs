@@ -450,6 +450,11 @@ fn bunfig_cache_false_disables_cache_and_metadata() {
         let cfg = Fx::new(&[("project/bunfig.toml", &bunfig(body))]).load();
         assert!(cfg.cache_disabled, "{body}");
         assert_eq!(cfg.network.manifest_cache, ManifestCacheMode::Disabled);
+        // Like bun, the project's node_modules/.cache takes the downloads.
+        assert!(
+            cfg.cache_dir.ends_with("project/node_modules/.cache"),
+            "{body}"
+        );
     }
 }
 

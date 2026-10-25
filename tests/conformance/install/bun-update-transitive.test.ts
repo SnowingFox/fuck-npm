@@ -2898,7 +2898,7 @@ async function staleDirectLeaf(server: Bun.Server<undefined>, groups: Groups = {
 
 // Nothing but the header: no table, and no "up to date" either.
 const expectHeaderOnly = (stdout: string, command: string) =>
-  expect(stdout).toMatch(new RegExp(`^bun ${command} v[^\\n]*\\n$`));
+  expect(stdout).toMatch(new RegExp(`^fnpm ${command} v[^\\n]*\\n$`));
 
 test.concurrent.each<[number, string[]]>([
   [502, []],

@@ -306,6 +306,11 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
         installed: out.installed.load(Ordering::Relaxed),
         installed_packages: out.installed_packages.load(Ordering::Relaxed),
         verified: out.verified.load(Ordering::Relaxed),
+        written: out
+            .written
+            .iter()
+            .map(|w| w.load(Ordering::Relaxed))
+            .collect(),
         removed: out.removed.load(Ordering::Relaxed),
         skipped: out.skipped.load(Ordering::Relaxed),
         dirs,
@@ -375,8 +380,11 @@ fn place_node<'s>(
                         source,
                     },
                 )?;
-                // bun never counts a workspace link as installed.
-                out.verified.fetch_add(1, Ordering::Relaxed);
+                // bun counts a new workspace link as installed.
+                out.installed.fetch_add(1, Ordering::Relaxed);
+                if !out.written[node.package.index()].swap(true, Ordering::Relaxed) {
+                    out.installed_packages.fetch_add(1, Ordering::Relaxed);
+                }
                 Ok(Some(true))
             }
             Place::Copy => {
