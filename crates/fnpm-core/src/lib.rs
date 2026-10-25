@@ -4,6 +4,7 @@
 
 #![warn(missing_docs)]
 
+pub mod analyze;
 pub mod commands;
 pub mod events;
 pub mod fast_path;

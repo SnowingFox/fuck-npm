@@ -237,11 +237,20 @@ pub(crate) fn prepare(
 ) -> Result<PreparedInstall> {
     let start = Instant::now();
     let mut phases = Phases::new(&env);
+    let mut opts = opts;
     if opts.analyze {
-        // `install --analyze <files>` scans imports; it belongs to a later parity phase.
-        return Err(Error::NotImplemented {
-            command: "install --analyze".into(),
-        });
+        // `--analyze <files>`: what the files import is added like positionals, with
+        // `--only-missing` (bun runs its bundler; fnpm scans the import statements).
+        let cwd = opts.pm.cwd.clone();
+        let files = std::mem::take(&mut opts.packages);
+        opts.packages = crate::analyze::packages(&cwd, &files)?;
+        opts.analyze = false;
+        opts.only_missing = true;
+        opts.command = if opts.packages.is_empty() {
+            InstallCommand::Install
+        } else {
+            InstallCommand::Add
+        };
     }
     let mut cli = opts.pm.to_cli_overrides();
     if opts.exact {

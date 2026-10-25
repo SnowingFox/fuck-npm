@@ -372,7 +372,7 @@ it("fnpm add --analyze leaves out builtins, paths and aliases, with or without a
       import "@/components/ui/button";
       import "~/alias";
       import "#internal/thing";
-      import "../../../submodule/bun/test/cli/install/missing/file";
+      import "./missing/file";
       import "/missing/file";
       import "https://example.com/mod/x.js";
       `,
@@ -412,11 +412,11 @@ it("fnpm add --analyze uses the nearest package.json with a name above the impor
   const member = join(package_dir, "packages", "member");
   await mkdir(join(member, "nested"), { recursive: true });
   await writeFile(join(member, "package.json"), JSON.stringify({ name: "@corp/member", version: "0.0.1" }));
-  await writeFile(join(member, "index.ts"), `import "@corp/member/sub"; import "../../../submodule/bun/test/cli/install/nested/index.ts";`);
+  await writeFile(join(member, "index.ts"), `import "@corp/member/sub"; import "./nested/index.ts";`);
   await writeFile(join(member, "nested", "package.json"), JSON.stringify({ type: "module" }));
   await writeFile(join(member, "nested", "index.ts"), `import "@corp/member"; import "bar/sub";`);
   expect(
-    await analyze("add", `import "../../../submodule/bun/test/cli/install/packages/member/index.ts";`, {
+    await analyze("add", `import "./packages/member/index.ts";`, {
       packageJson: { name: "root", workspaces: ["packages/*"] },
       urls,
     }),
@@ -434,7 +434,7 @@ it("fnpm add --analyze should scan dependencies", async () => {
       version: "0.0.1",
     }),
   );
-  await writeFile(join(package_dir, "entry-point.ts"), `import "../../../submodule/bun/test/cli/install/local-file.ts";`);
+  await writeFile(join(package_dir, "entry-point.ts"), `import "./local-file.ts";`);
   await writeFile(join(package_dir, "local-file.ts"), `export * from "bar";`);
   console.log(package_dir);
   const { stdout, stderr, exited } = spawn({
