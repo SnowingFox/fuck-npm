@@ -1,30 +1,57 @@
 /**
- * Placeholder contract for the fnpm native core (crates/fnpm-napi).
+ * The JS API of the fnpm native core (crates/fnpm-napi). See
+ * docs/ARCHITECTURE.md, "napi JS API and the event schema"; the CLI-side types
+ * are packages/fuck-npm/src/core/types.ts and both must change together.
  *
- * `napi build` writes the generated declarations to native.d.ts; this file is
- * the hand-written shape the CLI programs against until the generated one
- * replaces it. Payloads are plain objects (serde on the Rust side). Progress
- * arrives batched, at most every 50 ms, through a napi ThreadsafeFunction, so
- * the callback may be invoked as `(events)` or, with callee-handled errors, as
- * `(err, events)`.
+ * Payloads are plain JSON-shaped objects (serde on the Rust side, camelCase,
+ * unknown fields ignored). Work runs on the core's own threads, never on the JS
+ * thread. Progress arrives in batches, at most every 50 ms, as
+ * `onEvents(null, events)` through a napi ThreadsafeFunction; every batch is
+ * delivered before the returned promise settles. If `onEvents` throws, the
+ * exception surfaces as an uncaught exception (like an event listener's) and
+ * the promise still settles. Leave `onEvents` out when nobody renders progress
+ * (`--json`, `--silent`): the core then builds no events at all.
+ *
+ * `napi build` writes the generated declarations to native.d.ts (not committed);
+ * this file is the contract.
  */
 
+/** One progress or diagnostic event (`fnpm_types::Event`, tagged by `type`). */
 export type NativeEvent = { type: string; [key: string]: unknown };
 
-export type NativeEventCallback =
-  | ((events: NativeEvent[] | NativeEvent) => void)
-  | ((err: Error | null, events: NativeEvent[] | NativeEvent) => void);
+/** Receives one batch of events. `err` is always `null` (the core reports failures by rejecting). */
+export type NativeEventCallback = (err: Error | null, events: NativeEvent[]) => void;
 
-/** Version of the native core; the CLI warns when it differs from its own. */
+/** `error.code` on a rejected `install`/`invoke` (`fnpm_core::Error::code`). Codes are only ever added. */
+export type NativeErrorCode =
+  | "FROZEN_LOCKFILE"
+  | "NO_MATCHING_VERSION"
+  | "NOT_FOUND"
+  | "INTEGRITY"
+  | "NETWORK"
+  | "SCRIPT_FAILED"
+  | "INVALID_PACKAGE_JSON"
+  | "USAGE"
+  | "CORE_ERROR";
+
+/**
+ * A rejection. `USAGE` also covers a payload that does not match the Rust
+ * types; `CORE_ERROR` also covers a panic inside the core.
+ */
+export interface NativeError extends Error {
+  code: NativeErrorCode;
+}
+
+/** Version of the native core (the crate version); the CLI warns when it differs from its own. */
 export declare function version(): string;
 
-/** The install pipeline: install, ci, add, remove, update. */
+/** The install pipeline: install, ci, add, remove, update. Resolves with `InstallSummary`. */
 export declare function install(
   options: Record<string, unknown>,
   onEvents?: NativeEventCallback,
 ): Promise<Record<string, unknown>>;
 
-/** Every other command: `{command: ["pm", "cache", "rm"], positionals, passthrough, options}`. */
+/** Every other command: `{command: ["pm", "cache", "rm"], cwd, positionals, passthrough, options, json}`. */
 export declare function invoke(
   request: Record<string, unknown>,
   onEvents?: NativeEventCallback,

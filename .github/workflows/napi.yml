@@ -1,0 +1,139 @@
+# Builds the napi addon (crates/fnpm-napi -> fnpm.<triple>.node) for every published
+# target and runs the binding's tests on the platforms GitHub can execute natively.
+# Actions are pinned to commit SHAs (tag in the trailing comment); tool versions are pinned
+# in env below.
+name: napi
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/**"
+      - "packages/fuck-npm-binding/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package-lock.json"
+      - ".github/workflows/napi.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: napi-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.99.1"
+  NODE_VERSION: "24"
+  ZIG_VERSION: "0.15.2"
+  CARGO_ZIGBUILD_VERSION: "0.24.0"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, host: macos-latest }
+          - { target: x86_64-apple-darwin, host: macos-latest }
+          # glibc builds use napi-rs's cross toolchain so the .node links against an old
+          # glibc and loads on older distributions.
+          - { target: x86_64-unknown-linux-gnu, host: ubuntu-latest, flags: --use-napi-cross }
+          - { target: aarch64-unknown-linux-gnu, host: ubuntu-latest, flags: --use-napi-cross }
+          - { target: x86_64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
+          - { target: aarch64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
+          - { target: x86_64-pc-windows-msvc, host: windows-latest }
+          - { target: aarch64-pc-windows-msvc, host: windows-latest }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: napi-${{ matrix.target }}
+      - if: matrix.zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - if: matrix.zig
+        run: cargo install cargo-zigbuild --version "$CARGO_ZIGBUILD_VERSION" --locked
+        shell: bash
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: napi build
+        working-directory: packages/fuck-npm-binding
+        shell: bash
+        run: >
+          npx napi build --platform --profile release-napi --target "${{ matrix.target }}"
+          ${{ matrix.flags }}
+          --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binding-${{ matrix.target }}
+          path: packages/fuck-npm-binding/fnpm.*.node
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: test ${{ matrix.host }} node ${{ matrix.node }}
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        node: ["24"]
+        include:
+          - { host: ubuntu-latest, node: "20" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: napi-test
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: cargo test -p fnpm-napi
+      - run: cargo clippy -p fnpm-napi --all-targets --features testing -- -D warnings
+      # Debug build with the `testing` exports the vitest suite drives.
+      - run: npm run build:native:test -w @fuck-npm/binding
+      - run: npm test -w @fuck-npm/binding
+
+  # GitHub has no musl runner: load the release musl builds in Alpine and call into them.
+  smoke-musl:
+    name: smoke ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, host: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, host: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: binding-${{ matrix.target }}
+          path: packages/fuck-npm-binding
+      - name: load in Alpine
+        run: >
+          docker run --rm -v "$PWD:/w" -w /w/packages/fuck-npm-binding node:24-alpine
+          node -e "const b = require('./index.js'); console.log(b.__platformArchAbi(), b.version());
+          b.install({ packages: 1 }).catch((e) => { if (e.code !== 'USAGE') process.exit(1); });"
