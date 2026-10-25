@@ -472,59 +472,59 @@ async function main(): Promise<void> {
   FNPM = pinnedBinary;
   const binarySha256 = createHash("sha256").update(readFileSync(FNPM)).digest("hex");
   try {
-  const only = args.only?.split(",").map((s) => s.trim());
-  const skip = new Set(args.skip?.split(",").map((s) => s.trim()) ?? []);
-  const corpus = loadCorpus().filter((e) => (!only || only.includes(e.name)) && !skip.has(e.name));
-  if (!corpus.length) throw new Error("no projects selected");
-  const mirror = process.env.FNPM_E2E_REGISTRY ?? DEFAULT_MIRROR;
-  if (!(await mirrorUp(mirror))) throw new Error(`registry mirror ${mirror} is down (node bench/mirror.ts start)`);
-  mkdirSync(join(workRoot(), "_logs"), { recursive: true });
-  const version = sh(`${shq(FNPM)} --version`, REPO_ROOT).stdout.trim();
-  const headCommit = sh("git rev-parse --short HEAD", REPO_ROOT).stdout.trim();
-  const dirty = sh("git diff --quiet -- crates tests/e2e/*.ts tests/e2e/corpus.json", REPO_ROOT).status !== 0;
-  const commit = `${headCommit}${dirty ? "+dirty" : ""}`;
-  const date = new Date().toISOString().slice(0, 10);
-  const stem = args.out ?? join(E2E_DIR, "results", date);
-  mkdirSync(dirname(stem), { recursive: true });
+    const only = args.only?.split(",").map((s) => s.trim());
+    const skip = new Set(args.skip?.split(",").map((s) => s.trim()) ?? []);
+    const corpus = loadCorpus().filter((e) => (!only || only.includes(e.name)) && !skip.has(e.name));
+    if (!corpus.length) throw new Error("no projects selected");
+    const mirror = process.env.FNPM_E2E_REGISTRY ?? DEFAULT_MIRROR;
+    if (!(await mirrorUp(mirror))) throw new Error(`registry mirror ${mirror} is down (node bench/mirror.ts start)`);
+    mkdirSync(join(workRoot(), "_logs"), { recursive: true });
+    const version = sh(`${shq(FNPM)} --version`, REPO_ROOT).stdout.trim();
+    const headCommit = sh("git rev-parse --short HEAD", REPO_ROOT).stdout.trim();
+    const dirty = sh("git diff --quiet -- crates tests/e2e/*.ts tests/e2e/corpus.json", REPO_ROOT).status !== 0;
+    const commit = `${headCommit}${dirty ? "+dirty" : ""}`;
+    const date = new Date().toISOString().slice(0, 10);
+    const stem = args.out ?? join(E2E_DIR, "results", date);
+    mkdirSync(dirname(stem), { recursive: true });
 
-  const results: Result[] = [];
-  for (const entry of corpus) {
-    let r: Result;
-    try {
-      r = await project(entry, mirror);
-    } catch (err: any) {
-      r = {
-        name: entry.name,
-        pm: entry.pm,
-        lockfileFormat: entry.lockfileFormat,
-        status: "FAIL",
-        failures: [`runner error: ${err?.message ?? err}`],
-        warnings: [],
-        baseline: { installMs: 0, packages: 0, verifyOk: null },
-        fnpm: { packages: 0, instances: 0, layout: "" },
-        steps: {},
-        diff: emptyDiff(),
-      };
+    const results: Result[] = [];
+    for (const entry of corpus) {
+      let r: Result;
+      try {
+        r = await project(entry, mirror);
+      } catch (err: any) {
+        r = {
+          name: entry.name,
+          pm: entry.pm,
+          lockfileFormat: entry.lockfileFormat,
+          status: "FAIL",
+          failures: [`runner error: ${err?.message ?? err}`],
+          warnings: [],
+          baseline: { installMs: 0, packages: 0, verifyOk: null },
+          fnpm: { packages: 0, instances: 0, layout: "" },
+          steps: {},
+          diff: emptyDiff(),
+        };
+      }
+      log(`${entry.name}: ${r.status}${r.failures.length ? `\n    ${r.failures.join("\n    ")}` : ""}`);
+      results.push(r);
+      const compact = results.map((x) => ({
+        ...x,
+        diff: {
+          ...x.diff,
+          missing: trimList(x.diff.missing),
+          extra: trimList(x.diff.extra),
+          declared: trimList(x.diff.declared),
+          sameAsBun: trimList(x.diff.sameAsBun),
+          vsBun: x.diff.vsBun && { ...x.diff.vsBun, missing: trimList(x.diff.vsBun.missing), extra: trimList(x.diff.vsBun.extra) },
+        },
+      }));
+      writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, binarySha256, date, results: compact }, (_key, value) => typeof value === "string" ? scrub(value) : value, 1) + "\n");
+      writeFileSync(`${stem}.md`, scrub(report(results, version, commit, date)) + "\n");
     }
-    log(`${entry.name}: ${r.status}${r.failures.length ? `\n    ${r.failures.join("\n    ")}` : ""}`);
-    results.push(r);
-    const compact = results.map((x) => ({
-      ...x,
-      diff: {
-        ...x.diff,
-        missing: trimList(x.diff.missing),
-        extra: trimList(x.diff.extra),
-        declared: trimList(x.diff.declared),
-        sameAsBun: trimList(x.diff.sameAsBun),
-        vsBun: x.diff.vsBun && { ...x.diff.vsBun, missing: trimList(x.diff.vsBun.missing), extra: trimList(x.diff.vsBun.extra) },
-      },
-    }));
-    writeFileSync(`${stem}.json`, JSON.stringify({ fnpm: version, commit, binarySha256, date, results: compact }, (_key, value) => typeof value === "string" ? scrub(value) : value, 1) + "\n");
-    writeFileSync(`${stem}.md`, scrub(report(results, version, commit, date)) + "\n");
-  }
-  rmSync(join(workRoot(), "_fnpm"), { recursive: true, force: true });
-  log(`summary: ${results.map((r) => `${r.name}=${r.status}`).join(" ")}`);
-  if (results.some((r) => r.status === "FAIL")) process.exitCode = 1;
+    rmSync(join(workRoot(), "_fnpm"), { recursive: true, force: true });
+    log(`summary: ${results.map((r) => `${r.name}=${r.status}`).join(" ")}`);
+    if (results.some((r) => r.status === "FAIL")) process.exitCode = 1;
   } finally {
     rmSync(binaryDir, { recursive: true, force: true });
   }
