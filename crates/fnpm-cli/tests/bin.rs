@@ -3,7 +3,6 @@
 
 #![cfg(unix)]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -23,17 +22,20 @@ fn run(exe: &str, args: &[&str], envs: &[(&str, &Path)]) -> Output {
     command.output().unwrap()
 }
 
-/// A fake `node` that prints its argv (one per line) and `FNPM_LAUNCHER`, then exits 7.
-fn fake_node(dir: &Path) -> PathBuf {
-    let path = dir.join("node");
+/// A fake JS entry run by `/bin/sh` standing in for node: prints its own path, its argv
+/// (one per line) and `FNPM_LAUNCHER`, then exits 7. The script is only read, never exec'd,
+/// so a parallel test forking while it is written cannot make the exec fail with ETXTBSY.
+fn fake_entry(path: &Path) -> PathBuf {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
-        &path,
-        "#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\nprintf 'launcher=%s\\n' \"$FNPM_LAUNCHER\"\nexit 7\n",
+        path,
+        "printf '%s\\n' \"$0\"\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\nprintf 'launcher=%s\\n' \"$FNPM_LAUNCHER\"\nexit 7\n",
     )
     .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
+    path.to_path_buf()
 }
+
+const SH: &str = "/bin/sh";
 
 fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
@@ -63,8 +65,8 @@ fn version_matches_the_npm_package() {
 #[test]
 fn exec_hands_node_the_original_argv() {
     let dir = tempfile::tempdir().unwrap();
-    let node = fake_node(dir.path());
-    let entry = dir.path().join("fnpm.js");
+    let node = PathBuf::from(SH);
+    let entry = fake_entry(&dir.path().join("fnpm.js"));
     let args = ["--cwd", "a b", "outdated", "--json", "", "ünï", "--", "-x"];
     let output = run(
         FNPM,
@@ -85,8 +87,9 @@ fn exec_hands_node_the_original_argv() {
 #[test]
 fn fnpm_lock_execs_its_own_bundle() {
     let dir = tempfile::tempdir().unwrap();
-    let node = fake_node(dir.path());
+    let node = PathBuf::from(SH);
     let entry = dir.path().join("dist").join("fnpm.js");
+    fake_entry(&dir.path().join("dist").join("fnpm-lock.js"));
     let output = run(
         FNPM_LOCK,
         &["migrate", "--from", "npm"],
@@ -108,8 +111,8 @@ fn fnpm_lock_execs_its_own_bundle() {
 #[test]
 fn help_and_interactive_update_go_to_node() {
     let dir = tempfile::tempdir().unwrap();
-    let node = fake_node(dir.path());
-    let entry = dir.path().join("fnpm.js");
+    let node = PathBuf::from(SH);
+    let entry = fake_entry(&dir.path().join("fnpm.js"));
     for args in [&["install", "--help"][..], &["update", "-i"], &[]] {
         let output = run(
             FNPM,

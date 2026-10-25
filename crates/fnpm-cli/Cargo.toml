@@ -21,6 +21,7 @@ fnpm-core.workspace = true
 fnpm-types.workspace = true
 fnpm-config.workspace = true
 mimalloc.workspace = true
+libmimalloc-sys.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["signal"] }

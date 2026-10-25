@@ -38,11 +38,22 @@ pub trait Core {
 }
 
 /// `fnpm_core::install` on the core's runtime, cancelled by Ctrl-C.
+///
+/// A no-op install is answered before the runtime exists: building the multi-thread tokio
+/// runtime (cgroup probing, eight worker threads, the signal driver) costs more than the
+/// whole no-op check (`docs/ARCHITECTURE.md#startup-budget`).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NativeCore;
 
 impl Core for NativeCore {
     fn install(&self, options: InstallOptions, events: Arc<dyn EventSink>) -> CoreOutcome {
+        match noop_summary(&options, &*events) {
+            Ok(Some(summary)) => return CoreOutcome::Done(summary),
+            Ok(None) => {}
+            Err(error) => {
+                return CoreOutcome::Failed(CliError::core(error.code(), error.to_string()));
+            }
+        }
         fnpm_core::runtime().block_on(async move {
             let interrupted = async {
                 // Without a signal driver there is nothing to wait for; never resolve.
@@ -59,6 +70,54 @@ impl Core for NativeCore {
             }
         })
     }
+}
+
+/// The no-op fast path of `fnpm_core::install`, run synchronously with the core's own
+/// pieces (`Project::load`, `config_hash`, `fast_path::check`). The eligibility conditions
+/// mirror step 1 of the core's install pipeline (`crates/fnpm-core/src/install/mod.rs`) and
+/// must change with it. `Ok(None)` means "not a no-op": run the full install.
+fn noop_summary(
+    options: &InstallOptions,
+    events: &dyn EventSink,
+) -> fnpm_core::Result<Option<InstallSummary>> {
+    let eligible = options.command == InstallCommand::Install
+        && options.packages.is_empty()
+        && options.filter.is_empty()
+        && !options.pm.lockfile_only
+        && !options.pm.trust;
+    if !eligible {
+        return Ok(None);
+    }
+    let start = std::time::Instant::now();
+    let mut cli = options.pm.to_cli_overrides();
+    if options.exact {
+        cli.exact = Some(true);
+    }
+    let project = fnpm_core::project::Project::load(
+        &options.pm.cwd,
+        cli,
+        fnpm_config::Env::from_process(),
+        false,
+    )?;
+    let config = &project.config;
+    if config.force || !config.install_packages {
+        return Ok(None);
+    }
+    let fnpm_core::fast_path::Check::Noop { packages } =
+        fnpm_core::fast_path::check(&project.root_dir, fnpm_core::config_hash(config))
+    else {
+        return Ok(None);
+    };
+    project.report_warnings(events);
+    Ok(Some(InstallSummary {
+        checked: Some(fnpm_types::event::CheckedCount {
+            installs: packages,
+            packages,
+        }),
+        elapsed_ms: start.elapsed().as_millis() as u64,
+        noop: true,
+        ..InstallSummary::default()
+    }))
 }
 
 /// How a native command ended.

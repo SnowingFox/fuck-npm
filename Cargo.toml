@@ -54,6 +54,7 @@ xxhash-rust = { version = "=0.8.19", features = ["xxh3"] }
 memchr = "=2.8.3"
 tempfile = "=3.27.0"
 mimalloc = "=0.1.52"
+libmimalloc-sys = { version = "=0.1.49", features = ["extended"] }
 napi = { version = "=3.15.0", features = ["napi9", "tokio_rt", "serde-json"] }
 napi-derive = "=3.6.13"
 napi-build = "=2.6.0"

@@ -87,6 +87,57 @@ pub fn run_with(
     }
 }
 
+/// mimalloc's `arena_eager_commit` option (the same index in mimalloc v2 and v3).
+const MI_OPTION_ARENA_EAGER_COMMIT: std::ffi::c_int = 4;
+
+/// The global allocator of both executables (see [`native_allocator!`]).
+pub use mimalloc::MiMalloc;
+
+/// Allocator settings for a short-lived CLI.
+///
+/// mimalloc reserves a 1 GiB arena on the first allocation and, on Linux (overcommit),
+/// commits all of it with `MADV_HUGEPAGE`, so the first touch faults in a zeroed 2 MiB page:
+/// about 1 ms of a ~2.5 ms `fnpm --version`. Committing on demand costs nothing measurable
+/// on an install. `MIMALLOC_ARENA_EAGER_COMMIT` in the environment still wins.
+///
+/// It must run before the first allocation, and Rust's runtime allocates before `main`, so
+/// the executables run it as a load-time constructor ([`native_allocator!`]). Idempotent.
+pub fn configure_allocator() {
+    if std::env::var_os("MIMALLOC_ARENA_EAGER_COMMIT").is_none() {
+        // SAFETY: sets a plain integer option; mimalloc reads it when it reserves an arena.
+        // Valid before and after mimalloc's own initialisation.
+        unsafe { libmimalloc_sys::mi_option_set(MI_OPTION_ARENA_EAGER_COMMIT, 0) };
+    }
+}
+
+/// [`configure_allocator`] with the C ABI, for the load-time constructor.
+pub extern "C" fn configure_allocator_at_load() {
+    configure_allocator();
+}
+
+/// Declares mimalloc as the global allocator and registers [`configure_allocator`] to run
+/// when the executable is loaded, before Rust's runtime makes its first allocation. Used
+/// once in each executable's `main.rs`.
+#[macro_export]
+macro_rules! native_allocator {
+    () => {
+        #[global_allocator]
+        static GLOBAL: $crate::MiMalloc = $crate::MiMalloc;
+
+        #[used]
+        #[cfg_attr(
+            any(target_os = "linux", target_os = "android"),
+            unsafe(link_section = ".init_array")
+        )]
+        #[cfg_attr(
+            target_vendor = "apple",
+            unsafe(link_section = "__DATA,__mod_init_func")
+        )]
+        #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
+        static CONFIGURE_ALLOCATOR: extern "C" fn() = $crate::configure_allocator_at_load;
+    };
+}
+
 /// The whole program: route, run natively or exec node. Returns the exit status.
 pub fn main(bin: Bin) -> i32 {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();

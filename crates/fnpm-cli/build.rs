@@ -27,6 +27,7 @@ struct Flag {
 }
 
 fn main() {
+    link_for_startup();
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let spec_path = manifest.join("cli-spec.json");
     println!("cargo:rerun-if-changed={}", spec_path.display());
@@ -238,6 +239,22 @@ fn main() {
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     std::fs::write(out_dir.join("spec.rs"), out).expect("writing spec.rs");
+}
+
+/// Process start is most of the cost of `fnpm --version` and of a no-op install, and on
+/// glibc most of that is the dynamic loader: a PIE of this size carries ~14k relative
+/// relocations, and `-z now` binds every imported symbol before `main`. Link the executables
+/// the way bun's is linked instead: non-PIE (relocations resolved at link time) and lazily
+/// bound. Only the executables; the napi cdylib is unaffected. `FNPM_CLI_PIE=1` keeps the
+/// toolchain defaults.
+fn link_for_startup() {
+    println!("cargo:rerun-if-env-changed=FNPM_CLI_PIE");
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if os == "linux" && target_env == "gnu" && std::env::var("FNPM_CLI_PIE").as_deref() != Ok("1") {
+        println!("cargo:rustc-link-arg-bins=-no-pie");
+        println!("cargo:rustc-link-arg-bins=-Wl,-z,lazy");
+    }
 }
 
 fn str_of(value: &Value) -> String {
