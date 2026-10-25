@@ -104,6 +104,8 @@ pub struct Report {
     pub ran: u32,
     /// Names of optional dependencies whose script failed; the caller removes them.
     pub failed_optional: Vec<String>,
+    /// The directories of those packages (`Job::dir`), sorted.
+    pub failed_optional_dirs: Vec<PathBuf>,
 }
 
 /// Settings of a run.

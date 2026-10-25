@@ -3,6 +3,7 @@
 //! resolve, link overlapping the downloads, bins, lifecycle scripts, then the lockfile,
 //! package.json edits, the store's project record and the no-op state file.
 
+mod backfill;
 mod edits;
 mod lock;
 mod plan;
@@ -143,6 +144,20 @@ pub(crate) fn migrate_lock(
     names: &[&str],
 ) -> Result<lock::LockState> {
     lock::migrate_from(config, ws, names)
+}
+
+/// Completes a graph migrated from yarn.lock or pnpm-lock.yaml from the registry manifests
+/// (bins, install scripts, os/cpu, integrity), like bun does right after those migrations.
+pub(crate) async fn backfill_migrated(
+    lock: &mut lock::LockState,
+    client: &fnpm_registry::RegistryClient,
+    config: &Config,
+) {
+    if let Some(fill) = backfill::needed(lock.format)
+        && let Some(graph) = lock.graph.as_mut()
+    {
+        backfill::run(graph, client, config, fill).await;
+    }
 }
 
 /// Writes a migration's package.json edits; returns bun's report lines.
@@ -298,7 +313,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let config = project.config.clone();
     let root = project.root_dir.clone();
     // 2. Workspace and 3. lockfile (read by `prepare`).
-    let (mut ws, ws_warnings, lock) = match loaded {
+    let (mut ws, ws_warnings, mut lock) = match loaded {
         Some(l) => l,
         None => {
             let (ws, warnings) = Workspace::load_with(&root, &Default::default())?;
@@ -320,6 +335,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 4. + 5. Resolve, streaming packages to the fetcher.
     let client = project.client()?;
     client.set_event_sink(events.clone());
+    if lock.migrated {
+        backfill_migrated(&mut lock, &client, &config).await;
+    }
     let store = project.store()?;
     let fetcher = Fetcher::new(
         store.clone(),
@@ -551,8 +569,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 7. Lifecycle scripts.
     let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
     phases.mark("scripts");
-    summary.blocked_scripts = blocked.0;
-    summary.failed_count += blocked.1;
+    summary.blocked_scripts = blocked;
 
     let _ = background.await;
     // The state file goes last, after everything succeeded.
@@ -1157,7 +1174,7 @@ fn save(
 }
 
 /// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns
-/// `(blocked scripts, failed optional packages)`.
+/// Runs the install's lifecycle scripts; returns the number of blocked (untrusted) ones.
 async fn run_scripts(
     project: &Project,
     ws: &Workspace,
@@ -1165,7 +1182,7 @@ async fn run_scripts(
     linked: &Linked,
     trust_names: &[String],
     events: &Arc<dyn EventSink>,
-) -> Result<(u32, u32)> {
+) -> Result<u32> {
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
@@ -1198,7 +1215,7 @@ async fn run_scripts(
     .map_err(Error::io(&root))?;
     let blocked = plan.blocked_scripts();
     if plan.jobs.is_empty() {
-        return Ok((blocked, 0));
+        return Ok(blocked);
     }
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
@@ -1208,13 +1225,14 @@ async fn run_scripts(
         project_dir: root.clone(),
     };
     let report = fnpm_scripts::run_dag(plan.jobs, plan.deps, &opts, &**events).await?;
-    for name in &report.failed_optional {
-        events.emit(Event::warn(
-            format!("{name}: optional dependency script failed"),
-            Some("OPTIONAL_SCRIPT_FAILED"),
-        ));
+    // Like bun's `discard_failed_optional_package`: an optional dependency whose script failed
+    // is deleted and the install goes on (the runner warns about it when verbose).
+    for dir in &report.failed_optional_dirs {
+        if dir.starts_with(&root) && dir != &root {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
-    Ok((blocked, report.failed_optional.len() as u32))
+    Ok(blocked)
 }
 
 /// Writes the no-op state for the files as they are now.

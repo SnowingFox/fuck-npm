@@ -32,3 +32,29 @@ Checkouts go to `$FNPM_E2E_DIR` (default `~/.cache/fnpm-e2e`), never into the re
 
 `packages` and `bins` are linker independent and are the primary comparison. `importers` reflects
 the PM's linker (hoisted vs isolated) and is compared only where fnpm uses the same layout.
+
+## fnpm runs
+
+```sh
+cargo build --release -p fnpm-cli                  # the runner uses target/release/fnpm (or $FNPM_BIN)
+FNPM_E2E_DIR=/somewhere/outside/repo node tests/e2e/fnpm.ts [--only a,b] [--skip a,b] [--skip-verify] [--no-bun]
+```
+
+Per project, one at a time:
+
+1. bun (the parity target) installs the pristine checkout with `--ignore-scripts`, for reference;
+2. pristine checkout again, empty `FNPM_STORE_DIR` / `FNPM_CACHE_DIR`, cold `fnpm install` from the
+   project's own lockfile (fnpm migrates it and writes `fnpm.lock`);
+3. the snapshot is compared with the baseline: `packages` (missing and extra name@version),
+   the version every importer resolves for each dependency it declares (node resolution through
+   the importer's and its ancestors' `node_modules`), the top-level `node_modules` and `.bin`
+   when the layouts match (hoisted vs isolated), and workspace lifecycle scripts;
+4. the verify command (`fnpm.verify` when the project's PM cannot run on a foreign tree);
+5. a no-op re-run, a warm re-install (`node_modules` removed) and `--frozen-lockfile`, each of
+   which must reproduce the same snapshot and leave `fnpm.lock` unchanged.
+
+A difference from the baseline that bun shows too is reported as "same as bun" (parity) instead
+of a failure; fnpm's package set is also diffed against bun's. Dependency lifecycle scripts are
+only listed: fnpm, like bun, runs them for trusted packages only. `fnpm.allow` (regexes) accepts
+other documented differences and `fnpm.known` marks a genuine incompatibility (status KNOWN).
+Results: `tests/e2e/results/<date>.md` (and `.json`); logs in `$FNPM_E2E_DIR/_logs/<name>.fnpm.*`.
