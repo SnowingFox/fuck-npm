@@ -241,7 +241,7 @@ function machineInfo(): Results["machine"] {
       ? run(["findmnt", "-n", "-o", "FSTYPE", "-T", TMP_DIR]).stdout.trim()
       : run(["sh", "-c", `mount | grep " on $(df -P "$0" | tail -1 | awk '{print $6}') "`, TMP_DIR]).stdout.trim();
   return {
-    os: `${type()} ${release()}`,
+    os: `${type()} ${release().match(/^\d+(?:\.\d+)*/)?.[0] ?? "unknown"}`,
     platform: platform(),
     arch: arch(),
     cpu: cpus()[0]?.model ?? "unknown",

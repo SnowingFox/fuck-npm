@@ -3,6 +3,7 @@
 //! resolve, link overlapping the downloads, bins, lifecycle scripts, then the lockfile,
 //! package.json edits, the store's project record and the no-op state file.
 
+mod backfill;
 mod edits;
 mod lock;
 mod plan;
@@ -143,6 +144,20 @@ pub(crate) fn migrate_lock(
     names: &[&str],
 ) -> Result<lock::LockState> {
     lock::migrate_from(config, ws, names)
+}
+
+/// Completes a graph migrated from yarn.lock or pnpm-lock.yaml from the registry manifests
+/// (bins, install scripts, os/cpu, integrity), like bun does right after those migrations.
+pub(crate) async fn backfill_migrated(
+    lock: &mut lock::LockState,
+    client: &fnpm_registry::RegistryClient,
+    config: &Config,
+) {
+    if let Some(fill) = backfill::needed(lock.format)
+        && let Some(graph) = lock.graph.as_mut()
+    {
+        backfill::run(graph, client, config, fill).await;
+    }
 }
 
 /// Writes a migration's package.json edits; returns bun's report lines.
@@ -441,6 +456,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     if !registry_names.is_empty() {
         client.prefetch(registry_names);
     }
+    if lock.migrated {
+        backfill_migrated(&mut lock, &client, &config).await;
+    }
     let store = project.store()?;
     let fetcher = Fetcher::new(
         store.clone(),
@@ -548,6 +566,17 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .entry(workspace)
             .or_default()
             .extend(updates);
+    }
+
+    let kind = fnpm_linker::choose_linker(
+        config.linker.fixed().or(graph.node_linker),
+        graph.config_version,
+        graph.has_workspaces(),
+        lock.migrated && lock.format == Some(Format::Npm),
+        &root,
+    );
+    if kind == NodeLinker::Isolated && (changed || lock.migrated || !edits.is_empty()) {
+        lock::normalize_bindings(&mut graph, &ws)?;
     }
 
     // Without a link (`--lockfile-only`, `--dry-run`) the rows are what the lockfile gained.
@@ -906,8 +935,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 7. Lifecycle scripts.
     let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
     phases.mark("scripts");
-    summary.blocked_scripts = blocked.0;
-    summary.failed_count += blocked.1;
+    summary.blocked_scripts = blocked;
 
     let _ = background.await;
     // The state file goes last, after everything succeeded.
@@ -1269,10 +1297,10 @@ fn optional_only(graph: &LockGraph, id: PackageId) -> bool {
 }
 
 /// The graph as the linker reads it (bun's shape): the root has one membership edge
-/// (`WORKSPACE | PROD`) per workspace member, and the root's declared dependencies on members
-/// are plain edges. The resolver marks every edge into a project package with `WORKSPACE`
-/// and adds no membership edges, and graphs read from fnpm.lock have neither, so both are
-/// normalised here.
+/// (`WORKSPACE | PROD`) per workspace member, and every declared dependency on a member, of
+/// the root or of another workspace, is a plain edge. The resolver marks every edge into a
+/// project package with `WORKSPACE` and adds no membership edges, and graphs read from
+/// fnpm.lock have neither, so both are normalised here.
 pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     use fnpm_types::{Behavior, DepEdge};
     let mut g = graph.clone();
@@ -1282,11 +1310,13 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
             && graph.workspaces.get(&e.literal).copied() == e.target
     };
     let mut have: Vec<PackageId> = Vec::new();
-    for e in &mut g.packages[0].dependencies {
-        if is_membership(e) {
-            have.extend(e.target);
-        } else if e.behavior.is_workspace() {
-            e.behavior = e.behavior.with(Behavior::WORKSPACE, false);
+    for (i, p) in g.packages.iter_mut().enumerate() {
+        for e in &mut p.dependencies {
+            if i == 0 && is_membership(e) {
+                have.extend(e.target);
+            } else if e.behavior.is_workspace() {
+                e.behavior = e.behavior.with(Behavior::WORKSPACE, false);
+            }
         }
     }
     for (path, id) in &graph.workspaces {
@@ -1712,8 +1742,8 @@ fn announce_resolved(
     )));
 }
 
-/// Step 7: lifecycle scripts of trusted packages, in dependency order. Returns
-/// `(blocked scripts, failed optional packages)`.
+/// Step 7: lifecycle scripts of trusted packages, in dependency order.
+/// Returns the number of blocked (untrusted) scripts.
 async fn run_scripts(
     project: &Project,
     ws: &Workspace,
@@ -1721,7 +1751,7 @@ async fn run_scripts(
     linked: &Linked,
     trust_names: &[String],
     events: &Arc<dyn EventSink>,
-) -> Result<(u32, u32)> {
+) -> Result<u32> {
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
@@ -1754,7 +1784,7 @@ async fn run_scripts(
     .map_err(Error::io(&root))?;
     let blocked = plan.blocked_scripts();
     if plan.jobs.is_empty() {
-        return Ok((blocked, 0));
+        return Ok(blocked);
     }
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
@@ -1763,14 +1793,120 @@ async fn run_scripts(
         silent: config.log_level == fnpm_config::LogLevel::Silent,
         project_dir: root.clone(),
     };
-    let report = fnpm_scripts::run_dag(plan.jobs, plan.deps, &opts, &**events).await?;
-    for name in &report.failed_optional {
-        events.emit(Event::warn(
-            format!("{name}: optional dependency script failed"),
-            Some("OPTIONAL_SCRIPT_FAILED"),
-        ));
+    let cleanup = |failed: &Path| -> std::io::Result<()> {
+        let Some(id) = linked
+            .report
+            .dirs
+            .iter()
+            .find_map(|(id, dir)| (dir == failed).then_some(*id))
+        else {
+            return Ok(());
+        };
+        // Global bin links point through the root alias rather than an isolated store path.
+        if config.global {
+            for edge in graph
+                .root()
+                .dependencies
+                .iter()
+                .filter(|e| e.target == Some(id))
+            {
+                fnpm_linker::bins::unlink_bins(
+                    &root.join("node_modules").join(&edge.name),
+                    &config.global_bin_dir,
+                )
+                .map_err(std::io::Error::other)?;
+            }
+        }
+        // A hoisted package can have several physical copies. Remove every copy and every
+        // bin link into it before releasing parent and root lifecycle scripts.
+        for (_, dir) in linked
+            .report
+            .dirs
+            .iter()
+            .filter(|(package, _)| *package == id)
+        {
+            if !dir.starts_with(&root) || dir == &root {
+                continue;
+            }
+            if linked.linker == NodeLinker::Isolated {
+                let real = std::fs::canonicalize(dir)?;
+                remove_optional_links(&root.join("node_modules"), &real)?;
+                for member in &ws.members {
+                    remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+                }
+            }
+            for ancestor in dir
+                .ancestors()
+                .filter(|p| p.file_name().is_some_and(|n| n == "node_modules"))
+            {
+                fnpm_linker::bins::unlink_bins(dir, &ancestor.join(".bin"))
+                    .map_err(std::io::Error::other)?;
+            }
+            if config.global {
+                fnpm_linker::bins::unlink_bins(dir, &config.global_bin_dir)
+                    .map_err(std::io::Error::other)?;
+            }
+            match std::fs::remove_dir_all(dir) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    };
+    fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
+        .await?;
+    Ok(blocked)
+}
+
+/// Remove isolated aliases and their bins while the failed package still exists, so realpath
+/// can identify aliases in root, workspace, hidden-hoist and local virtual-store directories.
+/// Never follow other package links into shared store entries or external workspace folders.
+fn remove_optional_links(nm: &Path, failed: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(nm) {
+        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
     }
-    Ok((blocked, report.failed_optional.len() as u32))
+    let entries = match std::fs::read_dir(nm) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            if std::fs::canonicalize(&path).is_ok_and(|p| p == failed) {
+                for ancestor in path
+                    .ancestors()
+                    .filter(|p| p.file_name().is_some_and(|name| name == "node_modules"))
+                {
+                    fnpm_linker::bins::unlink_bins(&path, &ancestor.join(".bin"))
+                        .map_err(std::io::Error::other)?;
+                }
+                std::fs::remove_file(&path)?;
+            }
+        } else if kind.is_dir() {
+            let name = entry.file_name();
+            if name == ".fnpm" {
+                remove_optional_links(&path.join("node_modules"), failed)?;
+                for slot in std::fs::read_dir(&path)? {
+                    let slot = slot?;
+                    if slot.file_type()?.is_dir() && slot.file_name() != "node_modules" {
+                        remove_optional_links(&slot.path().join("node_modules"), failed)?;
+                    }
+                }
+            } else if name.to_string_lossy().starts_with('@') {
+                remove_optional_links(&path, failed)?;
+            } else if !name.to_string_lossy().starts_with('.') {
+                remove_optional_links(&path.join("node_modules"), failed)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Writes the no-op state for the files as they are now.

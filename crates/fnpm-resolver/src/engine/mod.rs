@@ -144,6 +144,8 @@ pub(crate) struct Engine<'a> {
     pub prev_by_name: HashMap<String, Vec<PackageId>>,
     pub prev_by_key: HashMap<String, PackageId>,
     pub prev_versions: Vec<Option<Version>>,
+    pub prev_non_peer_targets: HashSet<PackageId>,
+    pub changed_peer_providers: HashSet<String>,
     pub imported: HashMap<PackageId, PackageId>,
 
     pub queue: VecDeque<Row>,
@@ -300,6 +302,8 @@ impl<'a> Engine<'a> {
             prev_by_name: HashMap::new(),
             prev_by_key: HashMap::new(),
             prev_versions: Vec::new(),
+            prev_non_peer_targets: HashSet::new(),
+            changed_peer_providers: HashSet::new(),
             imported: HashMap::new(),
             queue: VecDeque::new(),
             deferred_peers: Vec::new(),
@@ -350,6 +354,16 @@ impl<'a> Engine<'a> {
         let Some(prev) = self.prev else { return };
         self.prev_overrides = OverrideSet::new(&prev.overrides);
         self.prev_versions = prev.packages.iter().map(package_version).collect();
+        self.prev_non_peer_targets = prev
+            .packages
+            .iter()
+            .flat_map(|p| {
+                p.dependencies
+                    .iter()
+                    .filter(|e| !e.behavior.is_peer())
+                    .filter_map(|e| e.target)
+            })
+            .collect();
         for (i, p) in prev.packages.iter().enumerate() {
             let id = PackageId(i as u32);
             self.prev_by_key.entry(p.key()).or_insert(id);
@@ -386,7 +400,7 @@ impl<'a> Engine<'a> {
                 }
             }
         }
-        self.graph.trusted_dependencies = self.parse_trusted()?;
+        self.graph.trusted_dependencies = crate::frozen::trusted(self.ws)?;
         if let Some(prev) = self.prev {
             self.graph.node_linker = prev.node_linker;
             self.graph.config_version = prev.config_version;
@@ -432,39 +446,6 @@ impl<'a> Engine<'a> {
             );
         }
         Ok(out)
-    }
-
-    fn parse_trusted(&self) -> Result<Option<std::collections::BTreeSet<String>>> {
-        let mut set: Option<std::collections::BTreeSet<String>> = None;
-        let sources = std::iter::once(&self.ws.root.raw)
-            .chain(self.ws.members.iter().map(|m| &m.manifest.raw));
-        for raw in sources {
-            let Some(field) = raw.get("trustedDependencies") else {
-                continue;
-            };
-            let Some(items) = field.as_array() else {
-                return Err(Error::InvalidPackageJson {
-                    path: "package.json".into(),
-                    message: "Expected \"trustedDependencies\" to be an array of strings".into(),
-                });
-            };
-            let set = set.get_or_insert_with(Default::default);
-            for item in items {
-                let Some(name) = item.as_str() else {
-                    return Err(Error::InvalidPackageJson {
-                        path: "package.json".into(),
-                        message: "Expected \"trustedDependencies\" to be an array of strings"
-                            .into(),
-                    });
-                };
-                set.insert(name.to_owned());
-            }
-        }
-        if let Some(only) = &self.ws.settings.only_built_dependencies {
-            set.get_or_insert_with(Default::default)
-                .extend(only.iter().cloned());
-        }
-        Ok(set)
     }
 
     /// The root and workspace packages with their declared edges, `fnpm add` requests and
@@ -565,6 +546,45 @@ impl<'a> Engine<'a> {
         }
         self.request_targets = vec![None; requests.len()];
         self.requests = requests;
+        if let Some(prev) = self.prev {
+            for (path, &id) in &self.graph.workspaces {
+                let current = &self.graph.packages[id.index()];
+                let previous = prev
+                    .workspaces
+                    .get(path)
+                    .map(|id| &prev.packages[id.index()]);
+                let before: HashMap<_, _> = previous
+                    .into_iter()
+                    .flat_map(|p| &p.dependencies)
+                    .filter(|e| !e.behavior.is_peer())
+                    .map(|e| (&e.name, &e.literal))
+                    .collect();
+                let now: HashMap<_, _> = current
+                    .dependencies
+                    .iter()
+                    .filter(|e| !e.behavior.is_peer())
+                    .map(|e| (&e.name, &e.literal))
+                    .collect();
+                for name in before.keys().chain(now.keys()) {
+                    if before.get(name) != now.get(name) {
+                        self.changed_peer_providers.insert((*name).clone());
+                    }
+                }
+            }
+            for path in prev
+                .workspaces
+                .keys()
+                .filter(|p| !self.graph.workspaces.contains_key(*p))
+            {
+                let p = &prev.packages[prev.workspaces[path].index()];
+                self.changed_peer_providers.extend(
+                    p.dependencies
+                        .iter()
+                        .filter(|e| !e.behavior.is_peer())
+                        .map(|e| e.name.clone()),
+                );
+            }
+        }
         let ids: Vec<PackageId> = self.graph.workspaces.values().copied().collect();
         let mut ordered = vec![PackageId::ROOT];
         ordered.extend(ids.into_iter().filter(|id| *id != PackageId::ROOT));

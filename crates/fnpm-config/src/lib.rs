@@ -427,7 +427,7 @@ pub struct Config {
     pub linker: LinkerSetting,
     /// `None`: platform default (clonefile on macOS, hardlink elsewhere).
     pub backend: Option<Backend>,
-    /// Isolated linker shares `<store>/links`. fnpm default: true (bun: false).
+    /// Isolated linker shares `<store>/links` when enabled. Default: false, like bun.
     pub global_store: bool,
     /// Isolated linker: `node_modules/.fnpm/node_modules` hidden hoist (pnpm `hoist`).
     pub hoist: bool,

@@ -36,7 +36,7 @@ fn defaults() {
     assert_eq!(cfg.linker, LinkerSetting::Auto);
     assert_eq!(cfg.backend, None);
     assert!(
-        cfg.global_store
+        !cfg.global_store
             && cfg.hoist
             && cfg.link_workspace_packages
             && cfg.auto_install_peers

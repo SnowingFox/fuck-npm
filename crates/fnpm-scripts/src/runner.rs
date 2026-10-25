@@ -95,6 +95,7 @@ struct JobFailure {
 struct JobDone {
     index: usize,
     name: String,
+    dir: std::path::PathBuf,
     optional: bool,
     is_dependency: bool,
     ran: u32,
@@ -108,6 +109,7 @@ pub(crate) async fn execute(
     opts: &RunOptions,
     events: &dyn EventSink,
     node_gyp_dir: Option<&std::path::Path>,
+    cleanup: Option<&crate::OptionalCleanup<'_>>,
 ) -> Result<Report> {
     let n = nodes.len();
     debug_assert_eq!(deps.len(), n);
@@ -236,7 +238,15 @@ pub(crate) async fn execute(
                     Err(failure) => {
                         let tolerated = done_job.optional && !matches!(failure.failure, Failure::Signaled(_));
                         if tolerated {
+                            if let Some(cleanup) = cleanup
+                                && let Err(source) = cleanup(&done_job.dir)
+                            {
+                                set.abort_all();
+                                while set.join_next().await.is_some() {}
+                                return Err(Error::Io { path: done_job.dir, source });
+                            }
                             report.failed_optional.push(done_job.name.clone());
+                            report.failed_optional_dirs.push(done_job.dir.clone());
                             if ctx.verbose {
                                 events.emit(Event::warn(
                                     format!(
@@ -276,6 +286,7 @@ pub(crate) async fn execute(
         events.emit(event);
     }
     report.failed_optional.sort();
+    report.failed_optional_dirs.sort();
     Ok(report)
 }
 
@@ -296,6 +307,7 @@ async fn run_job(
     let mut done = JobDone {
         index,
         name: job.name.clone(),
+        dir: job.dir.clone(),
         optional: job.optional,
         is_dependency,
         ran: 0,

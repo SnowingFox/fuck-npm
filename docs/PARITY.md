@@ -404,7 +404,7 @@ Conventions:
 - [x] **minimumReleaseAge errors** — TooRecent / AllVersionsTooRecent messages incl. peers · bun: `src/install/npm.rs` · owner: `fnpm-resolver`
 - [x] **cpu / os / libc filtering** — Negatable arrays with `!`, `any`, `none`; disabled packages kept in lockfile but not downloaded/placed · bun: `src/install_types/resolver_hooks.rs` · owner: `fnpm-resolver`
 - [x] **Peer dependencies** — installed by default; meta-only names synthesize optional `*` peer; mismatch and missing warnings · bun: `src/install/lockfile/Package.rs` · owner: `fnpm-resolver`
-- [ ] **optionalDependencies** — failures skipped silently; failed script deletes package; duplicates with deps merge · bun: `src/install/lifecycle_script_runner.rs` · owner: `fnpm-resolver`
+- [x] **optionalDependencies** — failures skipped silently; failed script deletes package; duplicates with deps merge · bun: `src/install/lifecycle_script_runner.rs` · owner: `fnpm-resolver`
 - [x] **bundledDependencies (install side)** — both spellings; bundled deps not fetched separately · bun: `src/install/lockfile/Package.rs` · owner: `fnpm-resolver`
 - [x] **linkWorkspacePackages** — npm range matching a workspace version links it; same-name dist-tag links · bun: `src/install/lockfile/Package.rs` · owner: `fnpm-resolver`
 - [ ] **Reuse cached versions** — any cached version satisfying range used before download · bun: `src/install/PackageManager/install_with_manager.rs` · owner: `fnpm-resolver`

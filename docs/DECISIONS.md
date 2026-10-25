@@ -53,18 +53,20 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
 - **Cost:** fnpm inherits bun's format decisions (hoisted-path keys); anything fnpm-specific has
   to stay additive. A binary sidecar (`node_modules/.fnpm/lock.bin`) covers fast reloads.
 
-## 4. Global virtual store on by default
+## 4. Global virtual store is opt-in
 
-2026-10-25.
+2026-10-26 (revises the 2026-10-25 default).
 
-- **Decision:** isolated installs link `node_modules/.fnpm/<pkg>` to shared entries in
-  `~/.fnpm/store/v2/links/` by default (bun has the same feature, off by default).
-- **Why:** a warm isolated install becomes one symlink per package instead of a clone or
-  hardlink per file. bun's own measurement (`docs/pm/global-store.mdx`, 1,400-package fixture,
-  macOS): 124.8 ms with the global store vs 840.9 ms without.
-- **Cost:** packages that write into their own directory at run time affect every project that
-  shares the entry; entries are keyed by package and dependency closure, and
-  `FNPM_GLOBAL_STORE=0` / `globalStore = false` turns it off.
+- **Decision:** isolated installs keep package entries in the project by default, like bun.
+  `FNPM_GLOBAL_STORE=1` / `globalStore = true` enables shared entries in
+  `~/.fnpm/store/v2/links/`.
+- **Why:** Node resolves symlinks to their real location. A shared entry cannot reach the
+  project's hidden hoist, breaking packages that import undeclared dependencies. The trpc
+  corpus reproduces this when `@nuxt/schema` imports `scule` during postinstall.
+- **Tradeoff:** opting in makes warm isolated installs one symlink per package instead of a
+  clone or hardlink per file, but requires packages that resolve their dependencies without
+  the project hidden hoist. Packages that write into a shared entry affect every project
+  sharing it; entries are keyed by package and dependency closure.
 
 ## 5. Per-file content-addressed store
 

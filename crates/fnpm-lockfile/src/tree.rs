@@ -334,7 +334,7 @@ impl<'a, 'g> Builder<'a, 'g> {
     }
 
     fn bind_peer(&mut self, dep_id: u32) -> bool {
-        if !self.dep(dep_id).behavior.is_peer() {
+        if !self.dep(dep_id).behavior.is_peer() || self.resolutions[dep_id as usize] == 0 {
             return false;
         }
         match self.flat.peer_by_version(dep_id, |_| true) {

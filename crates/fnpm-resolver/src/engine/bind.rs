@@ -273,7 +273,11 @@ impl Engine<'_> {
 
     pub(crate) fn bind(&mut self, row: Row) -> Result<Step> {
         let edge = self.edge(row).clone();
-        if edge.target.is_some() || edge.behavior.is_optional_peer() {
+        if edge.target.is_some() {
+            return Ok(Step::Done);
+        }
+        if edge.behavior.is_optional_peer() && !row.install_peer {
+            self.deferred_peers.push(row);
             return Ok(Step::Done);
         }
         let asked = match self.asked(row, &edge) {
@@ -291,7 +295,18 @@ impl Engine<'_> {
             };
             return self.fail(row, &edge, err);
         }
-        if let Some(target) = self.reuse_previous(row, &edge, &asked) {
+        if edge.behavior.is_peer() && row.install_peer {
+            if let Some(target) = self.reuse_previous_peer(row, &edge, &asked) {
+                self.set_target(row, target);
+                return Ok(Step::Done);
+            }
+            if edge.behavior.is_optional_peer() {
+                return Ok(Step::Done);
+            }
+        }
+        if !edge.behavior.is_peer()
+            && let Some(target) = self.reuse_previous(row, &edge, &asked)
+        {
             self.set_target(row, target);
             return Ok(Step::Done);
         }
@@ -408,6 +423,42 @@ impl Engine<'_> {
                 .as_deref()
                 == Some(asked.literal.as_str());
         if !self.prev_satisfies(target, asked, unchanged) {
+            return None;
+        }
+        self.import_prev(target)
+    }
+
+    /// Loaded transitive peer bindings survive unrelated workspace changes, even when a
+    /// foreign lockfile selected a version outside the range. A removed or changed project
+    /// provider and explicit updates still run the normal peer pass.
+    fn reuse_previous_peer(
+        &mut self,
+        row: Row,
+        edge: &DepEdge,
+        asked: &Asked,
+    ) -> Option<PackageId> {
+        if self.update.active
+            || self.st[row.pkg.index()].kind == Kind::Project
+            || self.changed_peer_providers.contains(&asked.name)
+        {
+            return None;
+        }
+        let prev = self.prev?;
+        let owner = &prev.packages[self.st[row.pkg.index()].prev?.index()];
+        let before = owner.dependencies.iter().find(|e| {
+            e.name == edge.name && e.behavior == edge.behavior && e.literal == edge.literal
+        })?;
+        if self.prev_effective_literal(owner, before).as_deref() != Some(asked.literal.as_str()) {
+            return None;
+        }
+        let target = before.target?;
+        let package = &prev.packages[target.index()];
+        if package.name != asked.name || !matches!(package.resolution, Resolution::Npm { .. }) {
+            return None;
+        }
+        // A target formerly provided by a non-peer dependency is reusable only when that
+        // dependency is still in the current graph. Peer-only locked copies have no such holder.
+        if self.prev_non_peer_targets.contains(&target) && !self.imported.contains_key(&target) {
             return None;
         }
         self.import_prev(target)

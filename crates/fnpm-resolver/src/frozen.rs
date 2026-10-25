@@ -9,7 +9,7 @@ use fnpm_workspace::{PackageJson, Workspace};
 use serde_json::Value;
 
 use crate::local::{self, LocalKind};
-use crate::{Resolved, Result};
+use crate::{Error, Resolved, Result};
 
 /// bun `DependencyChange` messages: `name was added`, `name was removed`,
 /// `name is in different dependency groups`, `name changed in peerDependenciesMeta`,
@@ -72,6 +72,38 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
 
 fn declared_edges(pj: &PackageJson, kind: LocalKind) -> Result<Vec<DepEdge>> {
     Ok(local::package_json_edges(pj, kind)?.0)
+}
+
+/// The explicit lifecycle trust policy from the root, workspaces and pnpm settings.
+pub(crate) fn trusted(ws: &Workspace) -> Result<Option<std::collections::BTreeSet<String>>> {
+    let mut set: Option<std::collections::BTreeSet<String>> = None;
+    let sources = std::iter::once(&ws.root.raw).chain(ws.members.iter().map(|m| &m.manifest.raw));
+    for raw in sources {
+        let Some(field) = raw.get("trustedDependencies") else {
+            continue;
+        };
+        let Some(items) = field.as_array() else {
+            return Err(Error::InvalidPackageJson {
+                path: "package.json".into(),
+                message: "Expected \"trustedDependencies\" to be an array of strings".into(),
+            });
+        };
+        let set = set.get_or_insert_with(Default::default);
+        for item in items {
+            let Some(name) = item.as_str() else {
+                return Err(Error::InvalidPackageJson {
+                    path: "package.json".into(),
+                    message: "Expected \"trustedDependencies\" to be an array of strings".into(),
+                });
+            };
+            set.insert(name.to_owned());
+        }
+    }
+    if let Some(only) = &ws.settings.only_built_dependencies {
+        set.get_or_insert_with(Default::default)
+            .extend(only.iter().cloned());
+    }
+    Ok(set)
 }
 
 /// Everything that differs between the workspace and the previous graph, in bun's words. Empty
@@ -137,7 +169,7 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
     if extensions != prev.package_extensions {
         out.push("packageExtensions changed".into());
     }
-    let patched: BTreeMap<String, String> = root
+    let mut patched: BTreeMap<String, String> = root
         .get("patchedDependencies")
         .and_then(Value::as_object)
         .map(|o| {
@@ -151,21 +183,52 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
         .iter()
         .map(|(k, v)| (k.clone(), v.path.clone()))
         .collect();
+    // The text lockfile only records trust and patches for packages present in its tree.
+    // Ignore declarations the writer omitted, as bun does on a frozen reinstall.
+    let patch_keys: std::collections::BTreeSet<String> = prev
+        .packages
+        .iter()
+        .map(|p| {
+            if matches!(p.resolution, fnpm_types::Resolution::Workspace { .. }) {
+                format!("{}@{}", p.name, p.version)
+            } else {
+                p.key()
+            }
+        })
+        .collect();
+    patched.retain(|key, _| patch_keys.contains(key) || prev_patched.contains_key(key));
     if patched != prev_patched {
         out.push("patchedDependencies changed".into());
     }
-    let mut trusted: Option<std::collections::BTreeSet<String>> = None;
-    for raw in std::iter::once(root).chain(ws.members.iter().map(|m| &m.manifest.raw)) {
-        if let Some(items) = raw.get("trustedDependencies").and_then(Value::as_array) {
-            trusted
-                .get_or_insert_with(Default::default)
-                .extend(items.iter().filter_map(Value::as_str).map(str::to_owned));
+    let mut trusted = trusted(ws)?;
+    if let Some(names) = &mut trusted
+        && !names.is_empty()
+    {
+        let mut present: std::collections::BTreeSet<&str> = prev
+            .packages
+            .iter()
+            .skip(1)
+            .map(|p| p.name.as_str())
+            .collect();
+        if let Some(recorded) = &prev.trusted_dependencies {
+            present.extend(recorded.iter().map(String::as_str));
         }
-    }
-    if let Some(only) = &ws.settings.only_built_dependencies {
-        trusted
-            .get_or_insert_with(Default::default)
-            .extend(only.iter().cloned());
+        for p in &prev.packages {
+            for e in &p.dependencies {
+                if e.target.is_some_and(|t| {
+                    !matches!(
+                        prev.packages[t.index()].resolution,
+                        fnpm_types::Resolution::Npm { .. }
+                    )
+                }) {
+                    present.insert(&e.name);
+                }
+            }
+        }
+        names.retain(|name| present.contains(name.as_str()));
+        if names.is_empty() {
+            trusted = None;
+        }
     }
     if trusted != prev.trusted_dependencies {
         out.push("trustedDependencies changed".into());

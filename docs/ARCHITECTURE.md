@@ -240,7 +240,7 @@ Same keys as bunfig `[install]` (`docs/runtime/bunfig.mdx` in bun), plus fnpm-on
 registry = "https://registry.npmjs.org/"
 linker = "isolated"            # auto | hoisted | isolated
 backend = "clonefile"          # clonefile | hardlink | copyfile | symlink
-globalStore = true             # fnpm default true (bun: false)
+globalStore = false            # opt in to shared isolated entries
 exact = false
 frozenLockfile = false
 ignoreScripts = false
@@ -671,7 +671,7 @@ pub fn config_file_candidates(cwd: &Path, home: &Path, xdg: Option<&Path>) -> Ve
 **Defaults** (bun `PackageManagerOptions.rs:128-197, 1294-1364` unless noted):
 `network.concurrency = 64`, `retries = 5`, `retry_backoff_ms = 50`, `idle_timeout_secs = 300`,
 `manifest_cache = CacheControl`, `linker = Auto`, `backend = None` (platform default),
-`global_store = true` (**fnpm differs**: bun defaults false), `hoist = true`,
+`global_store = false` (like bun), `hoist = true`,
 `link_workspace_packages = true`, `auto_install_peers = true`, `verify_integrity = true`,
 `concurrent_scripts = 2 * available_parallelism`, `platform = Platform::current()`,
 `lockfile.save = true`, user agent `fnpm/<version> npm/? node/<process.version> <os> <arch>`.
@@ -1372,7 +1372,9 @@ none, pnpm-workspace.yaml settings), the migration's package.json write-back app
 and written with `PackageJsonEditor` when the lockfile is saved, then the command plan
 (`install/plan.rs`), the resolve with `Resolved::Package` streamed to `Fetcher::ensure` (one
 tokio task per package: store hit, else `RegistryClient::tarball` -> `Store::import_tarball`,
-or git checkout / local tarball / folder import), then `Linker::link` on a blocking thread whose
+or git checkout / local tarball / folder import). Changed isolated graphs use the saved text
+lockfile's reconstructed bindings before linking; package IDs and metadata stay intact for
+streamed fetches and command results. `Linker::link` runs on a blocking thread whose
 `PackageSource::wait` blocks on the package's fetch slot (overlap), global bins for `-g`,
 integrity backfill from the imports, save (package.json edits, lockfile, yarn.lock with
 `--yarn`), `Store::set_project_packages` and sidecar caching on a blocking task, trusted
@@ -1387,7 +1389,9 @@ installed. `PackageSource::size_hint` lets the linker start the biggest packages
 `PackageSource::patch_tag` (the current `patchedDependencies` hash) makes the linker reinstall a
 package whose `.fnpm-patch-tag` differs, so an edited or removed patch is applied. A failed
 optional package is dropped and linking retried; a failed required one reports the fetch's own
-code (`Error::Fetch`). `FNPM_TIMING=1` prints phase times.
+code (`Error::Fetch`). A tolerated optional lifecycle failure removes its package copies,
+aliases and bins before the scheduler releases dependent scripts; cleanup errors fail the
+install. `FNPM_TIMING=1` prints phase times.
 
 **Command semantics.** `add`: bun's `UpdateRequest` parsing (`spec::Positional`), group
 precedence and move-to-group, saved literal `^<v>` for tags / bare names / bare `npm:` aliases
@@ -1451,7 +1455,7 @@ implement extglobs or numeric brace ranges.
 and the package's own name) must be valid package names: they become paths under the link
 registry.
 
-**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 3): `version`,
+**Fast path state** (`node_modules/.fnpm/.state/state`, JSON, `STATE_VERSION` 5): `version`,
 `fnpmVersion`, `lockfileHash` (xxh3-64 of fnpm.lock), `manifests` (`[path, size, mtimeNs,
 xxh3]` per package.json, `pnpm-workspace.yaml` when present (a new one invalidates), the
 package.json of every directory the workspace globs select, and the `patchedDependencies`

@@ -1377,3 +1377,304 @@ async fn interactive_updates_wait_for_security_scan_including_catalogs() {
         p.run(frozen).await.expect("saved manifests match lockfile");
     }
 }
+
+/// A tarball-URL dependency is keyed in the store by name and integrity alone: the version
+/// is known after a resolve or an npm migration but not after reading fnpm.lock back (bun's
+/// format has none for URL resolutions), so a warm install must find the same entry
+/// (real-world: marked's `marked-repo` GitHub tarball was downloaded again on every warm install).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tarball_url_dependency_is_not_downloaded_again_when_warm() {
+    let reg = Registry::start(&basic()).await;
+    let url = reg.tarball_url("b", "1.2.0");
+    let p = Project::new(&reg, json!({ "dependencies": { "repo": url } }));
+    p.install().await;
+    assert_eq!(
+        reg.tarball_requests(),
+        1,
+        "resolver content reused by fetcher"
+    );
+    assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+    assert!(
+        p.read("fnpm.lock").contains(&format!("b@{url}")),
+        "{}",
+        p.read("fnpm.lock")
+    );
+    for _ in 0..2 {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        reg.clear_seen();
+        p.install().await;
+        assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+        assert_eq!(reg.tarball_requests(), 0, "store hit: {:?}", reg.seen());
+    }
+    let packed = p
+        .invoke(&["pm", "cache", "pack"], &["tarball.pack"], json!({}))
+        .await
+        .unwrap();
+    assert_eq!(packed.exit_code, 0, "{:?}", packed.lines);
+    assert_eq!(packed.data.as_ref().unwrap()["packages"], 1);
+    assert_eq!(packed.data.as_ref().unwrap()["missing"], 0);
+    let verified = p
+        .invoke(&["lock", "verify"], &[], json!({ "integrity": true }))
+        .await
+        .unwrap();
+    assert_eq!(verified.exit_code, 0, "{:?}", verified.lines);
+
+    // The same through an npm migration, which knows the version.
+    let reg = Registry::start(&basic()).await;
+    let url = reg.tarball_url("b", "1.2.0");
+    let p = Project::new(
+        &reg,
+        json!({ "name": "app", "dependencies": { "repo": url } }),
+    );
+    let lock = json!({
+        "name": "app",
+        "lockfileVersion": 3,
+        "requires": true,
+        "packages": {
+            "": { "name": "app", "dependencies": { "repo": url } },
+            "node_modules/repo": {
+                "name": "b",
+                "version": "1.2.0",
+                "resolved": url,
+                "integrity": reg.integrity("b", "1.2.0")
+            }
+        }
+    });
+    p.write(
+        "package-lock.json",
+        &serde_json::to_string_pretty(&lock).unwrap(),
+    );
+    p.install().await;
+    assert_eq!(p.installed("repo").as_deref(), Some("1.2.0"));
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    p.install().await;
+    assert_eq!(
+        reg.tarball_requests(),
+        0,
+        "store hit after migration: {:?}",
+        reg.seen()
+    );
+}
+
+/// Like bun, an optional dependency whose script fails is deleted and the install succeeds
+/// (real-world: uptime-kuma's `ssh2` -> `cpu-features`, whose node-gyp build fails without a
+/// toolchain, made `fnpm install` exit 1).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failing_optional_script_deletes_the_package_and_succeeds() {
+    for name in ["native-opt", "@scope/native-opt"] {
+        let reg = Registry::start(&[
+            Pkg::new(name, "1.0.0")
+                .script("install", "exit 1")
+                .bin("native-opt", "bin.js"),
+            Pkg::new("host", "1.0.0").optional(name, "1.0.0").script(
+                "postinstall",
+                &format!(
+                    "test ! -e ../{name} && test ! -L ../{name} && test ! -L ../.bin/native-opt"
+                ),
+            ),
+        ])
+        .await;
+        for (linker, global_store) in [("hoisted", false), ("isolated", false), ("isolated", true)]
+        {
+            let p = Project::new(
+                &reg,
+                json!({
+                    "dependencies": { "host": "1.0.0" },
+                    "optionalDependencies": { name: "1.0.0" },
+                    "trustedDependencies": [name, "host"],
+                    "scripts": { "postinstall": format!("test ! -e node_modules/{name} && test ! -L node_modules/{name} && test ! -L node_modules/.bin/native-opt") }
+                }),
+            );
+            p.write(
+                "fnpm.toml",
+                &format!("[install]\nlinker = \"{linker}\"\nglobalStore = {global_store}\n"),
+            );
+            let s = p.install().await;
+            assert_eq!(s.failed_count, 0, "{linker}: {s:?}");
+            assert_eq!(p.installed("host").as_deref(), Some("1.0.0"));
+            assert!(
+                !exists(&p.path(&format!("node_modules/{name}"))),
+                "{linker}: deleted like bun"
+            );
+            assert!(std::fs::symlink_metadata(p.path("node_modules/.bin/native-opt")).is_err());
+            assert!(
+                p.read("fnpm.lock").contains(&format!("{name}@1.0.0")),
+                "still locked"
+            );
+        }
+    }
+}
+
+/// yarn.lock and pnpm-lock.yaml record no bins, so after migrating one the registry manifests
+/// fill them in, as bun does (real-world: excalidraw's and webpack's yarn.lock left
+/// node_modules/.bin empty and the root `prepare` script could not find `husky`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bins_of_a_migrated_yarn_or_pnpm_lockfile_come_from_the_manifests() {
+    let reg = Registry::start(&basic()).await;
+    let integrity = reg.integrity("tool", "1.0.0");
+    let yarn = format!(
+        "# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.\n# yarn lockfile v1\n\n\ntool@1:\n  version \"1.0.0\"\n  resolved \"{}\"\n  integrity {integrity}\n",
+        reg.tarball_url("tool", "1.0.0")
+    );
+    let pnpm = format!(
+        "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .:\n    dependencies:\n      tool:\n        specifier: '1'\n        version: 1.0.0\n\npackages:\n\n  tool@1.0.0:\n    resolution: {{integrity: {integrity}}}\n    hasBin: true\n\nsnapshots:\n\n  tool@1.0.0: {{}}\n"
+    );
+    for (file, text) in [("yarn.lock", yarn), ("pnpm-lock.yaml", pnpm)] {
+        let p = Project::new(
+            &reg,
+            json!({ "name": "app", "dependencies": { "tool": "1" } }),
+        );
+        p.write(file, &text);
+        p.install().await;
+        assert_eq!(p.installed("tool").as_deref(), Some("1.0.0"), "{file}");
+        assert!(
+            exists(&p.path("node_modules/.bin/tool")),
+            "{file}: bin linked"
+        );
+        assert!(
+            p.read("fnpm.lock").contains("\"bin\""),
+            "{file}: bin saved: {}",
+            p.read("fnpm.lock")
+        );
+    }
+}
+
+/// With the isolated linker, a workspace that depends on another one (`workspace:*`) gets a
+/// link to it in its own node_modules, like bun (real-world: opencode and create-t3-turbo
+/// had none, so their packages could not import each other).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_workspace_links_the_workspaces_it_depends_on() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({ "name": "root", "workspaces": ["packages/*"] }),
+    );
+    p.write(
+        "packages/a/package.json",
+        &json!({ "name": "@x/a", "version": "1.0.0" }).to_string(),
+    );
+    p.write(
+        "packages/b/package.json",
+        &json!({ "name": "@x/b", "version": "1.0.0", "dependencies": { "@x/a": "workspace:*", "b": "1.0.0" } })
+            .to_string(),
+    );
+    for _ in 0..2 {
+        p.install().await;
+        assert!(
+            exists(&p.path("node_modules/.fnpm/b@1.0.0")),
+            "isolated layout"
+        );
+        assert_eq!(
+            std::fs::read_link(p.path("packages/b/node_modules/@x/a")).ok(),
+            Some(std::path::PathBuf::from("../../../a"))
+        );
+        assert!(exists(&p.path("packages/b/node_modules/b/package.json")));
+        // Again from fnpm.lock.
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        std::fs::remove_dir_all(p.path("packages/b/node_modules")).unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_reinstall_accepts_unused_trust_and_patch_entries_omitted_by_the_lockfile() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "a": "1.0.0" },
+            "trustedDependencies": ["a", "not-installed"],
+            "patchedDependencies": { "not-installed@1.0.0": "unused.patch" }
+        }),
+    );
+    p.write("unused.patch", "unused patch\n");
+    p.install().await;
+    let lock_before = p.read("fnpm.lock");
+    assert!(!lock_before.contains("not-installed"), "{lock_before}");
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    reg.clear_seen();
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.frozen_lockfile = true;
+    let (summary, _) = p.run(opts).await.unwrap();
+    assert_eq!(summary.failed_count, 0);
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
+    assert_eq!(p.read("fnpm.lock"), lock_before);
+    assert_eq!(reg.manifest_requests(), 0);
+
+    let mut manifest: serde_json::Value = serde_json::from_str(&p.read("package.json")).unwrap();
+    manifest["trustedDependencies"] = json!(["not-installed"]);
+    p.write("package.json", &manifest.to_string());
+    let mut opts = p.opts(InstallCommand::Install, &[]);
+    opts.pm.frozen_lockfile = true;
+    assert_eq!(
+        p.run(opts.clone()).await.unwrap_err().code(),
+        "FROZEN_LOCKFILE"
+    );
+    manifest["trustedDependencies"] = json!(["a", "not-installed"]);
+    manifest["patchedDependencies"]["a@1.0.0"] = json!("unused.patch");
+    p.write("package.json", &manifest.to_string());
+    assert_eq!(p.run(opts).await.unwrap_err().code(), "FROZEN_LOCKFILE");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unused_explicit_trust_never_enables_default_scripts_on_reinstall() {
+    let reg =
+        Registry::start(&[Pkg::new("esbuild", "1.0.0").script("install", "echo ran > ran.txt")])
+            .await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "esbuild": "1.0.0" },
+            "trustedDependencies": ["not-installed"]
+        }),
+    );
+    p.install().await;
+    assert!(!exists(&p.path("node_modules/esbuild/ran.txt")));
+    assert!(!p.read("fnpm.lock").contains("not-installed"));
+    for frozen in [false, true] {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.frozen_lockfile = frozen;
+        let (summary, _) = p.run(opts).await.unwrap();
+        assert_eq!(summary.blocked_scripts, 1);
+        assert!(
+            !exists(&p.path("node_modules/esbuild/ran.txt")),
+            "frozen={frozen}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn isolated_default_keeps_hidden_hoisted_modules_visible_to_esm() {
+    let mut plugin = Pkg::new("plugin", "1.0.0");
+    plugin.files.push((
+        "probe.mjs".into(),
+        "import extra from 'extra'; if (extra !== 'extra@1.0.0') process.exit(1);".into(),
+    ));
+    let reg = Registry::start(&[
+        plugin,
+        Pkg::new("provider", "1.0.0").dep("extra", "1.0.0"),
+        Pkg::new("extra", "1.0.0"),
+    ])
+    .await;
+    let p = Project::new(
+        &reg,
+        json!({
+            "dependencies": { "plugin": "1.0.0", "provider": "1.0.0" },
+            "scripts": { "postinstall": "node node_modules/plugin/probe.mjs" }
+        }),
+    );
+    p.write("fnpm.toml", "[install]\nlinker = \"isolated\"\n");
+    p.install().await;
+    let real = std::fs::canonicalize(p.path("node_modules/plugin")).unwrap();
+    assert!(
+        real.starts_with(&p.dir),
+        "default package stays in the project: {real:?}"
+    );
+    for frozen in [false, true] {
+        std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+        let mut opts = p.opts(InstallCommand::Install, &[]);
+        opts.pm.frozen_lockfile = frozen;
+        p.run(opts).await.unwrap();
+    }
+}

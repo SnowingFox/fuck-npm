@@ -1182,6 +1182,14 @@ async fn github_commits_and_tarball_urls() {
         format!("{api}/repos/o/r/tarball/{sha}")
     );
     assert_eq!(
+        c.github_tarball_url("oven-sh", "bun", "oven-sh-bun-0123456"),
+        format!("{api}/repos/oven-sh/bun/tarball/0123456")
+    );
+    assert_eq!(
+        c.github_tarball_url("anomalyco", "ghostty-web", "anomalyco-ghostty-web-83c0a07"),
+        format!("{api}/repos/anomalyco/ghostty-web/tarball/83c0a07")
+    );
+    assert_eq!(
         c.github_tarball_url("o", "", sha),
         format!("{api}/repos/o/tarball/{sha}")
     );

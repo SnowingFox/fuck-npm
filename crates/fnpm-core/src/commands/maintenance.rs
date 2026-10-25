@@ -167,7 +167,7 @@ fn migration_sources(from: Option<&str>) -> Result<Vec<&'static str>> {
 }
 
 /// `fnpm migrate` / `pm migrate` / `fnpm-lock migrate [--from x] [--dry-run] [--force]`.
-pub(crate) fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
+pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     let project = cx.project()?;
     let ws = project.workspace(&*cx.events)?;
     let root = project.root_dir.clone();
@@ -179,7 +179,11 @@ pub(crate) fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     }
     let from = cx.string("from");
     let sources = migration_sources(from.as_deref())?;
-    let state = crate::install::migrate_lock(&project.config, &ws, &sources)?;
+    let mut state = crate::install::migrate_lock(&project.config, &ws, &sources)?;
+    if state.migrated {
+        let client = project.client()?;
+        crate::install::backfill_migrated(&mut state, &client, &project.config).await;
+    }
     for w in &state.warnings {
         cx.events.emit(Event::warn(w.clone(), None));
     }
@@ -320,13 +324,7 @@ pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
                 Some(g) => g
                     .packages
                     .iter()
-                    .filter_map(|p| {
-                        Some(fnpm_store::PackageKey {
-                            name: p.name.clone(),
-                            version: p.version.clone(),
-                            integrity: *p.resolution.integrity()?,
-                        })
-                    })
+                    .filter_map(crate::fetch::store_key)
                     .collect(),
                 None => Vec::new(),
             };

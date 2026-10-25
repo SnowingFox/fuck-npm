@@ -72,8 +72,8 @@ Known gaps in the merged crates (PARITY rows left open for these):
 - resolver: "reuse cached versions" only covers locked/pinned versions; production sources
   (`RegistrySource`, git, store import) first exercised by fnpm-core.
 - lockfile: two bun.lock readers (`text`, used by `load`/`parse`/`serialize`, and
-  `formats::bun_text`, used by migration reports) should become one; post-migration steps
-  and `fnpm ./bun.lockb` are core work; `out_of_sync` ignores `packageExtensions`.
+  `formats::bun_text`, used by migration reports) should become one; migrated Yarn/pnpm
+  bins and lifecycle metadata are backfilled in core; `out_of_sync` ignores `packageExtensions`.
 - linker: isolated step order not interleaved with scripts; Windows `.exe` shims.
 - scripts: `--no-orphans` is only the Linux parent-death signal; local package.json/semver
   helpers instead of fnpm-workspace/fnpm-semver.
@@ -114,13 +114,13 @@ Exit criteria:
 - Benchmark: the full matrix including `monorepo` and every `large` scenario.
 - Platforms: add Linux arm64 and Linux btrfs (FICLONE).
 
-## P3: Migrations and fnpm-lock (not started)
+## P3: Migrations and fnpm-lock (in progress)
 
 | deliverable | status |
 |---|---|
-| First-install migration from package-lock / shrinkwrap, yarn.lock (v1, berry), pnpm-lock.yaml, bun.lock, bun.lockb, carrying pnpm workspace config | not started (format code merged in P1) |
+| First-install migration from package-lock / shrinkwrap, yarn.lock (v1, berry), pnpm-lock.yaml, bun.lock, bun.lockb, carrying pnpm workspace config | implemented in core; real-project corpus exercises npm v3, Yarn v1/Berry v8, pnpm v9 and bun text; shrinkwrap/binary corpus coverage remains |
 | `fnpm migrate`, `fnpm-lock migrate / export / verify / diff / why / dedupe / audit / print` | not started |
-| Golden tests: real lockfiles from each tool for every fixture; migrate, install, compare resolved versions with the source tool's `ls --json` | not started |
+| Golden tests: real lockfiles from each tool for every fixture; migrate, install, compare resolved versions with the source tool's `ls --json` | in progress: 18-project corpus compares native-PM snapshots, package versions, declared deps, bins, observed scripts, verification and reinstalls; results and remaining failures in `tests/e2e/results` |
 
 Exit criteria:
 

@@ -123,8 +123,8 @@ impl RegistrySource {
     }
 
     /// Reads the package.json out of the tarball, records its integrity and imports it into the
-    /// store under its real `name@version` key. A failed import is not fatal: the fetch phase
-    /// downloads the tarball again.
+    /// store under its real name and integrity (non-registry keys omit the version).
+    /// A failed import is not fatal: the fetch phase downloads the tarball again.
     fn finish_tarball(&self, origin: &str, bytes: &[u8]) -> fnpm_registry::Result<FetchedPackage> {
         let text = crate::tarball::package_json_from_tgz(bytes).map_err(|message| {
             fnpm_registry::Error::InvalidManifest {
@@ -137,7 +137,7 @@ impl RegistrySource {
         if let (Some(store), Some(name)) = (self.store(), manifest.name.clone()) {
             let key = fnpm_store::PackageKey {
                 name,
-                version: manifest.version.clone().unwrap_or_default(),
+                version: String::new(),
                 integrity,
             };
             let _ = store.import_tarball_bytes(&key, bytes, fnpm_store::ImportOptions::default());
@@ -305,7 +305,7 @@ impl RegistrySource {
                 {
                     let key = fnpm_store::PackageKey {
                         name,
-                        version: manifest.version.clone().unwrap_or_default(),
+                        version: String::new(),
                         integrity,
                     };
                     let _ = store.import_directory(&key, &dir);

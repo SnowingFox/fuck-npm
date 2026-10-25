@@ -32,7 +32,7 @@ fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
     }
 }
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 4;
+pub const STATE_VERSION: u32 = 5;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -548,6 +548,10 @@ mod tests {
             Check::Changed(None)
         );
         let mut s = state_for(dir.path());
+        s.version = STATE_VERSION - 1;
+        write(dir.path(), &s).unwrap();
+        assert!(matches!(check(dir.path(), 7), Check::Changed(Some(_))));
+        s.version = STATE_VERSION;
         s.fnpm_version = "0.0.0-other".into();
         write(dir.path(), &dir.path().join("meta"), &s).unwrap();
         assert!(matches!(

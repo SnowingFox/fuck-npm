@@ -1085,8 +1085,15 @@ fn bind_flat(
         flat.linked_workspace(name, dep.resolved.range)?;
         member_named(flat, name)
     };
+    let root_peer = |flat: &Flat<'_>, d: u32| {
+        let name = flat.version_based_peer(d)?;
+        (name == flat.pkg_name_id[0] && pkg_map.get(flat.deps[d as usize].name) == Some(&0))
+            .then_some(0)
+    };
     let own_peer = |flat: &Flat<'_>, d: u32| {
-        linked_member(flat, d).or_else(|| flat.peer_by_version(d, |_| true))
+        root_peer(flat, d)
+            .or_else(|| linked_member(flat, d))
+            .or_else(|| flat.peer_by_version(d, |_| true))
     };
 
     // Root dependencies.
@@ -1170,7 +1177,7 @@ fn bind_flat(
             let by_version = if is_ws {
                 own_peer(flat, d)
             } else {
-                flat.peer_by_version(d, |_| true)
+                root_peer(flat, d).or_else(|| flat.peer_by_version(d, |_| true))
             };
             let res_id = match by_version {
                 Some(r) => r,
