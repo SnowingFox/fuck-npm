@@ -9,11 +9,11 @@
 //!
 //! Payloads cross as JSON values (serde, camelCase, unknown fields ignored). The work runs on
 //! [`fnpm_core::runtime`], never on the JS thread. Failures reject the promise with an
-//! `Error` whose `code` is [`fnpm_core::Error::code`]; a payload that does not deserialise
-//! is `USAGE`, a panic in the core is `CORE_ERROR`. Events are batched by
-//! [`fnpm_core::events::BatchingSink`] and delivered through a `ThreadsafeFunction`; the
-//! promise settles only after JS has handled the last batch. See
-//! `docs/ARCHITECTURE.md#fnpm-napi`.
+//! `Error` whose `code` is [`fnpm_core::Error::code`]; a payload or callback that does not
+//! match the contract is `USAGE`, a panic in the core is `CORE_ERROR`. Neither function
+//! throws synchronously. Events are batched by [`fnpm_core::events::BatchingSink`] and
+//! delivered through a `ThreadsafeFunction`; the promise settles only after JS has handled
+//! the last batch. See `docs/ARCHITECTURE.md#fnpm-napi`.
 
 #![deny(missing_docs)]
 
@@ -26,15 +26,17 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 
-use fnpm_core::events::BatchingSink;
+use fnpm_core::events::{BatchingSink, FLUSH_INTERVAL};
 use fnpm_core::{CoreRequest, InstallOptions};
-use fnpm_types::{EventSink, NoopSink};
+use fnpm_types::{Event, EventSink, NoopSink};
 use futures_util::FutureExt;
 use napi::JsDeferred;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use serde_json::Value;
+use tokio::task::JoinHandle;
+use tokio::time::MissedTickBehavior;
 
 use crate::listener::{Ack, Listener, Transport};
 use crate::payload::Failure;
@@ -68,10 +70,12 @@ pub fn version() -> String {
 )]
 pub fn install<'env>(
     env: &'env Env,
-    options: Value,
-    on_events: Option<EventsFn>,
+    options: Unknown<'env>,
+    on_events: Option<Unknown<'env>>,
 ) -> Result<Object<'env>> {
-    let parsed = payload::parse::<InstallOptions>(options, "install options");
+    const WHAT: &str = "install options";
+    let parsed = payload::from_js::<InstallOptions>(env, options, WHAT)
+        .and_then(|options| payload::absolute_cwd(&options.pm.cwd, WHAT).map(|()| options));
     run(env, parsed, on_events, |options, sink| async move {
         payload::settle(fnpm_core::install(options, sink).await)
     })
@@ -85,21 +89,24 @@ pub fn install<'env>(
 )]
 pub fn invoke<'env>(
     env: &'env Env,
-    request: Value,
-    on_events: Option<EventsFn>,
+    request: Unknown<'env>,
+    on_events: Option<Unknown<'env>>,
 ) -> Result<Object<'env>> {
-    let parsed = payload::parse::<CoreRequest>(request, "request");
+    const WHAT: &str = "request";
+    let parsed = payload::from_js::<CoreRequest>(env, request, WHAT)
+        .and_then(|request| payload::absolute_cwd(&request.cwd, WHAT).map(|()| request));
     run(env, parsed, on_events, |request, sink| async move {
         payload::settle(fnpm_core::invoke(request, sink).await)
     })
 }
 
 /// Creates the promise and runs `work` on the core runtime with the right sink. A payload
-/// that failed to parse rejects right away, without starting the runtime.
+/// or callback that does not match the contract rejects right away, without starting the
+/// runtime or creating the `ThreadsafeFunction`.
 fn run<'env, T, W, F>(
     env: &'env Env,
     parsed: std::result::Result<T, Failure>,
-    on_events: Option<EventsFn>,
+    on_events: Option<Unknown<'env>>,
     work: W,
 ) -> Result<Object<'env>>
 where
@@ -108,8 +115,11 @@ where
     F: Future<Output = Outcome> + Send + 'static,
 {
     let (deferred, promise) = env.create_deferred::<Value, Settle>()?;
-    let input = match parsed {
-        Ok(input) => input,
+    let prepared = payload::callback(on_events)
+        .and_then(|callback| parsed.map(|input| (input, callback)))
+        .and_then(|(input, callback)| Ok((input, events_fn(env, callback)?)));
+    let (input, on_events) = match prepared {
+        Ok(prepared) => prepared,
         Err(failure) => {
             deferred.resolve(settle_with(Err(failure)));
             return Ok(promise);
@@ -128,38 +138,113 @@ where
     Ok(promise)
 }
 
-/// Awaits `work` (a panic becomes `CORE_ERROR`), waits until JS has handled every event
-/// batch, then settles the promise.
+/// Turns a validated `onEvents` function into the `ThreadsafeFunction` that delivers batches.
+fn events_fn(
+    env: &Env,
+    callback: Option<Unknown<'_>>,
+) -> std::result::Result<Option<EventsFn>, Failure> {
+    let Some(callback) = callback else {
+        return Ok(None);
+    };
+    // SAFETY: `callback` is a live function value of this call's `env`.
+    unsafe { EventsFn::from_napi_value(env.raw(), callback.raw()) }
+        .map(Some)
+        .map_err(|error| Failure::usage(format!("invalid onEvents: {}", error.reason)))
+}
+
+/// Awaits `work`, waits until JS has handled every event batch, then settles the promise.
 async fn finish<F>(deferred: JsDeferred<Value, Settle>, listener: Option<Arc<Listener>>, work: F)
 where
     F: Future<Output = Outcome>,
 {
-    let outcome = AssertUnwindSafe(work)
-        .catch_unwind()
-        .await
-        .unwrap_or_else(|panic| Err(Failure::from_panic(panic.as_ref())));
+    let outcome = guarded(work).await;
     if let Some(listener) = listener {
         listener.close().await;
     }
     deferred.resolve(settle_with(outcome));
 }
 
+/// Runs `work`, turning a panic into `CORE_ERROR`.
+async fn guarded<F>(work: F) -> Outcome
+where
+    F: Future<Output = Outcome>,
+{
+    AssertUnwindSafe(work)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|panic| Err(Failure::from_panic(panic.as_ref())))
+}
+
 /// Runs `work` with a batching sink feeding `listener` (flushed every 50 ms and once at
-/// the end), or with the no-op sink when nobody listens.
+/// the end), or with the no-op sink when nobody listens. Must run inside a tokio runtime.
 async fn drive<W, F>(listener: Option<Arc<Listener>>, work: W) -> Outcome
 where
     W: FnOnce(Arc<dyn EventSink>) -> F,
     F: Future<Output = Outcome>,
 {
     let Some(listener) = listener else {
-        return work(Arc::new(NoopSink)).await;
+        return guarded(work(Arc::new(NoopSink))).await;
     };
-    let sink = BatchingSink::new(Arc::new(move |events| {
+    let sink = BatchingSink::new(Arc::new(move |events: Vec<Event>| {
         listener.deliver(&events);
     }));
-    // The guard's drop performs the final flush, before the caller closes the listener.
-    let _flusher = sink.start();
-    work(sink.clone()).await
+    let flusher = Flusher::start(sink.clone());
+    let outcome = guarded(work(sink)).await;
+    // The final flush happens before the caller closes the listener.
+    flusher.finish().await;
+    outcome
+}
+
+/// The periodic flush of a [`BatchingSink`].
+///
+/// `BatchingSink::start` is not used: its guard aborts the timer task and flushes right
+/// away, while the task may be in the middle of a flush on another worker (batch taken,
+/// not yet delivered). The final batch could then overtake the previous one, or the
+/// previous one could arrive after the listener closed and be lost. Here the final flush
+/// waits until the timer task has actually stopped.
+struct Flusher {
+    sink: Arc<BatchingSink>,
+    task: Option<JoinHandle<()>>,
+}
+
+impl Flusher {
+    fn start(sink: Arc<BatchingSink>) -> Self {
+        let ticking = sink.clone();
+        let task = tokio::spawn(async move {
+            let mut tick = tokio::time::interval(FLUSH_INTERVAL);
+            tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            // The first tick completes immediately.
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                ticking.flush();
+            }
+        });
+        Self {
+            sink,
+            task: Some(task),
+        }
+    }
+
+    /// Stops the timer, waits out a flush it may be running, then delivers what is left.
+    async fn finish(mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+            // Resolves once the task is gone: `flush` has no await point, so a flush that
+            // was running has delivered its batch by then.
+            let _ = task.await;
+        }
+        self.sink.flush();
+    }
+}
+
+impl Drop for Flusher {
+    /// The drive future was dropped before `finish` (runtime shutdown): stop the timer.
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
 }
 
 /// The settle callback for an outcome: the value, or an `Error` with `code` set.

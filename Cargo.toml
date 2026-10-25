@@ -54,7 +54,9 @@ xxhash-rust = { version = "=0.8.19", features = ["xxh3"] }
 memchr = "=2.8.3"
 tempfile = "=3.27.0"
 mimalloc = "=0.1.52"
-napi = { version = "=3.15.0", features = ["napi9", "tokio_rt", "serde-json"] }
+# No `tokio_rt`: it starts napi-rs's own multi-thread runtime when the addon loads; fnpm-napi
+# runs everything on `fnpm_core::runtime()` instead.
+napi = { version = "=3.15.0", features = ["napi9", "serde-json"] }
 napi-derive = "=3.6.13"
 napi-build = "=2.6.0"
 axum = "=0.8.9"

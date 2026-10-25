@@ -1,9 +1,11 @@
-//! Pure conversions between the JSON payloads JS sends and the core's types, and between
-//! core outcomes and what the promise settles with. Nothing here touches Node-API, so it is
-//! unit-tested with plain `cargo test`.
+//! Conversions between the JSON payloads JS sends and the core's types, and between core
+//! outcomes and what the promise settles with. Only [`from_js`] and [`callback`] touch
+//! Node-API; everything else is unit-tested with plain `cargo test`.
 
 use std::any::Any;
+use std::path::Path;
 
+use napi::bindgen_prelude::{Env, FromNapiValue, JsValue, Unknown, ValueType};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -31,12 +33,15 @@ impl Failure {
         }
     }
 
+    /// A `USAGE` failure with `message`.
+    pub fn usage(message: impl Into<String>) -> Self {
+        Self::from_core(&fnpm_core::Error::usage(message))
+    }
+
     /// A payload that does not deserialise is a contract violation between the CLI and the
     /// binding; it is reported as a usage error, with the field serde complained about.
-    pub fn invalid_payload(what: &str, error: &serde_json::Error) -> Self {
-        Self::from_core(&fnpm_core::Error::Usage {
-            message: format!("invalid {what}: {error}"),
-        })
+    pub fn invalid_payload(what: &str, error: impl std::fmt::Display) -> Self {
+        Self::usage(format!("invalid {what}: {error}"))
     }
 
     /// Turns a caught panic payload into a failure. `panic!` payloads are `&str` or `String`;
@@ -54,9 +59,98 @@ impl Failure {
     }
 }
 
-/// Deserialises a JS payload. `what` names it in the error ("install options").
-pub fn parse<T: DeserializeOwned>(value: Value, what: &str) -> Result<T, Failure> {
+/// Converts a JS payload and deserialises it. Values JSON cannot hold (`undefined` at the
+/// top level, functions, symbols, `NaN`, nesting deeper than napi-rs allows) are `USAGE`
+/// failures like any other mismatch, not synchronous exceptions.
+pub fn from_js<T: DeserializeOwned>(
+    env: &Env,
+    value: Unknown<'_>,
+    what: &str,
+) -> Result<T, Failure> {
+    // SAFETY: `value` is a live value of this call's `env`.
+    let json = unsafe { Value::from_napi_value(env.raw(), value.raw()) }
+        .map_err(|error| Failure::invalid_payload(what, &error.reason))?;
+    parse(json, what)
+}
+
+/// `onEvents` must be a function, `undefined` or `null`.
+pub fn callback(value: Option<Unknown<'_>>) -> Result<Option<Unknown<'_>>, Failure> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value.get_type() {
+        Ok(ValueType::Function) => Ok(Some(value)),
+        Ok(ValueType::Undefined | ValueType::Null) => Ok(None),
+        Ok(other) => Err(Failure::usage(format!(
+            "invalid onEvents: expected a function, got {}",
+            type_name(other)
+        ))),
+        Err(error) => Err(Failure::usage(format!(
+            "invalid onEvents: {}",
+            error.reason
+        ))),
+    }
+}
+
+/// The `typeof` of a value type, for messages.
+fn type_name(value_type: ValueType) -> &'static str {
+    match value_type {
+        ValueType::Undefined => "undefined",
+        ValueType::Null => "null",
+        ValueType::Boolean => "boolean",
+        ValueType::Number => "number",
+        ValueType::String => "string",
+        ValueType::Symbol => "symbol",
+        ValueType::Object => "object",
+        ValueType::Function => "function",
+        ValueType::BigInt => "bigint",
+        _ => "an unsupported value",
+    }
+}
+
+/// Deserialises a JSON payload. `what` names it in the error ("install options").
+pub fn parse<T: DeserializeOwned>(mut value: Value, what: &str) -> Result<T, Failure> {
+    integral_numbers(&mut value);
     serde_json::from_value(value).map_err(|error| Failure::invalid_payload(what, &error))
+}
+
+/// JS has only doubles; napi-rs turns integral ones into integers only up to `u32::MAX`, so
+/// `minimumReleaseAgeMs: 5184000000` (60 days) would arrive as `5184000000.0` and fail a
+/// `u64` field. Every integral number that a double represents exactly becomes an integer.
+fn integral_numbers(value: &mut Value) {
+    /// 2^53: beyond it a double no longer holds every integer.
+    const EXACT: f64 = 9_007_199_254_740_992.0;
+    match value {
+        Value::Number(number) => {
+            if number.is_f64()
+                && let Some(float) = number.as_f64()
+                && float.fract() == 0.0
+                && float.abs() <= EXACT
+            {
+                // In range by the check above, so the casts are exact.
+                *number = if float >= 0.0 {
+                    serde_json::Number::from(float as u64)
+                } else {
+                    serde_json::Number::from(float as i64)
+                };
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(integral_numbers),
+        Value::Object(map) => map.values_mut().for_each(integral_numbers),
+        Value::Null | Value::Bool(_) | Value::String(_) => {}
+    }
+}
+
+/// The core resolves everything against `cwd`, so it must be absolute: an empty or relative
+/// `cwd` would silently mean the Node process's working directory (or a parent of it).
+pub fn absolute_cwd(cwd: &Path, what: &str) -> Result<(), Failure> {
+    if cwd.is_absolute() {
+        return Ok(());
+    }
+    Err(Failure::usage(format!(
+        "invalid {what}: `cwd` must be an absolute path, got {:?}",
+        cwd.display().to_string()
+    )))
 }
 
 /// Serialises a core result for the promise. The core's result types always serialise; a
@@ -195,6 +289,70 @@ mod tests {
         }))
         .unwrap_err();
         assert_eq!(err.code, "USAGE");
+    }
+
+    #[test]
+    fn integral_doubles_fill_wide_integer_fields() {
+        // What napi-rs produces for 60 days in ms, and for nested big integers.
+        let opts: InstallOptions = parse(
+            json!({
+                "cwd": "/p",
+                "minimumReleaseAgeMs": 5_184_000_000.0,
+                "networkConcurrency": 64,
+                "depth": 0.0
+            }),
+            "install options",
+        )
+        .unwrap();
+        assert_eq!(opts.pm.minimum_release_age_ms, Some(5_184_000_000));
+        assert_eq!(opts.pm.network_concurrency, Some(64));
+        assert_eq!(opts.depth, Some(0));
+
+        let request: CoreRequest = parse(
+            json!({
+                "cwd": "/p",
+                "options": { "big": 9_007_199_254_740_992.0_f64, "neg": -5e9, "frac": 1.5 }
+            }),
+            "request",
+        )
+        .unwrap();
+        assert_eq!(request.options["big"], json!(9_007_199_254_740_992_u64));
+        assert_eq!(request.options["neg"], json!(-5_000_000_000_i64));
+        assert_eq!(request.options["frac"], json!(1.5));
+    }
+
+    #[test]
+    fn fractions_and_out_of_range_numbers_stay_usage_errors() {
+        for payload in [
+            json!({ "networkConcurrency": 1.5 }),
+            json!({ "networkConcurrency": 70_000.0 }),
+            // Too large to be exact: left as a double, which a u64 field rejects.
+            json!({ "minimumReleaseAgeMs": 1e300 }),
+        ] {
+            let failure = parse::<InstallOptions>(payload, "install options").unwrap_err();
+            assert_eq!(failure.code, "USAGE", "{}", failure.message);
+        }
+    }
+
+    #[test]
+    fn cwd_must_be_absolute() {
+        let root = if cfg!(windows) {
+            r"C:\project"
+        } else {
+            "/project"
+        };
+        assert_eq!(absolute_cwd(Path::new(root), "request"), Ok(()));
+        for cwd in ["", ".", "relative/dir"] {
+            let failure = absolute_cwd(Path::new(cwd), "install options").unwrap_err();
+            assert_eq!(failure.code, "USAGE");
+            assert!(
+                failure
+                    .message
+                    .starts_with("invalid install options: `cwd` must be an absolute path"),
+                "{}",
+                failure.message
+            );
+        }
     }
 
     #[test]

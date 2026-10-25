@@ -1,13 +1,15 @@
 // Loads the built addon (npm run build:native:test) and checks the JS contract in
-// index.d.ts: payload handling, error codes, and event delivery ordering. The `__test*`
-// exports exist only in builds with the cargo feature `testing`.
+// index.d.ts: payload handling, error codes, event delivery ordering, and real installs
+// against a local registry. The `__test*` exports exist only in builds with the cargo
+// feature `testing`.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { startRegistry } from "./helpers/registry.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, "..");
@@ -15,11 +17,6 @@ const require = createRequire(import.meta.url);
 const binding = require(pkg);
 
 const testing = typeof binding.__testDeliver === "function";
-
-/** The core is implemented concurrently; until then its entry points panic with "not yet implemented". */
-function coreStubbed(error) {
-  return error?.code === "CORE_ERROR" && /not (yet )?implemented/.test(error.message);
-}
 
 async function rejection(promise) {
   try {
@@ -30,11 +27,25 @@ async function rejection(promise) {
   throw new Error("expected the promise to reject");
 }
 
+/** Calls `fn` and returns the rejection; a synchronous throw fails the test. */
+async function rejectionOf(fn) {
+  let promise;
+  expect(() => {
+    promise = fn();
+  }).not.toThrow();
+  expect(promise).toBeInstanceOf(Promise);
+  return rejection(promise);
+}
+
 function runFixture(name, ...args) {
   return execFileSync(process.execPath, [join(here, "fixtures", name), pkg, ...args], {
     encoding: "utf8",
     timeout: 20_000,
   });
+}
+
+function tempDir(prefix) {
+  return mkdtempSync(join(tmpdir(), prefix));
 }
 
 describe("loader", () => {
@@ -64,11 +75,35 @@ describe("loader", () => {
   });
 
   it("reports every candidate when nothing loads", () => {
-    const out = runFixture("load-failure.cjs");
-    const report = JSON.parse(out);
+    const report = JSON.parse(runFixture("load-failure.cjs", "repository"));
     expect(report.code).toBe("FNPM_BINDING_NOT_FOUND");
     expect(report.message).toContain("Cannot load the fnpm native core");
     expect(report.message).toContain("does-not-exist.node (not found)");
+    expect(report.message).toContain("@fuck-npm/binding-darwin-x64 (not installed)");
+    expect(report.message).toMatch(/release-napi[\\/]libfnpm_napi\.dylib \(not found\)/);
+  });
+
+  it("never loads development builds from an installed copy's node_modules", () => {
+    // index.js sits in node_modules/@fuck-npm/binding next to a planted
+    // node_modules/target/release/libfnpm_napi.so and node_modules/crates/...
+    const report = JSON.parse(runFixture("load-failure.cjs", "installed"));
+    expect(report.code).toBe("FNPM_BINDING_NOT_FOUND");
+    expect(report.message).toContain("does-not-exist.node (not found)");
+    expect(report.message).toContain("@fuck-npm/binding-darwin-x64 (not installed)");
+    expect(report.message).not.toContain("libfnpm_napi");
+    expect(report.message).not.toContain("crates");
+    expect(binding.__inRepository("/home/u/project/node_modules/@fuck-npm/binding")).toBe(false);
+    expect(binding.__inRepository("C:\\u\\node_modules\\@fuck-npm\\binding")).toBe(false);
+    expect(binding.__inRepository(pkg)).toBe(true);
+  });
+});
+
+describe("load", () => {
+  it.runIf(process.platform === "linux")("starts no threads until the core runs", () => {
+    // napi-rs's `tokio_rt` feature would start its own runtime (one thread per CPU) here.
+    const { before, loaded, afterVersion } = JSON.parse(runFixture("threads.cjs"));
+    expect(loaded).toBe(before);
+    expect(afterVersion).toBe(before);
   });
 });
 
@@ -81,59 +116,188 @@ describe("version", () => {
 });
 
 describe("payloads", () => {
+  const cwd = tempDir("fnpm-binding-payload-");
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
   it("rejects install options of the wrong shape with USAGE", async () => {
-    const error = await rejection(binding.install({ packages: "react" }));
+    const error = await rejectionOf(() => binding.install({ cwd, packages: "react" }));
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe("USAGE");
     expect(error.message).toMatch(/^invalid install options: invalid type: string "react"/);
   });
 
   it("rejects unknown enum values with USAGE", async () => {
-    const error = await rejection(binding.install({ command: "explode" }));
+    const error = await rejectionOf(() => binding.install({ cwd, command: "explode" }));
     expect(error.code).toBe("USAGE");
     expect(error.message).toContain("explode");
   });
 
   it("rejects a request that is not an object with USAGE", async () => {
-    const error = await rejection(binding.invoke(["ls"]));
+    const error = await rejectionOf(() => binding.invoke(["ls"]));
     expect(error.code).toBe("USAGE");
     expect(error.message).toMatch(/^invalid request: /);
   });
 
+  it.each([
+    ["no options at all", () => binding.install()],
+    ["undefined options", () => binding.install(undefined)],
+    ["NaN", () => binding.install({ cwd, networkConcurrency: Number.NaN })],
+    ["Infinity", () => binding.install({ cwd, networkConcurrency: Number.POSITIVE_INFINITY })],
+    ["a function", () => binding.install({ cwd, extra: () => 1 })],
+    ["a symbol", () => binding.invoke({ cwd, command: ["ls"], options: { s: Symbol("s") } })],
+    [
+      "nesting deeper than JSON allows",
+      () => {
+        const options = {};
+        let node = options;
+        for (let i = 0; i < 500; i++) node = node.a = {};
+        return binding.invoke({ cwd, command: ["ls"], options });
+      },
+    ],
+  ])("rejects %s with USAGE instead of throwing", async (_name, call) => {
+    const error = await rejectionOf(call);
+    expect(error.code).toBe("USAGE");
+    expect(error.message).toMatch(/^invalid (install options|request): /);
+  });
+
+  it.each([
+    ["missing", {}],
+    ["empty", { cwd: "" }],
+    ["relative", { cwd: "some/dir" }],
+  ])("rejects a %s cwd with USAGE, before touching any directory", async (_name, payload) => {
+    let error = await rejectionOf(() => binding.install(payload));
+    expect(error.code).toBe("USAGE");
+    expect(error.message).toMatch(/^invalid install options: `cwd` must be an absolute path/);
+    error = await rejectionOf(() => binding.invoke({ command: ["ls"], ...payload }));
+    expect(error.code).toBe("USAGE");
+    expect(error.message).toMatch(/^invalid request: `cwd` must be an absolute path/);
+  });
+
+  it("rejects an onEvents that is not a function with USAGE", async () => {
+    const error = await rejectionOf(() => binding.install({ cwd }, 5));
+    expect(error.code).toBe("USAGE");
+    expect(error.message).toBe("invalid onEvents: expected a function, got number");
+  });
+
   it("does not call onEvents for a payload error", async () => {
     const calls = [];
-    await rejection(binding.invoke({ command: 5 }, (...args) => calls.push(args)));
+    await rejection(binding.invoke({ command: 5, cwd }, (...args) => calls.push(args)));
     expect(calls).toEqual([]);
   });
 
-  it("rejects an unknown command with USAGE", async (ctx) => {
-    const error = await rejection(binding.invoke({ command: ["definitely-not-a-command"] }));
-    if (coreStubbed(error)) ctx.skip();
-    expect(error.code).toBe("USAGE");
-    expect(error.message).toContain("definitely-not-a-command");
+  it("accepts integers beyond 32 bits (60 days in ms)", async () => {
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "p", version: "1.0.0" }));
+    const summary = await binding.install({ cwd, offline: true, minimumReleaseAgeMs: 60 * 86_400_000 });
+    expect(summary.failedCount).toBe(0);
   });
 
-  describe("against a project", () => {
-    const dir = mkdtempSync(join(tmpdir(), "fnpm-binding-"));
-    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  it("rejects a command the core does not run with a documented code", async () => {
+    const error = await rejectionOf(() => binding.invoke({ command: ["definitely-not-a-command"], cwd }));
+    expect(["USAGE", "NOT_IMPLEMENTED"]).toContain(error.code);
+    expect(error.message).toContain("definitely-not-a-command");
+  });
+});
 
-    it("an install of an empty project resolves with a summary", async (ctx) => {
-      const { writeFileSync } = await import("node:fs");
-      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "empty", version: "1.0.0" }));
-      const events = [];
-      let summary;
-      try {
-        summary = await binding.install({ cwd: dir, command: "install", offline: true }, (err, batch) =>
-          events.push(...batch),
-        );
-      } catch (error) {
-        if (coreStubbed(error)) ctx.skip();
-        throw error;
-      }
-      expect(summary).toMatchObject({ failedCount: 0, installedCount: 0 });
-      expect(typeof summary.elapsedMs).toBe("number");
-      for (const event of events) expect(typeof event.type).toBe("string");
+describe("installs against a local registry", () => {
+  let registry;
+  let home;
+  const saved = {};
+  const env = { FNPM_HOME: "", FNPM_CONFIG_REGISTRY: "", NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" };
+
+  beforeAll(async () => {
+    registry = await startRegistry({
+      "tiny-dep": { "1.0.0": {} },
+      tiny: { "1.0.0": { dependencies: { "tiny-dep": "^1.0.0" } }, "1.1.0": { dependencies: { "tiny-dep": "^1.0.0" } } },
     });
+    home = tempDir("fnpm-binding-home-");
+    env.FNPM_HOME = home;
+    env.FNPM_CONFIG_REGISTRY = registry.url;
+    for (const [key, value] of Object.entries(env)) {
+      saved[key] = process.env[key];
+      process.env[key] = value;
+    }
+  });
+
+  afterAll(async () => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await registry?.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  function project() {
+    const dir = tempDir("fnpm-binding-project-");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "app", version: "1.0.0" }, null, 2));
+    return dir;
+  }
+
+  it("add: delivers every event batch before resolving with the summary", async () => {
+    const cwd = project();
+    const batches = [];
+    let settled = false;
+    const summary = await binding
+      .install({ cwd, command: "add", packages: ["tiny"], registry: registry.url }, (err, batch) => {
+        expect(err).toBeNull();
+        expect(settled).toBe(false);
+        batches.push(batch);
+      })
+      .finally(() => {
+        settled = true;
+      });
+    expect(summary).toMatchObject({
+      added: [{ name: "tiny", version: "1.1.0" }],
+      installedCount: 2,
+      failedCount: 0,
+      noop: false,
+    });
+    expect(batches.length).toBeGreaterThan(0);
+    const events = batches.flat();
+    for (const event of events) expect(typeof event.type).toBe("string");
+    expect(events.some((event) => event.type === "resolve")).toBe(true);
+    expect(JSON.parse(readFileSync(join(cwd, "package.json"), "utf8")).dependencies).toEqual({ tiny: "^1.1.0" });
+    expect(existsSync(join(cwd, "node_modules", "tiny", "index.js"))).toBe(true);
+
+    // Nothing changed: the fast path answers, without a callback too.
+    const again = await binding.install({ cwd, registry: registry.url });
+    expect(again).toMatchObject({ noop: true, installedCount: 0 });
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("maps core errors to their codes", async () => {
+    const cwd = project();
+    let error = await rejection(
+      binding.install({ cwd, command: "add", packages: ["no-such-package"], registry: registry.url }, () => {}),
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe("NOT_FOUND");
+    expect(error.message).toContain("no-such-package");
+
+    error = await rejection(binding.install({ cwd, command: "add", packages: ["tiny@^9"], registry: registry.url }));
+    expect(error.code).toBe("NO_MATCHING_VERSION");
+
+    await binding.install({ cwd, command: "add", packages: ["tiny@1.0.0"], registry: registry.url });
+    const manifest = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+    manifest.dependencies["tiny-dep"] = "1.0.0";
+    writeFileSync(join(cwd, "package.json"), JSON.stringify(manifest));
+    error = await rejection(binding.install({ cwd, frozenLockfile: true, registry: registry.url }));
+    expect(error.code).toBe("FROZEN_LOCKFILE");
+
+    mkdirSync(join(cwd, "broken"));
+    writeFileSync(join(cwd, "broken", "package.json"), "{ not json");
+    error = await rejection(binding.install({ cwd: join(cwd, "broken"), registry: registry.url }));
+    expect(error.code).toBe("INVALID_PACKAGE_JSON");
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("runs installs concurrently in one process", async () => {
+    const dirs = Array.from({ length: 4 }, project);
+    const summaries = await Promise.all(
+      dirs.map((cwd) => binding.install({ cwd, command: "add", packages: ["tiny-dep"], registry: registry.url }, () => {})),
+    );
+    for (const summary of summaries) expect(summary.added).toEqual([{ name: "tiny-dep", version: "1.0.0" }]);
+    for (const cwd of dirs) rmSync(cwd, { recursive: true, force: true });
   });
 });
 
@@ -181,6 +345,36 @@ describe.runIf(testing)("event delivery", () => {
 
   it("works without a callback", async () => {
     expect(await binding.__testDeliver([[{ type: "link", done: 1, total: 1 }]])).toEqual({ delivered: 0 });
+  });
+
+  it("through the batching sink: nothing lost, nothing reordered, all before settling", async () => {
+    // Emission spans several 50 ms flushes, so the timer flushes while the work ends.
+    for (let round = 0; round < 8; round++) {
+      const events = Array.from({ length: 120 }, (_, i) => ({ type: "warn", message: `${round}-${i}` }));
+      const seen = [];
+      let settled = false;
+      const result = await binding
+        .__testEmit(events, (_err, batch) => {
+          expect(settled).toBe(false);
+          seen.push(...batch);
+        }, 3, 2)
+        .finally(() => {
+          settled = true;
+        });
+      expect(result).toEqual({ emitted: 120 });
+      expect(seen).toEqual(events);
+    }
+  });
+
+  it("through the batching sink: progress coalesces to the latest value", async () => {
+    const events = Array.from({ length: 500 }, (_, i) => ({ type: "link", done: i + 1, total: 500 }));
+    const seen = [];
+    await binding.__testEmit(events, (_err, batch) => seen.push(...batch));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(500);
+    expect(seen.at(-1)).toEqual({ type: "link", done: 500, total: 500 });
+    const done = seen.map((event) => event.done);
+    expect(done).toEqual([...done].sort((a, b) => a - b));
   });
 
   it("a throwing callback is an uncaught exception and the promise still settles", () => {

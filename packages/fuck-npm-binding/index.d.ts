@@ -4,8 +4,9 @@
  * are packages/fuck-npm/src/core/types.ts and both must change together.
  *
  * Payloads are plain JSON-shaped objects (serde on the Rust side, camelCase,
- * unknown fields ignored). Work runs on the core's own threads, never on the JS
- * thread. Progress arrives in batches, at most every 50 ms, as
+ * unknown fields ignored); `cwd` must be absolute. Neither function throws: a
+ * payload or callback that does not fit is a `USAGE` rejection. Work runs on
+ * the core's own threads, never on the JS thread. Progress arrives in batches, at most every 50 ms, as
  * `onEvents(null, events)` through a napi ThreadsafeFunction; every batch is
  * delivered before the returned promise settles. If `onEvents` throws, the
  * exception surfaces as an uncaught exception (like an event listener's) and
@@ -32,11 +33,14 @@ export type NativeErrorCode =
   | "SCRIPT_FAILED"
   | "INVALID_PACKAGE_JSON"
   | "USAGE"
+  | "NOT_IMPLEMENTED"
   | "CORE_ERROR";
 
 /**
  * A rejection. `USAGE` also covers a payload that does not match the Rust
- * types; `CORE_ERROR` also covers a panic inside the core.
+ * types, a relative `cwd` and an `onEvents` that is not a function;
+ * `NOT_IMPLEMENTED` is a command of a later parity phase; `CORE_ERROR` also
+ * covers a panic inside the core.
  */
 export interface NativeError extends Error {
   code: NativeErrorCode;
@@ -63,3 +67,6 @@ export declare function __platformArchAbi(
   arch?: string,
   musl?: () => boolean,
 ): string | null;
+
+/** Whether `dir` (default: this package) is the repository checkout rather than an installed copy; development builds are only loaded then. */
+export declare function __inRepository(dir?: string): boolean;

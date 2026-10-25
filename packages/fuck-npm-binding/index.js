@@ -8,7 +8,13 @@
  *   2. ./fnpm.<abi>.node next to this file (`npm run build:native`)
  *   3. ../../crates/fnpm-napi/fnpm.<abi>.node (`napi build` run in the crate)
  *   4. the published platform package @fuck-npm/binding-<abi>
- *   5. a raw cargo artifact in $CARGO_TARGET_DIR or ../../target, release then debug
+ *   5. a raw cargo artifact in $CARGO_TARGET_DIR or ../../target, release-napi,
+ *      release, then debug
+ *
+ * 3 and 5 are development paths and only apply in the repository checkout. In
+ * an installed copy (…/node_modules/@fuck-npm/binding) ../../ is the user's
+ * node_modules, where any dependency (one named `target` or `crates`) could
+ * plant a library that would then run in every fnpm process, scripts or not.
  *
  * Every candidate goes through process.dlopen, which loads any extension, so a
  * cargo `libfnpm_napi.so` works without being renamed to `.node`.
@@ -62,21 +68,27 @@ function cargoArtifact(platform) {
   return `lib${CRATE_LIB}.so`;
 }
 
-function candidates(abi) {
+/** True in the repository checkout, false in an installed copy. */
+function inRepository(dir = __dirname) {
+  return !dir.split(/[\\/]/).includes('node_modules');
+}
+
+function candidates(abi, dev = inRepository()) {
   const list = [];
   const override = process.env.NAPI_RS_NATIVE_LIBRARY_PATH;
   if (override) list.push({ kind: 'file', path: override });
   if (abi) {
     const file = `${BINARY_NAME}.${abi}.node`;
     list.push({ kind: 'file', path: join(__dirname, file) });
-    list.push({ kind: 'file', path: join(__dirname, '..', '..', 'crates', 'fnpm-napi', file) });
+    if (dev) list.push({ kind: 'file', path: join(__dirname, '..', '..', 'crates', 'fnpm-napi', file) });
     list.push({ kind: 'package', path: `${PACKAGE_NAME}-${abi}` });
   }
+  if (!dev) return list;
   const targetDirs = [];
   if (process.env.CARGO_TARGET_DIR) targetDirs.push(process.env.CARGO_TARGET_DIR);
   targetDirs.push(join(__dirname, '..', '..', 'target'));
   for (const dir of targetDirs) {
-    for (const profile of ['release', 'debug']) {
+    for (const profile of ['release-napi', 'release', 'debug']) {
       list.push({ kind: 'file', path: join(dir, profile, cargoArtifact(process.platform)) });
     }
   }
@@ -123,3 +135,4 @@ function load() {
 
 module.exports = load();
 module.exports.__platformArchAbi = platformArchAbi;
+module.exports.__inRepository = inRepository;

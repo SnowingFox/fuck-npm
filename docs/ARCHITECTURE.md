@@ -1406,17 +1406,25 @@ type EventsFn = ThreadsafeFunction<Value, Unknown<'static>, Value, Status, /* ca
 
 **Call flow.**
 
-1. On the JS thread: deserialise the payload (`InstallOptions` / `CoreRequest`, unknown
-   fields ignored) and create a promise (`Env::create_deferred`). A payload that does not
-   deserialise rejects right away with `USAGE` (`invalid install options: <serde error>`),
-   without touching the runtime.
+1. On the JS thread: create a promise (`Env::create_deferred`), convert the payload to JSON
+   and deserialise it (`InstallOptions` / `CoreRequest`, unknown fields ignored). Integral
+   doubles become integers first (napi-rs only does so up to `u32::MAX`, which would break
+   `minimumReleaseAgeMs` beyond 49 days). Neither function throws: a payload that does not
+   convert or deserialise (`undefined`, functions, symbols, `NaN`, wrong types), a relative
+   or missing `cwd` (the core would otherwise use the Node process's directory), and an
+   `onEvents` that is not a function all reject right away with `USAGE`
+   (`invalid install options: <reason>`), without touching the runtime.
 2. Spawn the work on `fnpm_core::runtime()`. The functions are not napi `async fn`s on
    purpose: those run on napi-rs's own tokio runtime, which would mean a second thread pool
-   and a hop between runtimes.
+   and a hop between runtimes. For the same reason the `napi` crate is built without
+   `tokio_rt`, which would start that runtime (a thread per CPU) when the addon loads.
 3. With `onEvents`, the sink is a `BatchingSink` whose deliver closure serialises the batch
-   to a JSON array and calls the TSFN non-blocking (unbounded queue) as `(null, events)`;
-   `BatchingSink::start`'s guard flushes every 50 ms and once when dropped, after the work
-   returns. Without `onEvents` the sink is `NoopSink` and no event is built.
+   to a JSON array and calls the TSFN non-blocking (unbounded queue) as `(null, events)`.
+   fnpm-napi runs the 50 ms flush timer itself rather than `BatchingSink::start`: that
+   guard aborts the timer task and flushes at once, so a timer flush still running on
+   another worker could deliver after the final batch, or after the listener closed. Here
+   the final flush waits until the timer task has stopped. Without `onEvents` the sink is
+   `NoopSink` and no event is built.
 4. Every batch is sent with a return-value callback that releases an ack once the JS
    callback has returned. The promise settles through a different Node queue, so before
    settling the task waits until every ack is back (`listener::Listener::close`), then drops
@@ -1425,7 +1433,8 @@ type EventsFn = ThreadsafeFunction<Value, Unknown<'static>, Value, Status, /* ca
 5. Settle on the JS thread: resolve with the result as JSON, or reject with an `Error`
    created there with `code` and `message` set (the rejection is that exact object).
 
-**Errors and panics.** Codes are `fnpm_core::Error::code()`. A panic in the core (in
+**Errors and panics.** Codes are `fnpm_core::Error::code()` (`NOT_IMPLEMENTED` for commands of
+a later parity phase). A panic in the core (in
 `runtime()` or the spawned work) is caught and rejects with `CORE_ERROR` and
 `internal error in the fnpm core: <panic message>`; the runtime keeps running. This needs
 unwinding, so the addon is built with the `release-napi` profile (`release` with
@@ -1438,19 +1447,25 @@ release-napi`, `@napi-rs/cli` pinned) writes `fnpm.<triple>.node` and the genera
 `native.d.ts` (not committed) into `packages/fuck-npm-binding`. `build:native:test` is a
 debug build with the cargo feature `testing`, which adds `__testDeliver` and
 `__testRejectNow`: they drive the delivery, ack and rejection plumbing on a private runtime,
-independent of what the core does. `.github/workflows/napi.yml` builds all eight targets
+independent of what the core does, and `__testEmit`, which emits events through the same
+`run` path and batching sink as `install`. `.github/workflows/napi.yml` builds all eight targets
 (glibc with `--use-napi-cross`, musl with cargo-zigbuild), runs `cargo test`, clippy and
-the vitest suite on Linux x64/arm64, macOS arm64 and Windows x64, and loads the musl builds
-in Alpine.
+the vitest suite on Linux x64/arm64, macOS arm64 and Windows x64, and loads every release
+build on its own platform (musl ones in Alpine) to run `tests/smoke.cjs`: a `USAGE`
+rejection, an empty-project install with events, and the no-op fast path.
 
 **Tests.** `cargo test -p fnpm-napi`: payload parsing (camelCase, unknown fields, wrong
-types, enum values), error-code mapping, panic payloads, and ack accounting with concurrent
-producers and a slow consumer. `npm test -w @fuck-npm/binding` (vitest, loads the built
-addon): loader triples and the not-found report, version, `USAGE` rejections, event batches
-in order and all before settling (also before a rejection, and with 2000 batches), a throwing
-listener, the process exiting once the promise settles, panics as `CORE_ERROR`, and (once
-the core is implemented; skipped while it panics with `todo!`) an unknown command and an
-empty-project install.
+types, enum values, integral doubles, absolute `cwd`), error-code mapping, panic payloads,
+and ack accounting with concurrent producers and a slow consumer. `npm test -w
+@fuck-npm/binding` (vitest, loads the built addon): loader triples, the not-found report and
+that an installed copy never loads development builds, no threads started by loading,
+version, `USAGE` rejections instead of exceptions for every malformed payload, `cwd` and
+callback, event batches in order and all before settling (also before a rejection, with 2000
+batches, and through the batching sink while its timer flushes), progress coalescing, a
+throwing listener, the process exiting once the promise settles, panics as `CORE_ERROR`, and
+real installs against an in-memory registry (`tests/helpers/registry.mjs`): `add` with events
+then the no-op fast path, `NOT_FOUND`, `NO_MATCHING_VERSION`, `FROZEN_LOCKFILE`,
+`INVALID_PACKAGE_JSON`, and concurrent installs in one process.
 
 **Perf.** `npm run bench -w @fuck-npm/binding` measures load time, a sync call, a rejected
 payload, an empty async round trip, and 1/100/1000 event batches.
@@ -1538,8 +1553,9 @@ The JS surface is `packages/fuck-npm-binding/index.d.ts`; the CLI-side types are
 export function version(): string;
 export function install(options: InstallOptions, onEvents?: (err: Error | null, events: CoreEvent[]) => void): Promise<InstallSummary>;
 export function invoke(request: CoreRequest, onEvents?: (err: Error | null, events: CoreEvent[]) => void): Promise<CoreResult>;
-// Rejections: Error with `code` in FROZEN_LOCKFILE | NO_MATCHING_VERSION | NOT_FOUND | INTEGRITY | NETWORK |
-//             SCRIPT_FAILED | INVALID_PACKAGE_JSON | USAGE | CORE_ERROR
+// Never throws. Rejections: Error with `code` in FROZEN_LOCKFILE | NO_MATCHING_VERSION | NOT_FOUND |
+//             INTEGRITY | NETWORK | SCRIPT_FAILED | INVALID_PACKAGE_JSON | USAGE | NOT_IMPLEMENTED | CORE_ERROR
+// `cwd` (in options and request) must be absolute.
 ```
 
 Events (`fnpm_types::event::Event`, serde `tag = "type"`, camelCase fields), delivered as
@@ -1605,10 +1621,13 @@ passed under `--json` / `--silent`. Tests: vitest with injected fakes.
 `/usr/bin/ldd`, then `process.report`) and loads, in order: `NAPI_RS_NATIVE_LIBRARY_PATH`,
 `fnpm.<triple>.node` next to it, `fnpm.<triple>.node` in `crates/fnpm-napi`, the
 `@fuck-npm/binding-<triple>` platform package, then raw cargo output in
-`target/{release,debug}` (development);
+`$CARGO_TARGET_DIR` or `target/{release-napi,release,debug}` (development). The
+`crates/` and `target/` candidates only apply in the repository checkout: in an installed
+copy `../../` is the user's `node_modules`, where a dependency named `target` or `crates`
+could plant a library that every fnpm process would load, scripts allowed or not.
 `index.d.ts` is the contract above. Platform packages are napi-rs standard prebuilt packages
-built in CI (`napi build --platform --release`); they also carry the native executables (see
-[packaging](#packaging-and-distribution)).
+built in CI (`napi build --platform --profile release-napi`); they also carry the native
+executables (see [packaging](#packaging-and-distribution)).
 
 ## bench
 
