@@ -472,6 +472,19 @@ async fn optional_platform_mismatch_is_skipped() {
         p.read("fnpm.lock").contains("only-aix"),
         "kept in the lockfile"
     );
+    let downloaded = |reg: &Registry| {
+        reg.seen()
+            .iter()
+            .any(|r| r.contains("only-aix") && r.ends_with(".tgz"))
+    };
+    assert!(
+        !downloaded(&reg),
+        "never download another platform's package"
+    );
+    // Not on a reinstall from the lockfile either.
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
+    p.install().await;
+    assert!(!downloaded(&reg));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

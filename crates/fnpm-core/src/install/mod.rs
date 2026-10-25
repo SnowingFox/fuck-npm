@@ -428,7 +428,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         if !linked.reachable.get(i).copied().unwrap_or(false) {
             continue;
         }
-        if let Ok(f) = fetcher.ensure_package(p).wait().await {
+        let Some(slot) = fetcher.existing(p) else {
+            continue;
+        };
+        if let Ok(f) = slot.wait().await {
             graph.packages[i].resolution.set_integrity(f.key.integrity);
             integrity_filled = true;
         }

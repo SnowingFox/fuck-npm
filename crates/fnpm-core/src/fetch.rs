@@ -200,20 +200,34 @@ impl Fetcher {
         slot
     }
 
+    /// The slot of a package whose fetch was already started (never starts one).
+    pub fn existing(&self, p: &Package) -> Option<Arc<Slot>> {
+        self.inner
+            .slots
+            .lock()
+            .get(&format!("{}@{}", p.name, p.resolution))
+            .cloned()
+    }
+
     /// [`Fetcher::ensure`] for a graph package.
     pub fn ensure_package(&self, p: &Package) -> Arc<Slot> {
         self.ensure(&p.name, &p.version, &p.resolution)
     }
 
-    /// The `pkgs/` directory names of the installed packages (patched variants included), for
-    /// the store's project record.
+    /// The `pkgs/` directory names of the installed packages that this install fetched or found
+    /// in the store (patched variants included), for the store's project record.
     pub async fn store_dir_names(&self, graph: &LockGraph, installed: &[bool]) -> Vec<String> {
         let mut names = Vec::new();
         for (i, p) in graph.packages.iter().enumerate() {
             if !installed.get(i).copied().unwrap_or(false) || !needs_content(&p.resolution) {
                 continue;
             }
-            let Ok(f) = self.ensure_package(p).wait().await else {
+            // Only what this install fetched: packages that were not linked (another
+            // platform's optional binaries) must not be downloaded now.
+            let Some(slot) = self.existing(p) else {
+                continue;
+            };
+            let Ok(f) = slot.wait().await else {
                 continue;
             };
             names.push(f.key.dir_name());
