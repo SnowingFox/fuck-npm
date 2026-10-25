@@ -543,14 +543,18 @@ mod tests {
     #[test]
     fn missing_or_foreign_state_is_changed() {
         let dir = project();
+        let meta = dir.path().join("meta");
         assert_eq!(
             check(dir.path(), &dir.path().join("meta"), 7),
             Check::Changed(None)
         );
         let mut s = state_for(dir.path());
         s.version = STATE_VERSION - 1;
-        write(dir.path(), &s).unwrap();
-        assert!(matches!(check(dir.path(), 7), Check::Changed(Some(_))));
+        write(dir.path(), &meta, &s).unwrap();
+        assert!(matches!(
+            check(dir.path(), &meta, 7),
+            Check::Changed(Some(_))
+        ));
         s.version = STATE_VERSION;
         s.fnpm_version = "0.0.0-other".into();
         write(dir.path(), &dir.path().join("meta"), &s).unwrap();

@@ -421,6 +421,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn place_node<'s>(
     s: &rayon::ScopeFifo<'s>,
     cx: &'s LinkCx<'s>,
