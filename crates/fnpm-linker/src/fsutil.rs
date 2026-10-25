@@ -1,0 +1,920 @@
+//! Filesystem helpers of the linker: materialising a store package with the best backend
+//! (bun `PackageInstall.rs` install_with_*, `isolated_install/{FileCloner,Hardlinker,
+//! FileCopier}.rs`), symlinks that are idempotent (`Symlinker.rs`), moving trees aside and
+//! deleting them in the background, and lexical path arithmetic.
+
+use std::ffi::OsString;
+use std::io;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use fnpm_config::Backend;
+use fnpm_store::fsops::StickyBackend;
+use fnpm_store::{FileIndex, MaterializeError};
+
+/// Prefix of a tree moved out of the way (bun `OldModules::PREFIX`).
+pub const OLD_MODULES_PREFIX: &str = ".old_modules-";
+/// Prefix of the linker's staging directories.
+pub const STAGING_PREFIX: &str = ".fnpm-staging-";
+/// Prefix of a package directory moved aside before it is replaced.
+pub const MOVED_ASIDE_PREFIX: &str = ".fnpm-old-";
+
+/// True for names an interrupted install can leave behind (bun `prune::is_leftover`).
+pub fn is_leftover(name: &str) -> bool {
+    name.starts_with(OLD_MODULES_PREFIX)
+        || name.starts_with(STAGING_PREFIX)
+        || name.starts_with(MOVED_ASIDE_PREFIX)
+}
+
+/// A process-unique random-looking suffix (no RNG dependency: time, pid and a counter hashed).
+pub fn random_suffix() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64);
+    let mut bytes = [0u8; 24];
+    bytes[..8].copy_from_slice(&t.to_le_bytes());
+    bytes[8..16].copy_from_slice(&u64::from(std::process::id()).to_le_bytes());
+    bytes[16..].copy_from_slice(&n.to_le_bytes());
+    xxhash_rust::xxh3::xxh3_64(&bytes)
+}
+
+fn mat_err(op: &'static str, from: &Path, to: &Path, source: io::Error) -> MaterializeError {
+    MaterializeError::Io {
+        op,
+        from: from.display().to_string(),
+        to: to.display().to_string(),
+        source,
+    }
+}
+
+fn is_errno(e: &io::Error, codes: &[i32]) -> bool {
+    e.raw_os_error().is_some_and(|c| codes.contains(&c))
+}
+
+/// Errors that mean "this backend cannot work here", so the sticky backend degrades.
+fn is_unsupported(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::Unsupported
+        || is_errno(
+            e,
+            &[
+                libc::EXDEV,
+                libc::ENOTSUP,
+                libc::EOPNOTSUPP,
+                libc::EPERM,
+                libc::EINVAL,
+                libc::ENOSYS,
+                libc::EMLINK,
+            ],
+        )
+}
+
+/// Copies a store package into a fresh directory. Holds the process-wide sticky backend.
+#[derive(Debug)]
+pub struct Materializer {
+    sticky: StickyBackend,
+    /// Used at least once: (clonefile, hardlink, copyfile, symlink).
+    used: [std::sync::atomic::AtomicBool; 4],
+}
+
+impl Materializer {
+    /// Starts with `preferred`; failures move to the next backend for the rest of the process.
+    pub fn new(preferred: Backend) -> Self {
+        Self {
+            sticky: StickyBackend::new(preferred),
+            used: Default::default(),
+        }
+    }
+
+    /// The backend the next file will use.
+    pub fn current(&self) -> Backend {
+        self.sticky.current()
+    }
+
+    /// The weakest backend that was used, i.e. what the report shows.
+    pub fn used(&self) -> Option<Backend> {
+        [
+            Backend::Symlink,
+            Backend::Copyfile,
+            Backend::Hardlink,
+            Backend::Clonefile,
+        ]
+        .into_iter()
+        .find(|b| self.used[*b as usize].load(Ordering::Relaxed))
+    }
+
+    fn mark(&self, b: Backend) {
+        self.used[b as usize].store(true, Ordering::Relaxed);
+    }
+
+    /// Materialises the package at `src` (a store `package/` dir described by `index`) into
+    /// `dest`, which must not exist. Creates `dest`'s parents.
+    pub fn materialize(
+        &self,
+        src: &Path,
+        index: &FileIndex,
+        dest: &Path,
+    ) -> Result<Backend, MaterializeError> {
+        if let Some(parent) = dest.parent() {
+            create_dir_all(parent).map_err(|e| mat_err("mkdir", src, parent, e))?;
+        }
+        if self.current() == Backend::Clonefile && cfg!(target_os = "macos") {
+            match clone_dir(src, dest) {
+                Ok(()) => {
+                    self.mark(Backend::Clonefile);
+                    return Ok(Backend::Clonefile);
+                }
+                Err(e) if is_errno(&e, &[libc::EXDEV]) => self.sticky.degrade(Backend::Copyfile),
+                Err(e) if is_unsupported(&e) => self.sticky.degrade(Backend::Hardlink),
+                Err(e) if is_errno(&e, &[libc::EEXIST]) => {}
+                Err(e) => return Err(mat_err("clonefile", src, dest, e)),
+            }
+        }
+        match std::fs::create_dir(dest) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(mat_err("mkdir", src, dest, e)),
+        }
+        for d in &index.dirs {
+            if d.is_empty() {
+                continue;
+            }
+            let dir_buf = dest.join(d);
+            match std::fs::create_dir(&dir_buf) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    create_dir_all(&dir_buf).map_err(|e| mat_err("mkdir", src, &dir_buf, e))?;
+                }
+                Err(e) => return Err(mat_err("mkdir", src, &dir_buf, e)),
+            }
+        }
+        let mut weakest = Backend::Clonefile;
+        for f in &index.files {
+            let from = src.join(&f.path);
+            let to = dest.join(&f.path);
+            let used = self.place_file(&from, &to)?;
+            if (used as u8) > (weakest as u8) {
+                weakest = used;
+            }
+        }
+        if index.files.is_empty() {
+            weakest = self.current();
+        }
+        Ok(weakest)
+    }
+
+    /// Places one file, degrading the sticky backend on "unsupported" errors.
+    pub fn place_file(&self, from: &Path, to: &Path) -> Result<Backend, MaterializeError> {
+        loop {
+            let backend = self.current();
+            let result = match backend {
+                Backend::Clonefile => reflink_copy::reflink(from, to),
+                Backend::Hardlink => std::fs::hard_link(from, to),
+                Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                Backend::Symlink => symlink_file(from, to),
+            };
+            match result {
+                Ok(()) => {
+                    self.mark(backend);
+                    return Ok(backend);
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    std::fs::remove_file(to).map_err(|e| mat_err("unlink", from, to, e))?;
+                    let retry = match backend {
+                        Backend::Clonefile => reflink_copy::reflink(from, to),
+                        Backend::Hardlink => std::fs::hard_link(from, to),
+                        Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                        Backend::Symlink => symlink_file(from, to),
+                    };
+                    match retry {
+                        Ok(()) => {
+                            self.mark(backend);
+                            return Ok(backend);
+                        }
+                        Err(e)
+                            if matches!(backend, Backend::Clonefile | Backend::Hardlink)
+                                && is_unsupported(&e) =>
+                        {
+                            let _ = std::fs::remove_file(to);
+                            self.degrade_after(backend, &e);
+                        }
+                        Err(e) => return Err(mat_err(op_name(backend), from, to, e)),
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound && !from.exists() => {
+                    return Err(mat_err(op_name(backend), from, to, e));
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    if let Some(parent) = to.parent() {
+                        create_dir_all(parent).map_err(|e| mat_err("mkdir", from, parent, e))?;
+                    }
+                }
+                Err(e)
+                    if matches!(backend, Backend::Clonefile | Backend::Hardlink)
+                        && is_unsupported(&e) =>
+                {
+                    let _ = std::fs::remove_file(to);
+                    self.degrade_after(backend, &e);
+                }
+                Err(e) => return Err(mat_err(op_name(backend), from, to, e)),
+            }
+        }
+    }
+
+    fn degrade_after(&self, backend: Backend, e: &io::Error) {
+        let next = match backend {
+            // A clone across devices cannot hardlink either.
+            Backend::Clonefile if is_errno(e, &[libc::EXDEV]) => Backend::Copyfile,
+            Backend::Clonefile => Backend::Hardlink,
+            _ => Backend::Copyfile,
+        };
+        self.sticky.degrade(next);
+    }
+}
+
+fn op_name(b: Backend) -> &'static str {
+    match b {
+        Backend::Clonefile => "clonefile",
+        Backend::Hardlink => "hardlink",
+        Backend::Copyfile => "copyfile",
+        Backend::Symlink => "symlink",
+    }
+}
+
+#[cfg(unix)]
+fn symlink_file(from: &Path, to: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(from, to)
+}
+
+#[cfg(windows)]
+fn symlink_file(from: &Path, to: &Path) -> io::Result<()> {
+    std::os::windows::fs::symlink_file(from, to)
+}
+
+/// macOS `clonefile` of a whole directory: one syscall for the whole package.
+#[cfg(target_os = "macos")]
+pub fn clone_dir(src: &Path, dest: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let s = std::ffi::CString::new(src.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let d = std::ffi::CString::new(dest.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: both pointers are valid NUL-terminated strings for the duration of the call.
+    let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), libc::CLONE_NOFOLLOW) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+/// Not available outside macOS.
+#[cfg(not(target_os = "macos"))]
+pub fn clone_dir(_src: &Path, _dest: &Path) -> io::Result<()> {
+    Err(io::Error::from(io::ErrorKind::Unsupported))
+}
+
+/// `create_dir_all` that tolerates a concurrent creator.
+pub fn create_dir_all(p: &Path) -> io::Result<()> {
+    match std::fs::create_dir_all(p) {
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && p.is_dir() => Ok(()),
+        r => r,
+    }
+}
+
+/// What `lstat` says is at `p`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    /// Nothing there.
+    Missing,
+    /// A real directory.
+    Dir,
+    /// A file (or something else that is not a directory or link).
+    File,
+    /// A symlink (or junction), not followed.
+    Symlink,
+}
+
+/// `lstat` classification; errors other than "not found" count as a file (the caller will
+/// try to remove it and report the real error).
+pub fn kind(p: &Path) -> Kind {
+    match std::fs::symlink_metadata(p) {
+        Ok(m) if m.file_type().is_symlink() => Kind::Symlink,
+        Ok(m) if m.is_dir() => Kind::Dir,
+        Ok(_) => Kind::File,
+        Err(e) if e.kind() == io::ErrorKind::NotFound || is_errno(&e, &[libc::ENOTDIR]) => {
+            Kind::Missing
+        }
+        Err(_) => Kind::File,
+    }
+}
+
+/// Removes whatever is at `p` (a link is removed, never followed). Missing is fine.
+pub fn remove_any(p: &Path) -> io::Result<()> {
+    let r = match kind(p) {
+        Kind::Missing => return Ok(()),
+        Kind::Dir => std::fs::remove_dir_all(p),
+        Kind::File => std::fs::remove_file(p),
+        Kind::Symlink => remove_link(p),
+    };
+    match r {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        r => r,
+    }
+}
+
+/// Removes a symlink (or junction on Windows).
+pub fn remove_link(p: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        std::fs::remove_dir(p).or_else(|_| std::fs::remove_file(p))
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_file(p)
+    }
+}
+
+/// Paths queued for deletion on a background thread.
+struct Trash {
+    queue: Mutex<Vec<PathBuf>>,
+    running: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+fn trash() -> &'static Trash {
+    static TRASH: OnceLock<Trash> = OnceLock::new();
+    TRASH.get_or_init(|| Trash {
+        queue: Mutex::new(Vec::new()),
+        running: Mutex::new(None),
+    })
+}
+
+/// Deletes `p` on a background thread. The caller has already renamed it out of the way.
+pub fn delete_in_background(p: PathBuf) {
+    let t = trash();
+    t.queue.lock().unwrap_or_else(|e| e.into_inner()).push(p);
+    let mut running = t.running.lock().unwrap_or_else(|e| e.into_inner());
+    if running.as_ref().is_some_and(|h| !h.is_finished()) {
+        return;
+    }
+    if let Some(h) = running.take() {
+        let _ = h.join();
+    }
+    let spawned = std::thread::Builder::new()
+        .name("fnpm-trash".into())
+        .spawn(|| {
+            loop {
+                let next = trash()
+                    .queue
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pop();
+                let Some(p) = next else { break };
+                let _ = remove_any(&p);
+            }
+        });
+    match spawned {
+        Ok(h) => *running = Some(h),
+        Err(_) => {
+            drop(running);
+            // No thread: delete inline.
+            let items: Vec<PathBuf> =
+                std::mem::take(&mut *t.queue.lock().unwrap_or_else(|e| e.into_inner()));
+            for p in items {
+                let _ = remove_any(&p);
+            }
+        }
+    }
+}
+
+/// Blocks until every background deletion queued so far has finished.
+pub fn flush_background_deletes() {
+    loop {
+        let handle = trash()
+            .running
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        match handle {
+            Some(h) => {
+                let _ = h.join();
+            }
+            None => break,
+        }
+        if trash()
+            .queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+        {
+            break;
+        }
+        // Items queued after the thread exited: drain them here.
+        let items: Vec<PathBuf> =
+            std::mem::take(&mut *trash().queue.lock().unwrap_or_else(|e| e.into_inner()));
+        for p in items {
+            let _ = remove_any(&p);
+        }
+    }
+}
+
+/// Renames `p` to `<dir of p>/.fnpm-old-<rand>` and deletes it in the background; deletes in
+/// place when the rename fails (e.g. a mount point or another filesystem).
+pub fn move_aside_and_delete(p: &Path) -> io::Result<()> {
+    move_aside_into(p, p.parent().unwrap_or(Path::new(".")))
+}
+
+/// Like [`move_aside_and_delete`], with the temporary name in `parent` (same filesystem), so
+/// that `p`'s own parent can be removed right away (a scope folder).
+pub fn move_aside_into(p: &Path, parent: &Path) -> io::Result<()> {
+    if kind(p) != Kind::Dir {
+        return remove_any(p);
+    }
+    let aside = parent.join(format!("{MOVED_ASIDE_PREFIX}{:016x}", random_suffix()));
+    match std::fs::rename(p, &aside) {
+        Ok(()) => {
+            delete_in_background(aside);
+            Ok(())
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(_) => remove_any(p),
+    }
+}
+
+/// Lexically normalises an absolute or relative path (`.` dropped, `..` pops).
+pub fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            c => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The relative path from directory `from` to `to` (both absolute or both relative to the
+/// same base; compared lexically).
+pub fn relative(from: &Path, to: &Path) -> PathBuf {
+    let from = normalize(from);
+    let to = normalize(to);
+    let fc: Vec<_> = from.components().collect();
+    let tc: Vec<_> = to.components().collect();
+    let common = fc.iter().zip(&tc).take_while(|(a, b)| a == b).count();
+    let mut out = PathBuf::new();
+    for _ in common..fc.len() {
+        out.push("..");
+    }
+    for c in &tc[common..] {
+        out.push(c.as_os_str());
+    }
+    if out.as_os_str().is_empty() {
+        out.push(".");
+    }
+    out
+}
+
+/// `dir/name` where `name` may be scoped (`@s/n`), with `/` as the separator inside.
+pub fn join_name(dir: &Path, name: &str) -> PathBuf {
+    let mut p = dir.to_path_buf();
+    for part in name.split('/') {
+        p.push(part);
+    }
+    p
+}
+
+/// How [`ensure_symlink`] treats what is already at the destination (bun `Symlinker::Strategy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strategy {
+    /// The destination's parent is new: just create, fix up on failure.
+    ExpectMissing,
+    /// Read the current link first; keep it when it already points at the target.
+    ExpectExisting,
+}
+
+#[cfg(unix)]
+fn symlink_dir_raw(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn symlink_dir_raw(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+}
+
+/// Makes `dest` a symlink with the text `target`. Returns `Ok(true)` when something was
+/// written. With [`Strategy::ExpectExisting`], a real directory that has a `package.json` is
+/// kept (a `patch` checkout or a mount point), like bun. `real_base` is the deepest directory
+/// of `dest` known to be a real directory; links planted in components below it are removed
+/// so nothing is written through them.
+pub fn ensure_symlink(
+    target: &Path,
+    dest: &Path,
+    strategy: Strategy,
+    real_base: Option<&Path>,
+) -> io::Result<bool> {
+    ensure_inner(target, dest, strategy, real_base, true)
+}
+
+fn create_link(target: &Path, dest: &Path) -> io::Result<()> {
+    match symlink_dir_raw(target, dest) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            if let Some(parent) = dest.parent() {
+                create_dir_all(parent)?;
+            }
+            symlink_dir_raw(target, dest)
+        }
+        r => r,
+    }
+}
+
+fn ensure_inner(
+    target: &Path,
+    dest: &Path,
+    strategy: Strategy,
+    real_base: Option<&Path>,
+    may_retry: bool,
+) -> io::Result<bool> {
+    if let (Some(base), Some(parent)) = (real_base, dest.parent()) {
+        remove_planted_links(parent, base)?;
+    }
+    match strategy {
+        Strategy::ExpectMissing => match symlink_dir_raw(target, dest) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                if let Some(parent) = dest.parent() {
+                    create_dir_all(parent)?;
+                }
+                symlink_dir_raw(target, dest).map(|()| true)
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                remove_any(dest)?;
+                symlink_dir_raw(target, dest).map(|()| true)
+            }
+            Err(e) => Err(e),
+        },
+        Strategy::ExpectExisting => match std::fs::read_link(dest) {
+            Ok(current) => {
+                if strip_trailing_sep(&current) == target {
+                    return Ok(false);
+                }
+                remove_link(dest)?;
+                create_link(target, dest).map(|()| true)
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound || is_errno(&e, &[libc::ENOTDIR]) => {
+                match create_link(target, dest) {
+                    Err(e) if may_retry && e.kind() == io::ErrorKind::AlreadyExists => {
+                        ensure_inner(target, dest, strategy, None, false)
+                    }
+                    r => r.map(|()| true),
+                }
+            }
+            Err(_) => {
+                // A file or a directory.
+                if dest.join("package.json").exists() && kind(dest) == Kind::Dir {
+                    return Ok(false);
+                }
+                remove_any(dest)?;
+                create_link(target, dest).map(|()| true)
+            }
+        },
+    }
+}
+
+fn strip_trailing_sep(p: &Path) -> PathBuf {
+    let s = p.as_os_str().to_string_lossy();
+    let t = s.trim_end_matches(['/', '\\']);
+    if t.len() == s.len() || t.is_empty() {
+        p.to_path_buf()
+    } else {
+        PathBuf::from(OsString::from(t))
+    }
+}
+
+/// For each component of `path` below `real_base`: a symlink there came with the project (it
+/// was not created by the installer), so it is removed rather than written through
+/// (bun `prune::remove_planted_links`). `path` must start with `real_base`.
+pub fn remove_planted_links(path: &Path, real_base: &Path) -> io::Result<()> {
+    let Ok(rest) = path.strip_prefix(real_base) else {
+        return Ok(());
+    };
+    let mut cur = real_base.to_path_buf();
+    for c in rest.components() {
+        cur.push(c.as_os_str());
+        match std::fs::symlink_metadata(&cur) {
+            Ok(m) if m.file_type().is_symlink() => {
+                remove_link(&cur)?;
+                return Ok(());
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound || is_errno(&e, &[libc::ENOTDIR]) => {
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Atomically replaces the symlink at `dest` with one to `target` (write `<dest>.tmp`, rename).
+pub fn replace_symlink_atomic(target: &Path, dest: &Path) -> io::Result<()> {
+    let name = dest
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = dest.with_file_name(format!("{STAGING_PREFIX}{name}-{:016x}", random_suffix()));
+    symlink_dir_raw(target, &tmp)?;
+    match std::fs::rename(&tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use fnpm_store::IndexedFile;
+
+    fn index(dirs: &[&str], files: &[&str]) -> FileIndex {
+        FileIndex {
+            dirs: dirs.iter().map(|s| (*s).to_owned()).collect(),
+            files: files
+                .iter()
+                .map(|p| IndexedFile {
+                    path: (*p).to_owned(),
+                    size: 0,
+                    mode: 0o644,
+                    digest: [0; 64],
+                })
+                .collect(),
+            package_json: None,
+        }
+    }
+
+    fn src_pkg(root: &Path) -> PathBuf {
+        let src = root.join("store/pkg");
+        std::fs::create_dir_all(src.join("lib/deep")).unwrap();
+        std::fs::write(
+            src.join("package.json"),
+            r#"{"name":"a","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(src.join("lib/index.js"), "x").unwrap();
+        std::fs::write(src.join("lib/deep/d.js"), "d").unwrap();
+        src
+    }
+
+    #[test]
+    fn materialize_each_backend() {
+        for backend in [
+            Backend::Clonefile,
+            Backend::Hardlink,
+            Backend::Copyfile,
+            Backend::Symlink,
+        ] {
+            let t = tempfile::tempdir().unwrap();
+            let src = src_pkg(t.path());
+            let idx = index(
+                &["lib", "lib/deep"],
+                &["package.json", "lib/index.js", "lib/deep/d.js"],
+            );
+            let m = Materializer::new(backend);
+            let dest = t.path().join("nm/a");
+            let used = m.materialize(&src, &idx, &dest).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(dest.join("lib/deep/d.js")).unwrap(),
+                "d"
+            );
+            assert!(m.used().is_some());
+            if backend == Backend::Hardlink {
+                use std::os::unix::fs::MetadataExt;
+                assert_eq!(used, Backend::Hardlink);
+                let a = std::fs::metadata(src.join("lib/index.js")).unwrap().ino();
+                let b = std::fs::metadata(dest.join("lib/index.js")).unwrap().ino();
+                assert_eq!(a, b);
+            }
+            if backend == Backend::Symlink {
+                assert_eq!(kind(&dest.join("package.json")), Kind::Symlink);
+            }
+        }
+    }
+
+    #[test]
+    fn materialize_creates_missing_parent_dirs_not_in_index() {
+        let t = tempfile::tempdir().unwrap();
+        let src = src_pkg(t.path());
+        let idx = index(&[], &["lib/deep/d.js"]);
+        let dest = t.path().join("nm/b");
+        Materializer::new(Backend::Hardlink)
+            .materialize(&src, &idx, &dest)
+            .unwrap();
+        assert!(dest.join("lib/deep/d.js").exists());
+    }
+
+    #[test]
+    fn materialize_missing_source_errors() {
+        let t = tempfile::tempdir().unwrap();
+        let src = src_pkg(t.path());
+        let idx = index(&[], &["nope.js"]);
+        let err =
+            Materializer::new(Backend::Hardlink).materialize(&src, &idx, &t.path().join("nm/c"));
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn place_file_replaces_existing() {
+        let t = tempfile::tempdir().unwrap();
+        let src = src_pkg(t.path());
+        let dst = t.path().join("x.js");
+        std::fs::write(&dst, "old").unwrap();
+        Materializer::new(Backend::Copyfile)
+            .place_file(&src.join("lib/index.js"), &dst)
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "x");
+    }
+
+    #[test]
+    fn relative_paths() {
+        assert_eq!(
+            relative(Path::new("/a/b/c"), Path::new("/a/d")),
+            PathBuf::from("../../d")
+        );
+        assert_eq!(
+            relative(
+                Path::new("/a/node_modules"),
+                Path::new("/a/node_modules/.fnpm/x/node_modules/x")
+            ),
+            PathBuf::from(".fnpm/x/node_modules/x")
+        );
+        assert_eq!(
+            relative(Path::new("/a"), Path::new("/a")),
+            PathBuf::from(".")
+        );
+        assert_eq!(
+            relative(Path::new("/a/./b/../c"), Path::new("/a/c/d")),
+            PathBuf::from("d")
+        );
+    }
+
+    #[test]
+    fn join_scoped_names() {
+        assert_eq!(
+            join_name(Path::new("/nm"), "@s/n"),
+            PathBuf::from("/nm/@s/n")
+        );
+        assert_eq!(join_name(Path::new("/nm"), "n"), PathBuf::from("/nm/n"));
+    }
+
+    #[test]
+    fn symlink_strategies() {
+        let t = tempfile::tempdir().unwrap();
+        let target_dir = t.path().join("target");
+        std::fs::create_dir(&target_dir).unwrap();
+        let dest = t.path().join("nm/@s/link");
+        // Missing parent is created.
+        assert!(
+            ensure_symlink(
+                Path::new("../../target"),
+                &dest,
+                Strategy::ExpectMissing,
+                None
+            )
+            .unwrap()
+        );
+        assert!(dest.join(".").exists());
+        // Same link: nothing written.
+        assert!(
+            !ensure_symlink(
+                Path::new("../../target"),
+                &dest,
+                Strategy::ExpectExisting,
+                None
+            )
+            .unwrap()
+        );
+        // Different link: replaced.
+        assert!(
+            ensure_symlink(
+                Path::new("../../other"),
+                &dest,
+                Strategy::ExpectExisting,
+                None
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            std::fs::read_link(&dest).unwrap(),
+            PathBuf::from("../../other")
+        );
+        // ExpectMissing over an existing entry replaces it.
+        assert!(
+            ensure_symlink(
+                Path::new("../../target"),
+                &dest,
+                Strategy::ExpectMissing,
+                None
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            std::fs::read_link(&dest).unwrap(),
+            PathBuf::from("../../target")
+        );
+        // An empty directory is replaced by the link.
+        let d2 = t.path().join("nm/empty");
+        std::fs::create_dir_all(&d2).unwrap();
+        assert!(
+            ensure_symlink(Path::new("../target"), &d2, Strategy::ExpectExisting, None).unwrap()
+        );
+        assert_eq!(kind(&d2), Kind::Symlink);
+        // A directory with package.json is kept.
+        let d3 = t.path().join("nm/patched");
+        std::fs::create_dir_all(&d3).unwrap();
+        std::fs::write(d3.join("package.json"), "{}").unwrap();
+        assert!(
+            !ensure_symlink(Path::new("../target"), &d3, Strategy::ExpectExisting, None).unwrap()
+        );
+        assert_eq!(kind(&d3), Kind::Dir);
+        // A file is replaced.
+        let f = t.path().join("nm/file");
+        std::fs::write(&f, "x").unwrap();
+        assert!(
+            ensure_symlink(Path::new("../target"), &f, Strategy::ExpectExisting, None).unwrap()
+        );
+        assert_eq!(kind(&f), Kind::Symlink);
+    }
+
+    #[test]
+    fn planted_links_are_removed_not_followed() {
+        let t = tempfile::tempdir().unwrap();
+        let outside = t.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let nm = t.path().join("nm");
+        std::fs::create_dir(&nm).unwrap();
+        std::os::unix::fs::symlink(&outside, nm.join("@scope")).unwrap();
+        let dest = nm.join("@scope/pkg");
+        ensure_symlink(
+            Path::new("../x"),
+            &dest,
+            Strategy::ExpectExisting,
+            Some(&nm),
+        )
+        .unwrap();
+        assert_eq!(kind(&nm.join("@scope")), Kind::Dir);
+        assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn move_aside_deletes_in_background() {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path().join("pkg");
+        std::fs::create_dir_all(d.join("a/b")).unwrap();
+        std::fs::write(d.join("a/b/c"), "x").unwrap();
+        move_aside_and_delete(&d).unwrap();
+        assert_eq!(kind(&d), Kind::Missing);
+        flush_background_deletes();
+        let left: Vec<_> = std::fs::read_dir(t.path()).unwrap().collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn remove_any_kinds() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("f");
+        std::fs::write(&f, "x").unwrap();
+        remove_any(&f).unwrap();
+        remove_any(&f).unwrap();
+        let l = t.path().join("l");
+        std::os::unix::fs::symlink(t.path(), &l).unwrap();
+        remove_any(&l).unwrap();
+        assert!(t.path().exists());
+    }
+
+    #[test]
+    fn leftovers() {
+        assert!(is_leftover(".old_modules-abc"));
+        assert!(is_leftover(".fnpm-staging-x"));
+        assert!(is_leftover(".fnpm-old-1"));
+        assert!(!is_leftover(".bin"));
+    }
+
+    #[test]
+    fn atomic_replace() {
+        let t = tempfile::tempdir().unwrap();
+        let l = t.path().join("l");
+        std::os::unix::fs::symlink("a", &l).unwrap();
+        replace_symlink_atomic(Path::new("b"), &l).unwrap();
+        assert_eq!(std::fs::read_link(&l).unwrap(), PathBuf::from("b"));
+    }
+}
