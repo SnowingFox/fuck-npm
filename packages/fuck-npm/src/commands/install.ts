@@ -39,13 +39,17 @@ export async function runInstallFamily(ctx: CommandContext): Promise<number> {
   return finishInstall(ctx, options, summary);
 }
 
-/** `fnpm add v0.1.0` + blank line on stderr, like bun's header. */
+/**
+ * `fnpm add v0.1.0` on stderr, like bun's header. One newline: the summary opens with the
+ * blank line (bun's tree printer starts with `\n`), so there is exactly one blank line
+ * between them, as in bun's output.
+ */
 export function printHeader(ctx: CommandContext, options: InstallOptions, label: string): void {
   if (ctx.output.mode === "json" || options.logLevel === "silent" || !options.summary) {
     return;
   }
   const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
-  ctx.runtime.stderr.write(`${pc.bold(`fnpm ${label}`)} ${pc.dim(`v${getCliVersion()}`)}\n\n`);
+  ctx.runtime.stderr.write(`${pc.bold(`fnpm ${label}`)} ${pc.dim(`v${getCliVersion()}`)}\n`);
 }
 
 /**

@@ -128,10 +128,10 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
     let silent = options.pm.log_level == fnpm_config::LogLevel::Silent;
     let stderr_colors = Colors::new(color_enabled(&terminal.env, terminal.stderr_is_tty));
 
-    // `fnpm add v0.1.0` and a blank line on stderr, like bun's header.
+    // `fnpm add v0.1.0` on stderr, like bun's header; the summary opens with the blank line.
     if mode != Mode::Json && !silent && options.pm.summary {
         terminal.stderr.write(&format!(
-            "{} {}\n\n",
+            "{} {}\n",
             stderr_colors.bold(&format!("fnpm {label}")),
             stderr_colors.dim(&format!("v{VERSION}"))
         ));

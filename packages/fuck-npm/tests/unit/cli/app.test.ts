@@ -124,7 +124,9 @@ describe("install family", () => {
 
     expect(await bed.run(["install"])).toBe(0);
 
-    expect(bed.stderr.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n\n$/);
+    // Together: header, one blank line, rows, as bun prints them (`bun install v…\n` then
+    // its tree printer's leading `\n`).
+    expect(bed.stderr.text()).toMatch(/^fnpm install v\d+\.\d+\.\d+\n$/);
     expect(bed.stdout.text()).toBe("\n+ react@18.3.1\n\n3 packages installed [123.00ms]\n");
   });
 
