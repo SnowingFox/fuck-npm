@@ -954,6 +954,211 @@
   ],
   "review": {
     "commit": "accc85e",
-    "note": "Five-run independent review measurements; native release build includes streaming-sharing and missing-placement fixes. Concurrent incomplete-entry recovery fix a1a42f0 was validated separately after this run. Shared host; times include scheduler variance."
+    "note": "Five-run independent review measurements; native release build includes streaming-sharing and missing-placement fixes. Concurrent incomplete-entry recovery fix a1a42f0 was validated separately after this run. Shared host; times include scheduler variance.",
+    "finalSmallVerification": {
+      "commit": "ddafd7d",
+      "scenarios": [
+        {
+          "fixture": "small",
+          "tool": "bun",
+          "scenario": "cold-lockfile",
+          "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.165330136,
+          "stddev": 0.006252054534629841,
+          "median": 0.16633624800000002,
+          "min": 0.155500632,
+          "max": 0.172862278,
+          "times": [
+            0.165215989,
+            0.16633624800000002,
+            0.172862278,
+            0.155500632,
+            0.16673553300000002
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "bun",
+          "scenario": "warm",
+          "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.0275076362,
+          "stddev": 0.002603427056809581,
+          "median": 0.026120634,
+          "min": 0.025925200000000002,
+          "max": 0.032017798,
+          "times": [
+            0.025977348,
+            0.027497201000000002,
+            0.032017798,
+            0.025925200000000002,
+            0.026120634
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "bun",
+          "scenario": "noop",
+          "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.0074949456,
+          "stddev": 0.0011971949103265517,
+          "median": 0.006876869000000001,
+          "min": 0.00670494,
+          "max": 0.009569917,
+          "times": [
+            0.00670494,
+            0.006876869000000001,
+            0.009569917,
+            0.007477015,
+            0.006845987
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "bun",
+          "scenario": "add",
+          "command": "bun add nanoid@5.1.5 --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.011709398400000001,
+          "stddev": 0.003905185160956559,
+          "median": 0.010116278000000001,
+          "min": 0.008676299,
+          "max": 0.018368917000000002,
+          "times": [
+            0.018368917000000002,
+            0.011886026000000001,
+            0.008676299,
+            0.009499472,
+            0.010116278000000001
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "bun",
+          "scenario": "ci",
+          "command": "bun install --frozen-lockfile --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.0265790522,
+          "stddev": 0.003326872352151974,
+          "median": 0.028199850000000002,
+          "min": 0.022385412,
+          "max": 0.029948967000000003,
+          "times": [
+            0.029948967000000003,
+            0.028199850000000002,
+            0.028668962000000003,
+            0.023692070000000003,
+            0.022385412
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "fnpm",
+          "scenario": "cold-lockfile",
+          "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.1659460458,
+          "stddev": 0.017167092425963693,
+          "median": 0.16138107100000001,
+          "min": 0.148071536,
+          "max": 0.19084240300000002,
+          "times": [
+            0.148071536,
+            0.19084240300000002,
+            0.16138107100000001,
+            0.17510155000000002,
+            0.154333669
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "fnpm",
+          "scenario": "warm",
+          "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.024922380200000004,
+          "stddev": 0.004590749633967496,
+          "median": 0.023036099,
+          "min": 0.019601128000000002,
+          "max": 0.03043364,
+          "times": [
+            0.019601128000000002,
+            0.022560105,
+            0.023036099,
+            0.03043364,
+            0.028980929000000002
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "fnpm",
+          "scenario": "noop",
+          "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.0036624277999999996,
+          "stddev": 0.0006257637000839054,
+          "median": 0.0034472670000000004,
+          "min": 0.003296769,
+          "max": 0.004772272,
+          "times": [
+            0.003296769,
+            0.0034472670000000004,
+            0.00331238,
+            0.004772272,
+            0.0034834510000000003
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "fnpm",
+          "scenario": "add",
+          "command": "fnpm add nanoid@5.1.5 --ignore-scripts --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.012177050400000002,
+          "stddev": 0.001059096251160063,
+          "median": 0.012061542000000001,
+          "min": 0.010696056,
+          "max": 0.013386642,
+          "times": [
+            0.010696056,
+            0.012061542000000001,
+            0.013386642,
+            0.011761371000000001,
+            0.012979641
+          ]
+        },
+        {
+          "fixture": "small",
+          "tool": "fnpm",
+          "scenario": "ci",
+          "command": "fnpm install --frozen-lockfile --ignore-scripts --registry=http://127.0.0.1:4873/",
+          "runs": 5,
+          "mean": 0.026971910000000005,
+          "stddev": 0.0019883386842642022,
+          "median": 0.026312916000000002,
+          "min": 0.025317497,
+          "max": 0.029975092000000002,
+          "times": [
+            0.029975092000000002,
+            0.025325944000000003,
+            0.025317497,
+            0.026312916000000002,
+            0.027928101
+          ]
+        }
+      ]
+    },
+    "finalSyscalls": {
+      "fixture": "small",
+      "scenario": "cold-lockfile",
+      "linkat": 2673,
+      "linkatErrors": 0,
+      "mkdirat": 144,
+      "mkdiratErrors": 0,
+      "openat": 2982,
+      "openatErrors": 107
+    }
   }
 }

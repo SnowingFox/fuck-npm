@@ -1554,7 +1554,11 @@ Combined physical sizes were 16.66 / 17.05 MiB (small), 502.64 / 506.57 MiB (med
 was larger for fnpm in every fixture. This run includes the fixes for parallel streamed
 sharing, executable-mode replacement and missing scoped/nested placements. The subsequent
 concurrent incomplete-entry recovery fix was tested separately; it changes recovery after a
-failed publish rename. Shared-host variance remains visible in the raw samples.
+failed publish rename. Shared-host variance remains visible in the raw samples. The final
+release repeated small cold-lockfile at 166.0 / 165.3 ms, warm at 24.9 / 27.5 ms, noop at
+3.66 / 7.49 ms, add at 12.18 / 11.71 ms, and CI at 26.97 / 26.58 ms. These samples and
+an independent syscall check (2,673 linkat, zero failures; 144 mkdirat, zero failures) are
+also retained in the review JSON.
 
 
 ## fnpm-napi
