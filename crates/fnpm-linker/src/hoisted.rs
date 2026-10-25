@@ -498,6 +498,7 @@ fn place_node<'s>(
                         && fsutil::kind(dest) == Kind::Dir
                         && fsutil::kind(&dest.join("package.json")) == Kind::File
                     {
+                        out.verified.fetch_add(1, Ordering::Relaxed);
                         return Ok(Some(false));
                     }
                     let ok = match &pkg.resolution {

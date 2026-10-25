@@ -267,7 +267,6 @@ pub async fn dispatch(
         ["lock", "print"] => inspect::print(&cx),
         ["lock", "dedupe"] => maintenance::dedupe(&cx, true).await,
         ["lock", "audit"] => info::audit(&cx, true).await,
-        // Later parity phases (docs/ROADMAP.md P4): a typed error, never a panic.
         ["pack"] | ["pm", "pack"] => pack::run(&cx).await,
         ["publish"] => publish::run(&cx).await,
         ["patch"] => patch::run(&cx, false).await,

@@ -656,7 +656,6 @@ async fn scripts_root_runs_untrusted_is_blocked() {
         &json!({ "dependencies": { "native": "1.0.0" }, "trustedDependencies": ["native"] })
             .to_string(),
     );
-    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
     let s = p.install().await;
     assert_eq!(s.blocked_scripts, 0);
     assert!(exists(&p.path("node_modules/native/built.txt")));
@@ -1711,4 +1710,21 @@ async fn explicit_peer_add_updates_manifest_and_lockfile_when_peers_are_omitted(
             p.run(frozen).await.unwrap();
         }
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unchanged_hoisted_placements_still_count_as_checked_after_trust_edit() {
+    let reg = Registry::start(&basic()).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "b": "1.0.0" } }));
+    p.install().await;
+    p.write(
+        "package.json",
+        &json!({
+            "dependencies": { "b": "1.0.0" }, "trustedDependencies": ["b"]
+        })
+        .to_string(),
+    );
+    let summary = p.install().await;
+    assert_eq!(summary.installed_count, 0);
+    assert_eq!(summary.checked.unwrap().installs, 1);
 }

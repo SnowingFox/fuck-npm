@@ -738,6 +738,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // previous lockfile's install left (the no-op state still matches it), packages that keep
     // their place are trusted without being read.
     let intact = in_place
+        // A command-provided graph patch no longer describes the installed tree.
+        && opts.patch.is_none()
         && previous.is_some()
         && lock.hash.is_some_and(|h| {
             fast_path::layout_intact(&root, &project.meta_dir(), hash, h, "hoisted")
@@ -1511,10 +1513,28 @@ async fn link(
             std::fs::write(&package_json, crate::options::DlxMode::UNFINISHED)
                 .map_err(Error::io(&package_json))?;
         }
+        // Previously blocked scripts need a fresh installed copy even when their
+        // package resolution did not change. The script scheduler consumes rebuilt dirs.
+        let newly_trusted = !config.ignore_scripts
+            && lock.graph.as_ref().is_some_and(|before| {
+                let old_policy = TrustPolicy::from_graph(before, std::iter::empty());
+                let new_policy = TrustPolicy::from_graph(graph, trust_names.iter().cloned());
+                let registry = registry_lookup(config);
+                graph.ids().any(|id| {
+                    let package = &graph.packages[id.index()];
+                    package.meta.needs_scripts()
+                        && !package.resolution.is_local_tree()
+                        && new_policy.is_trusted_with_registry(graph, id, &registry)
+                        && before.ids().any(|old| {
+                            before.packages[old.index()].key() == package.key()
+                                && !old_policy.is_trusted_with_registry(before, old, &registry)
+                        })
+                })
+            });
         let link_opts = LinkOptions {
             previous_hoisted_workspaces,
             backend: config.backend.unwrap_or_else(fnpm_linker::default_backend),
-            force: config.force || dlx.is_some_and(|d| d.relink),
+            force: config.force || newly_trusted || dlx.is_some_and(|d| d.relink),
             fresh: !root.join("node_modules").exists(),
             selected_workspaces: selected.clone(),
             hoisted_prune_tree: (selected.is_some() && kind == NodeLinker::Hoisted).then(|| {

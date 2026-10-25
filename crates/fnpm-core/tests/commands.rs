@@ -1399,3 +1399,20 @@ async fn audit_fix_rejects_manifest_changes_before_auditing_or_writing() {
         assert_eq!(p.installed("a").as_deref(), Some("1.0.0"));
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn audit_fix_replaces_installed_files_when_cached_layout_is_intact() {
+    let reg = Registry::start(&[Pkg::new("a", "1.0.0"), Pkg::new("a", "1.0.1")]).await;
+    let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
+    p.run(p.opts(fnpm_core::options::InstallCommand::Add, &["a@1.0.0"]))
+        .await
+        .unwrap();
+    reg.set_advisories(json!({ "a": [{
+        "id": 1, "severity": "high", "title": "unsafe", "vulnerable_versions": "<1.0.1",
+        "url": "https://github.com/advisories/GHSA-test"
+    }] }));
+    p.invoke(&["audit"], &["fix"], json!({})).await.unwrap();
+    assert_eq!(p.installed("a").as_deref(), Some("1.0.1"));
+    assert!(p.read("node_modules/a/index.js").contains("a@1.0.1"));
+    assert!(p.read("fnpm.lock").contains("a@1.0.1"));
+}
