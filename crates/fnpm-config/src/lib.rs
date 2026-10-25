@@ -255,8 +255,8 @@ pub struct Omit {
     pub peer: bool,
 }
 
-/// HTTP proxies.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// HTTP proxies. `Debug` masks the credentials in the proxy URLs.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
     /// Proxy for `http://` requests.
@@ -265,6 +265,16 @@ pub struct ProxyConfig {
     pub https: Option<String>,
     /// `NO_PROXY` entries.
     pub no_proxy: Vec<String>,
+}
+
+impl fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProxyConfig")
+            .field("http", &self.http.as_deref().map(redact_url))
+            .field("https", &self.https.as_deref().map(redact_url))
+            .field("no_proxy", &self.no_proxy)
+            .finish()
+    }
 }
 
 /// TLS settings.
@@ -615,10 +625,13 @@ impl Config {
 
     /// The registry a package name is fetched from (`@scope:registry`, else the default).
     pub fn registry_for(&self, package_name: &str) -> &RegistryScope {
+        if self.scopes.is_empty() || !package_name.starts_with('@') {
+            return &self.registry;
+        }
+        // The `@scope` prefix of the name is the map key, so no key has to be built.
         package_name
-            .strip_prefix('@')
-            .and_then(|rest| rest.split_once('/'))
-            .and_then(|(scope, _)| self.scopes.get(&format!("@{scope}")))
+            .find('/')
+            .and_then(|slash| self.scopes.get(&package_name[..slash]))
             .unwrap_or(&self.registry)
     }
 

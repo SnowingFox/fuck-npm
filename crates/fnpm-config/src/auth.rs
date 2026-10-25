@@ -641,8 +641,11 @@ pub(crate) fn build_scope(
 /// npm's `nerfDart` for the text between `//` and `:<opt>=`: drops a scheme, lowercases the
 /// host, and drops the port if it is the default of a scheme that was written out.
 pub fn normalize_key(raw: &str) -> String {
+    // Byte-wise: the text may hold a multi-byte character where the scheme would end.
     let has_scheme = |scheme: &str| {
-        raw.len() >= scheme.len() && raw[..scheme.len()].eq_ignore_ascii_case(scheme)
+        raw.as_bytes()
+            .get(..scheme.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(scheme.as_bytes()))
     };
     let (default_port, rest) = if has_scheme("https://") {
         (Some("443"), &raw[8..])

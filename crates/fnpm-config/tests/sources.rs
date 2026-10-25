@@ -997,8 +997,9 @@ fn proxies() {
     assert_eq!(cfg.network.proxy.https.as_deref(), Some("http://s:1"));
     assert_eq!(cfg.network.proxy.http.as_deref(), Some("http://p:2"));
     assert_eq!(cfg.network.proxy.no_proxy, ["a.com", "b.com"]);
+    // Like bun, the http variables never serve https requests.
     let cfg = fx.load_with(&[("HTTP_PROXY", "http://only:3")], CliOverrides::default());
-    assert_eq!(cfg.network.proxy.https.as_deref(), Some("http://only:3"));
+    assert_eq!(cfg.network.proxy.https, None);
     let fx = Fx::new(&[(
         "project/.npmrc",
         "proxy=http://rc:1/\nhttps-proxy=false\nnoproxy=x.com\n",

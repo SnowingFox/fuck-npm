@@ -250,7 +250,9 @@ fn expand_into(
 pub fn load_into(env: &mut Env, text: &str) {
     let src = text.strip_prefix('\u{feff}').unwrap_or(text).as_bytes();
     let mut parser = Parser { pos: 0, src };
+    // File order (expansion runs in it) and a set for the membership test.
     let mut added: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     while parser.pos < src.len() {
         let Some(key) = parser.parse_key(true) else {
             parser.skip_line();
@@ -258,10 +260,12 @@ pub fn load_into(env: &mut Env, text: &str) {
         };
         let key = String::from_utf8_lossy(key).into_owned();
         let value = String::from_utf8_lossy(&parser.parse_value()).into_owned();
-        if env.get(&key).is_some() && !added.contains(&key) {
+        let ours = seen.contains(&key);
+        if !ours && env.get(&key).is_some() {
             continue;
         }
-        if !added.contains(&key) {
+        if !ours {
+            seen.insert(key.clone());
             added.push(key.clone());
         }
         env.set(key, value);

@@ -668,6 +668,70 @@ pub(crate) fn defaults(cwd: &Path) -> Config {
     resolve(&opts, layers).expect("defaults never fail: no credentials, no flags")
 }
 
+/// bun `env_loader`: `<scheme>_proxy` before `<SCHEME>_PROXY` (an empty lowercase value falls
+/// through to the uppercase one); `""` and `''` count as unset.
+fn proxy_var<'a>(env: &'a Env, lower: &str, upper: &str) -> Option<&'a str> {
+    let value = match env.get(lower) {
+        Some(v) if !v.is_empty() => Some(v),
+        _ => env.get(upper),
+    };
+    value.filter(|v| !is_emptyish(v))
+}
+
+fn is_emptyish(v: &str) -> bool {
+    matches!(v, "" | "\"\"" | "''")
+}
+
+/// `all_proxy` / `ALL_PROXY`, only when it names an HTTP proxy (no scheme, `http:`, `https:`):
+/// it commonly points at a SOCKS proxy, which the HTTP client cannot speak.
+fn all_proxy(env: &Env) -> Option<&str> {
+    let value = proxy_var(env, "all_proxy", "ALL_PROXY")?;
+    match value.split_once("://") {
+        None => Some(value),
+        Some((scheme, _))
+            if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") =>
+        {
+            Some(value)
+        }
+        Some(_) => None,
+    }
+}
+
+/// The http and https proxies and the `NO_PROXY` list. `.npmrc` `proxy` / `https-proxy` win
+/// over the environment (an empty value turns one off) and, like npm, `proxy` also serves https
+/// when neither `https-proxy` nor an https variable is set. The variables follow bun: the http
+/// ones never serve https requests, and `ALL_PROXY` fills either.
+fn proxies(env: &Env, m: &InstallFile) -> (Option<String>, Option<String>, Vec<String>) {
+    let configured = |v: &Option<String>| v.as_ref().map(|s| (!s.is_empty()).then(|| s.clone()));
+    let http = configured(&m.proxy).unwrap_or_else(|| {
+        proxy_var(env, "http_proxy", "HTTP_PROXY")
+            .or_else(|| all_proxy(env))
+            .map(str::to_owned)
+    });
+    let https = configured(&m.https_proxy).unwrap_or_else(|| {
+        proxy_var(env, "https_proxy", "HTTPS_PROXY")
+            .map(str::to_owned)
+            .or_else(|| configured(&m.proxy).flatten())
+            .or_else(|| all_proxy(env).map(str::to_owned))
+    });
+    let no_proxy = match &m.noproxy {
+        Some(list) => list.clone(),
+        None => ["no_proxy", "NO_PROXY"]
+            .iter()
+            .filter_map(|k| env.get(k))
+            .find(|v| !is_emptyish(v))
+            .map(|v| {
+                v.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+    (http, https, no_proxy)
+}
+
 fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     let cli = &opts.cli;
     let Layers {
@@ -998,6 +1062,10 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(v) = cli.ignore_scripts {
         ignore_scripts = v;
     }
+    // `NPM_CONFIG_IGNORE_SCRIPTS` and friends can only turn scripts off, even under a flag.
+    if env_ignores_scripts(env) {
+        ignore_scripts = true;
+    }
     if let Some(v) = cli.save_text_lockfile {
         save_text_lockfile = v;
     }
@@ -1039,6 +1107,10 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         backend = cli.backend;
     }
     let platform = parse_platform(cli)?;
+    if let Some(v) = cli.frozen_lockfile {
+        frozen = v;
+    }
+    // After `--frozen-lockfile`: like bun, `--production` always freezes the lockfile.
     if cli.production == Some(true) {
         production = true;
         local_dev = false;
@@ -1046,9 +1118,6 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         frozen = true;
     } else if cli.production == Some(false) {
         production = false;
-    }
-    if let Some(v) = cli.frozen_lockfile {
-        frozen = v;
     }
     if cli.force == Some(true) {
         force = true;
@@ -1112,40 +1181,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     };
 
     // ── network ──
-    let proxy_env = |keys: &[&str]| {
-        keys.iter()
-            .find_map(|k| env.get_not_empty(k))
-            .map(str::to_owned)
-    };
-    let pick_proxy = |configured: &Option<String>, keys: &[&str]| -> Option<String> {
-        match configured {
-            Some(v) if v.is_empty() => None,
-            Some(v) => Some(v.clone()),
-            None => proxy_env(keys),
-        }
-    };
-    let http_proxy = pick_proxy(
-        &m.proxy,
-        &["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"],
-    );
-    let https_proxy = pick_proxy(&m.https_proxy, &["HTTPS_PROXY", "https_proxy"]).or_else(|| {
-        m.https_proxy
-            .is_none()
-            .then(|| http_proxy.clone())
-            .flatten()
-    });
-    let no_proxy = match &m.noproxy {
-        Some(list) => list.clone(),
-        None => proxy_env(&["NO_PROXY", "no_proxy"])
-            .map(|v| {
-                v.split([',', ' '])
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-    };
+    let (http_proxy, https_proxy, no_proxy) = proxies(env, &m);
     let reject_unauthorized =
         m.strict_ssl != Some(false) && env.get("NODE_TLS_REJECT_UNAUTHORIZED") != Some("0");
     let ca_store = cli
