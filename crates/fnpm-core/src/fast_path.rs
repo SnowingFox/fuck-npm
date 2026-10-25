@@ -64,7 +64,7 @@ pub enum Check {
         packages: u32,
     },
     /// Something changed; carry the parsed state so the install can reuse the hashes.
-    Changed(Option<State>),
+    Changed(Option<Box<State>>),
 }
 
 /// `(size, mtime ns)` of a file.
@@ -123,7 +123,7 @@ pub fn check(project_dir: &Path, config_hash: u64) -> Check {
             packages: state.packages,
         }
     } else {
-        Check::Changed(Some(state))
+        Check::Changed(Some(Box::new(state)))
     }
 }
 
