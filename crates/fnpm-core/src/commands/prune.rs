@@ -611,6 +611,84 @@ fn pruned_workspaces(graph: &LockGraph, root: &Path) -> Vec<(PackageId, String)>
     out
 }
 
+/// `<who> depends on workspace "<name>" (<path>), which is listed in fnpm.lock but not on disk`
+/// when the root or a workspace on disk depends on a workspace that is gone.
+pub(crate) fn missing_workspace_dependency(graph: &LockGraph, root: &Path) -> Option<String> {
+    let pruned: HashSet<PackageId> = pruned_workspaces(graph, root)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    if pruned.is_empty() {
+        return None;
+    }
+    for (i, p) in graph.packages.iter().enumerate() {
+        if pruned.contains(&PackageId(i as u32))
+            || !matches!(
+                p.resolution,
+                Resolution::Root | Resolution::Workspace { .. }
+            )
+        {
+            continue;
+        }
+        for e in &p.dependencies {
+            let Some(t) = e.target.filter(|t| pruned.contains(t)) else {
+                continue;
+            };
+            // The root's membership rows are not dependencies.
+            if i == 0 && graph.workspaces.get(&e.literal) == Some(&t) {
+                continue;
+            }
+            let path = match &graph.packages[t.index()].resolution {
+                Resolution::Workspace { path } => path.clone(),
+                _ => String::new(),
+            };
+            let who = if i == 0 {
+                "the root package".to_owned()
+            } else {
+                format!("workspace \"{}\"", p.name)
+            };
+            return Some(format!(
+                "{who} depends on workspace \"{}\" ({path}), which is listed in fnpm.lock but not on disk",
+                graph.packages[t.index()].name
+            ));
+        }
+    }
+    None
+}
+
+/// The workspace, with listed members that are not on disk skipped (a pruned checkout, like a
+/// Docker layer that copied only package.json and fnpm.lock).
+pub(crate) fn workspace_on_disk(
+    project: &crate::project::Project,
+    events: &dyn fnpm_types::EventSink,
+) -> Result<fnpm_workspace::Workspace> {
+    let (ws, warnings) = fnpm_workspace::Workspace::load_with(
+        &project.root_dir,
+        &fnpm_workspace::LoadOptions {
+            missing: fnpm_workspace::MissingWorkspace::Skip,
+        },
+    )?;
+    for w in warnings {
+        events.emit(fnpm_types::Event::warn(w, None));
+    }
+    Ok(ws)
+}
+
+/// `note: skipped N workspace(s) listed in fnpm.lock but not on disk: "a", "b"`.
+pub(crate) fn pruned_note(graph: &LockGraph, root: &Path) -> Option<String> {
+    let pruned = pruned_workspaces(graph, root);
+    if pruned.is_empty() {
+        return None;
+    }
+    let names: Vec<String> = pruned.iter().map(|(_, n)| format!("\"{n}\"")).collect();
+    Some(format!(
+        "note: skipped {} workspace{} listed in fnpm.lock but not on disk: {}",
+        pruned.len(),
+        plural(pruned.len()),
+        names.join(", ")
+    ))
+}
+
 /// `fnpm prune`.
 pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
     let start = Instant::now();
@@ -641,7 +719,7 @@ pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
                 .unwrap_or_else(|| crate::version().to_owned())
         ));
     }
-    let ws = project.workspace(&*cx.events)?;
+    let ws = workspace_on_disk(&project, &*cx.events)?;
     let lock = match crate::install::load_lock(&project.config, &ws) {
         Ok(lock) => lock,
         Err(e) => {
@@ -697,39 +775,11 @@ pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
         );
     }
     // What is left must not depend on what is gone, like an install.
-    for (i, p) in graph.packages.iter().enumerate() {
-        if pruned_ids.contains(&PackageId(i as u32))
-            || !matches!(
-                p.resolution,
-                Resolution::Root | Resolution::Workspace { .. }
-            )
-        {
-            continue;
+    if let Some(message) = missing_workspace_dependency(&graph, &root) {
+        if !quiet {
+            eprintln!("error: {message}");
         }
-        for e in &p.dependencies {
-            let Some(t) = e.target.filter(|t| pruned_ids.contains(t)) else {
-                continue;
-            };
-            if i == 0 && e.behavior.is_workspace() {
-                continue;
-            }
-            let path = match &graph.packages[t.index()].resolution {
-                Resolution::Workspace { path } => path.clone(),
-                _ => String::new(),
-            };
-            let who = if i == 0 {
-                "the root package".to_owned()
-            } else {
-                format!("workspace \"{}\"", p.name)
-            };
-            if !quiet {
-                eprintln!(
-                    "error: {who} depends on workspace \"{}\" ({path}), which is listed in fnpm.lock but not on disk",
-                    graph.packages[t.index()].name
-                );
-            }
-            return Err(Error::Reported);
-        }
+        return Err(Error::Reported);
     }
     // The graph as if the missing workspaces had never been there.
     let graph = if pruned_ids.is_empty() {

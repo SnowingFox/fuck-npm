@@ -617,40 +617,202 @@ pub(crate) fn store(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
     }
 }
 
-/// `pm fetch`: downloads every package of the lockfile into the store without linking.
+/// Resolves like `fnpm install` (frozen with `--frozen-lockfile`), writing nothing.
+async fn resolve_for_fetch(
+    cx: &Ctx,
+    config: &fnpm_config::Config,
+    client: &fnpm_registry::RegistryClient,
+    ws: &fnpm_workspace::Workspace,
+    previous: Option<&LockGraph>,
+) -> std::result::Result<LockGraph, fnpm_resolver::Error> {
+    let mode = if config.frozen_lockfile {
+        fnpm_resolver::Mode::Frozen
+    } else {
+        fnpm_resolver::Mode::Normal
+    };
+    let config = std::sync::Arc::new(config.clone());
+    let out = fnpm_resolver::Resolver::new(config, client.clone())
+        .resolve(
+            fnpm_resolver::ResolveInput {
+                workspace: ws,
+                previous,
+                mode,
+                requests: Vec::new(),
+                removals: Vec::new(),
+            },
+            None,
+            &*cx.events,
+        )
+        .await?;
+    Ok(out.graph)
+}
+
+/// `fnpm pm fetch` (bun `pm_fetch_command.rs` and `PopulatePackageCache.rs`): resolves like
+/// `fnpm install` (with the lockfile, or without one) and downloads every package into the
+/// store, without linking, running scripts or writing fnpm.lock or package.json.
 pub(crate) async fn fetch(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to fetch")?;
+    let start = std::time::Instant::now();
+    let started = std::time::SystemTime::now();
+    let loud = cx.pm.log_level != fnpm_config::LogLevel::Silent;
+    let summary = loud && cx.pm.summary;
+    let say = |line: &str| {
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{line}");
+        let _ = out.flush();
+    };
+    if summary {
+        say(&format!(
+            "fnpm pm fetch v{}\n",
+            cx.string("cliVersion")
+                .unwrap_or_else(|| crate::version().to_owned())
+        ));
+    }
+    let project = cx.project()?;
     let config = project.config.clone();
-    let client = project.client()?;
-    let fetcher = Fetcher::new(
-        project.store()?,
-        client.clone(),
-        project.root_dir.clone(),
-        config.cache_dir.clone(),
-        config.verify_integrity,
-        cx.events.clone(),
-    );
-    let mut slots = Vec::new();
-    for p in &graph.packages {
-        if needs_content(&p.resolution) && !p.is_disabled(&config.platform) {
-            slots.push((p.key(), fetcher.ensure_package(p)));
+    let dry_run = cx.pm.dry_run || config.dry_run;
+    let ws = super::prune::workspace_on_disk(&project, &*cx.events)?;
+    let lock = crate::install::load_lock(&config, &ws)?;
+    // A pruned checkout fetches what fnpm.lock pins for its missing workspaces too.
+    let mut pinned = None;
+    if let Some(graph) = &lock.graph {
+        if let Some(message) = super::prune::missing_workspace_dependency(graph, &project.root_dir)
+        {
+            if loud {
+                eprintln!("error: {message}");
+            }
+            return Err(Error::Reported);
+        }
+        if let Some(note) = super::prune::pruned_note(graph, &project.root_dir) {
+            if loud {
+                eprintln!("{note}");
+            }
+            pinned = Some(graph.clone());
         }
     }
-    let mut errors = Vec::new();
-    for (key, slot) in &slots {
-        if let Err(e) = slot.wait().await {
-            errors.push(format!("error: {key}: {e}"));
+    let client = project.client()?;
+    let resolved = match pinned {
+        Some(graph) => Ok(graph),
+        None => resolve_for_fetch(cx, &config, &client, &ws, lock.graph.as_ref()).await,
+    };
+    let graph = match resolved {
+        Ok(graph) => graph,
+        Err(e) => {
+            if loud {
+                eprintln!("error: {e}");
+            }
+            return Err(Error::Reported);
+        }
+    };
+    let store = project.store()?;
+    let candidates: Vec<&fnpm_types::Package> = graph
+        .packages
+        .iter()
+        .skip(1)
+        .filter(|p| {
+            needs_content(&p.resolution)
+                && !matches!(p.resolution, fnpm_types::Resolution::Folder { .. })
+                && !p.is_disabled(&config.platform)
+        })
+        .collect();
+    // A store entry made before this run was already in the cache. One the resolve itself
+    // made (a git or GitHub package without a lockfile) was fetched by this run, as in bun.
+    let made_before = |key: &fnpm_store::PackageKey| {
+        std::fs::metadata(store.package_dir(key))
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t < started)
+    };
+    let (mut fetched, mut already_cached) = (0usize, 0usize);
+    let mut failed = false;
+    if dry_run {
+        // Nothing is downloaded: only what the lockfile pins can be found in the store.
+        for p in &candidates {
+            match crate::fetch::store_key(p) {
+                Some(key) if store.get(&key).ok().flatten().is_some() => already_cached += 1,
+                _ => fetched += 1,
+            }
+        }
+    } else {
+        let fetcher = Fetcher::new(
+            store.clone(),
+            client.clone(),
+            project.root_dir.clone(),
+            config.cache_dir.clone(),
+            config.verify_integrity,
+            cx.events.clone(),
+        );
+        let slots: Vec<_> = candidates
+            .iter()
+            .map(|p| (p.key(), fetcher.ensure_package(p)))
+            .collect();
+        let mut errors = Vec::new();
+        let mut offline_missing = Vec::new();
+        for ((key, slot), p) in slots.iter().zip(&candidates) {
+            match slot.wait().await {
+                Ok(f) if made_before(&f.key) => already_cached += 1,
+                Ok(_) => fetched += 1,
+                Err(e) if e.code == "OFFLINE" => offline_missing.push(p.name.clone()),
+                Err(e) => {
+                    // bun names the request that failed: `GET <url> - 404`.
+                    let message = match e
+                        .message
+                        .strip_prefix("package \"")
+                        .and_then(|m| m.strip_suffix("\" not found"))
+                    {
+                        Some(url) if url.contains("://") => format!("GET {url} - 404"),
+                        _ => format!("{key}: {e}"),
+                    };
+                    errors.push(message);
+                }
+            }
+        }
+        if loud && (fetched > 0 || !errors.is_empty()) {
+            eprintln!("Fetching packages");
+        }
+        if !offline_missing.is_empty() {
+            if loud {
+                for name in &offline_missing {
+                    eprintln!("error: --offline: \"{name}\" is not in the cache");
+                }
+            }
+            return Err(Error::Reported);
+        }
+        for message in &errors {
+            failed = true;
+            if loud {
+                eprintln!("error: {message}");
+            }
         }
     }
     client.flush_cache_writes().await;
-    let mut lines = errors.clone();
-    lines.push(format!(
-        "{} {} in the store",
-        slots.len() - errors.len(),
-        plural(slots.len() - errors.len(), "package")
-    ));
-    let data = json!({ "packages": slots.len(), "errors": errors });
-    Ok(exit(i32::from(!errors.is_empty()), data, lines))
+    if failed {
+        return Err(Error::Reported);
+    }
+    if config.security_scanner.is_some() && cx.pm.log_level == fnpm_config::LogLevel::Verbose {
+        eprintln!("note: packages are not scanned until fnpm install runs the security scanner");
+    }
+    let data = json!({ "fetched": fetched, "alreadyCached": already_cached });
+    if !summary {
+        return Ok(ok(data, Vec::new()));
+    }
+    let elapsed = format!("[{:.2}ms]", start.elapsed().as_secs_f64() * 1000.0);
+    let s = |n: usize| if n == 1 { "" } else { "s" };
+    if fetched > 0 {
+        say(&format!(
+            "{} {fetched} package{} into cache {elapsed}",
+            if dry_run { "Would fetch" } else { "Fetched" },
+            s(fetched)
+        ));
+    } else if already_cached > 0 {
+        say(&format!(
+            "Done! {already_cached} package{} already in cache {elapsed}",
+            s(already_cached)
+        ));
+    } else {
+        say(&format!("Done! No packages to fetch {elapsed}"));
+    }
+    say(&format!("Cache: {}", config.cache_dir.display()));
+    Ok(ok(data, Vec::new()))
 }
 
 #[cfg(unix)]

@@ -100,6 +100,21 @@ export async function evictCacheEntries(cache: string, evict: (entry: string) =>
   }
 }
 
+/**
+ * bun keeps the packages it downloads in its cache directory; fnpm keeps them in its store, which
+ * this harness puts in one directory per worker. A test that gives bun a cache of its own gets
+ * fnpm's store in the same place, so what one test downloads is not in another's cache.
+ */
+export function cacheDirEnv(cache: string): Record<string, string> {
+  return { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: join(cache, "store") };
+}
+
+/** The packages a cache from {@link cacheDirEnv} holds, by fnpm's store names (`name@version-<hash>`). */
+export function cachedPackageNames(cache: string): string[] {
+  const pkgs = join(cache, "store", "v2", "pkgs");
+  return fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [];
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }
