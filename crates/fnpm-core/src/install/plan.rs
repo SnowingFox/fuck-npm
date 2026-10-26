@@ -281,6 +281,43 @@ pub(crate) fn plan(
                     if opts.only_missing && declared_group(manifest, &name).is_some() {
                         continue;
                     }
+                    // pnpm's rule for a bare `--catalog` add over a range the target declares.
+                    if let Some(cat) = opts.catalog.as_ref().filter(|_| !positional.has_version())
+                        && let Some(declared) = declared_literal(manifest, &name)
+                            .filter(|l| !l.starts_with("catalog:") && !l.starts_with("workspace:"))
+                    {
+                        let existing = edits::catalog_entry(&ws.root.raw, cat, &name);
+                        let entry = existing.clone().or_else(|| seed.clone());
+                        if let Some(entry) = entry.filter(|e| e != declared) {
+                            let who = manifest
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "package.json".into());
+                            let follows = existing.is_some()
+                                || matches!(
+                                    (
+                                        fnpm_semver::Range::parse(&entry),
+                                        fnpm_semver::Version::parse(declared),
+                                    ),
+                                    (Ok(r), Ok(v)) if r.satisfies(&v)
+                                );
+                            let note = if follows {
+                                format!(
+                                    "note: {name} in {who} now follows the catalog entry \"{entry}\" instead of \"{declared}\""
+                                )
+                            } else {
+                                format!(
+                                    "note: {name} in {who} keeps \"{declared}\" because the catalog entry is \"{entry}\""
+                                )
+                            };
+                            if config.log_level != fnpm_config::LogLevel::Silent {
+                                events.emit(Event::notice(note));
+                            }
+                            if !follows {
+                                continue;
+                            }
+                        }
+                    }
                     let group = opts
                         .group
                         .or_else(|| {
