@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 
 /// The state file in the meta directory ([`meta_dir`]).
 pub const STATE_FILE: &str = "state";
+/// The `lockfile_hash` of an install that left no lockfile (a project with no packages).
+pub const NO_LOCKFILE: u64 = 0;
 
 /// Project metadata (state and parsed lockfile) in `<cache>/projects/<xxh3 of the project path>`.
 /// Usually outside the project; `cache = false` puts the cache in `node_modules/.cache`.
@@ -193,6 +195,8 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
     }
     match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK)) {
         Ok(bytes) if fnpm_lockfile::content_hash(&bytes) == state.lockfile_hash => {}
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound && state.lockfile_hash == NO_LOCKFILE => {}
         _ => return false,
     }
     // A pnpm-workspace.yaml that appeared since the install changes the workspace.

@@ -1833,14 +1833,14 @@ fn save(
             events.emit(Event::warn(line, Some("MIGRATED_PACKAGE_JSON")));
         }
     }
-    // Bun deletes the lockfile when remove leaves only the dependency-free root.
+    // Bun deletes the lockfile (and writes none) when only the dependency-free root is left.
     // Keep this inside the normal save gate so --no-save and frozen installs preserve it.
-    let removing = edits
-        .by_workspace
-        .values()
-        .flatten()
-        .any(|edit| matches!(edit, Edit::Remove { .. }));
-    if removing && graph.len() == 1 && graph.packages[0].dependencies.is_empty() {
+    if graph.len() == 1 && graph.packages[0].dependencies.is_empty() {
+        let removing = edits
+            .by_workspace
+            .values()
+            .flatten()
+            .any(|edit| matches!(edit, Edit::Remove { .. }));
         let path = root.join(fnpm_lockfile::FNPM_LOCK);
         match std::fs::remove_file(&path) {
             Ok(()) => {}
@@ -1849,9 +1849,11 @@ fn save(
         }
         let _ = std::fs::remove_file(lock::sidecar_path(config, root));
         if !config.global {
-            events.emit(Event::status(
-                "\npackage.json has no dependencies! Deleted empty lockfile",
-            ));
+            events.emit(Event::status(if removing {
+                "\npackage.json has no dependencies! Deleted empty lockfile"
+            } else {
+                "No packages! Deleted empty lockfile"
+            }));
         }
         return Ok(true);
     }
@@ -2156,8 +2158,11 @@ fn write_state(
     linker: &NodeLinker,
     installs: u32,
 ) {
-    let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
-        return;
+    // A project with no packages has no lockfile (bun deletes it).
+    let lockfile_hash = match std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) {
+        Ok(bytes) => fnpm_lockfile::content_hash(&bytes),
+        Err(_) if graph.len() == 1 => fast_path::NO_LOCKFILE,
+        Err(_) => return,
     };
     let (files, workspace_patterns, workspace_dirs) = watched_files(ws, graph);
     let manifests = files
@@ -2167,7 +2172,7 @@ fn write_state(
     let state = State {
         version: fast_path::STATE_VERSION,
         fnpm_version: crate::version().to_owned(),
-        lockfile_hash: fnpm_lockfile::content_hash(&bytes),
+        lockfile_hash,
         manifests,
         config_hash,
         node_modules: (0, 0, 0),
