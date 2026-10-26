@@ -2747,7 +2747,14 @@
             "aliases": [],
             "hidden": false,
             "description": "Remove packages from node_modules that nothing needs",
-            "positionals": [],
+            "positionals": [
+              {
+                "name": "args",
+                "required": false,
+                "variadic": true,
+                "description": "None: prune always works on the whole node_modules"
+              }
+            ],
             "flags": [
               0,
               1,

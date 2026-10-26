@@ -3801,7 +3801,7 @@ test.concurrent(
     expect(lines(stdout)).toStrictEqual([BANNER, "", "- no-deps@1.0.0", REMOVED(1, 3)]);
     expect(exitCode).toBe(0);
     expect(storeEntries(dir)).toStrictEqual([entry]);
-    expect(readdirSync(own).toSorted()).toStrictEqual([".bun-tag", "package.json"]);
+    expect(readdirSync(own).toSorted()).toStrictEqual([".fnpm-tag", "package.json"]);
     expect(nodeModulesTree(dir, { storeBins: false })).toEqual(await freshInstallTree(dir, "--omit=optional"));
 
     await install(dir, "--linker", "isolated");
@@ -3903,7 +3903,7 @@ test.concurrent(
     await write(packageJson, JSON.stringify({ name: "foo", dependencies: { "no-deps": "1.0.0", "git-pkg": gitPkg } }));
     await install(dir, "--linker", "hoisted");
     const nm = join(dir, "node_modules");
-    const rootTag = join(nm, "git-pkg", ".bun-tag");
+    const rootTag = join(nm, "git-pkg", ".fnpm-tag");
     const tag = await file(rootTag).text();
     expect(tag).toMatch(/^[0-9a-f]{40}$/);
     expect(await lock(dir)).toContain(tag);

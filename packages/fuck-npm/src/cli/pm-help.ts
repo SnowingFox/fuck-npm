@@ -87,3 +87,41 @@ export function renderPmHelp(colors: Colors): string {
       .reduceRight((inner, tag) => styles[tag]!(inner), text),
   );
 }
+
+/** `fnpm prune --help`: bun's help for `bun prune`, word for word. */
+export const PRUNE_HELP = `Usage: fnpm prune [flags]
+
+  Remove packages from node_modules that are not in fnpm.lock. With --production, also remove packages that are only needed by devDependencies.
+
+Flags:
+  -p, --production      Also remove packages that are only needed by devDependencies (alias: --prod)
+      --omit=<val>      Also remove packages that are only needed by the given dependency types
+      --check           Exit with code 1 if node_modules has packages that can be removed, without deleting anything
+      --dry-run         Print what would be removed without deleting anything
+      --os=<val>        Prune for a different operating system than the current one
+      --cpu=<val>       Prune for a different CPU architecture than the current one
+      --libc=<val>      Prune for a different libc than the current one
+      --linker=<val>    Linker to assume when node_modules mixes isolated and hoisted installs (one of "isolated" or "hoisted")
+  -F, --filter=<val>    Only prune the node_modules folders of the matching workspaces
+      --silent          Don't log anything
+      --cwd=<val>       Set a specific cwd
+  -h, --help            Print this help menu
+
+Examples:
+  Remove packages that are not in fnpm.lock from node_modules
+  fnpm prune
+
+  Also remove devDependencies, e.g. after the build step in a Dockerfile
+  fnpm prune --production
+
+  Show what would be removed without deleting anything
+  fnpm prune --dry-run
+
+  Only report what would be removed; exit code 1 if there is anything (for CI)
+  fnpm prune --check
+
+  Only prune what the app workspace no longer needs
+  fnpm prune --production --filter app
+
+Full documentation is available at https://bun.com/docs/pm/cli/prune.
+`;

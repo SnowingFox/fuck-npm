@@ -250,6 +250,8 @@ const PRUNE: CommandLeaf = {
   kind: "leaf",
   name: "prune",
   description: "Remove packages from node_modules that nothing needs",
+  // The core refuses any, with bun's message.
+  positionals: [pos("args", "None: prune always works on the whole node_modules", { variadic: true })],
   flags: F.PRUNE,
   ignoresRuntimeFlags: true,
 };

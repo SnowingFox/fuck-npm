@@ -40,49 +40,6 @@ pub(crate) fn current_layout(
     Ok((linker, layout))
 }
 
-/// `fnpm prune [--check]`: removes what `node_modules` has but the lockfile does not place.
-pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to prune")?;
-    let (_, layout) = current_layout(&project, &graph)?;
-    let view = crate::install::link_view(&graph);
-    let plan = fnpm_linker::prune::plan(&project.root_dir, &view, &layout);
-    let names: Vec<String> = plan.removals.iter().map(|r| r.name.clone()).collect();
-    if cx.flag("check") || cx.pm.dry_run {
-        let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();
-        lines.push(if names.is_empty() {
-            "node_modules has nothing to prune".into()
-        } else {
-            format!(
-                "{} {} can be pruned",
-                names.len(),
-                plural(names.len(), "package")
-            )
-        });
-        let code = i32::from(cx.flag("check") && !names.is_empty());
-        return Ok(exit(
-            code,
-            json!({ "removed": names, "checked": plan.checked }),
-            lines,
-        ));
-    }
-    let (removed, errors) = fnpm_linker::prune::execute(&project.root_dir, &plan);
-    crate::fast_path::remove(&project.root_dir, &project.meta_dir());
-    let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();
-    for (p, e) in &errors {
-        lines.push(format!("error: {}: {e}", p.display()));
-    }
-    lines.push(format!(
-        "{removed} {} removed",
-        plural(removed as usize, "package")
-    ));
-    let code = i32::from(!errors.is_empty());
-    Ok(exit(
-        code,
-        json!({ "removed": names, "checked": plan.checked }),
-        lines,
-    ))
-}
-
 fn plural(n: usize, word: &str) -> String {
     if n == 1 {
         word.to_owned()

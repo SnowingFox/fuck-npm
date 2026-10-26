@@ -22,6 +22,7 @@ mod outdated;
 pub(crate) mod pack;
 pub(crate) mod patch;
 mod pkg;
+mod prune;
 mod publish;
 mod scan;
 mod scripts;
@@ -246,7 +247,7 @@ pub async fn dispatch(
         ["audit"] | ["pm", "audit"] => info::audit(&cx, false).await,
         ["link"] => link::link(&cx).await,
         ["unlink"] => link::unlink(&cx).await,
-        ["prune"] => maintenance::prune(&cx),
+        ["prune"] => prune::prune(&cx),
         ["dedupe" | "ddp"] => maintenance::dedupe(&cx, false).await,
         ["run"] => scripts::run(&cx).await,
         ["exec"] => scripts::exec(&cx).await,
