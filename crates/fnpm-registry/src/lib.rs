@@ -53,7 +53,7 @@ pub enum Error {
     NotFound(String),
     #[error("{url}: {message}")]
     Network { url: String, message: String },
-    #[error("offline: no cached manifest for \"{0}\"")]
+    #[error("--offline: no cached manifest for \"{0}\"")]
     Offline(String),
     #[error("invalid manifest for \"{name}\": {message}")]
     InvalidManifest { name: String, message: String },
@@ -133,6 +133,13 @@ pub struct RegistryStats {
 #[derive(Clone)]
 pub struct RegistryClient {
     inner: Arc<client::Inner>,
+}
+
+impl RegistryClient {
+    /// `--offline` / `--prefer-offline` / online.
+    pub fn offline_mode(&self) -> fnpm_config::OfflineMode {
+        self.inner.offline
+    }
 }
 
 impl std::fmt::Debug for RegistryClient {

@@ -83,6 +83,23 @@ export function dockerExe(): string | null {
  * The fnpm CLI. FNPM_EXE overrides it; the default is the built CLI of packages/fuck-npm. A `.js` path is run with
  * the current node by `spawn`, so it does not need to be executable.
  */
+/**
+ * Removes the cache entries `evict` selects: bun's `<name>@<version>...` folders and fnpm's
+ * packages (`<cache>/store/v2/pkgs/<name>@<version>-<hash>`, scoped names with `+`), so a
+ * test that evicts a package from bun's cache evicts it from fnpm's store as well.
+ */
+export async function evictCacheEntries(cache: string, evict: (entry: string) => boolean): Promise<void> {
+  const remove = (path: string) => fs.promises.rm(path, { recursive: true, force: true });
+  for (const entry of fs.existsSync(cache) ? fs.readdirSync(cache).sort() : []) {
+    if (entry !== "store" && evict(entry)) await remove(join(cache, entry));
+  }
+  const pkgs = join(cache, "store", "v2", "pkgs");
+  for (const entry of fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : []) {
+    const named = entry.replace(/^@([^+]+)\+/, "@$1/");
+    if (evict(named) || evict(entry)) await remove(join(pkgs, entry));
+  }
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }

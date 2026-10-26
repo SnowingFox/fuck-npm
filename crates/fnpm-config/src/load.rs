@@ -1160,10 +1160,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     let minimum_release_age_ms = minimum_release_age_ms.filter(|&ms| ms > 0);
 
     // ── directories ──
-    let store_dir = match env.get_not_empty(crate::env::names::STORE_DIR) {
-        Some(v) => env_path(&cwd, v, h).join(STORE_LAYOUT),
-        None => fnpm_home.join("store").join(STORE_LAYOUT),
-    };
+    let mut cache_configured = true;
     let cache_dir = if cache_disabled {
         // bun: with the cache off, downloads go to the project's `node_modules/.cache`,
         // whatever directory is configured.
@@ -1180,9 +1177,18 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     } else if let Some(dir) = m.cache_dir.clone().filter(|d| !d.as_os_str().is_empty()) {
         dir
     } else if h.is_some() || env.get_not_empty(crate::env::names::HOME).is_some() {
+        cache_configured = false;
         fnpm_home.join("cache")
     } else {
+        cache_configured = false;
         project_dir.join("node_modules").join(".fnpm-cache")
+    };
+    // bun keeps packages in its cache directory: a cache directory set by flag, environment
+    // or config holds the store as well (CI that caches it restores the packages too).
+    let store_dir = match env.get_not_empty(crate::env::names::STORE_DIR) {
+        Some(v) => env_path(&cwd, v, h).join(STORE_LAYOUT),
+        None if cache_configured && !cache_disabled => cache_dir.join("store").join(STORE_LAYOUT),
+        None => fnpm_home.join("store").join(STORE_LAYOUT),
     };
 
     // ── network ──

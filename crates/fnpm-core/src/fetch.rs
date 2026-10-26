@@ -470,8 +470,16 @@ async fn remote(
     url: &str,
     integrity: Option<Integrity>,
 ) -> Outcome {
-    if let Some(hit) = cached(inner, name, version, integrity) {
+    // A URL without an integrity is found again by what it imported as last time.
+    let known = integrity.or_else(|| inner.store.integrity_for_url(name, version, url));
+    if let Some(hit) = cached(inner, name, version, known) {
         return Ok(hit);
+    }
+    if inner.client.offline_mode() == fnpm_config::OfflineMode::Offline {
+        return Err(FetchFailure {
+            code: "OFFLINE",
+            message: format!("--offline: \"{name}\" is not in the cache"),
+        });
     }
     let body = inner
         .client
@@ -514,6 +522,7 @@ async fn remote(
                 .import_tarball_unpinned(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
+            inner.store.remember_url(name, version, url, &key.integrity);
             Ok(Fetched { entry, key })
         }
     }

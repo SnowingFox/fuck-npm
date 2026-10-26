@@ -340,6 +340,40 @@ impl Store {
         &self.inner.tuning
     }
 
+    /// `urls/<hash>`: the record of an unpinned download (see [`Store::remember_url`]).
+    fn url_record(&self, name: &str, version: &str, url: &str) -> PathBuf {
+        let hash = xxhash_rust::xxh3::xxh3_128(format!("{name}\0{version}\0{url}").as_bytes());
+        self.root.join("urls").join(format!("{hash:032x}"))
+    }
+
+    /// The integrity a tarball URL without one in the lockfile or manifest had when it was
+    /// last imported, recorded by [`Store::remember_url`]. Lets a later install (an offline
+    /// one too) reuse the package instead of downloading it again, as bun's name@version
+    /// cache does.
+    pub fn integrity_for_url(&self, name: &str, version: &str, url: &str) -> Option<Integrity> {
+        let text = std::fs::read_to_string(self.url_record(name, version, url)).ok()?;
+        Integrity::parse(text.trim()).ok()
+    }
+
+    /// Records what an unpinned tarball URL imported as. Best effort: a failed write only
+    /// means the next install downloads it again.
+    pub fn remember_url(&self, name: &str, version: &str, url: &str, integrity: &Integrity) {
+        let record = self.url_record(name, version, url);
+        let Some(dir) = record.parent() else { return };
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        let tmp = dir.join(format!(".tmp-{}-{nanos}", std::process::id()));
+        if std::fs::write(&tmp, integrity.to_string()).is_ok()
+            && std::fs::rename(&tmp, &record).is_err()
+        {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
+
     /// `pkgs/<dir>` of `key`.
     pub fn package_dir(&self, key: &PackageKey) -> PathBuf {
         self.root.join("pkgs").join(key.dir_name())

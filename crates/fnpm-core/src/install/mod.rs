@@ -1314,6 +1314,83 @@ fn native_dependencies(config: &Config, ws: &Workspace) -> Option<Vec<String>> {
 }
 
 /// Whether every edge into `id` is optional (so a failed fetch may drop it).
+/// Packages reachable from the root and the workspaces through edges that are not optional.
+fn required_without_optional(graph: &LockGraph, reachable: &[bool]) -> Vec<bool> {
+    let mut required = vec![false; graph.packages.len()];
+    let mut queue: Vec<usize> = graph
+        .packages
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            matches!(
+                p.resolution,
+                fnpm_types::Resolution::Root | fnpm_types::Resolution::Workspace { .. }
+            )
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for &i in &queue {
+        required[i] = true;
+    }
+    while let Some(i) = queue.pop() {
+        for e in &graph.packages[i].dependencies {
+            if e.behavior.is_optional() || e.behavior.is_optional_peer() {
+                continue;
+            }
+            if let Some(t) = e.target
+                && reachable.get(t.index()).copied().unwrap_or(false)
+                && !required[t.index()]
+            {
+                required[t.index()] = true;
+                queue.push(t.index());
+            }
+        }
+    }
+    required
+}
+
+/// The optional dependencies, not otherwise required, whose subtree contains one of `lost`.
+fn optional_roots_reaching(
+    graph: &LockGraph,
+    lost: &[PackageId],
+    required: &[bool],
+) -> Vec<PackageId> {
+    let mut roots = Vec::new();
+    for p in &graph.packages {
+        for e in &p.dependencies {
+            let Some(t) = e.target else { continue };
+            if !e.behavior.is_optional() || required[t.index()] || roots.contains(&t) {
+                continue;
+            }
+            // Below `t` through anything not already required elsewhere.
+            let mut seen = vec![false; graph.packages.len()];
+            let mut stack = vec![t];
+            let mut hit = false;
+            while let Some(x) = stack.pop() {
+                if seen[x.index()] {
+                    continue;
+                }
+                seen[x.index()] = true;
+                if lost.contains(&x) {
+                    hit = true;
+                    break;
+                }
+                for d in &graph.packages[x.index()].dependencies {
+                    if let Some(y) = d.target
+                        && !required[y.index()]
+                    {
+                        stack.push(y);
+                    }
+                }
+            }
+            if hit {
+                roots.push(t);
+            }
+        }
+    }
+    roots
+}
+
 fn optional_only(graph: &LockGraph, id: PackageId) -> bool {
     let mut any = false;
     for p in &graph.packages {
@@ -1429,6 +1506,7 @@ async fn link(
         &root,
     );
     let mut failed = 0u32;
+    let mut offline_missing = false;
     loop {
         let policy = Arc::new(TrustPolicy::from_graph(graph, trust_names.iter().cloned()));
         let cfg = config.clone();
@@ -1499,6 +1577,57 @@ async fn link(
         for (i, p) in graph.packages.iter().enumerate() {
             if reachable[i] && fetches(p) && (lazy.is_empty() || !lazy.contains(&p.key())) {
                 fetcher.ensure_package(p);
+            }
+        }
+        // --offline: like bun, every required package missing from the cache is reported, the
+        // rest is installed, and the install fails.
+        if config.network.offline == fnpm_config::OfflineMode::Offline {
+            // What is not in the cache. A package node_modules already holds (`lazy`) needs none.
+            let mut absent = vec![false; graph.packages.len()];
+            for (i, p) in graph.packages.iter().enumerate() {
+                if !reachable[i] || !fetches(p) || lazy.contains(&p.key()) {
+                    continue;
+                }
+                if let Err(f) = fetcher.ensure_package(p).wait().await
+                    && f.code == "OFFLINE"
+                {
+                    absent[i] = true;
+                }
+            }
+            // An optional dependency is left out with everything below it that only it needs;
+            // what the rest of the tree requires must be there.
+            let required = required_without_optional(graph, &reachable);
+            let mut reported = std::collections::BTreeSet::new();
+            let mut skip = Vec::new();
+            for (i, p) in graph.packages.iter().enumerate() {
+                if !absent[i] {
+                    continue;
+                }
+                if required[i] {
+                    if reported.insert(p.name.clone()) {
+                        events.emit(Event::Error {
+                            message: format!("--offline: \"{}\" is not in the cache", p.name),
+                            code: Some("OFFLINE".into()),
+                        });
+                    }
+                    offline_missing = true;
+                }
+                skip.push(PackageId(i as u32));
+            }
+            // Optional edges whose subtree lost a package are dropped, like a failed optional.
+            let skipped_optional = optional_roots_reaching(graph, &skip, &required);
+            for p in &mut graph.packages {
+                for e in &mut p.dependencies {
+                    if e.target
+                        .is_some_and(|t| skip.contains(&t) || skipped_optional.contains(&t))
+                    {
+                        e.target = None;
+                    }
+                }
+            }
+            if !skip.is_empty() {
+                // Plan the layout again without them.
+                continue;
             }
         }
         let previous_hoisted_workspaces = if kind == NodeLinker::Hoisted && graph.has_workspaces() {
@@ -1597,6 +1726,7 @@ async fn link(
             source: std::io::Error::other(format!("link task failed: {e}")),
         })?;
         match result {
+            Ok(_) if offline_missing => return Err(Error::Reported),
             Ok(report) => {
                 return Ok(Linked {
                     report,
