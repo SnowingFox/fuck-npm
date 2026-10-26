@@ -205,7 +205,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                     format_update_plan(
                         &summary,
                         Colors::new(stdout_color),
-                        mode == Mode::Rich && stdout_color,
+                        stdout_color,
                         elapsed_ms,
                     )
                 } else {
@@ -213,7 +213,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                         &summary,
                         command,
                         Colors::new(stdout_color),
-                        mode == Mode::Rich && stdout_color,
+                        stdout_color,
                         elapsed_ms,
                     )
                 };

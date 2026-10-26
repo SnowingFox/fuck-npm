@@ -11,12 +11,13 @@ pub(crate) struct Fatal(pub String);
 
 pub(crate) type FResult<T> = Result<T, Fatal>;
 
+/// bun's order: `FORCE_COLOR` wins over `NO_COLOR`.
 fn colors_for(is_tty: bool) -> bool {
-    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
-        return false;
-    }
     if let Some(force) = std::env::var_os("FORCE_COLOR") {
         return force != "0" && force != "false";
+    }
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        return false;
     }
     is_tty
 }

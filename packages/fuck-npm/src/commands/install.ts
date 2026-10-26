@@ -88,7 +88,7 @@ export function finishInstall(
     return exitCode;
   }
   if (options.logLevel !== "silent" && options.summary) {
-    const color = ctx.output.mode === "rich" && colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY);
+    const color = colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY);
     // Like bun, the time since the process started.
     const elapsedMs = Math.max(summary.elapsedMs, ctx.runtime.now());
     const lines =

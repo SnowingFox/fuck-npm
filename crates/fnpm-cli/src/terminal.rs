@@ -163,15 +163,15 @@ fn terminal_columns(_stdout_is_tty: bool, _stderr_is_tty: bool) -> usize {
     80
 }
 
-/// `colorEnabled` in `src/output/output.ts`: `NO_COLOR` (non-empty) wins, then
-/// `FORCE_COLOR` (anything but `0`/`false`), then `TERM=dumb`, then whether the stream is a
-/// terminal.
+/// `colorEnabled` in `src/output/output.ts`, bun's order: `FORCE_COLOR` (anything but
+/// `0`/`false`) wins over `NO_COLOR` (non-empty), then `TERM=dumb`, then whether the stream is
+/// a terminal.
 pub fn color_enabled(env: &Env, is_tty: bool) -> bool {
-    if env.get("NO_COLOR").is_some_and(|value| !value.is_empty()) {
-        return false;
-    }
     if let Some(force) = env.get("FORCE_COLOR") {
         return force != "0" && force != "false";
+    }
+    if env.get("NO_COLOR").is_some_and(|value| !value.is_empty()) {
+        return false;
     }
     if env.get("TERM") == Some("dumb") {
         return false;
@@ -188,10 +188,11 @@ mod tests {
         let env = |pairs: &[(&str, &str)]| Env::from_pairs(pairs.iter().copied());
         assert!(color_enabled(&env(&[]), true));
         assert!(!color_enabled(&env(&[]), false));
-        assert!(!color_enabled(
+        assert!(color_enabled(
             &env(&[("NO_COLOR", "1"), ("FORCE_COLOR", "1")]),
-            true
+            false
         ));
+        assert!(!color_enabled(&env(&[("NO_COLOR", "1")]), true));
         assert!(color_enabled(
             &env(&[("NO_COLOR", ""), ("FORCE_COLOR", "1")]),
             false
