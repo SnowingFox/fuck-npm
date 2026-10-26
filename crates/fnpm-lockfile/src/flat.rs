@@ -165,8 +165,15 @@ impl<'g> Flat<'g> {
             for (ei, e) in pkg.dependencies.iter().enumerate() {
                 let group_bits =
                     Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER;
-                if pid == 0 && !e.behavior.intersects(group_bits) && e.behavior.is_workspace() {
-                    // A link edge; the synthesized ones below replace it.
+                // A link edge (also the `WORKSPACE | PROD` membership edges of the linker's
+                // view, whose literal is the member's path); the synthesized ones below
+                // replace it.
+                if pid == 0
+                    && e.behavior.is_workspace()
+                    && (!e.behavior.intersects(group_bits)
+                        || (e.target.is_some()
+                            && graph.workspaces.get(&e.literal) == e.target.as_ref()))
+                {
                     continue;
                 }
                 let behavior = if e.behavior.intersects(group_bits) {
