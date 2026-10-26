@@ -23,8 +23,10 @@ The integrated main CI run ([40251319935](https://github.com/SnowingFox/fuck-npm
 failed on macOS (`libc::CLONE_NOFOLLOW` is unavailable), Windows Clippy (unused/dead store code),
 and Linux ARM GNU cross-compilation (the bundled GCC is too old for libdeflate). Linux x64 and ARM64
 binding test jobs passed, as did Linux GNU x64, both musl, and both Windows release addon builds.
-Release smoke jobs were skipped because the build matrix failed. ARM GNU now uses Zig with an explicit
-glibc 2.17 target; the platform fixes require a fresh CI run before these blockers can be considered closed.
+Release smoke jobs were skipped because the build matrix failed. The follow-up defines the Darwin clone flag
+from verified platform references and corrects Unix-only store guards for Windows. ARM GNU now uses Zig
+with an explicit glibc 2.17 target. Store tests join the native platform test jobs so the clonefile regression
+runs on macOS. These fixes require a fresh CI run before the blockers can be considered closed.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
