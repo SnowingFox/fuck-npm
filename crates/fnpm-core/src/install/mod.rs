@@ -772,8 +772,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         || changed
         || opts.patch.is_some()
         || lock.migrated
-        // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces.
-        || lock.graph.as_ref().is_some_and(|g| g.lockfile_version == 0)
+        // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces (a
+        // project without workspace members reads the same in both).
+        || lock
+            .graph
+            .as_ref()
+            .is_some_and(|g| g.lockfile_version == 0 && g.workspaces.len() > 1)
         || lock.config_version_missing
         || !root.join(lock::target_name(&config, &lock)).exists();
 
