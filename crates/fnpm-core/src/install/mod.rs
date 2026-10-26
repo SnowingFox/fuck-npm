@@ -825,12 +825,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 &*events,
             )?;
             // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too, so the file is in
-            // the writer's form afterwards; `Saved lockfile` only when that changed its bytes.
+            // the writer's form afterwards; it was saved only when that changed its bytes
+            // (`Saved lockfile`, `Saved fnpm.lock (N packages)`), else bun says `Checked`.
             if !saved && config.lockfile.save {
-                if write_lockfile(&root, &config, &lock, &graph, None)? {
+                saved = write_lockfile(&root, &config, &lock, &graph, None)?;
+                if saved {
                     events.emit(Event::status("Saved lockfile"));
                 }
-                saved = true;
             }
             // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`;
             // nothing when the lockfile is not saved (`--frozen-lockfile`).
