@@ -9,7 +9,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
-import { dirname, join, matchesGlob, relative, sep } from "node:path";
+import { basename, dirname, join, matchesGlob, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import tls from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -286,6 +286,13 @@ function resolveCommand(cmd: string[]): string[] {
 function cleanEnv(env: Env | undefined): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env ?? process.env)) if (value !== undefined) out[key] = String(value);
+  // bun keeps the packages in its cache directory; fnpm keeps them in its store. The harness gives every worker a
+  // `<root>/cache` and a `<root>/store`. A test that points FNPM_CACHE_DIR somewhere else (a cache of its own) gets
+  // a store of its own there as well, or it would find the packages of other tests and skip downloads it expects.
+  const { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: store } = out;
+  if (cache && store && basename(store) === "store" && join(dirname(store), "cache") !== cache) {
+    out.FNPM_STORE_DIR = join(cache, "store");
+  }
   return out;
 }
 
