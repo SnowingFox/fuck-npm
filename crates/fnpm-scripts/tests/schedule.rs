@@ -125,6 +125,7 @@ fn plan_install_selects_trusted_jobs() {
         trusted_from_requests: &empty,
         registry_for: &reg,
         installed: None,
+        members: None,
     };
     let plan = plan_install(
         &graph,

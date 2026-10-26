@@ -1048,7 +1048,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     // 7. Lifecycle scripts.
-    let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
+    let (blocked, failed_optional) = run_scripts(
+        &project,
+        &ws,
+        &graph,
+        &linked,
+        selected_ids.as_deref(),
+        &trust_names,
+        &events,
+    )
+    .await?;
     phases.mark("scripts");
     summary.blocked_scripts = blocked;
 
@@ -1056,8 +1065,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // The state file goes last, after everything succeeded.
     // Not when this run left the lockfile or package.json behind node_modules (`--no-save`,
     // a frozen install never changes either).
+    // Not either after a failed optional script: like bun, the next install tries it again.
     let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
-        && (config.save_package_json || edits.is_empty());
+        && (config.save_package_json || edits.is_empty())
+        && !failed_optional;
     // A `--filter` install links only part of the project; `update -r` links all of it.
     if selected_ids.is_none() && saved_everything {
         // Directories the linker moved aside are deleted in the background; their removal
@@ -2069,9 +2080,10 @@ async fn run_scripts(
     ws: &Workspace,
     graph: &LockGraph,
     linked: &Linked,
+    members: Option<&[PackageId]>,
     trust_names: &[String],
     events: &Arc<dyn EventSink>,
-) -> Result<u32> {
+) -> Result<(u32, bool)> {
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
@@ -2098,29 +2110,45 @@ async fn run_scripts(
             trusted_from_requests: &from_requests,
             registry_for: &|n: &str| cfg.registry_for(n).url.as_str(),
             installed: Some(&linked.reachable),
+            members,
         },
         &locate,
     )
     .map_err(Error::io(&root))?;
     let blocked = plan.blocked_scripts();
     if plan.jobs.is_empty() {
-        return Ok(blocked);
+        return Ok((blocked, false));
     }
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
         shell: None,
         env: Vec::new(),
         silent: config.log_level == fnpm_config::LogLevel::Silent,
+        verbose: config.log_level == fnpm_config::LogLevel::Verbose,
         project_dir: root.clone(),
     };
-    let cleanup = |failed: &Path| -> std::io::Result<()> {
+    let cleanup = |failed: &Path| -> std::io::Result<&'static str> {
         let Some(id) = linked
             .report
             .dirs
             .iter()
             .find_map(|(id, dir)| (dir == failed).then_some(*id))
         else {
-            return Ok(());
+            // A member reached only through an optional dependency: bun keeps its folder and
+            // removes the links to it.
+            if ws.members.iter().any(|m| m.dir == failed) {
+                let real = std::fs::canonicalize(failed)?;
+                remove_optional_links(&root.join("node_modules"), &real)?;
+                for member in &ws.members {
+                    remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+                }
+                return Ok(if linked.linker == NodeLinker::Isolated {
+                    "skipping"
+                } else {
+                    "deleting"
+                });
+            }
+            return Ok("deleting");
         };
         // Global bin links point through the root alias rather than an isolated store path.
         if config.global {
@@ -2172,11 +2200,12 @@ async fn run_scripts(
                 Err(e) => return Err(e),
             }
         }
-        Ok(())
+        Ok("deleting")
     };
-    fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
-        .await?;
-    Ok(blocked)
+    let report =
+        fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
+            .await?;
+    Ok((blocked, !report.failed_optional.is_empty()))
 }
 
 /// Remove isolated aliases and their bins while the failed package still exists, so realpath
