@@ -584,12 +584,21 @@ fn link_entry(
         Vec::new()
     };
     deps.extend(public);
+    // A member reached through a symlinked path (`link -> ../app`): its links are written
+    // relative to where its node_modules really is, or they would point beside it.
+    let mut real_nm: Option<PathBuf> = None;
     if matches!(st.kind, Kindof::Importer(_)) {
         fsutil::create_dir_all(&entry_nm).map_err(|source| Error::Io {
             path: entry_nm.clone(),
             source,
         })?;
+        real_nm = std::fs::canonicalize(&entry_nm)
+            .ok()
+            .filter(|real| *real != entry_nm);
     }
+    let project_real = real_nm
+        .as_ref()
+        .and_then(|_| std::fs::canonicalize(cx.project_dir).ok());
     for (alias, dep) in &deps {
         if !fnpm_types::name::is_safe_install_folder_name(alias) {
             return Err(Error::UnsafePath {
@@ -604,7 +613,22 @@ fn link_entry(
         let Some(target) = paths.store_path(states, *dep, from_global) else {
             continue;
         };
-        let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
+        let rel = match (&real_nm, &project_real) {
+            (Some(real), Some(project)) => {
+                // Both sides by their real paths: the store is inside the project.
+                let target = target
+                    .strip_prefix(cx.project_dir)
+                    .map(|r| project.join(r))
+                    .unwrap_or_else(|_| target.clone());
+                let parent = dest.parent().unwrap_or(&entry_nm);
+                let parent = parent
+                    .strip_prefix(&entry_nm)
+                    .map(|r| real.join(r))
+                    .unwrap_or_else(|_| parent.to_path_buf());
+                fsutil::relative(&parent, &target)
+            }
+            _ => fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target),
+        };
         let made = fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
         if made && matches!(st.kind, Kindof::Local) && !st.built.load(Ordering::Relaxed) {
