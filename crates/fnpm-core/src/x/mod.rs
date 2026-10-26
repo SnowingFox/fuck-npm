@@ -19,6 +19,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use fnpm_config::{CliOverrides, Config, Env, LoadOptions};
 use fnpm_scripts::env::EnvMap;
@@ -55,7 +57,7 @@ pub enum Outcome {
 }
 
 /// One `fnpm x` / `fnpm create`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Request {
     /// The arguments after `x` / `create` (flags typed before the command included).
     pub args: Vec<String>,
@@ -65,6 +67,53 @@ pub struct Request {
     pub create: bool,
     /// The CLI version (`--version`).
     pub version: String,
+    /// Draws the install while it runs (a terminal). Without it, the install prints bun's
+    /// status lines instead.
+    pub display: Option<Arc<dyn Display>>,
+}
+
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("args", &self.args)
+            .field("cwd", &self.cwd)
+            .field("create", &self.create)
+            .field("version", &self.version)
+            .field("display", &self.display.is_some())
+            .finish()
+    }
+}
+
+/// A live view of what `fnpm x` installs, drawn by the caller (the launcher's progress
+/// region).
+pub trait Display: Send + Sync {
+    /// Starts drawing the work named by `title` (`x create-vite`); the returned sink receives
+    /// its events.
+    fn start(&self, title: &str) -> Arc<dyn EventSink>;
+    /// Erases the view, then reports `done`. Called before anything else is printed and
+    /// before the bin runs, also when [`Display::start`] was not.
+    fn stop(&self, done: Option<Done>);
+}
+
+/// What happened before the bin runs, for [`Display::stop`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Done {
+    /// The tree was installed or refreshed.
+    Installed {
+        /// `<name>@<version>` of the package that runs.
+        package: String,
+        /// Packages the install wrote; 0 when the tree was already current.
+        packages: u32,
+        /// Bytes received from the registry.
+        bytes: u64,
+        /// Time spent installing.
+        elapsed_ms: u64,
+    },
+    /// A tree an earlier run installed was reused.
+    Cached {
+        /// `<name>@<version>` of the package that runs.
+        package: String,
+    },
 }
 
 /// stderr diagnostics in bun's format (`error: `, `warn: `, `note: `).
@@ -347,7 +396,8 @@ fn prepend_path(map: &mut EnvMap, tree: &Path) {
     map.set("PATH", new);
 }
 
-/// Prints warnings and errors of the install (not progress) to stderr.
+/// Prints the install's status lines, warnings and errors to stderr when nothing draws
+/// progress (bun's output without a progress bar).
 struct DiagnosticSink {
     out: Out,
     silent: bool,
@@ -361,6 +411,8 @@ impl EventSink for DiagnosticSink {
         match event {
             Event::Warn { message, .. } => self.out.warn(&message),
             Event::Error { message, .. } => self.out.error(&message),
+            Event::Status { message } => eprintln!("{message}"),
+            Event::Notice { message } => self.out.dim(&message),
             _ => {}
         }
     }
@@ -368,6 +420,47 @@ impl EventSink for DiagnosticSink {
     fn enabled(&self) -> bool {
         !self.silent
     }
+}
+
+/// Passes the install's events to the live view, keeping the registry byte count for
+/// [`Done::Installed`].
+struct Tally {
+    view: Arc<dyn EventSink>,
+    bytes: AtomicU64,
+}
+
+impl EventSink for Tally {
+    fn emit(&self, event: Event) {
+        if let Event::Telemetry { bytes, .. } = &event {
+            self.bytes.store(*bytes, Ordering::Relaxed);
+        }
+        self.view.emit(event);
+    }
+
+    fn enabled(&self) -> bool {
+        self.view.enabled()
+    }
+
+    fn wants_progress(&self) -> bool {
+        self.view.wants_progress()
+    }
+}
+
+/// `<name>@<version>` of the package installed in `tree`, else what was asked for.
+fn installed_label(tree: &Path, target: &Target) -> String {
+    std::fs::read(
+        tree.join("node_modules")
+            .join(&target.package)
+            .join("package.json"),
+    )
+    .ok()
+    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    .and_then(|json| {
+        json.get("version")?
+            .as_str()
+            .map(|version| format!("{}@{version}", target.package))
+    })
+    .unwrap_or_else(|| target.install_param.clone())
 }
 
 /// The registry's answer said nothing about the package (no connection, a 5xx / 429 / 408, or
@@ -442,9 +535,25 @@ struct InstallLock {
     _file: std::fs::File,
 }
 
+/// Locks `file`, calling `on_wait` first when another process holds the lock.
+fn lock_waiting(file: std::fs::File, on_wait: &mut Option<impl FnOnce()>) -> Option<std::fs::File> {
+    match file.try_lock() {
+        Ok(()) => Some(file),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            if let Some(on_wait) = on_wait.take() {
+                on_wait();
+            }
+            file.lock().ok().map(|()| file)
+        }
+        Err(std::fs::TryLockError::Error(_)) => None,
+    }
+}
+
 impl InstallLock {
-    /// Blocks while another `fnpm x` holds it; `None` if it cannot be taken.
-    fn acquire(tree: &Path) -> Option<Self> {
+    /// Blocks while another `fnpm x` holds it, calling `on_wait` once before it does; `None`
+    /// if it cannot be taken.
+    fn acquire(tree: &Path, on_wait: impl FnOnce()) -> Option<Self> {
+        let mut on_wait = Some(on_wait);
         let mut path = tree.as_os_str().to_owned();
         path.push(".lock");
         let mut options = std::fs::OpenOptions::new();
@@ -462,14 +571,14 @@ impl InstallLock {
         let primary = options
             .open(PathBuf::from(path))
             .ok()
-            .filter(|file| file.lock().is_ok());
+            .and_then(|file| lock_waiting(file, &mut on_wait));
         // A directory at the usual lock path must not force an unlocked install.
         // Linux can lock the tree directory itself, preserving a stable lock inode.
         #[cfg(target_os = "linux")]
         let primary = primary.or_else(|| {
             std::fs::File::open(tree)
                 .ok()
-                .filter(|file| file.lock().is_ok())
+                .and_then(|file| lock_waiting(file, &mut on_wait))
         });
         let file = primary?;
         Some(Self { _file: file })
@@ -604,13 +713,15 @@ pub fn plan(req: &Request) -> Outcome {
             return Outcome::Exit(1);
         }
     };
-    match plan_with(&opts, &out) {
+    match plan_with(&opts, &out, req.display.as_deref()) {
         Ok(outcome) => outcome,
         Err(code) => Outcome::Exit(code),
     }
 }
 
-fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
+fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<Outcome, i32> {
+    // `--silent` keeps the terminal to the bin.
+    let display = display.filter(|_| !opts.silent);
     let target = match target(opts) {
         Ok(t) => t,
         Err(message) => {
@@ -767,6 +878,11 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
                 ));
             }
             prepend_path(&mut run_env, &dir.path);
+            if let Some(display) = display {
+                display.stop(Some(Done::Cached {
+                    package: installed_label(&dir.path, &target),
+                }));
+            }
             return Ok(exec(bin, opts, &run_env));
         }
     }
@@ -798,7 +914,14 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         return Err(1);
     }
     // Never mutate a shared tree without owning its installation lock.
-    let mut lock = InstallLock::acquire(&tree_dir);
+    let mut lock = InstallLock::acquire(&tree_dir, || {
+        if display.is_some() {
+            out.dim(&format!(
+                "Waiting for another fnpm x to finish installing {}",
+                target.install_param
+            ));
+        }
+    });
     if lock.is_none() {
         out.error("failed to lock execution cache installation");
         return Err(1);
@@ -823,6 +946,11 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
     };
     if let Some(bin) = installed.clone().filter(|_| look_for_existing_bin) {
         drop(lock.take());
+        if let Some(display) = display {
+            display.stop(Some(Done::Cached {
+                package: installed_label(&tree_dir, &target),
+            }));
+        }
         return Ok(exec(bin, opts, &run_env));
     }
 
@@ -861,7 +989,8 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         pm: PmOptions {
             cwd: tree_dir.clone(),
             summary: false,
-            progress: false,
+            // Registry and worker telemetry for the live view.
+            progress: display.is_some(),
             // Like `--force` / `--no-cache` on the `bun add` that bunx spawns: the requested
             // package's manifest comes from the registry; the lockfile still pins the rest.
             no_cache: target.is_dist_tag || tree == Tree::Stale || installed.is_none(),
@@ -883,11 +1012,43 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
         }),
         ..InstallOptions::default()
     };
-    let sink: Arc<dyn EventSink> = Arc::new(DiagnosticSink {
-        out: Out::new(),
-        silent: opts.silent,
+    let started = Instant::now();
+    let tally = display.map(|display| {
+        let view = display.start(&format!("x {}", target.install_param));
+        // Until the first manifest arrives, say what is being resolved.
+        view.emit(Event::Resolve {
+            resolved: 0,
+            total: 1,
+            name: Some(target.install_param.clone()),
+        });
+        Arc::new(Tally {
+            view,
+            bytes: AtomicU64::new(0),
+        })
     });
+    let sink: Arc<dyn EventSink> = match &tally {
+        Some(tally) => Arc::clone(tally) as Arc<dyn EventSink>,
+        None => Arc::new(DiagnosticSink {
+            out: Out::new(),
+            silent: opts.silent,
+        }),
+    };
     let result = crate::runtime().block_on(crate::install_with_env(install, sink, install_env));
+    if let Some(display) = display {
+        display.stop(result.as_ref().ok().map(|summary| {
+            Done::Installed {
+                package: summary.requested.first().map_or_else(
+                    || target.install_param.clone(),
+                    |requested| format!("{}@{}", requested.name, requested.version),
+                ),
+                packages: summary.installed_count,
+                bytes: tally
+                    .as_ref()
+                    .map_or(0, |tally| tally.bytes.load(Ordering::Relaxed)),
+                elapsed_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            }
+        }));
+    }
     match result {
         Ok(_) => {
             if let Some(meta) = last_refresh
@@ -995,6 +1156,48 @@ pub fn run(req: &Request) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn install_lock_says_when_it_waits() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("tool@1.0.0");
+        std::fs::create_dir_all(&tree).unwrap();
+        // Free: no wait.
+        let held = InstallLock::acquire(&tree, || panic!("the lock was free")).unwrap();
+        let (waited_tx, waited_rx) = std::sync::mpsc::channel();
+        let path = tree.clone();
+        let waiter = std::thread::spawn(move || {
+            InstallLock::acquire(&path, move || waited_tx.send(()).unwrap()).is_some()
+        });
+        // Held by another open file: the waiter reports once, then blocks until the release.
+        waited_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        drop(held);
+        assert!(waiter.join().unwrap());
+    }
+
+    #[test]
+    fn installed_label_reads_the_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let opts = |package: &str| XArgs {
+            package_name: package.into(),
+            ..XArgs::default()
+        };
+        let cowsay = target(&opts("cowsay")).unwrap();
+        // Nothing installed: what was asked for.
+        assert_eq!(installed_label(dir.path(), &cowsay), "cowsay");
+        let manifest = dir.path().join("node_modules/cowsay");
+        std::fs::create_dir_all(&manifest).unwrap();
+        std::fs::write(
+            manifest.join("package.json"),
+            r#"{"name":"cowsay","version":"1.6.0"}"#,
+        )
+        .unwrap();
+        assert_eq!(installed_label(dir.path(), &cowsay), "cowsay@1.6.0");
+        let scoped = target(&opts("@scope/tool@2")).unwrap();
+        assert_eq!(installed_label(dir.path(), &scoped), "@scope/tool@2");
+    }
 
     #[test]
     fn create_prefix() {

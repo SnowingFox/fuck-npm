@@ -100,3 +100,13 @@ impl std::fmt::Debug for BinDef {
 }
 
 include!(concat!(env!("OUT_DIR"), "/spec.rs"));
+
+#[cfg(test)]
+mod version_tests {
+    #[test]
+    fn crates_match_the_npm_package() {
+        // `npm_config_user_agent` and the core report the crate version; the CLI reports
+        // packages/fuck-npm/package.json. Bump Cargo.toml's workspace version with it.
+        assert_eq!(super::VERSION, env!("CARGO_PKG_VERSION"));
+    }
+}

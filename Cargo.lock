@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-cli"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-config",
  "fnpm-core",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-config"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "base64 0.23.1",
  "fnpm-semver",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-core"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-linker"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-config",
  "fnpm-lockfile",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-lockfile"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-config",
  "fnpm-semver",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-napi"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-core",
  "fnpm-types",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-registry"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-resolver"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "flate2",
  "fnpm-config",
@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-scripts"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-config",
  "fnpm-types",
@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-semver"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-types",
  "mimalloc",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-store"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-types"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "base64 0.23.1",
  "hex",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "fnpm-workspace"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "fnpm-config",
  "fnpm-semver",

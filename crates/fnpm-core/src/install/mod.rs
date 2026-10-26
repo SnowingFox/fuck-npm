@@ -368,6 +368,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     for w in &lock.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
+    // Like bun, another manager's lockfile is migrated without asking; fnpm.lock is written
+    // next to it, which stays as it is.
+    if lock.migrated
+        && let Some(name) = lock.path.as_deref().and_then(Path::file_name)
+    {
+        events.emit(Event::notice(format!(
+            "migrated lockfile from {}",
+            name.to_string_lossy()
+        )));
+    }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
     if let Some(pending) = &pending_patch {
         ws.root = fnpm_workspace::PackageJson::parse(&pending.manifest)?;
@@ -950,6 +960,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         })
     };
     phases.mark("register");
+
+    if linked.linker == NodeLinker::Isolated {
+        layout_aliases(&root, &*events);
+    }
 
     // 7. Lifecycle scripts.
     let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
@@ -1783,6 +1797,57 @@ fn announce_resolved(
     )));
 }
 
+/// `node_modules/.bun` (next to bun.lock / bun.lockb) and `node_modules/.pnpm` (next to
+/// pnpm-lock.yaml) link to `node_modules/.fnpm`, so scripts written for those managers'
+/// isolated layouts find packages where they look (entries are named alike:
+/// `@scope+name@1.0.0`). Announced when the link is made.
+fn layout_aliases(root: &Path, events: &dyn EventSink) {
+    let nm = root.join("node_modules");
+    let store = nm.join(".fnpm");
+    let Ok(target) = std::fs::canonicalize(&store) else {
+        return;
+    };
+    for (manager, alias, lockfiles) in [
+        ("bun", ".bun", &["bun.lock", "bun.lockb"][..]),
+        ("pnpm", ".pnpm", &["pnpm-lock.yaml"][..]),
+    ] {
+        if !lockfiles.iter().any(|name| root.join(name).exists()) {
+            continue;
+        }
+        let link = nm.join(alias);
+        match std::fs::symlink_metadata(&link) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                if std::fs::canonicalize(&link).is_ok_and(|resolved| resolved == target) {
+                    continue;
+                }
+                let _ = std::fs::remove_file(&link).or_else(|_| std::fs::remove_dir(&link));
+            }
+            // The other manager's own store, stale after this install: aside, like a linker
+            // switch, for a later install to delete.
+            Ok(_) => {
+                let aside = nm.join(format!(
+                    "{}{:016x}",
+                    fnpm_linker::fsutil::OLD_MODULES_PREFIX,
+                    fnpm_linker::fsutil::random_suffix()
+                ));
+                if std::fs::rename(&link, &aside).is_err() {
+                    continue;
+                }
+            }
+            Err(_) => {}
+        }
+        match fnpm_store::fsops::symlink_dir(&store, &link) {
+            Ok(()) => events.emit(Event::notice(format!(
+                "node_modules/{alias} links to node_modules/.fnpm for scripts written for {manager}"
+            ))),
+            Err(e) => events.emit(Event::warn(
+                format!("could not link node_modules/{alias} to node_modules/.fnpm: {e}"),
+                None,
+            )),
+        }
+    }
+}
+
 /// Step 7: lifecycle scripts of trusted packages, in dependency order.
 /// Returns the number of blocked (untrusted) scripts.
 async fn run_scripts(
@@ -1992,4 +2057,65 @@ fn write_state(
 fn _assert_send() {
     fn is_send<T: Send>(_: T) {}
     let _ = |o: InstallOptions, e: Arc<dyn EventSink>| is_send(run(o, e, Env::default()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notices(sink: &fnpm_types::event::VecSink) -> Vec<String> {
+        sink.0
+            .lock()
+            .unwrap()
+            .drain(..)
+            .filter_map(|event| match event {
+                Event::Notice { message } => Some(message),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn layout_aliases_follow_the_lockfiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let nm = root.join("node_modules");
+        std::fs::create_dir_all(nm.join(".fnpm/macos-alias@2.2.0/node_modules/macos-alias"))
+            .unwrap();
+        let sink = fnpm_types::event::VecSink::default();
+
+        // No other lockfile: no alias.
+        layout_aliases(root, &sink);
+        assert!(std::fs::symlink_metadata(nm.join(".bun")).is_err());
+
+        // bun.lock: `.bun` shows the store, announced once.
+        std::fs::write(root.join("bun.lock"), "{}").unwrap();
+        layout_aliases(root, &sink);
+        assert_eq!(
+            notices(&sink),
+            ["node_modules/.bun links to node_modules/.fnpm for scripts written for bun"]
+        );
+        assert!(
+            nm.join(".bun/macos-alias@2.2.0/node_modules/macos-alias")
+                .is_dir()
+        );
+        layout_aliases(root, &sink);
+        assert!(notices(&sink).is_empty());
+
+        // bun's own store left behind is moved aside for a later install to delete.
+        std::fs::remove_file(nm.join(".bun")).unwrap();
+        std::fs::create_dir_all(nm.join(".bun/stale@1.0.0")).unwrap();
+        std::fs::write(root.join("pnpm-lock.yaml"), "").unwrap();
+        layout_aliases(root, &sink);
+        assert_eq!(notices(&sink).len(), 2);
+        assert!(nm.join(".bun/macos-alias@2.2.0").is_dir());
+        assert!(nm.join(".pnpm/macos-alias@2.2.0").is_dir());
+        let leftovers: Vec<_> = std::fs::read_dir(&nm)
+            .unwrap()
+            .flatten()
+            .filter(|e| fnpm_linker::fsutil::is_leftover(&e.file_name().to_string_lossy()))
+            .collect();
+        assert_eq!(leftovers.len(), 1);
+        assert!(leftovers[0].path().join("stale@1.0.0").is_dir());
+    }
 }

@@ -361,19 +361,38 @@ fn run(
                 format!("/{branch}")
             }
         );
-        let data = crate::runtime().block_on(async {
+        let view = req
+            .display
+            .as_ref()
+            .map(|display| display.start(&format!("create {label}")));
+        if let Some(view) = &view {
+            view.emit(fnpm_types::Event::Download {
+                done: 0,
+                total: 1,
+                bytes: None,
+                name: Some(format!("template {label}")),
+            });
+        }
+        let fetched = crate::runtime().block_on(async {
             parent
                 .client()?
                 .tarball_bytes(&url)
                 .await
                 .map_err(Error::from)
-        }).map_err(|error| match error {
+        });
+        if let Some(display) = &req.display {
+            display.stop(None);
+        }
+        let data = fetched.map_err(|error| match error {
             Error::Registry(fnpm_registry::Error::Status { status, .. }) if status >= 500 => {
                 Error::usage("GitHub returned a server error")
             }
-            Error::Registry(fnpm_registry::Error::Status { status: status @ (403 | 429), .. }) => {
-                Error::usage(format!("GitHub returned {status}. This usually means GitHub is rate limiting your requests"))
-            }
+            Error::Registry(fnpm_registry::Error::Status {
+                status: status @ (403 | 429),
+                ..
+            }) => Error::usage(format!(
+                "GitHub returned {status}. This usually means GitHub is rate limiting your requests"
+            )),
             other => other,
         })?;
         fnpm_store::archive::extract_to_dir(
@@ -544,21 +563,35 @@ fn run(
                     ""
                 }
             );
+            let view = req
+                .display
+                .as_ref()
+                .map(|display| display.start(&format!("create {label} · dependencies")));
             let opts = InstallOptions {
                 pm: PmOptions {
                     cwd: dest.clone(),
                     ignore_scripts: skip_scripts,
+                    progress: view.is_some(),
                     ..pm.clone()
                 },
                 command: InstallCommand::Install,
                 ..Default::default()
             };
             let started = std::time::Instant::now();
-            let summary = match crate::runtime().block_on(crate::install_with_env(
-                opts,
-                Arc::new(fnpm_types::NoopSink),
-                env.clone(),
-            )) {
+            // Without a live view, bun's status lines, warnings and errors still print: an
+            // error reported through events is not repeated below.
+            let sink = view.unwrap_or_else(|| {
+                Arc::new(super::DiagnosticSink {
+                    out: Out::new(),
+                    silent: false,
+                })
+            });
+            let installed =
+                crate::runtime().block_on(crate::install_with_env(opts, sink, env.clone()));
+            if let Some(display) = &req.display {
+                display.stop(None);
+            }
+            let summary = match installed {
                 Ok(summary) => summary,
                 Err(error) => {
                     let code = match &error {

@@ -99,6 +99,11 @@ pub enum Event {
     Status {
         message: String,
     },
+    /// A line every renderer prints, above a progress region too (bun's
+    /// `migrated lockfile from package-lock.json`).
+    Notice {
+        message: String,
+    },
     Summary {
         summary: InstallSummary,
     },
@@ -115,6 +120,12 @@ fn is_false(value: &bool) -> bool {
 impl Event {
     pub fn status(message: impl Into<String>) -> Self {
         Self::Status {
+            message: message.into(),
+        }
+    }
+
+    pub fn notice(message: impl Into<String>) -> Self {
+        Self::Notice {
             message: message.into(),
         }
     }
@@ -259,6 +270,14 @@ impl EventSink for VecSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notice_shape() {
+        assert_eq!(
+            serde_json::to_string(&Event::notice("migrated lockfile from bun.lock")).unwrap(),
+            r#"{"type":"notice","message":"migrated lockfile from bun.lock"}"#
+        );
+    }
 
     #[test]
     fn telemetry_and_script_contract_are_backward_compatible() {
