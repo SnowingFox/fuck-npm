@@ -174,6 +174,16 @@ function buildEnv(): Record<string, string | undefined> {
 /** The environment for every spawned fnpm (bunEnv). A test file that starts a registry repoints the default with setDefaultRegistry. */
 export const fnpmEnv: Record<string, string | undefined> = buildEnv();
 
+/**
+ * `env` with the package cache at `cacheDir` and no worker-wide FNPM_STORE_DIR, so fnpm keeps its store
+ * in that cache like bun keeps packages in its cache: what one test downloads (or edits through a
+ * node_modules link) is not shared with another test that has a cache of its own.
+ */
+export function withProjectCache(env: Record<string, string | undefined>, cacheDir: string) {
+  const { FNPM_STORE_DIR: _, ...rest } = env;
+  return { ...rest, FNPM_CACHE_DIR: cacheDir };
+}
+
 /** bunEnv/installEnv with a cache of its own under `dir`. */
 export function installEnv(dir: string, env: Record<string, string | undefined> = fnpmEnv) {
   return {

@@ -116,6 +116,18 @@ pub(crate) fn path_escapes(target: &str) -> bool {
 /// A resolved commit must be a full SHA-1 or SHA-256 object name: it ends up in the lockfile, in
 /// download URLs and in checkout paths, so a remote answering with anything else (`../x`, a
 /// branch name, an empty line) is an error rather than something to interpolate.
+/// The registry name an edge asks for (`npm:<name>@...` aliases name another package).
+fn asked_name(edge: &DepEdge) -> String {
+    edge.literal
+        .strip_prefix("npm:")
+        .map(|rest| {
+            fnpm_types::name::split_name_and_maybe_version(rest)
+                .0
+                .to_owned()
+        })
+        .unwrap_or_else(|| edge.name.clone())
+}
+
 /// The error of a dependency whose git, GitHub or tarball source failed. A repository git
 /// cannot read is reported like bun's clone failure, which names the dependency.
 fn remote_error(edge: &DepEdge, e: &fnpm_registry::Error) -> Error {
@@ -256,10 +268,11 @@ impl Engine<'_> {
         if !tolerated {
             return Err(err);
         }
+        let asked = asked_name(edge);
         let requested = self.requested_rows.contains_key(&(row.pkg, row.edge))
             || (self.update.active
                 && self.st[row.pkg.index()].kind == Kind::Project
-                && self.update.names.contains(&edge.name));
+                && (self.update.names.contains(&edge.name) || self.update.names.contains(&asked)));
         // Only a download that failed; a range nothing satisfies leaves the entry as it is.
         let download = !matches!(
             err,
@@ -273,6 +286,9 @@ impl Engine<'_> {
             && !self.failed_requests.contains(&edge.name)
         {
             self.failed_requests.push(edge.name.clone());
+            if asked != edge.name {
+                self.failed_requests.push(asked.clone());
+            }
         }
         if edge.behavior.is_peer() {
             let literal = &edge.literal;
@@ -298,10 +314,31 @@ impl Engine<'_> {
                 | Error::DistTagNotFound { .. }
                 | Error::TooRecent { .. }
         ) {
-            self.warnings.push(format!(
-                "{err}\n  error occurred while resolving optional dependency \"{}\"",
-                edge.name
-            ));
+            // A download that got no answer reads like bun's; a requested entry gets the one line.
+            let message = match &err {
+                Error::Registry(e) => match (e.network_error_name(), e) {
+                    // The manifest URL names the registry package (an override or a catalog
+                    // entry may point the edge at another one).
+                    (Some(kind), fnpm_registry::Error::Network { url, .. }) => {
+                        let manifest = url
+                            .rsplit('/')
+                            .next()
+                            .map(|n| n.replace("%2f", "/").replace("%2F", "/"))
+                            .unwrap_or_else(|| asked.clone());
+                        format!("{kind} downloading package manifest {manifest}")
+                    }
+                    _ => err.to_string(),
+                },
+                _ => err.to_string(),
+            };
+            if requested {
+                self.warnings.push(message);
+            } else {
+                self.warnings.push(format!(
+                    "{message}\n  error occurred while resolving optional dependency \"{}\"",
+                    edge.name
+                ));
+            }
         }
         Ok(Step::Done)
     }

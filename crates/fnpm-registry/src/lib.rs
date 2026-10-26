@@ -88,6 +88,26 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+impl Error {
+    /// bun's name for a download that got no answer (`ConnectionClosed downloading tarball
+    /// x@1.0.0`), read from a [`Error::Network`] message; `None` for other errors.
+    pub fn network_error_name(&self) -> Option<&'static str> {
+        let Error::Network { message, .. } = self else {
+            return None;
+        };
+        let text = message.to_ascii_lowercase();
+        Some(if text.contains("timed out") || text.contains("timeout") {
+            "Timeout"
+        } else if text.contains("refused") {
+            "ConnectionRefused"
+        } else if text.contains("closed") || text.contains("reset") || text.contains("incomplete") {
+            "ConnectionClosed"
+        } else {
+            "ConnectionFailed"
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ManifestRequest {
     /// Fetch the full packument (needed for `time`, `scripts`, `minimumReleaseAge`, `info`).

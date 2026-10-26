@@ -150,12 +150,10 @@ impl Inner {
                     .and_then(|v| v.to_str().ok())
                     .map(str::to_owned);
                 drop(permit);
-                let err = match status {
-                    404 => Error::NotFound(redact_url(spec.url.as_str())),
-                    _ => Error::Status {
-                        url: redact_url(spec.url.as_str()),
-                        status,
-                    },
+                // bun: `GET <url> - <status>`, a 404 included.
+                let err = Error::Status {
+                    url: redact_url(spec.url.as_str()),
+                    status,
                 };
                 Started::Failed(
                     Outcome::Status(status),

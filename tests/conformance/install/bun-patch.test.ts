@@ -35,6 +35,7 @@ import {
   normalizeFnpmSnapshot,
   readdirSorted,
   tempDir,
+  withProjectCache,
 } from "../harness.ts";
 import { isAbsolute, join, relative, resolve, sep } from "path";
 import { TestRegistry } from "../compat/registry.ts";
@@ -64,10 +65,7 @@ type Env = Record<string, string | undefined>;
  * whole file, so the env has to set it for concurrent projects to have separate caches.
  */
 function projectEnv(dir: string, cache = join(dir, ".bun-cache")): Env {
-  // bun keeps packages in its cache; without the worker's FNPM_STORE_DIR, fnpm keeps its store in
-  // `cache` too, so concurrent projects (and edits to their installed files) stay apart.
-  const { FNPM_STORE_DIR: _, ...env } = fnpmEnv;
-  return { ...env, NPM_CONFIG_REGISTRY: registry.registryUrl(), FNPM_CACHE_DIR: cache };
+  return { ...withProjectCache(fnpmEnv, cache), NPM_CONFIG_REGISTRY: registry.registryUrl() };
 }
 
 async function runBun(cwd: string, env: Env, ...args: string[]) {

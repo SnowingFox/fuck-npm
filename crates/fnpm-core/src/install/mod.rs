@@ -591,7 +591,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         planned.requests.iter().any(|r| &r.name == name)
             || (opts.command == InstallCommand::Update
                 && !opts.packages.is_empty()
-                && planned.updates.iter().any(|u| &u.name == name))
+                && (planned.updates.iter().any(|u| &u.name == name)
+                    || matches!(&planned.mode, Mode::Update { names, .. } if names.contains(name))))
     };
     if out.failed_requests.iter().any(named) {
         return Err(Error::Reported);
@@ -871,6 +872,50 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         Some(prev) if in_place => prev.packages.iter().map(|p| p.key()).collect(),
         _ => HashSet::new(),
     };
+    // A requested optional dependency whose download fails would be left out by the linker:
+    // bun warns with the failure and fails the command before anything is written.
+    if matches!(opts.command, InstallCommand::Add | InstallCommand::Update)
+        && (!opts.packages.is_empty() || !planned.requests.is_empty())
+    {
+        let mut requested: Vec<PackageId> = resolved_requests.iter().map(|(_, id)| *id).collect();
+        if opts.command == InstallCommand::Update {
+            for u in &planned.updates {
+                if let Some(t) = target_of(&graph, &u.workspace, &u.name) {
+                    requested.push(t);
+                }
+            }
+            // A name the update reached by its registry name (an `npm:` alias's target).
+            if let Mode::Update { names, .. } = &planned.mode {
+                let importers =
+                    std::iter::once(PackageId::ROOT).chain(graph.workspaces.values().copied());
+                for owner in importers {
+                    for e in &graph.packages[owner.index()].dependencies {
+                        if let Some(t) = e.target
+                            && names.contains(&graph.packages[t.index()].name)
+                        {
+                            requested.push(t);
+                        }
+                    }
+                }
+            }
+        }
+        requested.sort();
+        requested.dedup();
+        let mut failed_download = false;
+        for id in requested {
+            let p = &graph.packages[id.index()];
+            if !optional_only(&graph, id) || p.resolution.is_local_tree() {
+                continue;
+            }
+            if let Err(f) = fetcher.ensure_package(p).wait().await {
+                events.emit(Event::warn(f.message, Some("OPTIONAL_DEPENDENCY_FAILED")));
+                failed_download = true;
+            }
+        }
+        if failed_download {
+            return Err(Error::Reported);
+        }
+    }
     let linked = link(
         &project,
         &ws,

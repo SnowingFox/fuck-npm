@@ -99,7 +99,7 @@ pub enum Error {
 pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
     use fnpm_registry::Error as R;
     match e {
-        R::NotFound(_) => "NOT_FOUND",
+        R::NotFound(_) | R::Status { status: 404, .. } => "NOT_FOUND",
         R::Integrity { .. } => "INTEGRITY",
         R::Network { .. } | R::Status { .. } | R::Offline(_) | R::Registry { .. } => "NETWORK",
         _ => "CORE_ERROR",

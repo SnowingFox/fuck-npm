@@ -502,7 +502,14 @@ async fn remote(
         .client
         .tarball(url, integrity.as_ref())
         .await
-        .map_err(FetchFailure::from)?;
+        .map_err(|e| match e.network_error_name() {
+            // bun: `ConnectionClosed downloading tarball <name>@<version>`.
+            Some(kind) => FetchFailure {
+                code: "NETWORK",
+                message: format!("{kind} downloading tarball {name}@{version}"),
+            },
+            None => FetchFailure::from(e),
+        })?;
     let counter = inner.clone();
     let stream = body.stream.map(move |chunk| {
         if let Ok(b) = &chunk {

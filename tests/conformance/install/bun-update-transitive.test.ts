@@ -5,7 +5,7 @@ import { file, write } from "../compat/bun.ts";
 import { afterAll, beforeAll, describe, expect, test } from "../compat/bun-test.ts";
 import { statSync, utimesSync } from "fs";
 import { exists, rm } from "../compat/fs-promises.ts";
-import { fnpmEnv, fnpmExe, tempDir } from "../harness.ts";
+import { fnpmEnv, fnpmExe, tempDir, withProjectCache } from "../harness.ts";
 import { join } from "path";
 import { TestRegistry } from "../compat/registry.ts";
 
@@ -34,7 +34,7 @@ async function runIn(dir: string, rel: string, ...args: string[]) {
   await using proc = Bun.spawn({
     cmd: [fnpmExe(), ...args],
     cwd: join(dir, rel),
-    env: { ...fnpmEnv, FNPM_CACHE_DIR: join(dir, ".bun-cache") },
+    env: withProjectCache(fnpmEnv, join(dir, ".bun-cache")),
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
@@ -4259,7 +4259,7 @@ async function runInteractive(dir: string, keys: string, ...args: string[]) {
   await using proc = Bun.spawn({
     cmd: [fnpmExe(), "update", "-i", ...args],
     cwd: dir,
-    env: { ...fnpmEnv, FNPM_CACHE_DIR: join(dir, ".bun-cache") },
+    env: withProjectCache(fnpmEnv, join(dir, ".bun-cache")),
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
