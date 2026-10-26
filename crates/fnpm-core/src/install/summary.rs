@@ -104,10 +104,9 @@ pub(crate) fn installed_direct(
             continue;
         }
         let Some(t) = graph.get(id) else { continue };
-        if matches!(
-            t.resolution,
-            Resolution::Workspace { .. } | Resolution::Root
-        ) {
+        // A declared `workspace:` dependency is a row when its link was written, as in bun
+        // (only the root itself is never one).
+        if matches!(t.resolution, Resolution::Root) {
             continue;
         }
         let entry = AddedPackage {
