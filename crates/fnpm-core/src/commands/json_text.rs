@@ -130,10 +130,25 @@ fn write_number(out: &mut String, n: &Number) {
     }
 }
 
-/// A JSON string; control characters other than `\b \f \n \r \t` as `\u00XX`.
+/// Precedes a lone surrogate (`\ud800`) that a string was read with; the character after it is
+/// `SURROGATE_BASE` plus its offset from U+D800 (plane 15, private use).
+const SURROGATE_MARK: char = '\u{10ffff}';
+const SURROGATE_BASE: u32 = 0xF0000;
+
+/// A JSON string; control characters other than `\b \f \n \r \t` as `\u00XX`, and the lone
+/// surrogates the text had as their escapes.
 pub(crate) fn write_string(out: &mut String, s: &str) {
     out.push('"');
-    for c in s.chars() {
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == SURROGATE_MARK
+            && let Some(&next) = chars.peek()
+            && (SURROGATE_BASE..SURROGATE_BASE + 0x800).contains(&(next as u32))
+        {
+            chars.next();
+            out.push_str(&format!("\\u{:04x}", next as u32 - SURROGATE_BASE + 0xD800));
+            continue;
+        }
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
@@ -402,8 +417,16 @@ impl Parser<'_> {
                             } else {
                                 hi
                             };
-                            // A lone surrogate has no UTF-8 form.
-                            char::from_u32(code).unwrap_or('\u{fffd}')
+                            match char::from_u32(code) {
+                                Some(c) => c,
+                                // A lone surrogate has no UTF-8 form: it is kept as a marker
+                                // that `write_string` turns back into the escape.
+                                None => {
+                                    let mut buf = [0u8; 4];
+                                    out.extend_from_slice(SURROGATE_MARK.encode_utf8(&mut buf).as_bytes());
+                                    char::from_u32(SURROGATE_BASE + (code - 0xD800)).unwrap_or('\u{fffd}')
+                                }
+                            }
                         }
                         b'"' | b'\\' | b'/' => e as char,
                         b'\'' if !self.strict => '\'',
@@ -553,5 +576,15 @@ mod tests {
             ),
             "{\n  \"d\": \"a\\u001Bb\\u000B\",\n  \"e\": {},\n  \"f\": [\n    1.5,\n    1e-7\n  ]\n}"
         );
+    }
+
+    #[test]
+    fn lone_surrogates_survive_a_rewrite() {
+        let value = parse_package_json(r#"{"\ud800k": "a\udfffb\ud83d\ude00"}"#).unwrap();
+        let (key, v) = value.as_object().unwrap().iter().next().unwrap();
+        let mut out = String::new();
+        write_string(&mut out, key);
+        write_string(&mut out, v.as_str().unwrap());
+        assert_eq!(out, "\"\\ud800k\"\"a\\udfffb\u{1f600}\"");
     }
 }
