@@ -19,6 +19,7 @@ import semverLib from "semver";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { bindSync, NodeServer } from "../../registry/src/server.ts";
 import * as bunTest from "./bun-test.ts";
+import { lockfilePath } from "./lockfile.ts";
 import { readTar } from "../../registry/src/tgz.ts";
 
 type Bytes = Uint8Array<ArrayBuffer>;
@@ -107,9 +108,14 @@ export class BunFile extends Blob {
     this.#type = options.type;
   }
 
+  /** The file the readers open: `name`, or fnpm.lock for a `bun.lockb` fnpm does not write (see ./lockfile.ts). */
+  get #path(): string {
+    return lockfilePath(this.name);
+  }
+
   override get size(): number {
     try {
-      return fs.statSync(this.name).size;
+      return fs.statSync(this.#path).size;
     } catch {
       return 0;
     }
@@ -126,7 +132,7 @@ export class BunFile extends Blob {
 
   get lastModified(): number {
     try {
-      return fs.statSync(this.name).mtimeMs;
+      return fs.statSync(this.#path).mtimeMs;
     } catch {
       return 0;
     }
@@ -134,14 +140,14 @@ export class BunFile extends Blob {
 
   async exists(): Promise<boolean> {
     try {
-      return (await fsp.stat(this.name)).isFile();
+      return (await fsp.stat(this.#path)).isFile();
     } catch {
       return false;
     }
   }
 
   override async text(): Promise<string> {
-    return fsp.readFile(this.name, "utf8");
+    return fsp.readFile(this.#path, "utf8");
   }
 
   async json(): Promise<any> {
@@ -149,7 +155,7 @@ export class BunFile extends Blob {
   }
 
   override async bytes(): Promise<Bytes> {
-    const buffer = await fsp.readFile(this.name);
+    const buffer = await fsp.readFile(this.#path);
     return new Uint8Array(buffer.buffer as ArrayBuffer, buffer.byteOffset, buffer.byteLength) as Bytes;
   }
 
@@ -159,11 +165,11 @@ export class BunFile extends Blob {
   }
 
   override stream(): ReadableStream<Bytes> {
-    return withReaders(Readable.toWeb(fs.createReadStream(this.name)) as unknown as ReadableStream<Bytes>);
+    return withReaders(Readable.toWeb(fs.createReadStream(this.#path)) as unknown as ReadableStream<Bytes>);
   }
 
   override slice(start?: number, end?: number, contentType?: string): Blob {
-    const bytes = fs.readFileSync(this.name);
+    const bytes = fs.readFileSync(this.#path);
     return new Blob([new Uint8Array(bytes.subarray(start, end))], { type: contentType });
   }
 
@@ -172,7 +178,7 @@ export class BunFile extends Blob {
   }
 
   async delete(): Promise<void> {
-    await fsp.rm(this.name, { force: true });
+    await fsp.rm(this.#path, { force: true });
   }
 
   unlink(): Promise<void> {
@@ -180,7 +186,7 @@ export class BunFile extends Blob {
   }
 
   stat(): Promise<fs.Stats> {
-    return fsp.stat(this.name);
+    return fsp.stat(this.#path);
   }
 
   writer() {

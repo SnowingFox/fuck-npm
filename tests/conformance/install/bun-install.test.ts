@@ -14,6 +14,7 @@ import { access, cp, exists, mkdir, readlink, rename, rm, stat, writeFile } from
 import {
   fnpmEnv,
   fnpmExe,
+  nodeExe,
   fnpmEnv as env,
   githubTarball,
   hostedGitRepository,
@@ -7418,7 +7419,7 @@ describe.concurrent("bun-install", () => {
         stderr: "pipe",
       });
       const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
-      expect(stdout).toStartWith(`bun ${command[0]} v1.`);
+      expect(stdout).toStartWith(`fnpm ${command[0]} v`);
       return {
         stderr: normalizeFnpmSnapshot(stderr, String(dir)),
         exitCode,
@@ -13358,7 +13359,7 @@ describe.concurrent("isolated linker: file: dependencies that point outside the 
     await installTwice(projectDir);
 
     await using run = spawn({
-      cmd: [fnpmExe(), "-e", `console.log(JSON.stringify(require("plugin")))`],
+      cmd: [nodeExe(), "-e", `console.log(JSON.stringify(require("plugin")))`],
       cwd: projectDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -13427,7 +13428,7 @@ describe.concurrent("isolated linker: file: dependencies that point outside the 
       await installTwice(projectDir);
 
       await using run = spawn({
-        cmd: [fnpmExe(), "-e", `console.log(require("pkg-a"))`],
+        cmd: [nodeExe(), "-e", `console.log(require("pkg-a"))`],
         cwd: projectDir,
         stdout: "pipe",
         stderr: "pipe",
@@ -14259,7 +14260,7 @@ for (const field of ["resolutions", "overrides"]) {
 
     // pkg-a must be able to resolve `shared` at runtime.
     await using runProc = spawn({
-      cmd: [fnpmExe(), "-e", "console.log(require('pkg-a'))"],
+      cmd: [nodeExe(), "-e", "console.log(require('pkg-a'))"],
       cwd: projectDir,
       env,
       stdout: "pipe",
@@ -14594,7 +14595,7 @@ registry = "${ctx.registry_url}"
         expect(exitCode).toBe(0);
 
         await using runProc = spawn({
-          cmd: [fnpmExe(), "-e", "console.log(require('pkg-a'))"],
+          cmd: [nodeExe(), "-e", "console.log(require('pkg-a'))"],
           cwd: projectDir,
           env,
           stdout: "pipe",
@@ -14656,7 +14657,7 @@ registry = "${ctx.registry_url}"
       expect(exitCode).toBe(0);
 
       await using runProc = spawn({
-        cmd: [fnpmExe(), "-e", "console.log(require('pkg-a'))"],
+        cmd: [nodeExe(), "-e", "console.log(require('pkg-a'))"],
         cwd: projectDir,
         env,
         stdout: "pipe",
@@ -14789,7 +14790,7 @@ async function writeIsEvenProject(projectDir: string, rootPackageJsonFields: Rec
 
 async function expectIsEvenUsesVendoredIsOdd(projectDir: string) {
   await using proc = spawn({
-    cmd: [fnpmExe(), "-e", `console.log(require("is-even")(2))`],
+    cmd: [nodeExe(), "-e", `console.log(require("is-even")(2))`],
     cwd: projectDir,
     env,
     stdout: "pipe",
@@ -14887,7 +14888,7 @@ it.concurrent("installs the transitive file: dependency of a file: dependency", 
     // `lib/index.js` requires "nested", so this only passes when the
     // transitive file: dependency is materialized under node_modules.
     await using runProc = spawn({
-      cmd: [fnpmExe(), "-e", `console.log(require("lib"))`],
+      cmd: [nodeExe(), "-e", `console.log(require("lib"))`],
       cwd: String(dir),
       env,
       stdout: "pipe",
@@ -15455,7 +15456,7 @@ async function installFileDepCycle(projectDir: string): Promise<string> {
   expect(await readdirSorted(join(projectDir, "packages", "b"))).toStrictEqual(["index.js", "name.js", "package.json"]);
 
   await using runProc = spawn({
-    cmd: [fnpmExe(), "-e", `console.log(require("a"), require("b"))`],
+    cmd: [nodeExe(), "-e", `console.log(require("a"), require("b"))`],
     cwd: projectDir,
     env,
     stdout: "pipe",
@@ -15800,7 +15801,7 @@ describe.concurrent("file: tarball declared by a file: folder dependency", () =>
       expect(installExit).toBe(0);
 
       await using run = spawn({
-        cmd: [fnpmExe(), "-e", `console.log(require("lib"))`],
+        cmd: [nodeExe(), "-e", `console.log(require("lib"))`],
         cwd: projectDir,
         stdout: "pipe",
         stderr: "pipe",

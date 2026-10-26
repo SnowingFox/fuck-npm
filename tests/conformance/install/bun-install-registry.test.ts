@@ -27,6 +27,7 @@ import {
   assertManifestsPopulated,
   fnpmEnv,
   fnpmExe,
+  nodeExe,
   isDebug,
   isFlaky,
   isLinux,
@@ -2215,7 +2216,7 @@ describe.concurrent("bundledDependencies", () => {
       expect([pkgJsonStat.isFile(), indexStat.isFile()]).toEqual([true, true]);
 
       await using proc = spawn({
-        cmd: [fnpmExe(), "-e", `console.log(require("bundled-file"))`],
+        cmd: [nodeExe(), "-e", `console.log(require("bundled-file"))`],
         cwd: packageDir,
         stdout: "pipe",
         stderr: "pipe",
@@ -2273,7 +2274,7 @@ describe.concurrent("bundledDependencies", () => {
     }
 
     await using proc = spawn({
-      cmd: [fnpmExe(), "-e", `console.log(require("bundled-file"))`],
+      cmd: [nodeExe(), "-e", `console.log(require("bundled-file"))`],
       cwd: packageDir,
       stdout: "pipe",
       stderr: "pipe",

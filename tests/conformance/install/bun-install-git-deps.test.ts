@@ -26,7 +26,7 @@ import {
   writeFileSync,
 } from "fs";
 import { lstat, readdir, readlink } from "../compat/fs-promises.ts";
-import { fnpmEnv, fnpmExe, hostedGitRepository, isLinux, isWindows, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
+import { fnpmEnv, fnpmExe, hostedGitRepository, isLinux, isWindows, nodeExe, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
 import { dirname, join, resolve } from "path";
 import { pathToFileURL } from "url";
 
@@ -3310,7 +3310,7 @@ async function expectFileDepsInstalled(project: string) {
   expect(await linkedJson(join(nested, `${name}-self`, "package.json"))).toEqual(fileDepsManifest);
 
   await using proc = Bun.spawn({
-    cmd: [fnpmExe(), "-e", `console.log(require(${JSON.stringify(name)}))`],
+    cmd: [nodeExe(), "-e", `console.log(require(${JSON.stringify(name)}))`],
     cwd: project,
     env: fnpmEnv,
     stdout: "pipe",
