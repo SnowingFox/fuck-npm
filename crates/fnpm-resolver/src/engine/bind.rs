@@ -437,8 +437,12 @@ impl Engine<'_> {
         edge: &DepEdge,
         asked: &Asked,
     ) -> Option<PackageId> {
+        // A project's optional peer keeps the package the lockfile bound it to (bun keeps it
+        // even when only that peer holds it, as in a pruned checkout); its other peers resolve
+        // again.
+        let project = self.st[row.pkg.index()].kind == Kind::Project;
         if self.update.active
-            || self.st[row.pkg.index()].kind == Kind::Project
+            || (project && !edge.behavior.is_optional_peer())
             || self.changed_peer_providers.contains(&asked.name)
         {
             return None;

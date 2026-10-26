@@ -622,6 +622,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         stream.then(|| (&fetcher, skip.clone())),
         &events,
         &lockfile_name,
+        config.log_level == fnpm_config::LogLevel::Silent,
     )
     .await?;
     // Positionals without a name (git, tarball, folder) were requested under a guessed name;
@@ -652,6 +653,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             stream.then(|| (&fetcher, skip.clone())),
             &events,
             &lockfile_name,
+            config.log_level == fnpm_config::LogLevel::Silent,
         )
         .await?;
     }
@@ -665,6 +667,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let ResolveOutput {
         mut graph,
         changed,
+        behind,
         requests: resolved_requests,
         ..
     } = out;
@@ -1085,7 +1088,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // The state file goes last, after everything succeeded.
     // Not when this run left the lockfile or package.json behind node_modules (`--no-save`,
     // a frozen install never changes either).
-    let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
+    let saved_everything = !behind
+        && (config.lockfile.save || !(lockfile_dirty || integrity_filled))
         && (config.save_package_json || edits.is_empty());
     // A `--filter` install links only part of the project; `update -r` links all of it.
     if selected_ids.is_none() && saved_everything {
@@ -1184,6 +1188,7 @@ fn not_fetched(previous: Option<&LockGraph>, config: &Config) -> HashSet<String>
 
 /// One resolve; with a fetcher, every streamed package starts its fetch immediately (except
 /// the `skip` keys).
+#[allow(clippy::too_many_arguments)]
 async fn resolve(
     resolver: &Resolver,
     ws: &Workspace,
@@ -1192,6 +1197,7 @@ async fn resolve(
     fetcher: Option<(&Fetcher, Arc<HashSet<String>>)>,
     events: &Arc<dyn EventSink>,
     lockfile: &str,
+    silent: bool,
 ) -> Result<ResolveOutput> {
     let (tx, consumer) = match fetcher {
         Some((f, skip)) => {
@@ -1227,7 +1233,11 @@ async fn resolve(
     if let Some(task) = consumer {
         let _ = task.await;
     }
-    Ok(out.map_err(|e| e.with_lockfile(lockfile))?)
+    match out {
+        // bun's pruned-checkout error says nothing under `--silent`, and still fails.
+        Err(fnpm_resolver::Error::PrunedWorkspace { .. }) if silent => Err(Error::Reported),
+        out => Ok(out.map_err(|e| e.with_lockfile(lockfile))?),
+    }
 }
 
 /// Points the edge `name` of workspace `ws_path` at the literal written to package.json.
@@ -2078,9 +2088,14 @@ fn layout_aliases(root: &Path, events: &dyn EventSink) {
             Err(_) => {}
         }
         match fnpm_store::fsops::symlink_dir(&store, &link) {
-            Ok(()) => events.emit(Event::notice(format!(
-                "node_modules/{alias} links to node_modules/.fnpm for scripts written for {manager}"
-            ))),
+            // Said when fnpm.lock sits beside the other manager's lockfile; a project that keeps
+            // bun.lockb as its lockfile gets the alias silently, as bun has the folder.
+            Ok(()) if root.join(fnpm_lockfile::FNPM_LOCK).exists() => {
+                events.emit(Event::notice(format!(
+                    "node_modules/{alias} links to node_modules/.fnpm for scripts written for {manager}"
+                )))
+            }
+            Ok(()) => {}
             Err(e) => events.emit(Event::warn(
                 format!("could not link node_modules/{alias} to node_modules/.fnpm: {e}"),
                 None,
@@ -2324,6 +2339,7 @@ mod tests {
         std::fs::create_dir_all(nm.join(".fnpm/macos-alias@2.2.0/node_modules/macos-alias"))
             .unwrap();
         let sink = fnpm_types::event::VecSink::default();
+        std::fs::write(root.join("fnpm.lock"), "{}").unwrap();
 
         // No other lockfile: no alias.
         layout_aliases(root, &sink);

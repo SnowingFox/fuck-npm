@@ -509,6 +509,41 @@ pub(crate) fn skipped_catalogs(
     Some(skipped)
 }
 
+/// bun `warn_orphaned_patches`: a `patchedDependencies` key that names no installed version,
+/// as `<path> no longer applies (<name> is no longer installed)` or `(... is now <versions>)`.
+pub(crate) fn orphaned_patches(ws: &Workspace, prev: &LockGraph) -> Vec<String> {
+    let mut out = Vec::new();
+    for (key, patch) in declared_patches(ws) {
+        let Some(at) = key.get(1..).and_then(|k| k.find('@')).map(|i| i + 1) else {
+            continue;
+        };
+        let (name, version) = (&key[..at], &key[at + 1..]);
+        let installed: Vec<&fnpm_types::Package> =
+            prev.packages.iter().filter(|p| p.name == name).collect();
+        // `file:` folders, `link:` dependencies and workspaces are never patched.
+        if installed.iter().any(|p| p.resolution.is_local_tree()) {
+            continue;
+        }
+        if installed.iter().any(|p| p.version == version) {
+            continue;
+        }
+        let now: Vec<&str> = installed.iter().map(|p| p.version.as_str()).collect();
+        out.push(if now.is_empty() {
+            format!(
+                "{} no longer applies ({name} is no longer installed)",
+                patch.path
+            )
+        } else {
+            format!(
+                "{} no longer applies ({name} is now {})",
+                patch.path,
+                now.join(", ")
+            )
+        });
+    }
+    out
+}
+
 /// The `patchedDependencies` of the root package.json, for an install that keeps the lockfile.
 pub(crate) fn declared_patches(ws: &Workspace) -> BTreeMap<String, fnpm_types::PatchedDependency> {
     ws.root

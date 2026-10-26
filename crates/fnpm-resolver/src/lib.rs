@@ -299,6 +299,10 @@ pub struct ResolveOutput {
     pub graph: LockGraph,
     /// The graph differs from `previous` (the lockfile must be saved).
     pub changed: bool,
+    /// `--frozen-lockfile` kept a lockfile that is behind package.json (a pruned workspace,
+    /// patches or trust it does not record): nothing is saved, and the next plain install must
+    /// not take the no-op fast path.
+    pub behind: bool,
     /// For each `Request`, the package it resolved to (summary and package.json writes).
     pub requests: Vec<(Request, PackageId)>,
     /// Non-fatal problems (peer warnings, deprecations, ignored overrides).
@@ -397,6 +401,10 @@ impl Resolver {
                 unreachable!("a frozen resolve without a lockfile resolves normally");
             };
             let pruned = frozen::pruned(workspace, prev);
+            // The lockfile is behind package.json (a pruned workspace, patches or trust it does
+            // not record): the install keeps it, and the next plain install saves it.
+            let behind = !pruned.is_empty() || !frozen::changes(workspace, prev)?.is_empty();
+            warnings.extend(frozen::orphaned_patches(workspace, prev));
             let stripped;
             let prev = if pruned.is_empty() {
                 prev
@@ -462,7 +470,9 @@ impl Resolver {
             if changes.is_empty() && !stale {
                 let mut graph = prev.clone();
                 graph.patched_dependencies = frozen::declared_patches(workspace);
-                return self.unchanged(workspace, &graph, tx, events, warnings);
+                let mut out = self.unchanged(workspace, &graph, tx, events, warnings)?;
+                out.behind = behind;
+                return Ok(out);
             }
             // Like bun, edited dependency lists pass as long as resolving them against the
             // lockfile installs the same packages (a loosened range the locked version still
@@ -491,11 +501,11 @@ impl Resolver {
             }
             frozen::emit_all(&out.graph, cfg, tx.as_ref());
             warnings.extend(out.warnings);
-            // Changed: the lockfile is behind package.json, so the next plain install must
-            // not take the no-op fast path (a frozen install never saves it).
+            // The lockfile is behind package.json: the next plain install records the edits.
             return Ok(ResolveOutput {
                 graph: out.graph,
-                changed: true,
+                changed: false,
+                behind: true,
                 requests: out.requests,
                 warnings,
             });
@@ -567,6 +577,7 @@ impl Resolver {
         Ok(ResolveOutput {
             graph: out.graph,
             changed,
+            behind: false,
             requests: out.requests,
             warnings,
         })
@@ -607,6 +618,7 @@ impl Resolver {
         Ok(ResolveOutput {
             graph,
             changed: false,
+            behind: false,
             requests: Vec::new(),
             warnings,
         })
