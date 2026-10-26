@@ -263,11 +263,11 @@ reviewed, and all PARITY.md rows outside "Excluded" ticked.
 | deliverable | status |
 |---|---|
 | CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | partial; selected store/binding/patch tests, strict Clippy and binding/adapter JS tests pass on native Linux/macOS/Windows; full suites and btrfs remain |
-| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | recorded addon builds pass for all eight targets; complete launcher/addon artifacts and installed-tarball smoke are implemented and awaiting a successful matrix run |
+| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | [576363f run](https://github.com/SnowingFox/fuck-npm/actions/runs/40262732529): all eight complete builds and six macOS/Linux tarball install smokes pass; Windows smoke exposed positional backslash normalization, now repaired pending rerun |
 | npm CLI, binding and eight platform packages; postinstall swap and JS shim fallback | staged namespace-aware packaging and tarball validation implemented; unscoped name is occupied; npm authentication/owned namespace and complete release artifacts still required |
 | Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | selected store/patch/binding tests and both release addon smoke jobs pass; native executable distribution and full bin conformance remain |
-| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` install smoke on Linux x64; published-package and other-manager checks remain |
-| Publish dry run, then the first release (manual authentication on release machine) | staging/pack/publish scripts implemented; no npm package published yet; see [RELEASING.md](RELEASING.md) |
+| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` smoke on both macOS architectures and four Linux targets; local macOS ARM64 native preview verified; Windows repair pending rerun; published-package and other-manager checks remain |
+| Publish dry run, then the first release (manual authentication on release machine) | all ten tarballs packed and publish dry run passed on macOS; authentication/owned namespace still required; no npm package published yet; see [RELEASING.md](RELEASING.md) |
 
 Exit criteria:
 
