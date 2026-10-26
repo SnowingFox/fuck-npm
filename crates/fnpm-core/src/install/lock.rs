@@ -412,6 +412,10 @@ fn migrate_one(
             let (graph, report) =
                 fnpm_lockfile::formats::npm::migrate(bytes, ws, &opts, name, next)?;
             let mut warnings = report.warnings;
+            // bun prints these (`skipping N unused package-lock.json entries`) with --verbose.
+            if config.log_level == fnpm_config::LogLevel::Verbose {
+                warnings.extend(report.verbose);
+            }
             warnings.extend(report.notes);
             Ok((graph, Format::Npm, Vec::new(), warnings))
         }
