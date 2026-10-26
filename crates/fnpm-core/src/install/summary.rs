@@ -97,7 +97,26 @@ pub(crate) fn installed_direct(
         return out;
     };
     let mut edges: Vec<_> = pkg.dependencies.iter().collect();
-    edges.sort_by(|a, b| a.name.cmp(&b.name));
+    // bun prints them in its dependency order: workspace, dev, optional, prod, peer; each by
+    // name.
+    let rank = |b: fnpm_types::Behavior| {
+        if b.is_workspace() {
+            0
+        } else if b.is_dev() {
+            1
+        } else if b.is_optional() && !b.is_peer() {
+            2
+        } else if b.is_peer() {
+            4
+        } else {
+            3
+        }
+    };
+    edges.sort_by(|a, b| {
+        rank(a.behavior)
+            .cmp(&rank(b.behavior))
+            .then_with(|| a.name.cmp(&b.name))
+    });
     for edge in edges {
         let Some(id) = edge.target else { continue };
         if !written.get(id.index()).copied().unwrap_or(false) {
