@@ -148,9 +148,10 @@ struct Inner {
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     counters: Counters,
     reused_packages: Option<Arc<AtomicU64>>,
-    /// A tarball URL without an integrity is found again by what it imported as last time.
-    /// Off with the cache disabled, where bun downloads every tarball again.
-    reuse_unpinned: bool,
+    /// A registry tarball is taken from the store when it is there already, and a tarball URL
+    /// without an integrity is found again by what it imported as last time. Off with the cache
+    /// disabled, where bun downloads every tarball again (unless `--offline`).
+    reuse_downloads: bool,
 }
 
 /// Starts and tracks the imports of one install. Cheap to clone.
@@ -207,16 +208,16 @@ impl Fetcher {
                 slots: Mutex::new(HashMap::new()),
                 counters: Counters::default(),
                 reused_packages: None,
-                reuse_unpinned: true,
+                reuse_downloads: true,
             }),
         }
     }
 
-    /// [`Inner::reuse_unpinned`].
-    pub(crate) fn with_unpinned_reuse(mut self, on: bool) -> Self {
+    /// [`Inner::reuse_downloads`].
+    pub(crate) fn with_download_reuse(mut self, on: bool) -> Self {
         Arc::get_mut(&mut self.inner)
             .expect("fetcher not started")
-            .reuse_unpinned = on;
+            .reuse_downloads = on;
         self
     }
 
@@ -376,10 +377,10 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             let url = tarball_url
                 .clone()
                 .unwrap_or_else(|| inner.client.default_tarball_url(name, version));
-            remote(inner, name, version, &url, *integrity).await
+            remote(inner, name, version, &url, *integrity, true).await
         }
         Resolution::RemoteTarball { url, integrity } => {
-            remote(inner, name, version, url, *integrity).await
+            remote(inner, name, version, url, *integrity, false).await
         }
         Resolution::Github {
             owner,
@@ -391,7 +392,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             let url = inner
                 .client
                 .github_tarball_url(owner, repo, resolved_commit);
-            remote(inner, name, version, &url, *integrity).await
+            remote(inner, name, version, &url, *integrity, false).await
         }
         Resolution::LocalTarball { path, integrity } => {
             // Resolution labels preserve the requested spelling, including redundant
@@ -484,15 +485,21 @@ async fn remote(
     version: &str,
     url: &str,
     integrity: Option<Integrity>,
+    registry: bool,
 ) -> Outcome {
+    let offline = inner.client.offline_mode() == fnpm_config::OfflineMode::Offline;
+    let reuse = inner.reuse_downloads || offline;
     // A URL without an integrity is found again by what it imported as last time.
     let known = integrity.or_else(|| {
-        inner
-            .reuse_unpinned
+        reuse
             .then(|| inner.store.integrity_for_url(name, version, url))
             .flatten()
     });
-    if let Some(hit) = cached(inner, name, version, known) {
+    // A registry tarball is downloaded again with the cache disabled; a tarball URL or GitHub
+    // archive was already read by this install's resolve.
+    if (reuse || !registry)
+        && let Some(hit) = cached(inner, name, version, known)
+    {
         return Ok(hit);
     }
     // `--no-verify` bytes that do not match the pin are stored under their own hash, never under
@@ -500,7 +507,8 @@ async fn remote(
     let unverified = integrity
         .filter(|_| !inner.verify)
         .map(|pin| format!("{url}#{}", pin.to_sri()));
-    if let Some(record) = &unverified
+    if reuse
+        && let Some(record) = &unverified
         && let Some(hit) = cached(
             inner,
             name,
@@ -510,7 +518,7 @@ async fn remote(
     {
         return Ok(hit);
     }
-    if inner.client.offline_mode() == fnpm_config::OfflineMode::Offline {
+    if offline {
         return Err(FetchFailure {
             code: "OFFLINE",
             message: format!("--offline: \"{name}\" is not in the cache"),
@@ -572,7 +580,7 @@ async fn remote(
                 .import_tarball_unpinned(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
-            if inner.reuse_unpinned {
+            if inner.reuse_downloads {
                 inner.store.remember_url(name, version, url, &key.integrity);
             }
             Ok(Fetched { entry, key })
