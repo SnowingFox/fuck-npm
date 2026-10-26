@@ -1300,12 +1300,10 @@ fn package_json_edits(
                         spec: entry.clone(),
                     },
                 );
-                let map = if cat.is_empty() || cat == "default" {
-                    &mut graph.catalogs.default
-                } else {
-                    graph.catalogs.named.entry(cat.clone()).or_default()
-                };
-                map.insert(req.name.clone(), entry);
+                graph
+                    .catalogs
+                    .entries_for(cat, &req.name)
+                    .insert(req.name.clone(), entry);
             }
             let reference = if cat.is_empty() {
                 "catalog:".to_owned()
@@ -1383,11 +1381,7 @@ fn package_json_edits(
             let entry = entry.trim().to_owned();
             let new = updated_literal(&entry, &version, config.exact, planned.latest)
                 .unwrap_or_else(|| entry.clone());
-            let map = if catalog.is_empty() {
-                &mut graph.catalogs.default
-            } else {
-                graph.catalogs.named.entry(catalog.to_owned()).or_default()
-            };
+            let map = graph.catalogs.entries_for(catalog, &u.name);
             if map.get(&u.name) == Some(&new) && new == entry {
                 continue;
             }

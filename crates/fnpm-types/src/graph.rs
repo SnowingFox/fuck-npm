@@ -190,12 +190,31 @@ pub struct Catalogs {
 impl Catalogs {
     /// The specifier `catalog:<catalog>` stands for, for dependency `name`.
     pub fn get(&self, catalog: &str, name: &str) -> Option<&str> {
-        let map = if catalog.is_empty() || catalog == "default" {
-            &self.default
+        let in_group = |group: &str| self.named.get(group).and_then(|m| m.get(name));
+        let found = if catalog.is_empty() || catalog == "default" {
+            // The default catalog, spelled `catalog` or `catalogs.default`.
+            self.default.get(name).or_else(|| in_group("default"))
         } else {
-            self.named.get(catalog)?
+            in_group(catalog)
         };
-        map.get(name).map(String::as_str)
+        found.map(String::as_str)
+    }
+
+    /// The map that holds (or gets) the entry of `name` in `catalog`: for the default catalog,
+    /// `catalogs.default` when that spelling defines the name, `catalog` otherwise.
+    pub fn entries_for(&mut self, catalog: &str, name: &str) -> &mut BTreeMap<String, String> {
+        if catalog.is_empty() || catalog == "default" {
+            if !self.default.contains_key(name)
+                && self
+                    .named
+                    .get("default")
+                    .is_some_and(|m| m.contains_key(name))
+            {
+                return self.named.entry("default".into()).or_default();
+            }
+            return &mut self.default;
+        }
+        self.named.entry(catalog.to_owned()).or_default()
     }
 
     pub fn is_empty(&self) -> bool {

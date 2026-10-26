@@ -137,12 +137,7 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
                 spec,
             } => {
                 let current: Value = parse(&editor.text)?;
-                let (container, _) = catalog_container(&current);
-                let path = if catalog.is_empty() || catalog == "default" {
-                    join(&container, "catalog")
-                } else {
-                    join(&join(&container, "catalogs"), catalog)
-                };
+                let path = catalog_path(&current, catalog, name);
                 let mut entries = lookup(&current, &path)
                     .and_then(Value::as_object)
                     .cloned()
@@ -224,13 +219,25 @@ pub(crate) fn catalog_supported(root: &Value) -> bool {
 
 /// The existing entry of `name` in catalog `catalog` of the root package.json.
 pub(crate) fn catalog_entry(root: &Value, catalog: &str, name: &str) -> Option<String> {
+    let path = catalog_path(root, catalog, name);
+    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+}
+
+/// Where the entry of `name` in `catalog` is (or goes): the default catalog is `catalog` or
+/// its alias `catalogs.default`, whichever defines the name (`catalog` when neither does).
+fn catalog_path(root: &Value, catalog: &str, name: &str) -> Vec<String> {
     let (container, _) = catalog_container(root);
-    let path = if catalog.is_empty() || catalog == "default" {
-        join(&container, "catalog")
+    if catalog.is_empty() || catalog == "default" {
+        let singular = join(&container, "catalog");
+        let alias = join(&join(&container, "catalogs"), "default");
+        let defines = |path: &[String]| lookup(root, path).and_then(|c| c.get(name)).is_some();
+        if !defines(&singular) && defines(&alias) {
+            return alias;
+        }
+        singular
     } else {
         join(&join(&container, "catalogs"), catalog)
-    };
-    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+    }
 }
 
 fn join(base: &[String], key: &str) -> Vec<String> {

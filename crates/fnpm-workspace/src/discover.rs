@@ -183,14 +183,29 @@ fn package_json_catalogs(root: &PackageJson) -> Result<Catalogs> {
         for (name, group) in groups {
             let entries = string_entries(group);
             if name == "default" {
-                for (dep, version) in entries {
-                    if catalogs.default.contains_key(&dep) {
-                        return Err(bad_root(&format!(
+                // bun reports every name the two spellings both define.
+                let both: Vec<String> = entries
+                    .iter()
+                    .filter(|(dep, _)| catalogs.default.contains_key(dep))
+                    .map(|(dep, _)| {
+                        format!(
                             "\"{dep}\" is defined in both \"catalog\" and \"catalogs.default\"; keep one of them"
-                        )));
-                    }
-                    catalogs.default.insert(dep, version);
+                        )
+                    })
+                    .collect();
+                if !both.is_empty() {
+                    return Err(Error::InvalidPackageJson {
+                        path: PathBuf::new(),
+                        message: both.join("\nerror: "),
+                    });
                 }
+                // Kept under its spelling, so fnpm.lock writes it back the same way; lookups
+                // read both spellings of the default catalog.
+                catalogs
+                    .named
+                    .entry(name.clone())
+                    .or_default()
+                    .extend(entries);
             } else {
                 catalogs
                     .named
