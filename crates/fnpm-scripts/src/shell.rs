@@ -121,7 +121,14 @@ pub fn which(name: &str, path: &OsStr, cwd: &Path) -> Option<PathBuf> {
         };
         #[cfg(windows)]
         {
-            for ext in ["", ".exe", ".cmd", ".bat", ".com"] {
+            // npm writes an extensionless POSIX shim beside the Windows launcher.
+            // Prefer a native executable or batch file when the command has no extension.
+            let extensions: &[&str] = if Path::new(name).extension().is_some() {
+                &[""]
+            } else {
+                &[".exe", ".com", ".cmd", ".bat", ""]
+            };
+            for ext in extensions {
                 let candidate = dir.join(format!("{name}{ext}"));
                 if candidate.is_file() {
                     return Some(candidate);
@@ -227,6 +234,21 @@ mod tests {
             "echo \"a b\" c"
         );
         assert_eq!(script_with_args("npm run x", &[]), "fnpm run x");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_lookup_prefers_launchers_to_posix_shims() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().as_os_str();
+        let cwd = dir.path();
+        std::fs::write(dir.path().join("fixture"), "#!/bin/sh\nexit 1\n").unwrap();
+        for ext in ["bat", "cmd", "com", "exe"] {
+            let launcher = dir.path().join(format!("fixture.{ext}"));
+            std::fs::write(&launcher, "fixture").unwrap();
+            assert_eq!(which("fixture", path, cwd), Some(launcher.clone()));
+            assert_eq!(which(&format!("fixture.{ext}"), path, cwd), Some(launcher));
+        }
     }
 
     #[cfg(unix)]
