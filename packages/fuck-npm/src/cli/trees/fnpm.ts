@@ -368,11 +368,12 @@ const PM_CACHE: CommandGroup = {
     pm("prune", "Remove cache entries older than --max-age days", {
       flags: F.PM_CACHE_PRUNE,
     }),
+    // The core checks for exactly one <file>, with bun's message.
     pm("pack", "Write cache entries to an archive", {
-      positionals: [pos("file", "Archive to write", { required: true })],
+      positionals: [pos("file", "Archive to write", { variadic: true })],
     }),
     pm("unpack", "Restore cache entries from an archive", {
-      positionals: [pos("file", "Archive to read", { required: true })],
+      positionals: [pos("file", "Archive to read", { variadic: true })],
     }),
   ],
 };

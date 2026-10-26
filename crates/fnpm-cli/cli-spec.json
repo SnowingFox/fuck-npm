@@ -3749,8 +3749,8 @@
                     "positionals": [
                       {
                         "name": "file",
-                        "required": true,
-                        "variadic": false,
+                        "required": false,
+                        "variadic": true,
                         "description": "Archive to write"
                       }
                     ],
@@ -3810,8 +3810,8 @@
                     "positionals": [
                       {
                         "name": "file",
-                        "required": true,
-                        "variadic": false,
+                        "required": false,
+                        "variadic": true,
                         "description": "Archive to read"
                       }
                     ],

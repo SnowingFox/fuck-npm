@@ -482,6 +482,76 @@ fn cache_rm(cx: &Ctx, project: &crate::project::Project) -> Result<CoreResult> {
     ))
 }
 
+/// `fnpm pm cache pack <file>` / `unpack <file>` (bun `cache_pack::exec`).
+fn cache_pack(cx: &Ctx, project: &crate::project::Project, verb: &str) -> Result<CoreResult> {
+    let file = match cx.req.positionals.as_slice() {
+        [file] if !file.is_empty() => file.clone(),
+        _ => {
+            eprintln!("error: expected exactly one <file>\nusage: fnpm pm cache {verb} <file>");
+            return Err(Error::Reported);
+        }
+    };
+    let config = &project.config;
+    let quiet = cx.pm.log_level == fnpm_config::LogLevel::Silent;
+    let dry = cx.pm.dry_run || config.dry_run;
+    let started = std::time::Instant::now();
+    let elapsed = || format!("[{:.1}ms]", started.elapsed().as_secs_f64() * 1000.0);
+    let failed = |e: Error| {
+        eprintln!("error: fnpm pm cache {verb} failed: {e}");
+        Error::Reported
+    };
+    let store = project.store()?;
+    let path = cx.req.cwd.join(&file);
+    if verb == "pack" {
+        let ws = project.workspace(&*cx.events)?;
+        let lock = crate::install::load_lock(config, &ws)?;
+        let Some(graph) = &lock.graph else {
+            eprintln!("error: missing lockfile, nothing to pack");
+            eprintln!("note: run 'fnpm install' first");
+            return Err(Error::Reported);
+        };
+        let keys: Vec<fnpm_store::PackageKey> = graph
+            .packages
+            .iter()
+            .filter_map(crate::fetch::store_key)
+            .collect();
+        let summary = fnpm_store::cache_pack::pack(&store, &keys, &path, dry)
+            .map_err(|e| failed(e.into()))?;
+        let mut lines = summary.lines(&file, dry);
+        if summary.missing > 0 && lines.len() > 1 {
+            eprintln!("{}", lines.remove(1));
+        }
+        if let Some(first) = lines.first_mut() {
+            first.push(' ');
+            first.push_str(&elapsed());
+        }
+        let data = json!({
+            "packages": summary.packages,
+            "files": summary.files,
+            "bytes": summary.bytes,
+            "missing": summary.missing,
+        });
+        return Ok(ok(data, if quiet { Vec::new() } else { lines }));
+    }
+    let summary =
+        fnpm_store::cache_pack::unpack(&store, &path, dry).map_err(|e| failed(e.into()))?;
+    let mut lines = summary.lines(dry);
+    if summary.incomplete > 0 && lines.len() > 1 {
+        eprintln!("{}", lines.remove(1));
+    }
+    if let Some(first) = lines.first_mut() {
+        first.push(' ');
+        first.push_str(&elapsed());
+    }
+    let data = json!({
+        "packages": summary.packages,
+        "created": summary.created,
+        "alreadyCached": summary.already_cached,
+        "incomplete": summary.incomplete,
+    });
+    Ok(ok(data, if quiet { Vec::new() } else { lines }))
+}
+
 pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
     let project = cx.project_anywhere()?;
     let config = &project.config;
@@ -518,45 +588,7 @@ pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
             });
             Ok(ok(data, report.lines()))
         }
-        ["pack"] => {
-            let Some(file) = cx.req.positionals.first() else {
-                return Err(Error::usage("Missing the archive to write"));
-            };
-            let dest = cx.req.cwd.join(file);
-            let ws = project.workspace(&*cx.events)?;
-            let lock = crate::install::load_lock(config, &ws)?;
-            let store = project.store()?;
-            let keys: Vec<fnpm_store::PackageKey> = match &lock.graph {
-                Some(g) => g
-                    .packages
-                    .iter()
-                    .filter_map(crate::fetch::store_key)
-                    .collect(),
-                None => Vec::new(),
-            };
-            let summary = fnpm_store::cache_pack::pack(&store, &keys, &dest, dry)?;
-            let data = json!({
-                "packages": summary.packages,
-                "files": summary.files,
-                "bytes": summary.bytes,
-                "missing": summary.missing,
-            });
-            Ok(ok(data, summary.lines(file, dry)))
-        }
-        ["unpack"] => {
-            let Some(file) = cx.req.positionals.first() else {
-                return Err(Error::usage("Missing the archive to read"));
-            };
-            let store = project.store()?;
-            let summary = fnpm_store::cache_pack::unpack(&store, &cx.req.cwd.join(file), dry)?;
-            let data = json!({
-                "packages": summary.packages,
-                "created": summary.created,
-                "alreadyCached": summary.already_cached,
-                "incomplete": summary.incomplete,
-            });
-            Ok(ok(data, summary.lines(dry)))
-        }
+        [verb @ ("pack" | "unpack")] => cache_pack(cx, &project, verb),
         other => Err(Error::UnknownCommand(
             std::iter::once("cache".to_owned())
                 .chain(other.iter().map(|s| (*s).to_owned()))
