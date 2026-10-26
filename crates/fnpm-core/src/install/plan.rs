@@ -59,6 +59,9 @@ pub(crate) struct Planned {
     /// `update <glob>` and `update !<name|glob>`: matching transitive packages move (or stay).
     pub globs: Vec<String>,
     pub negations: Vec<String>,
+    /// `update` whose selectors left no entry: `(entries checked, what left them out)`, for
+    /// bun's `Checked N dependencies, none selected by --dev (no changes)`.
+    pub none_selected: Option<(u32, String)>,
 }
 
 fn manifest_of<'a>(ws: &'a Workspace, path: &str) -> &'a PackageJson {
@@ -207,6 +210,7 @@ pub(crate) fn plan(
         bare_scope: false,
         globs: Vec::new(),
         negations: Vec::new(),
+        none_selected: None,
     };
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
@@ -307,6 +311,28 @@ pub(crate) fn plan(
                     })
                     .collect()
             };
+            let g = opts.update_groups;
+            let selector = if g.dev {
+                Some("--dev")
+            } else if g.prod {
+                Some("--prod")
+            } else if g.no_optional {
+                Some("--no-optional")
+            } else if opts.depth.is_some() {
+                Some("--depth 0")
+            } else {
+                None
+            };
+            if selector.is_some()
+                && let Some(input) = opts.packages.iter().find(|i| {
+                    Positional::parse(i.trim()).is_ok_and(|p| p.name.is_some() && p.has_version())
+                })
+            {
+                return Err(Error::usage(format!(
+                    "a version cannot be combined with --dev, --prod, --no-optional or --depth 0: {}",
+                    input.trim()
+                )));
+            }
             let mut names: Vec<String> = Vec::new();
             let mut patterns: Vec<String> = Vec::new();
             // `!name` / `!glob` leave matching packages out of the update.
@@ -408,6 +434,31 @@ pub(crate) fn plan(
                 if !peer && !names.iter().any(|n| name_matches(pat, n)) {
                     planned.unmatched.push(pat.clone());
                 }
+            }
+            // Entries a selector or an exclusion could have picked, for the no-op line.
+            let checked: u32 = targets
+                .iter()
+                .map(|t| {
+                    DependencyGroup::ALL
+                        .into_iter()
+                        .flat_map(|g| manifest_of(ws, t).group(g))
+                        .filter(|(_, literal)| !literal.starts_with("workspace:"))
+                        .count() as u32
+                })
+                .sum();
+            let excluded_all = !negations.is_empty() && patterns.is_empty() && names.is_empty();
+            if names.is_empty() && patterns.is_empty() && (excluded_all || selector.is_some()) {
+                let by = if excluded_all {
+                    let quoted: Vec<String> = opts
+                        .packages
+                        .iter()
+                        .map(|p| format!("\"{}\"", p.trim()))
+                        .collect();
+                    format!("match {}", quoted.join(" "))
+                } else {
+                    format!("selected by {}", selector.unwrap_or_default())
+                };
+                planned.none_selected = Some((checked, by));
             }
             planned.globs = patterns
                 .iter()

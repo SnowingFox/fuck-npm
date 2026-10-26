@@ -47,6 +47,9 @@ pub fn format_update_plan(
     color: bool,
     elapsed_ms: f64,
 ) -> Vec<String> {
+    if summary.none_selected.is_some() {
+        return format_install_summary_at(summary, InstallCommand::Update, pc, color, elapsed_ms);
+    }
     let mut lines = vec![String::new()];
     let time = time_of(elapsed_ms, pc);
     let (arrow_up, arrow) = if color { ("↑", "→") } else { ("^", "->") };
@@ -110,6 +113,20 @@ pub fn format_install_summary_at(
     let mut lines = vec![String::new()];
     let time = time_of(elapsed_ms, pc);
     let available = |version: &Option<String>| available_of(version, pc);
+    if let Some(none) = &summary.none_selected {
+        lines.push(format!(
+            "Checked {} {}, none {} {} {time}",
+            none.checked,
+            if none.checked == 1 {
+                "dependency"
+            } else {
+                "dependencies"
+            },
+            none.by,
+            pc.dim("(no changes)")
+        ));
+        return lines;
+    }
 
     // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
     // (its update requests; `update` lists them): an add shows them once, in the `installed`

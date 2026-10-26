@@ -452,6 +452,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         |n| n.to_string_lossy().into_owned(),
     );
     plan::update_from_lockfile(&mut planned, lock.graph.as_ref(), &lockfile_name, &ws)?;
+    if let Some((checked, by)) = planned.none_selected.take() {
+        return Ok(InstallSummary {
+            none_selected: Some(fnpm_types::event::NoneSelected { checked, by }),
+            elapsed_ms: start.elapsed().as_millis() as u64,
+            ..InstallSummary::default()
+        });
+    }
 
     if opts.dlx.is_some_and(|dlx| dlx.refresh) {
         let mut names: Vec<_> = lock

@@ -112,6 +112,8 @@ export type InstallSummary = {
   packageJsonSynced?: boolean;
   /** `update`: `kept <name>@<version> (patched, v<x> available)` rows. */
   kept?: string[];
+  /** `update` whose selectors picked nothing: `Checked N dependencies, none <by>`. */
+  noneSelected?: { checked: number; by: string };
 };
 
 /** Progress and diagnostics streamed while the core works (batched ≤ every 50 ms). */

@@ -38,6 +38,7 @@ const plural = (count: number, word: string): string => `${count} ${word}${count
  * or `Checked N packages, nothing to update`.
  */
 export function formatUpdatePlan(summary: InstallSummary, pc: Colors, opts: { color: boolean } = { color: true }): string[] {
+  if (summary.noneSelected) return formatInstallSummary(summary, "update", pc, opts);
   const lines: string[] = [""];
   const time = timeOf(summary.elapsedMs, pc);
   const arrowUp = opts.color ? "↑" : "^";
@@ -70,6 +71,11 @@ export function formatInstallSummary(
   const note = summary.packageJsonSynced ? "(up to date, package.json synced)" : "(no changes)";
   const lines: string[] = [""];
   const time = timeOf(summary.elapsedMs, pc);
+  if (summary.noneSelected) {
+    const { checked, by } = summary.noneSelected;
+    lines.push(`Checked ${checked} ${checked === 1 ? "dependency" : "dependencies"}, none ${by} ${pc.dim("(no changes)")} ${time}`);
+    return lines;
+  }
 
   // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
   // (its update requests; `update` lists them): an add shows them once, in the `installed`

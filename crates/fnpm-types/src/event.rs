@@ -223,6 +223,17 @@ pub struct InstallSummary {
     /// `update`: `kept <name>@<version> (patched, v<x> available)` rows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kept: Vec<String>,
+    /// `update` whose selectors picked nothing: `Checked N dependencies, none <this>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none_selected: Option<NoneSelected>,
+}
+
+/// See [`InstallSummary::none_selected`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoneSelected {
+    pub checked: u32,
+    pub by: String,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon
