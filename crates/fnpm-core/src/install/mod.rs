@@ -574,9 +574,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         )
         .await?;
     }
-    // bun announces the resolve when it had to ask the network; its warnings follow.
-    let mut announced = false;
+    // bun announces the resolve when it had to ask the network; its warnings follow. A lockfile
+    // that already has every package is installed without that phase (bun skips
+    // `resolve_pending_tasks`): its downloads are not announced.
+    let resolving = out.changed || client.stats().manifest_requests > 0;
+    let mut announced = !resolving;
     announce_resolving(&client, &*events, &mut announced);
+    let announced = announced && resolving;
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
@@ -678,7 +682,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     if opts.pm.lockfile_only || !config.install_packages {
-        announce_resolved(&client, &*events, announced);
+        announce_resolved(&client, &*events, announced, resolving);
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.
         if opts.pm.lockfile_only && !config.dry_run {
             if config.save_package_json
@@ -909,7 +913,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     // Every download is done (the link waited for them).
-    announce_resolved(&client, &*events, announced);
+    announce_resolved(&client, &*events, announced, resolving);
 
     // Global installs link the direct dependencies' bins into the global bin directory.
     if config.global {
@@ -1929,9 +1933,10 @@ fn announce_resolved(
     client: &fnpm_registry::RegistryClient,
     events: &dyn EventSink,
     announced: bool,
+    resolving: bool,
 ) {
     let tasks = network_tasks(client);
-    if tasks == 0 {
+    if tasks == 0 || !resolving {
         return;
     }
     if !announced {
