@@ -1265,10 +1265,11 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
                     ))
                 }
             };
-            let default = foreign::default_tarball_url(&configured, name, &v.to_string());
+            // Like bun.lock, only npmjs packages are written without their URL.
             Resolution::Npm {
                 version: v.to_string(),
-                tarball_url: tarball_url.filter(|u| *u != default),
+                tarball_url: tarball_url
+                    .filter(|u| !foreign::url_is_under_registry(u, foreign::DEFAULT_REGISTRY)),
                 integrity: None,
             }
         } else if let Some((protocol, path)) = split_folder_protocol(head) {

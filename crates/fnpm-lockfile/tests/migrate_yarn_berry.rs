@@ -106,7 +106,7 @@ fn npm_packages_keep_the_versions_yarn_lock_pinned() {
     assert!(matches!(
         &target(g, 0, "no-deps").resolution,
         Resolution::Npm {
-            tarball_url: None,
+            tarball_url: Some(_),
             ..
         }
     ));
@@ -653,7 +653,7 @@ fn a_registry_yarn_uses_must_be_the_configured_one() {
     assert!(matches!(
         &target(&m.graph, 0, "no-deps").resolution,
         Resolution::Npm {
-            tarball_url: None,
+            tarball_url: Some(_),
             ..
         }
     ));

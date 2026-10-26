@@ -331,7 +331,7 @@ pub fn assert_matches_bun_lock(graph: &LockGraph, lock: &Value, registry: &str) 
 pub fn assert_matches_bun_lock_with(
     graph: &LockGraph,
     lock: &Value,
-    registry: &str,
+    _registry: &str,
     check_integrity: bool,
 ) {
     graph.validate().unwrap();
@@ -365,15 +365,13 @@ pub fn assert_matches_bun_lock_with(
             continue;
         };
         if let Resolution::Npm {
-            version,
             tarball_url,
             integrity,
+            ..
         } = &p.resolution
         {
-            let expected_url = lp
-                .url
-                .clone()
-                .filter(|u| !u.is_empty() && *u != default_url(registry, &p.name, version));
+            // bun.lock writes `""` only for npmjs; any other registry's URL is recorded.
+            let expected_url = lp.url.clone().filter(|u| !u.is_empty());
             assert_eq!(tarball_url, &expected_url, "{}: tarball url", lp.id);
             if check_integrity {
                 assert_eq!(
