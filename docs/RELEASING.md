@@ -32,10 +32,12 @@ does not establish permission to publish to its scope.
    lists. Staging refuses missing artifacts, mismatched versions, and existing
    output directories. `--target` allows a one-platform smoke fixture and marks
    it incomplete; the publication command refuses that fixture.
-5. Install the tarballs in an isolated directory and test the real bins, help,
+5. Run `node scripts/smoke-release.mjs /path/to/new-release`. It installs the
+   actual tarballs through a temporary localhost registry and checks the real bins, help,
    a dependency install, warm/no-op/frozen installs, and the shim with scripts
-   disabled. Use a temporary local registry for staged dependency names; plain
-   file tarballs alone do not satisfy their versioned registry dependencies.
+   disabled. The temporary registry serves only the staged packages; the dependency
+   fixture is a local tarball. File tarballs alone do not satisfy their versioned
+   registry dependencies, so retain this registry-based smoke.
 6. From the Mac, publish the exact inspected tarballs:
 
    ```sh
