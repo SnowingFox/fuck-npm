@@ -145,6 +145,9 @@ struct Inner {
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     counters: Counters,
     reused_packages: Option<Arc<AtomicU64>>,
+    /// A tarball URL without an integrity is found again by what it imported as last time.
+    /// Off with the cache disabled, where bun downloads every tarball again.
+    reuse_unpinned: bool,
 }
 
 /// Starts and tracks the imports of one install. Cheap to clone.
@@ -201,8 +204,17 @@ impl Fetcher {
                 slots: Mutex::new(HashMap::new()),
                 counters: Counters::default(),
                 reused_packages: None,
+                reuse_unpinned: true,
             }),
         }
+    }
+
+    /// [`Inner::reuse_unpinned`].
+    pub(crate) fn with_unpinned_reuse(mut self, on: bool) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("fetcher not started")
+            .reuse_unpinned = on;
+        self
     }
 
     pub(crate) fn with_reuse_counter(mut self, counter: Option<Arc<AtomicU64>>) -> Self {
@@ -471,7 +483,12 @@ async fn remote(
     integrity: Option<Integrity>,
 ) -> Outcome {
     // A URL without an integrity is found again by what it imported as last time.
-    let known = integrity.or_else(|| inner.store.integrity_for_url(name, version, url));
+    let known = integrity.or_else(|| {
+        inner
+            .reuse_unpinned
+            .then(|| inner.store.integrity_for_url(name, version, url))
+            .flatten()
+    });
     if let Some(hit) = cached(inner, name, version, known) {
         return Ok(hit);
     }
@@ -522,7 +539,9 @@ async fn remote(
                 .import_tarball_unpinned(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
-            inner.store.remember_url(name, version, url, &key.integrity);
+            if inner.reuse_unpinned {
+                inner.store.remember_url(name, version, url, &key.integrity);
+            }
             Ok(Fetched { entry, key })
         }
     }
