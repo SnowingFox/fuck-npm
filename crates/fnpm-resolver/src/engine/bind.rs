@@ -989,9 +989,13 @@ impl Engine<'_> {
         vm: &fnpm_registry::VersionManifest,
     ) -> PackageId {
         let version = vm.version.to_string();
-        let default_url = self.manifests.default_tarball_url(name, &version);
-        let tarball = (!vm.dist.tarball.is_empty() && vm.dist.tarball != default_url)
-            .then(|| vm.dist.tarball.clone());
+        // Like bun.lock, fnpm.lock records the tarball URL of every registry but npmjs (whose
+        // packages it writes as `""`), so a lockfile from a private registry names it.
+        let npmjs = fnpm_config::DEFAULT_REGISTRY;
+        let under_npmjs = vm.dist.tarball.strip_prefix(npmjs).is_some()
+            || vm.dist.tarball == npmjs.trim_end_matches('/');
+        let tarball =
+            (!vm.dist.tarball.is_empty() && !under_npmjs).then(|| vm.dist.tarball.clone());
         let mut package = local::package_from_manifest(name, vm, tarball);
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
