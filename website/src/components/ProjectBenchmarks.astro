@@ -1,0 +1,53 @@
+---
+// Every measured repository as charts (cold, warm, no-op, disk), with the numbers behind
+// them in a table. Static HTML: readable without JavaScript and indexable.
+import BenchChart from './BenchChart.astro';
+import { lockNote, projects, scenarios, versusBun } from '../data/bench.ts';
+const range = (r: number[] | undefined) => (r ? `${r[0]}–${r[1]}` : '—');
+---
+<div class="project-index not-prose">{projects.map((project) => <a href={`#${project.id}`}>{project.short}</a>)}</div>
+{projects.map((project) => (
+  <section class="project-bench" id={project.id}>
+    <h2>{project.name}</h2>
+    <p class="project-meta">
+      <a href={`https://github.com/${project.repo}/tree/${project.commit}`}>{project.repo} @ <code>{project.commit.slice(0, 7)}</code></a>
+      · {project.workspaces} workspaces · original lockfile <code>{project.originalLock}</code>
+      {project.check && <> · check <code>{project.check}</code></>}
+    </p>
+    <div class="project-charts not-prose">
+      {scenarios.map((scenario) => (
+        <article class="scenario-card">
+          <h3>{scenario.label}</h3><p>{scenario.description}</p>
+          <BenchChart project={project} metric={scenario.key} compact />
+          <p class="scenario-result">{versusBun(project, scenario.key) ?? 'No fnpm/Bun comparison'}</p>
+        </article>
+      ))}
+      <article class="scenario-card">
+        <h3>Disk</h3><p>node_modules + private cache/store · hardlinks counted once</p>
+        <BenchChart project={project} metric="disk" compact />
+        <p class="scenario-result">{versusBun(project, 'disk') ?? 'No fnpm/Bun comparison'}</p>
+      </article>
+    </div>
+    <details class="project-numbers">
+      <summary>All numbers for {project.name}</summary>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Tool</th><th>Lockfile</th><th>Cold (s)</th><th>Warm (s)</th><th>No-op (s)</th><th>Disk (MiB)</th><th>Versions</th><th>vs Bun missing / extra</th><th>Check</th></tr></thead>
+          <tbody>
+            {project.tools.map((tool) => (
+              <tr>
+                <th scope="row">{tool.name} {tool.version}</th>
+                <td>{tool.unsupported ? `could not install: ${tool.unsupported}` : lockNote(tool, project)}</td>
+                {[0, 1, 2].map((i) => <td>{tool.times ? <>{tool.times[i]}<br /><small>{range(tool.ranges?.[i])}</small></> : '—'}</td>)}
+                <td>{tool.disk ? <>{tool.disk.total}<br /><small>{tool.disk.nodeModules} + {tool.disk.store}</small></> : '—'}</td>
+                <td>{tool.packages ?? '—'}</td>
+                <td>{tool.versusBun ? `${tool.versusBun.missing} / ${tool.versusBun.extra}` : '—'}</td>
+                <td>{tool.check ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+))}

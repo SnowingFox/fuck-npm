@@ -5,7 +5,7 @@ description: Install the fnpm npm package and understand its native binary downl
 
 ## Release status
 
-As of October 26, 2026, `fnpm@0.0.2` is a candidate for public npm. Publication and fresh-registry verification are pending. The command below is the intended installation path once that publication completes. Check [release status](../project/releasing/) and the [repository release checklist](https://github.com/SnowingFox/fuck-npm/blob/main/docs/RELEASING.md).
+As of October 26, 2026, `fnpm` is not yet on public npm; the first public version will be `0.0.3`. The commands below are the installation path once it is published. Check [release status](../project/releasing/), or build from source with the [development instructions](../project/development/).
 
 ```sh
 npm install -g fnpm
@@ -17,7 +17,7 @@ The package is named **fnpm**. The unrelated unscoped `fuck-npm` package on npm 
 
 ## Requirements and download
 
-Use Node.js **20.19 or newer**. The npm package contains the JavaScript CLI, four bin entries and the installer. Its postinstall downloads the matching native archive from [fnpm GitHub Releases](https://github.com/SnowingFox/fuck-npm/releases), verifies the embedded SHA-512 digest and executable versions, then installs the native launchers and addon. There are no separate platform npm dependencies in the 0.0.2 layout.
+Use Node.js **20.19 or newer**. The npm package contains the JavaScript CLI, four bin entries and the installer. Its postinstall downloads the matching native archive from [fnpm GitHub Releases](https://github.com/SnowingFox/fuck-npm/releases), verifies the embedded SHA-512 digest and executable versions, then installs the native launchers and addon. The package has no platform npm dependencies.
 
 Supported release targets are macOS x64/ARM64, Linux x64/ARM64 with GNU or musl, and Windows x64/ARM64. Artifact smoke checks establish loading and a small install on those targets. They do not establish platform performance or complete compatibility.
 

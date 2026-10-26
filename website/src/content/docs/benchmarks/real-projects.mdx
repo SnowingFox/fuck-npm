@@ -1,0 +1,38 @@
+---
+title: Real-project benchmarks
+description: Cold, warm and no-op installs plus physical disk for fnpm, Bun, pnpm, Yarn and npm on pinned open-source repositories, each followed by a project check.
+---
+
+import BenchSummary from '../../../components/BenchSummary.astro';
+import ProjectBenchmarks from '../../../components/ProjectBenchmarks.astro';
+
+Every repository is installed by **fnpm, Bun, pnpm, Yarn and npm**. Each bar is the **median of three runs, in seconds**, including process startup; hover or focus a bar for the exact value and the min–max range. Timed installs disable lifecycle scripts. After the timings, each tool's tree runs the repository's own check (a build, a type check or tests) listed under its name.
+
+## How each tool gets its lockfile
+
+The repository's committed lockfile decides what a tool can reuse:
+
+- **Own lockfile**: the tool reads the repository's lockfile as is (pnpm with `pnpm-lock.yaml`, Yarn with `yarn.lock`, npm with `package-lock.json`).
+- **Migrated**: fnpm and Bun read every format and migrate it, keeping the locked versions.
+- **Imported lock**: pnpm converts a `yarn.lock` or `package-lock.json` with `pnpm import`.
+- **Fresh resolve**: the tool has no way to read the repository's lockfile, so it resolves the manifests' ranges itself. Its package versions can differ; the version counts under each repository show by how much.
+
+The first install that creates the tool's own lockfile is untimed. Every timed run then starts from that lockfile: **cold** with an empty private cache and no node_modules, **warm** with the cache kept and node_modules removed, **no-op** with both kept. A tool that cannot install a repository at all keeps its row with the reason, and gets no time.
+
+## Summary
+
+<BenchSummary />
+
+## Repositories
+
+<ProjectBenchmarks />
+
+## Script-enabled OpenNext check
+
+An earlier, separate untimed install of OpenNext Cloudflare with fnpm 0.0.1 used the default trusted-dependency policy on Linux with Node 24.22.1. It completed in 240.16 seconds. Three untrusted scripts remained blocked. better-sqlite3 compiled from source, the root build ran with automatic dependency verification disabled, 37 Vitest files / 364 tests passed, and a real SQL query returned `{"value":42}`. The original pnpm lock remained unchanged. This does not cover Node 26 on macOS, all native modules or arbitrary lifecycle scripts, and its duration is not part of the script-free medians.
+
+## Limits
+
+This is one shared Linux machine, with the OS page cache and a local registry mirror warm in every scenario. Three samples per scenario show variation, not statistical certainty; where ranges overlap, the medians' order can change between runs. Physical disk is measured before project checks; hardlinks count once and shared reflink extents are not identified. Upstream tarball URLs pinned in original lockfiles can bypass the mirror. A passing check means that command succeeded on the installed tree, not that the repository's entire test suite passes.
+
+The [methodology](../methodology/) explains isolation and disk accounting. Raw samples, package sets, commands and logs are in the repository's [benchmark results](https://github.com/SnowingFox/fuck-npm/tree/main/bench/results).

@@ -1,21 +1,56 @@
 ---
-import projects from '../data/benchmarks.json';
-const { scenario = 1, compact = false, hero = false } = Astro.props;
-const project = projects[0];
-const max = Math.max(...project.tools.map(tool => tool.times[scenario]));
-const ceiling = Math.ceil(max * 1.05 * 10 ** (1 - Math.floor(Math.log10(max)))) / 10 ** (1 - Math.floor(Math.log10(max)));
-const format = (n: number) => n < .1 ? `${(n * 1000).toFixed(1)}ms` : `${n.toFixed(n < 1 ? 3 : 2)}s`;
+// One project's tools for one metric, rendered to static HTML. Every tool keeps its row, also
+// when it could not install the repository, so the comparison never hides a package manager.
+import { ceiling, format, lockNote, lockTag, value, type Metric, type Project } from '../data/bench.ts';
+
+interface Props {
+  project: Project;
+  metric: Metric;
+  compact?: boolean;
+}
+const { project, metric, compact = false } = Astro.props;
+const disk = metric === 'disk';
+const values = project.tools.map((tool) => value(tool, metric)).filter((v): v is number => v != null);
+const end = ceiling(Math.max(...values, disk ? 1 : 0.01));
+const what = disk ? 'Combined physical disk (node_modules + cache/store)' : 'Install duration, median of 3 runs';
+const exact = (v: number) => (disk ? `${v.toFixed(2)} MiB` : `${v.toFixed(4)} s`);
+const describe = (tool: Project['tools'][number]) => {
+  const v = value(tool, metric);
+  if (v == null) return `${tool.name} ${tool.version}: ${tool.unsupported ?? 'not measured'}`;
+  const range = !disk && tool.ranges ? ` (range ${tool.ranges[metric as number][0]}–${tool.ranges[metric as number][1]} s)` : '';
+  const breakdown = disk && tool.disk ? ` · node_modules ${tool.disk.nodeModules.toFixed(2)} MiB + store ${tool.disk.store.toFixed(2)} MiB` : '';
+  return `${tool.name} ${tool.version} · ${exact(v)}${range}${breakdown} · lock: ${lockNote(tool, project)}`;
+};
 ---
-<div class:list={['benchmark-chart', { compact }]} data-scenario={scenario} data-hero={hero ? '' : undefined}>
-  <div class="bar-list" role="list" aria-label="Install duration comparison">
-    {project.tools.map(tool => <div class="bar-row" role="listitem" tabindex="0" data-tool={tool.name}>
-      <div class="tool-label"><strong>{tool.name}</strong><small>v{tool.version}</small></div>
-      <div class="bar-track"><div class:list={['bar-fill', { highlight: tool.name === 'fnpm' }]} style={`width:${tool.times[scenario] / ceiling * 100}%`}></div></div>
-      <strong class="bar-value">{format(tool.times[scenario])}</strong>
-      <span class="bar-tooltip" role="tooltip">{tool.name} {tool.version} · {tool.times[scenario].toFixed(4)} seconds · median of 3 runs</span>
-    </div>)}
+<div class:list={['benchmark-chart', { compact }]}>
+  <div class="bar-list" role="list" aria-label={`${project.name}: ${what}`}>
+    {project.tools.map((tool) => {
+      const v = value(tool, metric);
+      const tag = lockTag(tool);
+      return (
+        <div class:list={['bar-row', { unsupported: v == null }]} role="listitem" tabindex="0" title={describe(tool)}>
+          <div class="tool-label"><strong>{tool.name}</strong><small>v{tool.version}{tag && <span class="lock-tag"> · {tag}</span>}</small></div>
+          {v == null
+            ? <div class="bar-track bar-missing"><span>can't install this repository</span></div>
+            : <div class="bar-track"><div class:list={['bar-fill', { highlight: tool.name === 'fnpm' }]} style={`width:${Math.max((v / end) * 100, 0.6)}%`}></div></div>}
+          <strong class="bar-value">{v == null ? '—' : format(v, metric)}</strong>
+          <span class="bar-tooltip" role="tooltip">{describe(tool)}</span>
+        </div>
+      );
+    })}
   </div>
-  <div class="chart-axis" aria-hidden="true"><span>0s</span><span>{format(ceiling / 2)}</span><span>{format(ceiling)}</span></div>
-  <div class="chart-legend"><span><i class="legend-highlight"></i>fnpm</span><span><i></i>Other package managers</span><span>Lower is better</span></div>
-  <details class="chart-table"><summary>View data table</summary><table><caption>Install duration in seconds — median of three runs</caption><thead><tr><th>Tool / version</th><th>Seconds</th></tr></thead><tbody>{project.tools.map(tool => <tr><th scope="row">{tool.name} {tool.version}</th><td>{tool.times[scenario].toFixed(4)}</td></tr>)}</tbody></table></details>
+  <div class="chart-axis" aria-hidden="true"><span>0</span><span>{format(end / 2, metric)}</span><span>{format(end, metric)}</span></div>
+  <details class="chart-table">
+    <summary>View data table</summary>
+    <table>
+      <caption>{project.name}: {what}</caption>
+      <thead><tr><th>Tool / version</th><th>{disk ? 'MiB' : 'Seconds'}</th><th>Lockfile</th></tr></thead>
+      <tbody>
+        {project.tools.map((tool) => {
+          const v = value(tool, metric);
+          return <tr><th scope="row">{tool.name} {tool.version}</th><td>{v == null ? '—' : v.toFixed(disk ? 2 : 4)}</td><td>{v == null ? tool.unsupported : lockNote(tool, project)}</td></tr>;
+        })}
+      </tbody>
+    </table>
+  </details>
 </div>

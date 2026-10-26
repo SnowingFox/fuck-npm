@@ -22,8 +22,9 @@ npm run preview
 ```
 
 Production output is `website/dist/`, including the Pagefind search index. The
-site is deployed to <https://fuck-npm.vercel.app/> from `website/` with
-`vercel.json` (the build sets `DOCS_SITE` for canonical URLs, Open Graph tags and
+site is deployed to <https://fuck-npm.vercel.app/> by Vercel's GitHub integration
+(project root `website/`; every push to `main` deploys production, pull requests get
+previews) with `vercel.json` (the build sets `DOCS_SITE` for canonical URLs, Open Graph tags and
 the sitemap). Every page is prerendered to static HTML. For a GitHub Pages project
 path, build with:
 

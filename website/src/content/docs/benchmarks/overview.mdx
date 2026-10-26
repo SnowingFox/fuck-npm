@@ -1,0 +1,33 @@
+---
+title: Benchmark evidence
+description: Recorded fnpm comparisons with Bun, pnpm, npm and Yarn, including the cases fnpm loses.
+---
+
+import BenchSummary from '../../../components/BenchSummary.astro';
+
+fnpm's target is to beat Bun in every package-management scenario while using less disk. Current evidence falls short of that target. Two recorded suites answer different questions and must stay separate.
+
+## Real repositories, five package managers
+
+fnpm, Bun, pnpm, Yarn and npm each install the same pinned repositories, and each tree then runs the repository's own check. Times are median seconds of three runs; disk is node_modules plus each tool's private cache/store, hardlinks counted once. [Every repository's charts and numbers](../real-projects/).
+
+<BenchSummary />
+
+## Choose a report
+
+| Suite | Inputs | Statistic | What it tells you |
+|---|---|---|---|
+| [Real projects](../real-projects/) | Pinned open-source repositories (OpenNext, OpenCode, tRPC, Excalidraw, Jest, React, Vite, Vue, webpack, Uptime Kuma) | Median of three successful measured runs | Install behavior of fnpm, Bun, pnpm, Yarn and npm on real projects, with package-set and direct project checks |
+| [Synthetic matrix](../synthetic/) | Small, medium, large, monorepo manifests | Mean of five measured runs plus one warmup | Controlled scenarios across fnpm, Bun, pnpm, npm and Yarn classic; includes the strict speed gate |
+
+Both suites use Linux x64 and a pre-warmed local registry mirror. Timed installs disable lifecycle scripts. Process startup is included. OS and mirror caches remain warm even when a package manager's private cache is empty. These are not public-registry or cross-platform performance claims.
+
+## What remains open
+
+In the synthetic suite, the strict gate still fails **9/22** comparisons with Bun. Small cold installs, several cold-lockfile scenarios and all four add scenarios remain slower. Monorepo warm is also slower. fnpm's combined disk footprint is lower than Bun and pnpm on all four synthetic fixtures; its extra cache/store alone is larger than Bun's.
+
+Read [the methodology](../methodology/) before interpreting either result. An install finishing or a project check passing covers only the command actually recorded. Full conformance and production readiness are not established.
+
+## What the timing excludes
+
+The measurements do not time lock preparation, project builds, test suites or lifecycle scripts. Each suite records the fnpm source revision it measured. The synthetic suite measured an fnpm 0.0.1 source snapshot.

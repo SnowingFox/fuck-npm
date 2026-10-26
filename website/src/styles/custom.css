@@ -43,3 +43,42 @@ button { color: inherit; } .accent { color:rgb(var(--c-accent-strong)); }
 
 .docs-prose .doc-card > :is(strong,.doc-card-cta) { color:rgb(var(--c-fg)); }
 .docs-prose hr { border-color:rgb(var(--c-line)); }
+
+/* Benchmarks across five package managers. */
+[hidden] { display: none !important; }
+.project-tabs { grid-template-columns: repeat(5, 1fr); }
+.bar-row:first-child .tool-label strong, .bar-row:first-child .bar-value { font-weight: inherit; }
+.bar-row:has(.highlight) .tool-label strong, .bar-row:has(.highlight) .bar-value { font-weight: 750; }
+.tool-label small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lock-tag { color: rgb(var(--c-accent-strong)); }
+.bar-missing { display: flex; align-items: center; padding-left: 8px; background: repeating-linear-gradient(135deg, rgb(var(--c-subtle)) 0 6px, transparent 6px 9px); }
+.bar-missing span { font-size: 11px; color: rgb(var(--c-fg-faint)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compact .bar-missing span { font-size: 9px; }
+.bar-row.unsupported .tool-label strong, .bar-row.unsupported .bar-value { color: rgb(var(--c-fg-faint)); }
+.chart-table td:last-child { text-align: left; font-variant-numeric: normal; padding-left: 10px; color: rgb(var(--c-fg-faint)); }
+.hero-scenario .chart-legend { margin-top: 14px; }
+.disk-chart-wrap .benchmark-chart { margin-top: 8px; }
+.disk-caption { font-family: var(--font-mono); font-size: 11px; color: rgb(var(--c-fg-muted)); margin: 0 0 8px; }
+.benchmark-heading p a { text-decoration: underline; text-underline-offset: 3px; }
+/* Docs page: every repository. */
+.project-index { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 28px; }
+.project-index a { border: 1px solid rgb(var(--c-line)); padding: 4px 10px; font-size: 12px; text-decoration: none; }
+.project-index a:hover { border-color: rgb(var(--c-accent)); }
+.project-bench { scroll-margin-top: 80px; }
+.project-meta { font-size: 13px; color: rgb(var(--c-fg-muted)); line-height: 1.7; }
+.project-meta code { font-size: 11px; }
+.project-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.project-charts .scenario-card h3 { font-size: 15px; margin: 0 0 2px; }
+.project-charts .scenario-card > p:first-of-type { min-height: 0; margin-bottom: 14px; }
+.project-numbers { margin: 4px 0 40px; font-size: 13px; }
+.project-numbers summary { cursor: pointer; font-weight: 600; }
+.table-scroll { overflow-x: auto; }
+.project-numbers table, .summary-table { font-size: 12px; font-variant-numeric: tabular-nums; display: table; width: 100%; }
+.project-numbers small { color: rgb(var(--c-fg-faint)); font-size: 10px; }
+.summary-table td { text-align: center; }
+@media (max-width: 800px) {
+  .project-tabs { grid-template-columns: repeat(5, 1fr); }
+  .project-tabs button { font-size: 10px; padding-inline: 2px; }
+  .project-charts { grid-template-columns: 1fr; }
+}
+.pending-note { border-left: 2px solid rgb(var(--c-accent)); padding: 8px 14px; background: rgb(var(--c-subtle)); }

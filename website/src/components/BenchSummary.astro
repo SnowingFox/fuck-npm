@@ -1,0 +1,31 @@
+---
+// Counts computed from the data, so the summary cannot drift from the charts.
+import { benchmarks, measuredDate, pending, projects, value, type Metric } from '../data/bench.ts';
+const metrics: [Metric, string][] = [[0, 'Cold install'], [1, 'Warm cache'], [2, 'No-op'], ['disk', 'Disk']];
+const against = ['bun', 'pnpm', 'yarn', 'npm'];
+const label: Record<string, string> = { bun: 'Bun', pnpm: 'pnpm', yarn: 'Yarn', npm: 'npm' };
+const cell = (metric: Metric, other: string) => {
+  let lower = 0, compared = 0;
+  for (const p of projects) {
+    const f = p.tools.find((t) => t.name === 'fnpm');
+    const o = p.tools.find((t) => t.name === other);
+    const a = f && value(f, metric), b = o && value(o, metric);
+    if (a == null || b == null) continue;
+    compared++;
+    if (a < b) lower++;
+  }
+  return compared ? `${lower} / ${compared}` : '—';
+};
+const unsupported = projects.flatMap((p) => p.tools.filter((t) => t.unsupported).map((t) => `${t.name} on ${p.name}`));
+const failedChecks = projects.flatMap((p) => p.tools.filter((t) => t.check === 'fail').map((t) => `${t.name} on ${p.name}`));
+---
+{pending.length > 0 && <p class="pending-note"><strong>Measurement in progress:</strong> {projects.length} repositories are complete for all five tools; {pending.join(', ')} are still running and appear here once every tool has finished.</p>}
+<p>Measured {measuredDate} on Linux x64 ({benchmarks.machine.cores} CPU cores, Node {benchmarks.machine.node}), fnpm built from <code>{benchmarks.fnpm}</code>. Each cell counts the repositories where fnpm's median was lower than the other tool's, out of the repositories where both installed.</p>
+<div class="table-scroll">
+  <table class="summary-table">
+    <thead><tr><th>fnpm lower than</th>{against.map((t) => <th>{label[t]}</th>)}</tr></thead>
+    <tbody>{metrics.map(([m, name]) => <tr><th scope="row">{name}</th>{against.map((t) => <td>{cell(m, t)}</td>)}</tr>)}</tbody>
+  </table>
+</div>
+{unsupported.length > 0 && <p><strong>Could not install:</strong> {unsupported.join(', ')}. These pairs keep their rows in the charts, without a value.</p>}
+{failedChecks.length > 0 ? <p><strong>Project check failed:</strong> {failedChecks.join(', ')}. The install completed, but the listed command failed on that tree; see each repository's table.</p> : <p>Every completed install passed its repository's project check.</p>}

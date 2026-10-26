@@ -1,197 +1,327 @@
-[
-  {
-    "id": "opennextjs-cloudflare",
-    "short": "OpenNext",
-    "name": "OpenNext Cloudflare",
-    "repo": "opennextjs/opennextjs-cloudflare",
-    "workspaces": 23,
-    "tools": [
-      {
-        "name": "fnpm",
-        "version": "0.0.1",
-        "times": [
-          7.2118,
-          0.5771,
-          0.0089
-        ]
-      },
-      {
-        "name": "bun",
-        "version": "1.4.4",
-        "times": [
-          4.9949,
-          0.6028,
-          0.0798
-        ]
-      },
-      {
-        "name": "pnpm",
-        "version": "10.33.0",
-        "times": [
-          17.4433,
-          6.8035,
-          2.8804
-        ]
-      }
-    ],
-    "disk": {
-      "bun": 2653.39,
-      "pnpm": 2580.16,
-      "fnpm": 2592.87
-    }
+{
+  "measured": "2026-10-26",
+  "machine": {
+    "os": "linux",
+    "arch": "x64",
+    "cores": 8,
+    "memoryBytes": 16534245376,
+    "node": "v24.22.1"
   },
-  {
-    "id": "opencode",
-    "short": "OpenCode",
-    "name": "OpenCode",
-    "repo": "anomalyco/opencode",
-    "workspaces": 39,
-    "tools": [
-      {
-        "name": "fnpm",
-        "version": "0.0.1",
-        "times": [
-          9.4839,
-          0.6254,
-          0.0102
-        ]
-      },
-      {
-        "name": "bun",
-        "version": "1.4.4",
-        "times": [
-          11.363,
-          0.7154,
-          0.1249
-        ]
-      }
-    ],
-    "disk": {
-      "bun": 3238.86,
-      "fnpm": 3138.05
+  "fnpm": "5e5b347",
+  "projects": [
+    {
+      "id": "opennextjs-cloudflare",
+      "short": "OpenNext",
+      "name": "OpenNext Cloudflare",
+      "repo": "opennextjs/opennextjs-cloudflare",
+      "commit": "8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb",
+      "workspaces": 23,
+      "originalLock": "pnpm-lock.yaml",
+      "originalPm": "pnpm",
+      "check": "cd packages/cloudflare && PATH=\"$PWD/node_modules/.bin:$PATH\" tsc && PATH=\"$PWD/node_modules/.bin:$PATH\" vitest --run",
+      "tools": [
+        {
+          "name": "fnpm",
+          "version": "0.0.2",
+          "lockSource": "migrated",
+          "times": [
+            5.5416,
+            0.7809,
+            0.0068
+          ],
+          "ranges": [
+            [
+              4.7688,
+              5.7745
+            ],
+            [
+              0.5714,
+              1.0977
+            ],
+            [
+              0.0066,
+              0.0074
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2518.9,
+            "store": 74.06,
+            "total": 2592.96
+          },
+          "packages": 1651,
+          "instances": 1731,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 14
+          },
+          "check": "pass"
+        },
+        {
+          "name": "bun",
+          "version": "1.4.4",
+          "lockSource": "migrated",
+          "times": [
+            5.6774,
+            0.9632,
+            0.0888
+          ],
+          "ranges": [
+            [
+              4.9622,
+              6.8519
+            ],
+            [
+              0.5732,
+              1.1921
+            ],
+            [
+              0.0773,
+              0.0928
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2588.28,
+            "store": 65.1,
+            "total": 2653.38
+          },
+          "packages": 1637,
+          "instances": 1717,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 0
+          },
+          "check": "pass"
+        },
+        {
+          "name": "pnpm",
+          "version": "10.33.0",
+          "lockSource": "original",
+          "times": [
+            15.239,
+            6.1904,
+            2.6415
+          ],
+          "ranges": [
+            [
+              14.9222,
+              15.8688
+            ],
+            [
+              6.0119,
+              6.3856
+            ],
+            [
+              2.636,
+              2.7777
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2449.55,
+            "store": 130.64,
+            "total": 2580.19
+          },
+          "packages": 1651,
+          "instances": 1730,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 14
+          },
+          "check": "pass"
+        },
+        {
+          "name": "yarn",
+          "version": "1.22.22",
+          "lockSource": "fresh",
+          "unsupported": "yarn cannot read catalog: dependency specifiers",
+          "times": null,
+          "ranges": null,
+          "disk": null,
+          "packages": null,
+          "instances": null,
+          "missingDeclared": null,
+          "versusBun": null,
+          "check": null
+        },
+        {
+          "name": "npm",
+          "version": "11.19.1",
+          "lockSource": "fresh",
+          "unsupported": "npm cannot read workspace: or catalog: dependency specifiers",
+          "times": null,
+          "ranges": null,
+          "disk": null,
+          "packages": null,
+          "instances": null,
+          "missingDeclared": null,
+          "versusBun": null,
+          "check": null
+        }
+      ]
+    },
+    {
+      "id": "trpc",
+      "short": "tRPC",
+      "name": "tRPC",
+      "repo": "trpc/trpc",
+      "commit": "8d09833c76791b2ea7270af174fdab9f1408aeb8",
+      "workspaces": 43,
+      "originalLock": "pnpm-lock.yaml",
+      "originalPm": "pnpm",
+      "check": "cd packages/server && PATH=\"$PWD/node_modules/.bin:$PATH\" tsdown",
+      "tools": [
+        {
+          "name": "fnpm",
+          "version": "0.0.2",
+          "lockSource": "migrated",
+          "times": [
+            5.8114,
+            0.843,
+            0.0092
+          ],
+          "ranges": [
+            [
+              5.5396,
+              5.8503
+            ],
+            [
+              0.7924,
+              0.9986
+            ],
+            [
+              0.0089,
+              0.0104
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2382.78,
+            "store": 108.11,
+            "total": 2490.89
+          },
+          "packages": 3401,
+          "instances": 3434,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 0
+          },
+          "check": "pass"
+        },
+        {
+          "name": "bun",
+          "version": "1.4.4",
+          "lockSource": "migrated",
+          "times": [
+            5.6859,
+            0.7964,
+            0.178
+          ],
+          "ranges": [
+            [
+              5.2473,
+              6.7252
+            ],
+            [
+              0.7392,
+              0.9276
+            ],
+            [
+              0.1716,
+              0.1824
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2462.47,
+            "store": 96,
+            "total": 2558.46
+          },
+          "packages": 3401,
+          "instances": 3434,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 0
+          },
+          "check": "pass"
+        },
+        {
+          "name": "pnpm",
+          "version": "12.4.1",
+          "lockSource": "original",
+          "times": [
+            140.7165,
+            2.9687,
+            0.3851
+          ],
+          "ranges": [
+            [
+              140.6582,
+              142.5789
+            ],
+            [
+              2.8707,
+              3.0206
+            ],
+            [
+              0.3794,
+              0.4194
+            ]
+          ],
+          "disk": {
+            "nodeModules": 2361.22,
+            "store": 1021.67,
+            "total": 3382.89
+          },
+          "packages": 3418,
+          "instances": 3487,
+          "missingDeclared": 0,
+          "versusBun": {
+            "missing": 0,
+            "extra": 17
+          },
+          "check": "pass"
+        },
+        {
+          "name": "yarn",
+          "version": "1.22.22",
+          "lockSource": "fresh",
+          "unsupported": "yarn cannot read catalog: dependency specifiers",
+          "times": null,
+          "ranges": null,
+          "disk": null,
+          "packages": null,
+          "instances": null,
+          "missingDeclared": null,
+          "versusBun": null,
+          "check": null
+        },
+        {
+          "name": "npm",
+          "version": "11.19.1",
+          "lockSource": "fresh",
+          "unsupported": "npm cannot read workspace: or catalog: dependency specifiers",
+          "times": null,
+          "ranges": null,
+          "disk": null,
+          "packages": null,
+          "instances": null,
+          "missingDeclared": null,
+          "versusBun": null,
+          "check": null
+        }
+      ]
     }
-  },
-  {
-    "id": "trpc",
-    "short": "tRPC",
-    "name": "tRPC",
-    "repo": "trpc/trpc",
-    "workspaces": 43,
-    "tools": [
-      {
-        "name": "fnpm",
-        "version": "0.0.1",
-        "times": [
-          10.0058,
-          0.8811,
-          0.0121
-        ]
-      },
-      {
-        "name": "bun",
-        "version": "1.4.4",
-        "times": [
-          5.6106,
-          1.4238,
-          0.1905
-        ]
-      },
-      {
-        "name": "pnpm",
-        "version": "12.4.1",
-        "times": [
-          150.1458,
-          2.997,
-          0.4394
-        ]
-      }
-    ],
-    "disk": {
-      "bun": 2558.46,
-      "pnpm": 3541.51,
-      "fnpm": 2490.91
-    }
-  },
-  {
-    "id": "excalidraw",
-    "short": "Excalidraw",
-    "name": "Excalidraw",
-    "repo": "excalidraw/excalidraw",
-    "workspaces": 10,
-    "tools": [
-      {
-        "name": "fnpm",
-        "version": "0.0.1",
-        "times": [
-          2.0217,
-          0.2277,
-          0.0098
-        ]
-      },
-      {
-        "name": "bun",
-        "version": "1.4.4",
-        "times": [
-          2.3536,
-          0.3205,
-          0.0661
-        ]
-      },
-      {
-        "name": "yarn",
-        "version": "1.22.22",
-        "times": [
-          196.8902,
-          18.8943,
-          1.025
-        ]
-      }
-    ],
-    "disk": {
-      "bun": 934.82,
-      "yarn": 4294.92,
-      "fnpm": 901.8
-    }
-  },
-  {
-    "id": "jest",
-    "short": "Jest",
-    "name": "Jest",
-    "repo": "jestjs/jest",
-    "workspaces": 70,
-    "tools": [
-      {
-        "name": "fnpm",
-        "version": "0.0.1",
-        "times": [
-          2.3337,
-          0.3237,
-          0.0103
-        ]
-      },
-      {
-        "name": "bun",
-        "version": "1.4.4",
-        "times": [
-          2.2663,
-          0.3629,
-          0.089
-        ]
-      },
-      {
-        "name": "yarn",
-        "version": "4.18.0",
-        "times": [
-          39.0481,
-          24.3643,
-          4.433
-        ]
-      }
-    ],
-    "disk": {
-      "bun": 828.7,
-      "yarn": 1007.64,
-      "fnpm": 805.96
-    }
-  }
-]
+  ],
+  "pending": [
+    "OpenCode",
+    "Excalidraw",
+    "Jest",
+    "React",
+    "Vite",
+    "Vue core",
+    "webpack",
+    "Uptime Kuma"
+  ]
+}

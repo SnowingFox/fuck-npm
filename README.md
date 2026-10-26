@@ -12,10 +12,11 @@ run package executables.
 
 ## Install
 
-Install the package from the public npm registry:
+`fnpm` is not on public npm yet; the first public version will be **0.0.3**
+(until then, use the [development build](#development-build)). Once published:
 
 ```sh
-npm install -g fnpm@0.0.2
+npm install -g fnpm
 fnpm --version
 fnpm install
 fnpx --help
@@ -37,7 +38,7 @@ use the installed files. With npm versions that require lifecycle approval, use
 
 The existing unscoped `fuck-npm` package on npm belongs to another maintainer.
 This project's scoped `@tiktok-fe/fnpm@0.0.1` used separate platform packages;
-`fnpm@0.0.2` replaces that layout and targets public npm.
+`fnpm@0.0.3` replaces that layout on public npm (the `0.0.2` candidate was never published).
 See [release preparation](docs/RELEASING.md) for verification and publication.
 
 ## Development build
@@ -106,92 +107,61 @@ The documentation site contains the same results on its
 [real-project details](website/src/content/docs/benchmarks/real-projects.md).
 [Run the documentation site locally](website/README.md); no hosted deployment is configured yet.
 
-### Real repositories: OpenNext, OpenCode, tRPC, Excalidraw and Jest
+### Real repositories: fnpm, Bun, pnpm, Yarn and npm
 
-These are installs of five pinned upstream repositories, followed by actual project
-builds/type checks/tests. All 14 measured project/tool combinations passed their
-listed project check and had zero missing declared dependencies after explicit
-foreign-platform exclusions. The [full report](bench/results/2026-10-26-linux-x64-real-projects.md)
-and [raw samples](bench/results/2026-10-26-linux-x64-real-projects.json) retain
-source revisions, package versions, variation, commands and evidence.
+Every pinned repository is installed by all five package managers, and each tree then
+runs the repository's own check (build, type check or tests). The
+[documentation site](https://fuck-npm.vercel.app/benchmarks/real-projects/) shows the
+same data as charts, with ranges, version counts and check results per tool. Measured
+2026-10-26 on Linux x64 (8 CPU cores, Node v24.22.1),
+fnpm built from `5e5b347`; Bun 1.4.4, pnpm 10.33.0, 12.4.1,
+Yarn 1.22.22, npm 11.19.1. Timed installs disable
+lifecycle scripts; OS and registry mirror caches are warm.
 
-Measured 2026-10-26 on Linux x64/ext4, 8 CPU cores, 15.4 GiB RAM and Node 24.22.1.
-Each value below is the **median of three runs, in seconds**. fnpm was version
-`0.0.1`, source `048c97d`; these are the measured binary's results, not a new run
-of the `0.0.2` distribution. Bun was 1.4.4; project-specific pnpm/Yarn versions
-appear in the table. Installs ran to completion without a time cap.
+- **Cold install**: the tool's lockfile, empty private cache/store, no node_modules.
+- **Warm cache**: cache/store kept, node_modules removed.
+- **No-op**: both kept.
 
-- **Cold lock:** each tool's prepared native lock, empty private package-manager
-  cache/store and no `node_modules`; OS and registry mirror caches remain warm.
-- **Warm relink:** retain that private cache/store, remove `node_modules`, reinstall.
-- **No-op:** retain cache/store and the installed dependency tree, reinstall.
+fnpm and Bun migrate the repository's lockfile; the project's own manager uses it as is.
+† marks a tool without a lockfile of its own for that repository (a fresh resolve, or
+`pnpm import`), whose package versions can differ. "can't install" keeps the row for a
+tool that cannot read the repository's format (npm cannot read `workspace:` or `catalog:` specifiers; Yarn classic cannot read `catalog:`).
 
-Timed installs disable lifecycle scripts. Build/test validation and the separate
-script-enabled OpenNext check are outside the installation timings. npm is covered
-by the synthetic matrix below; it cannot directly install these repositories'
-original workspace/catalog/Bun formats.
+**Measurement in progress:** OpenCode, Excalidraw, Jest, React, Vite, Vue core, webpack, Uptime Kuma are still running; they are added when every tool has finished.
 
-| Project | Tool/version | Cold lock | Warm relink | No-op | Missing deps | Project check |
-|---|---|---:|---:|---:|---:|---|
-| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) | bun 1.4.4 | 4.9949 | 0.6028 | 0.0798 | 0 | pass |
-| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) | pnpm 10.33.0 | 17.4433 | 6.8035 | 2.8804 | 0 | pass |
-| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) | fnpm 0.0.1 | 7.2118 | 0.5771 | 0.0089 | 0 | pass |
-| [tRPC](https://github.com/trpc/trpc) | bun 1.4.4 | 5.6106 | 1.4238 | 0.1905 | 0 | pass |
-| [tRPC](https://github.com/trpc/trpc) | pnpm 12.4.1 | 150.1458 | 2.9970 | 0.4394 | 0 | pass |
-| [tRPC](https://github.com/trpc/trpc) | fnpm 0.0.1 | 10.0058 | 0.8811 | 0.0121 | 0 | pass |
-| [Excalidraw](https://github.com/excalidraw/excalidraw) | bun 1.4.4 | 2.3536 | 0.3205 | 0.0661 | 0 | pass |
-| [Excalidraw](https://github.com/excalidraw/excalidraw) | yarn 1.22.22 | 196.8902 | 18.8943 | 1.0250 | 0 | pass |
-| [Excalidraw](https://github.com/excalidraw/excalidraw) | fnpm 0.0.1 | 2.0217 | 0.2277 | 0.0098 | 0 | pass |
-| [Jest](https://github.com/jestjs/jest) | bun 1.4.4 | 2.2663 | 0.3629 | 0.0890 | 0 | pass |
-| [Jest](https://github.com/jestjs/jest) | yarn 4.18.0 | 39.0481 | 24.3643 | 4.4330 | 0 | pass |
-| [Jest](https://github.com/jestjs/jest) | fnpm 0.0.1 | 2.3337 | 0.3237 | 0.0103 | 0 | pass |
-| [OpenCode](https://github.com/anomalyco/opencode) | bun 1.4.4 | 11.3630 | 0.7154 | 0.1249 | 0 | pass |
-| [OpenCode](https://github.com/anomalyco/opencode) | fnpm 0.0.1 | 9.4839 | 0.6254 | 0.0102 | 0 | pass |
+**Cold install (s)**, median of three runs:
 
-fnpm's median was lower than Bun's for warm relinking and no-op installs on all
-five repositories, and cold installs on Excalidraw and OpenCode (2/5). OpenNext,
-tRPC and Jest cold installs were slower than Bun. This was a shared machine;
-[minimum–maximum ranges](bench/results/2026-10-26-linux-x64-real-projects.md#variation-and-package-sets)
-show the variation and do not establish universal speedups.
+| Repository | fnpm | Bun | pnpm | Yarn | npm |
+|---|---:|---:|---:|---:|---:|
+| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare/tree/8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb) | 5.542 | 5.677 | 15.239 | can't install | can't install |
+| [tRPC](https://github.com/trpc/trpc/tree/8d09833c76791b2ea7270af174fdab9f1408aeb8) | 5.811 | 5.686 | 140.716 | can't install | can't install |
 
-**Combined physical disk, MiB:** `node_modules` plus each tool's private cache/store,
-measured before builds, with shared `(device, inode)` pairs counted once. Shared
-reflink extents cannot be identified by this measurement.
+**Warm cache (s)**, median of three runs:
 
-| Repository | fnpm | Bun | Project package manager |
-|---|---:|---:|---:|
-| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) | 2592.87 | 2653.39 | 2580.16 (pnpm) |
-| [OpenCode](https://github.com/anomalyco/opencode) | 3138.05 | 3238.86 | — |
-| [tRPC](https://github.com/trpc/trpc) | 2490.91 | 2558.46 | 3541.51 (pnpm) |
-| [Excalidraw](https://github.com/excalidraw/excalidraw) | 901.80 | 934.82 | 4294.92 (yarn) |
-| [Jest](https://github.com/jestjs/jest) | 805.96 | 828.70 | 1007.64 (yarn) |
+| Repository | fnpm | Bun | pnpm | Yarn | npm |
+|---|---:|---:|---:|---:|---:|
+| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare/tree/8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb) | 0.781 | 0.963 | 6.190 | can't install | can't install |
+| [tRPC](https://github.com/trpc/trpc/tree/8d09833c76791b2ea7270af174fdab9f1408aeb8) | 0.843 | 0.796 | 2.969 | can't install | can't install |
 
-fnpm's combined footprint was lower than Bun's on these five repositories.
-OpenNext still used slightly more than pnpm. Its fnpm tree contained 1,651 unique
-package versions versus Bun's 1,637 (14 extra), so it is not an identical-package
-comparison. The fnpm and Bun version sets matched for the other four repositories.
-OpenCode's 23 declarations for other OS/CPU targets were explicitly accounted for,
-not treated as missing host dependencies. Other baseline package-set differences
-are preserved in the full report.
+**No-op (s)**, median of three runs:
 
-**What ran after installation:**
+| Repository | fnpm | Bun | pnpm | Yarn | npm |
+|---|---:|---:|---:|---:|---:|
+| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare/tree/8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb) | 0.007 | 0.089 | 2.642 | can't install | can't install |
+| [tRPC](https://github.com/trpc/trpc/tree/8d09833c76791b2ea7270af174fdab9f1408aeb8) | 0.009 | 0.178 | 0.385 | can't install | can't install |
 
-| Tested repository revision | Workspaces | Successful project validation |
-|---|---:|---|
-| [OpenNext Cloudflare `8ea9eb9`](https://github.com/opennextjs/opennextjs-cloudflare/tree/8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb) | 23 | Cloudflare package `tsc` + `vitest --run`; separate script-enabled install, root build, 37 test files / 364 tests and a better-sqlite3 SQL query |
-| [OpenCode `7a83c69`](https://github.com/anomalyco/opencode/tree/7a83c69fe12f021ec5b8ad10a1171e6d01d99289) | 39 | `packages/util`: `bun check --no-script` |
-| [tRPC `8d09833`](https://github.com/trpc/trpc/tree/8d09833c76791b2ea7270af174fdab9f1408aeb8) | 43 | `packages/server`: `tsdown` build |
-| [Excalidraw `b7de45e`](https://github.com/excalidraw/excalidraw/tree/b7de45e88111f5680ae4bb3c3f3541c7d3b279fe) | 10 | `tsc` type check |
-| [Jest `61050e9`](https://github.com/jestjs/jest/tree/61050e9323e742539dc2360236671110e37329e6) | 70 | `node ./scripts/build.mjs` build |
+**Combined disk (MiB)**: node_modules plus the private cache/store, hardlinks counted once:
 
-These checks validate the commands listed, not every upstream test suite.
-The separate script-enabled OpenNext run took 240.16 s to install on Linux Node 24,
-compiled better-sqlite3 from source, passed its root build and all 364 Cloudflare
-tests, and returned `{"value":42}` from a real SQL query. The original pnpm lock
-was unchanged; three untrusted scripts were blocked by the default trust policy.
-That lifecycle result does not cover Node 26 on macOS. The earlier
-[18-project compatibility corpus](tests/e2e/results/2026-10-26-land.md) is recorded
-separately as 13 PASS / 5 KNOWN.
+| Repository | fnpm | Bun | pnpm | Yarn | npm |
+|---|---:|---:|---:|---:|---:|
+| [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare/tree/8ea9eb973b6d71743e4b37ab2fdf5d98fe4d0ddb) | 2,593 | 2,653 | 2,580 | can't install | can't install |
+| [tRPC](https://github.com/trpc/trpc/tree/8d09833c76791b2ea7270af174fdab9f1408aeb8) | 2,491 | 2,558 | 3,383 | can't install | can't install |
+
+These are medians on one shared machine; overlapping ranges mean the order can change
+between runs. The raw samples, package sets and commands are committed to [`bench/results/`](bench/results/) when the run finishes.
+The earlier fnpm 0.0.1 / Bun-only report, including a script-enabled OpenNext run
+(better-sqlite3 built from source, 364 tests passed), is kept as
+[2026-10-26-linux-x64-real-projects.md](bench/results/2026-10-26-linux-x64-real-projects.md).
 
 ### Synthetic fixtures: npm, pnpm, Yarn, Bun and fnpm
 
@@ -281,8 +251,12 @@ The full design, including every crate's API, is in [docs/ARCHITECTURE.md](docs/
 
 ## Compatibility
 
-Latest integration checks: **3,667 passed / 2,973 failed / 58 skipped**
-(55.2%) across 42 completed conformance files out of 45 selected; timeouts and the stopped matrix are listed separately.
+Bun's ported conformance suite last ran as a whole at **3,667 passed / 2,973 failed /
+58 skipped** (55.2%, 42 of 45 selected files; an older snapshot). On current source, the
+lockfile-migration files pass 170 and fail 426 (115 / 481 before the latest fixes), with
+no new failures. Most remaining migration failures compare exact output (lockfile
+snapshots, Bun's stderr wording); frozen-lockfile and offline behavior are the next areas
+to fix. See [support and current limits](https://fuck-npm.vercel.app/status/).
 The 18-project corpus has **13 PASS / 5 KNOWN / 0 unexpected failures**.
 See [conformance status](tests/conformance/STATUS.md) and
 [corpus results](tests/e2e/results/2026-10-26-land.md). Full parity remains open.
@@ -291,9 +265,10 @@ See [conformance status](tests/conformance/STATUS.md) and
 passed all 21 jobs: eight native builds, eight normal/disabled-script npm tarball
 smokes, and five test jobs across Linux, macOS and Windows. The `fnpm@0.0.2`
 candidate also passed fresh macOS arm64 installs using the actual GitHub native
-archives, covering all four bins, addon loading, TS command dispatch and
-offline/frozen reinstalls. The scoped `@tiktok-fe/fnpm@0.0.1` was published through
-bnpm; public `fnpm@0.0.2` publication is pending local npm authentication.
+archives, but was never published to npm. The first public release is `fnpm@0.0.3`
+(includes fnpx progress, migration notices, Bun/pnpm layout links and the yarn.lock
+peer fix); its platform CI and npm publication are in progress. The scoped
+`@tiktok-fe/fnpm@0.0.1` was published through bnpm.
 See [release status](docs/RELEASING.md#release-history).
 
 ## Repository layout

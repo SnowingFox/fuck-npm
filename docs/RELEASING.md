@@ -88,6 +88,12 @@ still work through first-use installation, but retain the Node startup overhead.
 
 ## Release history
 
+`fnpm@0.0.2` was staged and its native archives uploaded to a GitHub prerelease, but it
+was never published to npm. `fnpm@0.0.3` is the first public release of the
+single-package layout; it adds fnpx install progress, migration notices,
+`node_modules/.bun` / `.pnpm` links and peer dependencies restored after yarn.lock
+migration.
+
 `@tiktok-fe/fnpm@0.0.1` and its nine binding/platform packages were published via
 bnpm on 2026-10-26. Its native artifacts came from source
 `048c97ddbfcf617c7f559ed70b15114ace6f5bfb` and

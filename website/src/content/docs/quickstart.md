@@ -27,7 +27,7 @@ fnpm install --ignore-scripts
 fnpm-lock verify
 ```
 
-Review migration warnings and the version set. Then inspect dependency [script trust](../pm/lifecycle/), run a script-enabled install where appropriate, and run your project's build and tests. A successful install alone does not prove runtime compatibility. The [real-project report](../benchmarks/real-projects/#package-sets-and-project-checks) shows why comparing installed versions matters.
+Review migration warnings and the version set. Then inspect dependency [script trust](../pm/lifecycle/), run a script-enabled install where appropriate, and run your project's build and tests. A successful install alone does not prove runtime compatibility. The [real-project report](../benchmarks/real-projects/) shows why comparing installed versions matters.
 
 Commit `fnpm.lock` with the relevant manifest changes after validation. Keep the original lock until your migration is accepted.
 

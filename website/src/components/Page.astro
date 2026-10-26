@@ -96,7 +96,7 @@ const structured = home ? {
             <header class="docs-page-heading"><div class="breadcrumb">{section} <span>›</span> <span>{entry.data.title}</span><button class="copy-page">▢ &nbsp; Copy page</button></div>
             <h1 class="display">{entry.data.title}</h1><p>{entry.data.description}</p></header>
             <div class="docs-prose prose"><slot /></div>
-            <footer class="docs-footer" data-pagefind-ignore><a href={`https://github.com/SnowingFox/fuck-npm/edit/main/website/src/content/docs/${entry.id === 'docs' ? 'docs.mdx' : `${entry.id}.md`}`}>Edit this page on GitHub ↗</a><a href={`${base}project/credits/`}>Credits & licenses</a></footer>
+            <footer class="docs-footer" data-pagefind-ignore><a href={`https://github.com/SnowingFox/fuck-npm/edit/main/website/src/content/docs/${entry.filePath?.replace(/^src\/content\/docs\//, '') ?? `${entry.id}.md`}`}>Edit this page on GitHub ↗</a><a href={`${base}project/credits/`}>Credits & licenses</a></footer>
           </article>
         </main>
       </div>
