@@ -1539,6 +1539,16 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     g
 }
 
+/// Whether the flags of the install leave packages of the tree out (`--production`, `--omit`,
+/// another `--os` / `--cpu` / `--libc`).
+fn omits_packages(config: &Config) -> bool {
+    config.production
+        || config.omit.dev
+        || config.omit.optional
+        || config.omit.peer
+        || config.platform != fnpm_types::Platform::current()
+}
+
 /// The layout for `view` (a [`link_view`] of the graph). The hoisted tree from
 /// `fnpm_lockfile::tree::hoist` records a workspace's own `node_modules` entries with the
 /// workspace's node as parent and lists them in `workspace_roots`; the linker places
@@ -1796,8 +1806,32 @@ async fn link(
             force: config.force || newly_trusted || dlx.is_some_and(|d| d.relink),
             fresh: !root.join("node_modules").exists(),
             selected_workspaces: selected.clone(),
-            hoisted_prune_tree: (selected.is_some() && kind == NodeLinker::Hoisted).then(|| {
-                match plan_layout(&linker, &view, kind, None) {
+            // bun places every package wherever the flags of the install leave them and only
+            // skips what they omit: a package `--production`, `--omit` or `--os` leaves out
+            // stays in a node_modules that has it, like one that `--filter` does not select.
+            hoisted_prune_tree: (kind == NodeLinker::Hoisted
+                && (selected.is_some() || omits_packages(config)))
+            .then(|| {
+                let mut all =
+                    fnpm_lockfile::tree::HoistOptions::all(fnpm_types::Platform::current());
+                // A peer that `--omit=peer` leaves out has no place of its own to keep.
+                if config.omit.peer {
+                    all.include = all.include.with(fnpm_types::Behavior::PEER, false);
+                }
+                let full = if omits_packages(config) {
+                    let mut tree = fnpm_lockfile::tree::hoist(&view, &all);
+                    for (_, ids) in &tree.workspace_roots.clone() {
+                        for &id in ids {
+                            if let Some(node) = tree.nodes.get_mut(id as usize) {
+                                node.parent = None;
+                            }
+                        }
+                    }
+                    Layout::Hoisted(tree)
+                } else {
+                    plan_layout(&linker, &view, kind, None)
+                };
+                match full {
                     Layout::Hoisted(tree) => tree,
                     _ => unreachable!("hoisted layout requested"),
                 }
