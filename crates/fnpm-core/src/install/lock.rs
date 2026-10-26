@@ -39,6 +39,100 @@ pub(crate) struct LockState {
     /// The sidecar ([`sidecar_path`]) was not fresh, so it should be written from
     /// [`LockState::graph`] after the install.
     pub sidecar_missing: bool,
+    /// fnpm.lock / bun.lock / bun.lockb did not parse and was ignored.
+    pub parse_failure: Option<ParseFailure>,
+}
+
+/// An own lockfile that does not parse, reported as bun reports it.
+#[derive(Debug, Clone)]
+pub(crate) struct ParseFailure {
+    /// The error with bun's source frame when it has a place ([`fnpm_workspace::frame`]).
+    pub framed: String,
+    /// The file name, as bun prints it (`fnpm.lock`).
+    pub name: String,
+    /// bun's error name: `ParserError` (not JSONC) or `InvalidLockfile`.
+    pub tag: &'static str,
+}
+
+impl ParseFailure {
+    fn of(path: &Path, e: &fnpm_lockfile::Error) -> Self {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let bytes = std::fs::read(path).unwrap_or_default();
+        let message = match e {
+            fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
+            other => other.to_string(),
+        };
+        // `line:column: message` for the text formats.
+        let placed = message.split_once(": ").and_then(|(at, text)| {
+            let (line, column) = at.split_once(':')?;
+            Some((
+                line.parse::<usize>().ok()?,
+                column.parse::<usize>().ok()?,
+                text,
+            ))
+        });
+        let source = std::str::from_utf8(&bytes).ok();
+        let framed = match (placed, source) {
+            (Some((line, column, text)), Some(source)) => {
+                fnpm_workspace::frame::Frame::at_line_col(source, line, column)
+                    .framed(Path::new(&name), text)
+            }
+            _ => message,
+        };
+        let text_format = !name.ends_with(".lockb");
+        let tag = if text_format && fnpm_lockfile::is_syntax_error(&bytes) {
+            "ParserError"
+        } else {
+            "InvalidLockfile"
+        };
+        Self { framed, name, tag }
+    }
+
+    /// What an install that goes on without the file prints before it resolves.
+    pub(crate) fn events(&self) -> Vec<fnpm_types::Event> {
+        use fnpm_types::Event;
+        let (frame, message) = fnpm_workspace::frame::split(&self.framed);
+        let mut out: Vec<Event> = frame.map(Event::notice).into_iter().collect();
+        out.push(Event::Error {
+            message: message.to_owned(),
+            code: None,
+        });
+        out.push(Event::notice(format!(
+            "{}: failed to parse lockfile: '{}'",
+            self.tag, self.name
+        )));
+        out.push(Event::notice(String::new()));
+        out.push(Event::warn("Ignoring lockfile", None));
+        out
+    }
+
+    /// A frozen install cannot go on without the file.
+    pub(crate) fn frozen_error(&self, source: fnpm_lockfile::Error) -> Error {
+        Error::Framed {
+            message: format!(
+                "{}\n{}: failed to parse lockfile: '{}'\n\nwarn: Ignoring lockfile\nerror: lockfile had changes, but lockfile is frozen",
+                self.framed, self.tag, self.name
+            ),
+            source: Box::new(source.into()),
+        }
+    }
+
+    /// A command that only reads the lockfile stops (bun `failed to parse lockfile`); `framed`
+    /// prints the reason with its frame first.
+    pub(crate) fn read_error(&self, framed: bool) -> Error {
+        let failed = format!("failed to parse lockfile: {}", self.tag);
+        Error::Framed {
+            message: if framed {
+                format!("{}\nerror: {failed}", self.framed)
+            } else {
+                failed.clone()
+            },
+            source: Box::new(Error::usage(failed)),
+        }
+    }
 }
 
 /// The workspace's warnings that are not the migration's to give. A pnpm migration reads
@@ -272,9 +366,13 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
                 return Ok(state);
             }
             Ok(None) => {}
-            Err(e) if config.frozen_lockfile => return Err(e.into()),
+            Err(e) if config.frozen_lockfile => {
+                return Err(ParseFailure::of(&path, &e).frozen_error(e));
+            }
             Err(e) => {
-                state.warnings.push(format!("Ignoring lockfile: {e}"));
+                let failure = ParseFailure::of(&path, &e);
+                state.failures.extend(failure.events());
+                state.parse_failure = Some(failure);
                 return Ok(state);
             }
         }

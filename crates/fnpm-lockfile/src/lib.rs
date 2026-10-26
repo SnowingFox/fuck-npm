@@ -171,6 +171,12 @@ impl ParseOptions {
     }
 }
 
+/// The text lockfile `bytes` is not JSONC at all (bun's `ParserError`), rather than a document
+/// with a wrong field (`InvalidLockfile`).
+pub fn is_syntax_error(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).map_or(true, |src| jsonc::parse(src).is_err())
+}
+
 /// Reads bun.lock-format text; errors carry `line:column`.
 pub(crate) fn text_parse(
     bytes: &[u8],
@@ -295,8 +301,8 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
         };
         let hash = content_hash(&bytes);
         let migrated = format != Format::Fnpm;
-        let config_version_missing = format == Format::Fnpm
-            && !bytes.windows(15).any(|w| w == b"\"configVersion\"");
+        let config_version_missing =
+            format == Format::Fnpm && !bytes.windows(15).any(|w| w == b"\"configVersion\"");
         if format == Format::Fnpm
             && !opts.no_sidecar
             && let Some(graph) = match &opts.sidecar_path {
@@ -476,7 +482,11 @@ pub fn save_binary(dir: &Path, graph: &LockGraph) -> Result<bool> {
 
 /// Saves `graph` in the project's lockfile: bun.lockb when that is the lockfile the project
 /// keeps (no fnpm.lock beside it), else fnpm.lock. For commands that edit a loaded lockfile.
-pub fn save_keeping_format(dir: &Path, graph: &LockGraph, sidecar_path: Option<&Path>) -> Result<()> {
+pub fn save_keeping_format(
+    dir: &Path,
+    graph: &LockGraph,
+    sidecar_path: Option<&Path>,
+) -> Result<()> {
     if !dir.join(FNPM_LOCK).exists() && dir.join(BUN_LOCKB).exists() {
         save_binary(dir, graph)?;
     } else {

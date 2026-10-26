@@ -375,7 +375,8 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
   return snapshot
     .replaceAll("\r\n", "\n")
     // A command header (`fnpm install v0.0.1`) reads like bun's normalized one: `fnpm install <version> (<revision>)`.
-    .replace(/^(fnpm(?: [a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
+    // Flags too: `fnpm update --interactive v0.0.1`.
+    .replace(/^(fnpm(?: (?:--)?[a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
     .replaceAll("\\", "/")
     .replaceAll(fs.realpathSync.native(process.cwd()).replaceAll("\\", "/"), "<cwd>")
     .replaceAll(fs.realpathSync.native(os.tmpdir()).replaceAll("\\", "/"), "<tmp>")

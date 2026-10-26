@@ -40,6 +40,23 @@ impl Frame {
         }
     }
 
+    /// The frame of the 1-based `line` and `column` (characters) of `source`, clamped to the
+    /// line's end.
+    pub fn at_line_col(source: &str, line: usize, column: usize) -> Self {
+        let start = source
+            .split_inclusive('\n')
+            .take(line.saturating_sub(1))
+            .map(str::len)
+            .sum::<usize>();
+        let rest = &source[start.min(source.len())..];
+        let end = rest.find('\n').unwrap_or(rest.len());
+        let offset = rest[..end]
+            .char_indices()
+            .nth(column.saturating_sub(1))
+            .map_or(end, |(i, _)| i);
+        Self::at_offset(source, start + offset)
+    }
+
     /// The frame of the first `"<value>"` string after `"<key>"` in `source`: where a JSON
     /// file names an entry (`workspaces` → `"packages/a"`). `None` when it is not there.
     pub fn of_string_after(source: &str, key: &str, value: &str) -> Option<Self> {
@@ -111,5 +128,6 @@ mod tests {
             (2, 9, "  \"é\": \"x\"")
         );
         assert_eq!(Frame::at_offset("", 5).column, 1);
+        assert_eq!(Frame::at_line_col(source, 2, 9), frame);
     }
 }

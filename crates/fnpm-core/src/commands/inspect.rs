@@ -304,7 +304,7 @@ fn ls_tree(
 
 /// `fnpm ls [--all] [--depth n] [names]`.
 pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to list")?;
+    let (project, _, graph) = cx.load_locked_with("nothing to list", false)?;
     let all = cx.flag("all");
     let max_depth = cx
         .number("depth")

@@ -163,6 +163,9 @@ impl Ctx {
         let project = self.project()?;
         let ws = project.workspace(&*self.events)?;
         let lock = crate::install::load_lock(&project.config, &ws)?;
+        for e in &lock.failures {
+            self.events.emit(e.clone());
+        }
         for w in &lock.warnings {
             self.events.emit(fnpm_types::Event::warn(w.clone(), None));
         }
@@ -170,11 +173,32 @@ impl Ctx {
     }
 
     /// [`Ctx::load`] that requires a lockfile (bun: `error: Lockfile not found`, with the
-    /// command's `nothing <x>` suffix).
+    /// command's `nothing <x>` suffix). One that does not parse stops the command, with its
+    /// source frame.
     pub fn load_locked(&self, nothing: &str) -> Result<(Project, Workspace, LockGraph)> {
-        let (p, ws, g) = self.load()?;
-        match g {
-            Some(g) => Ok((p, ws, g)),
+        self.load_locked_with(nothing, true)
+    }
+
+    /// [`Ctx::load_locked`]; `framed: false` names only the failure (bun `pm ls`).
+    pub fn load_locked_with(
+        &self,
+        nothing: &str,
+        framed: bool,
+    ) -> Result<(Project, Workspace, LockGraph)> {
+        let project = self.project()?;
+        let ws = project.workspace(&*self.events)?;
+        let lock = crate::install::load_lock(&project.config, &ws)?;
+        if let Some(failure) = &lock.parse_failure {
+            return Err(failure.read_error(framed));
+        }
+        for e in &lock.failures {
+            self.events.emit(e.clone());
+        }
+        for w in &lock.warnings {
+            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
+        }
+        match lock.graph {
+            Some(g) => Ok((project, ws, g)),
             None => Err(Error::usage(format!("missing lockfile, {nothing}"))),
         }
     }
