@@ -255,6 +255,11 @@ struct Inner {
     tuning: Tuning,
 }
 
+/// The integrities of the packages this process imported (or found published while
+/// importing), whichever [`Store`] value did it: the resolver and the fetcher open their own.
+static IMPORTED: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashSet<Integrity>>> =
+    std::sync::LazyLock::new(Default::default);
+
 fn spawn_cpu<T, F>(f: F) -> tokio::sync::oneshot::Receiver<Result<T>>
 where
     T: Send + 'static,
@@ -313,6 +318,12 @@ impl Store {
             root: root.to_path_buf(),
             inner: Arc::new(Inner { tmp, tuning }),
         })
+    }
+
+    /// Whether this process imported the package with `integrity` (an install with the cache
+    /// disabled takes only those from the store, and downloads the others again).
+    pub fn imported_here(&self, integrity: &Integrity) -> bool {
+        IMPORTED.lock().contains(integrity)
     }
 
     /// The store root (`…/store/v2`).
@@ -483,6 +494,9 @@ impl Store {
             },
         )
         .map_err(io_err(dest))?;
+        if let Some(integrity) = meta.integrity {
+            IMPORTED.lock().insert(integrity);
+        }
         match published {
             Published::Ours => {
                 staging.mark_published();

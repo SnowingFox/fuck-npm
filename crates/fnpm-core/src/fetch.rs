@@ -148,9 +148,10 @@ struct Inner {
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     counters: Counters,
     reused_packages: Option<Arc<AtomicU64>>,
-    /// A registry tarball is taken from the store when it is there already, and a tarball URL
-    /// without an integrity is found again by what it imported as last time. Off with the cache
-    /// disabled, where bun downloads every tarball again (unless `--offline`).
+    /// A download is taken from the store when it is there already, and a tarball URL without
+    /// an integrity is found again by what it imported as last time. Off with the cache
+    /// disabled, where bun downloads every tarball and clones every repository again (unless
+    /// `--offline`): only what this install already imported is taken from the store then.
     reuse_downloads: bool,
 }
 
@@ -377,10 +378,10 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             let url = tarball_url
                 .clone()
                 .unwrap_or_else(|| inner.client.default_tarball_url(name, version));
-            remote(inner, name, version, &url, *integrity, true).await
+            remote(inner, name, version, &url, *integrity).await
         }
         Resolution::RemoteTarball { url, integrity } => {
-            remote(inner, name, version, url, *integrity, false).await
+            remote(inner, name, version, url, *integrity).await
         }
         Resolution::Github {
             owner,
@@ -392,7 +393,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             let url = inner
                 .client
                 .github_tarball_url(owner, repo, resolved_commit);
-            remote(inner, name, version, &url, *integrity, false).await
+            remote(inner, name, version, &url, *integrity).await
         }
         Resolution::LocalTarball { path, integrity } => {
             // Resolution labels preserve the requested spelling, including redundant
@@ -445,7 +446,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             integrity,
             ..
         } => {
-            if let Some(hit) = cached(inner, name, version, *integrity) {
+            if let Some(hit) = reusable(inner, name, version, *integrity) {
                 return Ok(hit);
             }
             git(inner, name, version, url, resolved_commit).await
@@ -479,13 +480,25 @@ fn cached(
     Some(Fetched { entry, key })
 }
 
+/// [`cached`] for a download: with the cache disabled, only a package this install imported.
+fn reusable(
+    inner: &Inner,
+    name: &str,
+    version: &str,
+    integrity: Option<Integrity>,
+) -> Option<Fetched> {
+    let offline = inner.client.offline_mode() == fnpm_config::OfflineMode::Offline;
+    let integrity =
+        integrity.filter(|i| inner.reuse_downloads || offline || inner.store.imported_here(i))?;
+    cached(inner, name, version, Some(integrity))
+}
+
 async fn remote(
     inner: &Arc<Inner>,
     name: &str,
     version: &str,
     url: &str,
     integrity: Option<Integrity>,
-    registry: bool,
 ) -> Outcome {
     let offline = inner.client.offline_mode() == fnpm_config::OfflineMode::Offline;
     let reuse = inner.reuse_downloads || offline;
@@ -495,11 +508,7 @@ async fn remote(
             .then(|| inner.store.integrity_for_url(name, version, url))
             .flatten()
     });
-    // A registry tarball is downloaded again with the cache disabled; a tarball URL or GitHub
-    // archive was already read by this install's resolve.
-    if (reuse || !registry)
-        && let Some(hit) = cached(inner, name, version, known)
-    {
+    if let Some(hit) = reusable(inner, name, version, known) {
         return Ok(hit);
     }
     // `--no-verify` bytes that do not match the pin are stored under their own hash, never under
