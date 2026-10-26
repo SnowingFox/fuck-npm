@@ -2,11 +2,12 @@
 //! removals and the `update` targets (bun `UpdateRequest.rs`, `add_remove_with_filter.rs`,
 //! `updatePackageJSONAndInstall.rs`).
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use fnpm_config::Config;
 use fnpm_resolver::{Mode, Request};
-use fnpm_types::{DependencyGroup, Event, EventSink};
+use fnpm_types::{DependencyGroup, Event, EventSink, LockGraph, PackageId};
 use fnpm_workspace::{PackageJson, RootSelection, SelectOptions, Selector, Workspace};
 
 use crate::options::{InstallCommand, InstallOptions};
@@ -48,6 +49,11 @@ pub(crate) struct Planned {
     pub latest: bool,
     /// `--filter` / `-r`: the selected workspace paths (`None`: no selection).
     pub selected: Option<Vec<String>>,
+    /// `update <name|pattern>`: the ones no selected package.json declares. The install looks
+    /// them up in the lockfile (a transitive dependency is updated in place there).
+    pub unmatched: Vec<String>,
+    /// `update`: the workspace paths it targets, and whether `-r` / `--filter` chose them.
+    pub scope: (Vec<String>, bool),
 }
 
 fn manifest_of<'a>(ws: &'a Workspace, path: &str) -> &'a PackageJson {
@@ -191,6 +197,8 @@ pub(crate) fn plan(
         updates: Vec::new(),
         latest: opts.latest,
         selected: None,
+        unmatched: Vec::new(),
+        scope: (Vec::new(), false),
     };
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
@@ -274,6 +282,7 @@ pub(crate) fn plan(
         }
         InstallCommand::Update => {
             let (targets, selected) = targets(opts, ws, cwd, events)?;
+            planned.scope = (targets.clone(), selected);
             if selected {
                 planned.selected = Some(targets.clone());
             }
@@ -292,7 +301,26 @@ pub(crate) fn plan(
             };
             let mut names: Vec<String> = Vec::new();
             let mut patterns: Vec<String> = Vec::new();
+            // `!name` / `!glob` leave matching packages out of the update.
+            let mut negations: Vec<String> = Vec::new();
             for input in &opts.packages {
+                let input = input.trim();
+                if let Some(negated) = input.strip_prefix('!') {
+                    negations.push(negated.to_owned());
+                    continue;
+                }
+                if input.contains('*') {
+                    let scoped = input.strip_prefix('@').map_or(input, |rest| {
+                        rest.split_once('/').map_or(rest, |(_, name)| name)
+                    });
+                    if scoped.contains('@') {
+                        return Err(Error::usage(format!(
+                            "a version cannot be combined with a pattern: {input}"
+                        )));
+                    }
+                    patterns.push(input.to_owned());
+                    continue;
+                }
                 let p = Positional::parse(input)?;
                 match (&p.name, p.has_version()) {
                     (Some(name), true) => {
@@ -317,16 +345,17 @@ pub(crate) fn plan(
                     _ => patterns.push(p.input.clone()),
                 }
             }
+            let excluded = |name: &str| negations.iter().any(|pat| name_matches(pat, name));
             for target in &targets {
                 let m = manifest_of(ws, target);
                 for g in &groups {
                     for (name, literal) in m.group(*g) {
                         let wanted = if patterns.is_empty() {
-                            opts.packages.is_empty()
+                            opts.packages.len() == negations.len()
                         } else {
                             patterns.iter().any(|pat| name_matches(pat, name))
                         };
-                        if !wanted {
+                        if !wanted || excluded(name) {
                             continue;
                         }
                         if !names.contains(name) {
@@ -341,12 +370,20 @@ pub(crate) fn plan(
                 }
             }
             for pat in &patterns {
-                if !names.iter().any(|n| name_matches(pat, n)) {
-                    events.emit(Event::warn(
-                        format!("No dependency matched \"{pat}\""),
-                        Some("NO_MATCH"),
-                    ));
+                // A name declared only in peerDependencies is left as it is.
+                let peer = targets.iter().any(|t| {
+                    manifest_of(ws, t)
+                        .group(DependencyGroup::Peer)
+                        .iter()
+                        .any(|(n, _)| name_matches(pat, n))
+                });
+                if !peer && !names.iter().any(|n| name_matches(pat, n)) {
+                    planned.unmatched.push(pat.clone());
                 }
+            }
+            if !negations.is_empty() && patterns.is_empty() && names.is_empty() {
+                // Everything was left out: an update of nothing.
+                names.push(String::new());
             }
             // An explicit name list keeps transitive dependencies locked (`--depth 0` and
             // patterns); a bare update re-resolves every direct dependency.
@@ -374,6 +411,114 @@ pub(crate) fn plan(
         InstallCommand::Add => unreachable!("handled above"),
     }
     Ok(planned)
+}
+
+/// `update <name|pattern>` for what no targeted package.json declares: the packages of that
+/// name in the lockfile that the targeted workspaces reach move within their dependents'
+/// ranges (bun updates a transitive dependency in place). A name the lockfile lacks, or one
+/// only other workspaces reach, is an error that names the fix.
+pub(crate) fn update_from_lockfile(
+    planned: &mut Planned,
+    graph: Option<&LockGraph>,
+    lockfile: &str,
+    ws: &Workspace,
+) -> Result<()> {
+    if planned.unmatched.is_empty() {
+        return Ok(());
+    }
+    let reach = |path: &str| -> HashSet<String> {
+        let mut names = HashSet::new();
+        let Some(graph) = graph else { return names };
+        let start = if path.is_empty() {
+            Some(PackageId::ROOT)
+        } else {
+            graph.workspaces.get(path).copied()
+        };
+        let importers: HashSet<PackageId> = graph.workspaces.values().copied().collect();
+        let mut seen = HashSet::new();
+        let mut stack: Vec<PackageId> = start.into_iter().collect();
+        while let Some(id) = stack.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(p) = graph.get(id) else { continue };
+            for e in &p.dependencies {
+                let Some(t) = e.target else { continue };
+                if importers.contains(&t) || t == PackageId::ROOT {
+                    continue;
+                }
+                if let Some(target) = graph.get(t) {
+                    names.insert(target.name.clone());
+                }
+                stack.push(t);
+            }
+        }
+        names
+    };
+    let (targets, by_flag) = planned.scope.clone();
+    let mut scoped: HashSet<String> = HashSet::new();
+    for t in &targets {
+        scoped.extend(reach(t));
+    }
+    let mut extra: Vec<String> = Vec::new();
+    for pat in std::mem::take(&mut planned.unmatched) {
+        let in_lock: Vec<String> = graph
+            .map(|g| {
+                let mut v: Vec<String> = g
+                    .packages
+                    .iter()
+                    .skip(1)
+                    .filter(|p| {
+                        !matches!(p.resolution, fnpm_types::Resolution::Workspace { .. })
+                            && name_matches(&pat, &p.name)
+                    })
+                    .map(|p| p.name.clone())
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            })
+            .unwrap_or_default();
+        if in_lock.is_empty() {
+            return Err(Error::usage(if pat.contains('*') {
+                format!("no packages in {lockfile} match \"{pat}\"")
+            } else {
+                format!("\"{pat}\" is not in {lockfile}\n    fnpm add {pat}")
+            }));
+        }
+        let hits: Vec<String> = in_lock.into_iter().filter(|n| scoped.contains(n)).collect();
+        if hits.is_empty() {
+            let scope = if by_flag {
+                "the selected workspaces"
+            } else {
+                "this workspace"
+            };
+            let mut message =
+                format!("\"{pat}\" is not a dependency of {scope}\n    fnpm update -r {pat}");
+            let mut others: Vec<(String, String)> = Vec::new();
+            others.push((String::new(), ws.root.name.clone().unwrap_or_default()));
+            for m in &ws.members {
+                others.push((m.path.clone(), m.manifest.name.clone().unwrap_or_default()));
+            }
+            for (path, name) in others {
+                if targets.contains(&path) || !reach(&path).iter().any(|n| name_matches(&pat, n)) {
+                    continue;
+                }
+                let label = if name.is_empty() { path } else { name };
+                message.push_str(&format!("\n    fnpm update --filter {label} {pat}"));
+            }
+            return Err(Error::usage(message));
+        }
+        extra.extend(hits);
+    }
+    if let Mode::Update { names, .. } = &mut planned.mode {
+        for n in extra {
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The declared literal of `name` in the package at `workspace`.

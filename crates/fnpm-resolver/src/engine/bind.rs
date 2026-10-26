@@ -367,6 +367,10 @@ impl Engine<'_> {
         if self.update.names.is_empty() {
             return self.st[row.pkg.index()].kind == Kind::Project;
         }
+        // A bundled dependency ships inside its owner's tarball: it is never re-resolved.
+        if edge.behavior.is_bundled() || self.st[row.pkg.index()].in_bundle {
+            return false;
+        }
         self.update.names.contains(&edge.name) || self.update.names.contains(&asked.name)
     }
 

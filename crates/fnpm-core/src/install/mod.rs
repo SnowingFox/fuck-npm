@@ -436,6 +436,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
+    let lockfile_name = lock.path.as_deref().and_then(Path::file_name).map_or_else(
+        || "fnpm.lock".to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    plan::update_from_lockfile(&mut planned, lock.graph.as_ref(), &lockfile_name, &ws)?;
 
     if opts.dlx.is_some_and(|dlx| dlx.refresh) {
         let mut names: Vec<_> = lock
