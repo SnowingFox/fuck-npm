@@ -8,6 +8,7 @@
 mod discover;
 mod editor;
 pub mod filter;
+pub mod frame;
 pub mod glob;
 pub mod graph;
 mod jsonc;

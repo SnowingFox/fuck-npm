@@ -370,14 +370,33 @@ fn load_workspace(
                     !root.join(path).join("package.json").exists() && !listed(path)
                 });
             if let Some(entry) = missing.or((lock.graph.is_none()).then_some(entry.as_str())) {
-                return Err(fnpm_workspace::Error::WorkspaceNotFound(entry.to_owned()).into());
+                return Err(not_found(root, entry));
             }
             return Ok((ws, warnings, lock));
+        }
+        Err(fnpm_workspace::Error::WorkspaceNotFound(entry)) => {
+            return Err(not_found(root, &entry));
         }
         other => other?,
     };
     let lock = lock::load(config, &ws)?;
     Ok((ws, warnings, lock))
+}
+
+/// bun's `Workspace not found "<entry>"`, framed at the entry in the root package.json.
+fn not_found(root: &Path, entry: &str) -> Error {
+    let error = Error::from(fnpm_workspace::Error::WorkspaceNotFound(entry.to_owned()));
+    let path = root.join("package.json");
+    let frame = std::fs::read_to_string(&path).ok().and_then(|source| {
+        fnpm_workspace::frame::Frame::of_string_after(&source, "workspaces", entry)
+    });
+    match frame {
+        Some(frame) => Error::Framed {
+            message: frame.framed(&path, &error.to_string()),
+            source: Box::new(error),
+        },
+        None => error,
+    }
 }
 
 /// Writes fnpm.lock (with its sidecar), or bun.lockb when the project keeps it. Converting
