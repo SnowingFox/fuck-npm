@@ -38,7 +38,20 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
         };
         let i_end = i + now[i..].iter().take_while(|e| e.name == name).count();
         let j_end = j + before[j..].iter().take_while(|e| e.name == name).count();
-        let (a, b) = (&now[i..i_end], &before[j..j_end]);
+        // Same-name edges pair up by group: package.json and the lockfile need not list a
+        // name's groups in the same order (`dependencies` and `devDependencies`).
+        fn by_group<'a>(v: &[&'a DepEdge]) -> Vec<&'a DepEdge> {
+            let mut v = v.to_vec();
+            v.sort_by_key(|e| e.behavior.group());
+            v
+        }
+        // `optionalDependencies` replaces the same name in `dependencies` (as in
+        // `package_json_edges`); a lockfile from Bun 1.4 still lists both.
+        let (a, b) = (
+            by_group(&collapse_optional(&now[i..i_end])),
+            by_group(&collapse_optional(&before[j..j_end])),
+        );
+        let (a, b) = (a.as_slice(), b.as_slice());
         (i, j) = (i_end, j_end);
         let message = match (a.is_empty(), b.is_empty()) {
             (false, true) => Some("was added".to_owned()),
@@ -68,6 +81,58 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
             out.push(format!("{name} {m}{suffix}"));
         }
     }
+}
+
+/// Same-name edges as package.json declares them: without a `dependencies` one that an
+/// `optionalDependencies` one replaces, or the `*` optional peer that Bun 1.4 wrote next to the
+/// declared peer range.
+fn collapse_optional<'a>(edges: &[&'a DepEdge]) -> Vec<&'a DepEdge> {
+    let optional = edges.iter().any(|e| {
+        !e.behavior.is_peer() && e.behavior.group() == fnpm_types::DependencyGroup::Optional
+    });
+    let ranged_peer = edges
+        .iter()
+        .any(|e| e.behavior.is_peer() && e.literal != "*");
+    edges
+        .iter()
+        .copied()
+        .filter(|e| !optional || !shadowed_by_optional(e))
+        .filter(|e| !(ranged_peer && e.behavior.is_peer() && e.literal == "*"))
+        .collect()
+}
+
+/// A `dependencies` edge (not a dev, optional or peer one).
+fn shadowed_by_optional(e: &DepEdge) -> bool {
+    e.behavior.group() == fnpm_types::DependencyGroup::Prod
+}
+
+/// Bun 1.4 and older left a workspace out of the lockfile when a root dependency on a registry
+/// version of its name took its entry: a tag, or a range that the workspace's version does not
+/// satisfy, under its own name or by an `npm:` alias of it. Such a lockfile is not missing the
+/// workspace for a frozen install. A plain one keeps it too while the dependency is under the
+/// workspace's own name (`own_name_only`): that one has the workspace's folder in node_modules.
+fn dropped_by_bun_1_4(
+    root: &[DepEdge],
+    member: &fnpm_workspace::Member,
+    own_name_only: bool,
+) -> bool {
+    use fnpm_semver::{Range, Version};
+    let Ok(version) = Version::parse(&member.version) else {
+        return false;
+    };
+    root.iter().any(|e| {
+        if e.behavior.is_workspace() || (own_name_only && e.name != member.name) {
+            return false;
+        }
+        match fnpm_types::DependencySpec::parse(&e.name, &e.literal) {
+            Ok(fnpm_types::DependencySpec::DistTag { name, .. }) => name == member.name,
+            Ok(fnpm_types::DependencySpec::Npm { name, range, .. }) => {
+                name == member.name
+                    && matches!(Range::parse(&range), Ok(r) if !r.satisfies(&version))
+            }
+            _ => false,
+        }
+    })
 }
 
 /// The root fields whose change bun names in its frozen note, in its order (`catalogs` is
@@ -180,7 +245,9 @@ pub(crate) fn classified(
     paths.sort_unstable();
     for member in &ws.members {
         let Some(prev_id) = prev.workspaces.get(&member.path) else {
-            out.push(format!("workspace {} was added", member.path));
+            if !dropped_by_bun_1_4(&root_edges, member, !frozen) {
+                out.push(format!("workspace {} was added", member.path));
+            }
             continue;
         };
         let p = &prev.packages[prev_id.index()];
@@ -418,7 +485,18 @@ pub(crate) fn stale_pin(prev: &LockGraph) -> bool {
         prev.packages[id.index()].dependencies.iter().any(|e| {
             let Some(t) = e.target else { return false };
             let target = &prev.packages[t.index()];
+            // Another edge of the name decides the package (an optional one replacing it, or
+            // one in another group, a tag of Bun 1.4's, on the same package).
+            let replaced = prev.packages[id.index()].dependencies.iter().any(|o| {
+                !std::ptr::eq(o, e)
+                    && o.name == e.name
+                    && !o.behavior.is_peer()
+                    && (o.target == e.target
+                        || (shadowed_by_optional(e)
+                            && o.behavior.group() == fnpm_types::DependencyGroup::Optional))
+            });
             if e.behavior.is_peer()
+                || replaced
                 || !matches!(target.resolution, fnpm_types::Resolution::Npm { .. })
                 || prev.overrides.iter().any(|r| {
                     r.selector.target.name == e.name || r.selector.target.name == target.name

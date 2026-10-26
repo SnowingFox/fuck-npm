@@ -584,3 +584,58 @@ async fn workspace_version_changes_keep_locked_peer_copies_even_outside_their_ra
     assert_eq!(versions(&out.graph, "host"), ["1.0.0"]);
     assert_eq!(versions(&out.graph, "extra"), ["1.0.0"]);
 }
+
+/// Bun 1.4 left a workspace out of the lockfile when the root's dependency on a registry version
+/// of its name (a range its version does not satisfy, or an alias of it) took its entry.
+#[tokio::test]
+async fn frozen_accepts_a_workspace_that_bun_1_4_left_out() {
+    let h = Harness::new();
+    registry(&h);
+    for (deps, plain_keeps) in [
+        (json!({"a": "1.0.0"}), true),
+        (json!({"pub": "npm:a@1.0.0"}), false),
+    ] {
+        let older = workspace(json!({ "dependencies": deps }), &[]);
+        let first = h.install(&older).await.graph;
+        let ws = workspace(
+            json!({ "dependencies": deps }),
+            &[("packages/a", json!({"name": "a", "version": "3.0.0"}))],
+        );
+        let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+        assert_eq!(frozen.graph, first, "{deps}");
+        let plain = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
+        assert_eq!(!plain.changed, plain_keeps, "{deps}");
+    }
+    // A version the range accepts: the workspace is new.
+    let older = workspace(json!({"dependencies": {"a": "^1"}}), &[]);
+    let first = h.install(&older).await.graph;
+    let ws = workspace(
+        json!({"dependencies": {"a": "^1"}}),
+        &[("packages/a", json!({"name": "a", "version": "1.5.0"}))],
+    );
+    match h.run(&ws, Some(&first), Mode::Frozen).await {
+        Err(Error::FrozenLockfile { changes, .. }) => {
+            assert_eq!(changes, ["workspace packages/a was added"]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Bun 1.4 wrote a name that is in `dependencies` and `optionalDependencies` (or in
+/// `dependencies` and, by a tag, in `devDependencies`) twice; package.json still says the same.
+#[tokio::test]
+async fn frozen_accepts_names_that_bun_1_4_wrote_twice() {
+    let h = Harness::new();
+    registry(&h);
+    let ws = workspace(
+        json!({"dependencies": {"a": "1.0.0"}, "optionalDependencies": {"a": "^1"}}),
+        &[],
+    );
+    let mut first = h.install(&ws).await.graph;
+    let optional = first.root().dependencies[0].clone();
+    let mut prod = fnpm_types::DepEdge::new("a", "1.0.0", DependencyGroup::Prod.behavior());
+    prod.target = optional.target;
+    first.packages[0].dependencies.insert(0, prod);
+    let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+    assert!(!frozen.changed);
+}
