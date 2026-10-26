@@ -1229,7 +1229,9 @@ impl Engine<'_> {
                         edge.name
                     ),
                 })?;
-            let mut package = local::package_from_json(&pj, &edge.name, resolution);
+            // bun names a folder without a package.json name after the folder.
+            let fallback = fnpm_types::name::fallback_package_name(&rel).to_owned();
+            let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);
                 return Ok(Step::Done);
@@ -1664,10 +1666,19 @@ impl Engine<'_> {
                 if let Some(integrity) = fetched.integrity {
                     resolution.set_integrity(integrity);
                 }
-                let fallback = waiters
-                    .first()
-                    .map(|w| self.edge(*w).name.clone())
-                    .unwrap_or_default();
+                // bun names a tarball without a package.json name after its file.
+                let fallback = match &resolution {
+                    Resolution::RemoteTarball { url, .. } => {
+                        fnpm_types::name::fallback_package_name(url).to_owned()
+                    }
+                    Resolution::LocalTarball { path, .. } => {
+                        fnpm_types::name::fallback_package_name(path).to_owned()
+                    }
+                    _ => waiters
+                        .first()
+                        .map(|w| self.edge(*w).name.clone())
+                        .unwrap_or_default(),
+                };
                 let mut package =
                     local::package_from_json(&fetched.manifest, &fallback, resolution);
                 let id = match self.by_key.get(&package.key()) {
