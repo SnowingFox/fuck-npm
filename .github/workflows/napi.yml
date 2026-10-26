@@ -84,6 +84,7 @@ jobs:
           # zig passes its baseline CPU's features explicitly, including -evex512, so
           # libdeflate's AVX-512 functions (target attributes without evex512) fail to compile.
           CFLAGS_x86_64_unknown_linux_musl: -mevex512
+          CFLAGS_x86_64_unknown_linux_gnu: -mevex512
         run: >
           npx napi build --platform --profile release-napi --target "${{ matrix.build_target || matrix.target }}"
           ${{ matrix.flags }}
@@ -92,6 +93,7 @@ jobs:
         shell: bash
         env:
           CFLAGS_x86_64_unknown_linux_musl: -mevex512
+          CFLAGS_x86_64_unknown_linux_gnu: -mevex512
         run: |
           if [[ "${{ matrix.zig }}" == "true" ]]; then
             cargo zigbuild --release --locked -j 4 -p fnpm-cli --bins --target "${{ matrix.build_target || matrix.target }}"
@@ -155,6 +157,7 @@ jobs:
   smoke:
     name: smoke ${{ matrix.target }}
     needs: build
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
