@@ -1641,7 +1641,7 @@ catalogs:
       files: () => ({ ".yarnrc.yml": `npmRegistryServer: "http://127.0.0.1:${testRegistry.port}/"\n` }),
       lock: () => yarnLock({ "berry-reject@workspace:.": rootEntry([`  no-deps: "npm:^1.0.0"`]), ...noDeps100 }),
       error: () =>
-        `error: yarn fetches "no-deps" from http://127.0.0.1:${testRegistry.port}/ and fnpm is configured to fetch it from ${testRegistry.registryUrl()}; add the registry to bunfig.toml or .npmrc`,
+        `error: yarn fetches "no-deps" from http://127.0.0.1:${testRegistry.port}/ and fnpm is configured to fetch it from ${testRegistry.registryUrl()}; add the registry to fnpm.toml or .npmrc`,
     },
     {
       name: "a scope registry in .yarnrc.yml that is not bun's",
