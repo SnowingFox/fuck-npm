@@ -165,9 +165,12 @@ The 18-project corpus has **13 PASS / 5 KNOWN / 0 unexpected failures**.
 See [conformance status](tests/conformance/STATUS.md) and
 [corpus results](tests/e2e/results/2026-10-26-land.md). Full parity remains open.
 
-[Platform CI for `ff9c309`](https://github.com/SnowingFox/fuck-npm/actions/runs/40256325760)
-passed all 21 jobs: eight release addon builds, eight native smoke tests, and five test jobs across
-Linux, macOS and Windows. Native executable packaging and full platform conformance remain open.
+[Platform CI for `00ec69f`](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514)
+passed all 21 jobs: eight builds containing the native `fnpm` / `fnpm-lock` executables and addon,
+eight npm tarball installation smokes, and five test jobs across Linux, macOS and Windows.
+Each installation smoke covers normal and `--ignore-scripts` installs, versions/help, addon loading,
+a local tarball dependency, and offline/no-op/frozen reinstalls. Public npm publication, installation
+through other package managers, and full platform conformance remain open.
 
 - **Lockfiles.** With no `fnpm.lock`, the first install migrates `package-lock.json` /
   `npm-shrinkwrap.json` (lockfileVersion 2 to 4; v1 isn't read), `yarn.lock` (v1 and berry), `pnpm-lock.yaml`

@@ -1928,12 +1928,17 @@ done when the conformance tests for its PARITY rows pass.
 
 ## Packaging and distribution
 
-Status: planned (P6 in `docs/ROADMAP.md`). The shape follows bun's npm distribution
-(`submodule/bun/packages/bun-release`), with napi-rs's prebuilt-package conventions.
+Status: implemented and verified with staged npm tarballs on all eight targets
+([`00ec69f` CI](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514)); public
+npm publication and other package-manager installs remain open (P6 in `docs/ROADMAP.md`).
+The shape follows bun's npm distribution (`submodule/bun/packages/bun-release`), with
+napi-rs's prebuilt-package conventions. The names below are source workspace names:
+`scripts/stage-release.mjs --name <owned-name>` generates the actual published namespace.
+The unscoped npm name `fuck-npm` belongs to an unrelated package.
 
 | package | contents |
 |---|---|
-| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm` and `bin/fnpm-lock` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
+| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm`, `bin/fnpm-lock` and `bin/fnpmx` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
 | `@fuck-npm/binding` | the loader (`index.js`, `index.d.ts`) that finds `fnpm.<triple>.node` |
 | `@fuck-npm/binding-<triple>` | `fnpm.<triple>.node`, plus the native `fnpm` and `fnpm-lock` executables (`.exe` on Windows); `os` / `cpu` / `libc` set so package managers install only the matching one |
 
@@ -1945,8 +1950,10 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
   `packages/bun-release/src/npm/install.ts`) resolves the platform package (from `fuck-npm`,
   then from `@fuck-npm/binding`, the only package an isolated layout lets see it); if it is
   missing (`--no-optional`) it `npm install`s it into a temp dir and moves it under
-  `fuck-npm/node_modules`, and failing that downloads the tarball from the registry
-  (`npm_config_registry`) and checks it against the packument's integrity. It then runs each
+  the binding's own `node_modules` (or the CLI's when the binding cannot be resolved),
+  so both loaders can resolve it. Failing that it downloads the tarball from the registry
+  (`npm_config_registry`), checks it against the packument's integrity, and extracts
+  the addon and both executables. It then runs each
   executable's `--version`, requires the package version, and replaces `bin/fnpm` and
   `bin/fnpm-lock` with hardlinks to (or copies of) the executables: link or copy to a temp name,
   then rename, so a store-backed file is never written in place. Package managers point
@@ -1967,15 +1974,20 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
   `fnpm doctor` reports when the shim is in use and how to fix it.
 - **Windows.** npm's `cmd-shim` writes `.bin/fnpm.cmd` before postinstall runs and bakes in the
   interpreter from the shebang of whatever `bin/fnpm` is at that moment. bun publishes a
-  shebang-less placeholder for this reason. The Windows layout (placeholder vs JS shim, and
-  `.exe` naming) is settled in P6 with tests on real npm, pnpm, yarn and bun installs.
+  shebang-less placeholder for this reason. fnpm retains the JS shim on Windows;
+  it launches the platform package's `.exe` with explicit bundle entry paths. Both
+  architectures pass staged npm tarball smoke with scripts enabled and disabled.
+  Other package-manager installs and full bin conformance remain to be tested.
 - **Size.** The native executable and `fnpm.node` both link `fnpm-core`, so each platform package
   carries the core twice. Accepted for now; the alternative (the TS CLI calling the native
   binary instead of napi) can be revisited after measuring.
-- **Versioning and publishing.** Every package shares one version. CI builds
-  `cargo build --release -p fnpm-cli` and `napi build --platform --release` per target,
-  publishes the platform packages first and `fuck-npm` last. Publishing is manual and needs an
-  `NPM_TOKEN` secret.
+- **Versioning and publishing.** Every package shares one version. CI builds release
+  launchers and a `release-napi` addon per target; GNU Linux uses Zig with a glibc 2.17
+  baseline. It installs staged tarballs through a temporary localhost registry on all
+  eight targets. Publication runs manually on the release Mac using local npm authentication:
+  platforms first, binding next, CLI last. The release scripts check bundle chunks, tarball
+  contents and SHA-512 integrity. Retrying skips an existing exact version only when registry
+  integrity matches. See [RELEASING.md](RELEASING.md) for commands.
 
 ## Startup budget
 

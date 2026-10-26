@@ -41,6 +41,17 @@ regression. The combined Linux follow-up passed 526 tests (3 ignored), strict Cl
 Windows scripts passed all-target strict cross-Clippy. This validates the addon matrix and selected
 platform regressions, not the full workspace/conformance suite or native launcher distribution.
 
+The [complete native distribution run for `00ec69f`](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514)
+subsequently passed all 21 jobs: eight release builds containing both executables and the addon,
+eight installed npm tarball smokes, and five native test jobs. The installation smokes cover
+normal and `--ignore-scripts` installs on both macOS and Windows architectures and Linux GNU/musl
+on x64/ARM64. They verify versions/help, addon loading, a local tarball dependency, and
+offline/no-op/frozen reinstalls. Windows smoke exposed a positional parser that replaced paired
+backslashes instead of individual separators; the repair and its native regression tests pass.
+All ten npm tarballs were also packed and dry-run published from macOS, where the native preview
+was installed and exercised. Public npm publication is still blocked by local authentication and
+an owned package namespace; other package-manager installation tests and full conformance remain.
+
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
 - Registry/adapter harness: 52 passed, 1 expected failure, 2 skipped, 1 todo.
@@ -51,7 +62,7 @@ platform regressions, not the full workspace/conformance suite or native launche
   strict speed gate fails 9/22 comparisons, combined disk below Bun on 4/4 and pnpm on 4/4 fixtures.
 - PARITY remains 231 checked / 183 open; no row was completed merely by merging these tracks.
 
-Full Bun conformance, speed in every scenario, extra cache size, complete platform suites and native launcher distribution remain open.
+Full Bun conformance, speed in every scenario, extra cache size, complete platform suites and public npm publication remain open.
 Scanner matrix TTY callbacks and subprocess resource-usage APIs are still missing in the Node test adapter.
 A measured adapter deadlock on reading subprocess output after exit was fixed with eager pipe draining.
 Trust transitions currently force a conservative relink of the selected layout so newly enabled scripts
@@ -263,10 +274,10 @@ reviewed, and all PARITY.md rows outside "Excluded" ticked.
 | deliverable | status |
 |---|---|
 | CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | partial; selected store/binding/patch tests, strict Clippy and binding/adapter JS tests pass on native Linux/macOS/Windows; full suites and btrfs remain |
-| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | [576363f run](https://github.com/SnowingFox/fuck-npm/actions/runs/40262732529): all eight complete builds and six macOS/Linux tarball install smokes pass; Windows smoke exposed positional backslash normalization, now repaired pending rerun |
-| npm CLI, binding and eight platform packages; postinstall swap and JS shim fallback | staged namespace-aware packaging and tarball validation implemented; unscoped name is occupied; npm authentication/owned namespace and complete release artifacts still required |
-| Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | selected store/patch/binding tests and both release addon smoke jobs pass; native executable distribution and full bin conformance remain |
-| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` smoke on both macOS architectures and four Linux targets; local macOS ARM64 native preview verified; Windows repair pending rerun; published-package and other-manager checks remain |
+| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | done: [00ec69f run](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514) passed all eight complete builds and eight installed npm tarball smokes |
+| npm CLI, binding and eight platform packages; postinstall swap and JS shim fallback | staging, complete native artifacts, tarball validation, native swap and shim install paths verified; unscoped name is occupied; npm authentication/owned namespace and public publication remain |
+| Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | native executables and addon build on x64/ARM64; installed JS shim launching native binaries passes both npm smoke jobs; selected store/patch/binding tests pass; full bin conformance and other package-manager installs remain |
+| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` smoke on all eight targets; local macOS ARM64 native preview verified; published-package and other-manager checks remain |
 | Publish dry run, then the first release (manual authentication on release machine) | all ten tarballs packed and publish dry run passed on macOS; authentication/owned namespace still required; no npm package published yet; see [RELEASING.md](RELEASING.md) |
 
 Exit criteria:
