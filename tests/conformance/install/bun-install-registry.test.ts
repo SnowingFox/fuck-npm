@@ -105,7 +105,7 @@ describe.concurrent("auto-install", () => {
   test("symlinks (and junctions) are created correctly in the install cache", async () => {
     const { packageDir, env } = await setupTest();
     const { stdout, stderr, exited } = spawn({
-      cmd: [fnpmExe(), "--print", "require('is-number')"],
+      cmd: [nodeExe(), "--print", "require('is-number')"],
       cwd: packageDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -2565,7 +2565,7 @@ describe.concurrent("tarballs of a fresh resolve", () => {
     const names = Object.keys(project.requires ?? {});
     if (names.length === 0) return;
     await using proc = spawn({
-      cmd: [fnpmExe(), "-p", `JSON.stringify([${names.map(name => `require(${JSON.stringify(name)})`).join(", ")}])`],
+      cmd: [nodeExe(), "-p", `JSON.stringify([${names.map(name => `require(${JSON.stringify(name)})`).join(", ")}])`],
       cwd,
       stdout: "pipe",
       stderr: "pipe",
