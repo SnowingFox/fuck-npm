@@ -177,6 +177,16 @@ to the newest results file.
 
 ## Real projects
 
+The measured repositories are [OpenNext Cloudflare](https://github.com/opennextjs/opennextjs-cloudflare),
+[OpenCode](https://github.com/anomalyco/opencode), [tRPC](https://github.com/trpc/trpc),
+[Excalidraw](https://github.com/excalidraw/excalidraw) and [Jest](https://github.com/jestjs/jest).
+The [README results tables](../README.md#real-repositories-opennext-opencode-trpc-excalidraw-and-jest)
+show every project/tool timing, combined disk and actual project validation up front.
+The [complete real-project report](results/2026-10-26-linux-x64-real-projects.md)
+contains pinned revisions, raw-sample ranges and package-set differences. It includes
+a separate OpenNext script-enabled install with source-built better-sqlite3,
+37 test files / 364 tests and a real SQL query; timed installs have scripts disabled.
+
 `real.ts` measures OpenNext Cloudflare, tRPC, Excalidraw, Jest and OpenCode from
 pinned git revisions. Sources must be git checkouts named `opennextjs-cloudflare`,
 `trpc`, `excalidraw`, `jest` and `opencode` under `--sources` (default:
