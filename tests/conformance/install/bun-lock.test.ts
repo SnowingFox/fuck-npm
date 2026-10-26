@@ -1577,7 +1577,7 @@ it("prints an actionable error for a lockfile version newer than this build supp
 
   expect(err).toContain("Unsupported lockfile version 99");
   expect(err).toContain("newer version of fnpm");
-  expect(err).toMatch(/This is Bun v\d+\.\d+\.\d+/);
+  expect(err).toMatch(/This is fnpm v\d+\.\d+\.\d+/);
   expect(err).toMatch(/supports lockfile versions up to \d+/);
   expect(err).toContain("Run 'bun upgrade'");
   // the old message gave no hint at all
