@@ -1259,7 +1259,8 @@ function fnpmVersion(): string {
 
 export const version = fnpmVersion();
 export const revision = "";
-export const version_with_sha = version;
+// bun's is "v<version> (<revision>)"; fnpm prints no revision in its headers.
+export const version_with_sha = `v${version}`;
 export const env = process.env;
 export const argv = process.argv;
 export const main = process.argv[1] ?? "";
