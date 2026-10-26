@@ -27,6 +27,7 @@ mod scan;
 mod scripts;
 mod table;
 mod update_interactive;
+mod view;
 mod why;
 pub(crate) use update_interactive::edits as interactive_edits;
 
@@ -240,7 +241,7 @@ pub async fn dispatch(
         ["outdated"] => outdated::run(&cx).await,
         ["why"] | ["pm", "why"] => why::why(&cx),
         ["ls"] | ["list"] | ["pm", "ls" | "list"] => ls::ls(&cx),
-        ["info" | "view" | "show"] | ["pm", "view" | "info"] => info::view(&cx).await,
+        ["info" | "view" | "show"] | ["pm", "view" | "info"] => view::view(&cx).await,
         ["whoami"] | ["pm", "whoami"] => info::whoami(&cx).await,
         ["audit"] | ["pm", "audit"] => info::audit(&cx, false).await,
         ["link"] => link::link(&cx).await,

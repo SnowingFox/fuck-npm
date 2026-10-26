@@ -134,12 +134,13 @@ async fn info_reads_the_packument() {
         .invoke(&["info"], &["a", "dist-tags.latest"], json!({}))
         .await
         .unwrap();
-    assert_eq!(r.data.unwrap(), json!("1.2.0"));
+    assert_eq!(r.data.unwrap(), json!({ "dist-tags.latest": "1.2.0" }));
+    // Said on stderr, like bun.
     let err = p
         .invoke(&["info"], &["missing-pkg"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "NOT_FOUND");
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -424,9 +424,7 @@ impl BinLinker {
         }
         if self.seen.contains(name) {
             // The name is taken, and `fnpm x <this package>` still runs the file itself.
-            if refresh {
-                make_executable(real_target, &target_meta);
-            }
+            make_executable(real_target, &target_meta);
             return Ok(One::Skipped);
         }
         self.seen.insert(name.to_owned());
@@ -708,6 +706,31 @@ pub fn link_bins(
             ..BinOptions::default()
         },
     )
+}
+
+/// Makes the bin files of the package at `package_dir` executable, without linking them: an
+/// install script can write a bin after the bins were linked (bun makes it executable once the
+/// script ran). Targets outside the package are left alone.
+pub fn make_bins_executable(bin: &Bin, package_dir: &Path) {
+    let one = |target: &str| {
+        if target.is_empty() || bin_target_escapes_package_dir(target) {
+            return;
+        }
+        let file = package_dir.join(target.trim_end_matches(['/', '\\']));
+        if needs_resolved_containment_check(target) && resolved_parent_escapes(package_dir, &file) {
+            return;
+        }
+        if let Ok(meta) = std::fs::metadata(&file)
+            && meta.is_file()
+        {
+            make_executable(&file, &meta);
+        }
+    };
+    match bin {
+        Bin::None | Bin::Dir { .. } => {}
+        Bin::File { path } | Bin::NamedFile { path, .. } => one(path),
+        Bin::Map { entries } => entries.iter().for_each(|(_, path)| one(path)),
+    }
 }
 
 /// Removes the links in `bin_dir` that point into `package_dir` (`fnpm remove`, relinks).

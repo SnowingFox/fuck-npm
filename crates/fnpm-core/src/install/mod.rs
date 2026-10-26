@@ -2091,8 +2091,19 @@ async fn run_scripts(
         }
         Ok(())
     };
+    let ran: Vec<(PackageId, PathBuf)> = plan
+        .jobs
+        .iter()
+        .map(|job| (job.package, job.dir.clone()))
+        .collect();
     fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
         .await?;
+    // A script may have written the package's bins after they were linked.
+    for (id, dir) in ran {
+        if let Some(p) = graph.get(id) {
+            fnpm_linker::bins::make_bins_executable(&p.bin, &dir);
+        }
+    }
     Ok(blocked)
 }
 

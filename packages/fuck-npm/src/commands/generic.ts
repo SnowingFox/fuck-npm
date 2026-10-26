@@ -9,7 +9,7 @@ import type { CommandContext } from "./context.ts";
 import { startListener } from "./install.ts";
 
 /** Commands whose `lines` are the whole output, also with `--json`. */
-const RAW_OUTPUT = new Set(["pm pkg", "pm licenses"]);
+const RAW_OUTPUT = new Set(["pm pkg", "pm licenses", "info", "view", "show", "pm view", "pm info"]);
 
 /**
  * Every command without a dedicated handler: validate, then hand the request

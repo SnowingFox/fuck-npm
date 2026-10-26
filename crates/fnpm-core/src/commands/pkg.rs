@@ -9,7 +9,8 @@ use super::json_text::{self, ParseError};
 use super::{Ctx, exit};
 use crate::{CoreResult, Error, Result};
 
-const EMPTY_BRACKETS_GET: &str = "Empty brackets are not valid syntax for retrieving values.";
+pub(super) const EMPTY_BRACKETS_GET: &str =
+    "Empty brackets are not valid syntax for retrieving values.";
 const EMPTY_BRACKETS_DELETE: &str = "Empty brackets are not valid syntax for deleting values.";
 
 /// Prints `error: <message>` (and `note: <note>`) and fails without another word from the CLI.
@@ -30,7 +31,7 @@ fn quote(s: &str) -> String {
 
 /// One step of a key path such as `contributors[0].name` or `keywords[]`.
 #[derive(Clone, Copy)]
-struct Segment<'a> {
+pub(super) struct Segment<'a> {
     /// An index when applied to an array, else a property name. Empty only for `[]` (append).
     name: &'a str,
     /// `a[b]` rather than `a.b`: `files[0]=x` and `files[]=x` create an array, `config.0=x`
@@ -41,7 +42,7 @@ struct Segment<'a> {
 }
 
 impl Segment<'_> {
-    fn is_append(self) -> bool {
+    pub(super) fn is_append(self) -> bool {
         self.name.is_empty()
     }
 
@@ -62,7 +63,7 @@ fn decimal(s: &str) -> Option<usize> {
 }
 
 /// `[...]` holds one literal name, dots included. `None`: an unclosed `[`.
-fn parse_key_path(key: &str) -> Option<Vec<Segment<'_>>> {
+pub(super) fn parse_key_path(key: &str) -> Option<Vec<Segment<'_>>> {
     let mut segments = Vec::new();
     let mut start = 0;
     while start < key.len() {
@@ -240,7 +241,7 @@ fn get(cx: &Ctx, keys: &[&str]) -> Result<CoreResult> {
 
 /// Like in npm, a name applied to an array (`maintainers.name`) reads `maintainers[0].name`,
 /// and so on; `label` is the path walked so far, used once an array was `expanded`.
-fn query_in(
+pub(super) fn query_in(
     value: &Value,
     path: &[Segment<'_>],
     key: &str,
