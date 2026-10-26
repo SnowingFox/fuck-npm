@@ -176,7 +176,7 @@ const WHY: CommandLeaf = {
   name: "why",
   description: "Explain why a package is installed",
   positionals: [
-    pos("package", "Package name or glob to explain", { required: true }),
+    pos("package", "Package name or glob to explain"),
   ],
   flags: F.WHY,
   ignoresRuntimeFlags: true,
@@ -377,28 +377,17 @@ const PM_CACHE: CommandGroup = {
   ],
 };
 
-const PM_PKG: CommandGroup = {
-  kind: "group",
-  name: "pkg",
-  description: "Read and edit package.json",
-  children: [
-    pm("get", "Print properties of package.json", {
-      positionals: [pos("keys", "Property paths, e.g. scripts.build", { variadic: true })],
+// One leaf like bun: the core reads the subcommand, prints help for `help` (or none) and
+// rejects unknown ones, and `--json` means "parse the values as JSON".
+const PM_PKG: CommandLeaf = pm("pkg", "Read and edit package.json (get, set, delete, fix)", {
+  usageText: "fnpm pm pkg <get|set|delete|fix|help> [...args]",
+  positionals: [
+    pos("subcommand", "get | set | delete | fix | help"),
+    pos("args", "Property paths, or key=value pairs for set (values parse as JSON with --json)", {
+      variadic: true,
     }),
-    pm("set", "Set properties of package.json", {
-      positionals: [
-        pos("assignments", "key=value pairs; values parse as JSON with --json", {
-          required: true,
-          variadic: true,
-        }),
-      ],
-    }),
-    pm("delete", "Delete properties of package.json", {
-      positionals: [pos("keys", "Property paths to delete", { required: true, variadic: true })],
-    }),
-    pm("fix", "Normalize package.json and fix common errors"),
   ],
-};
+});
 
 const PM: CommandGroup = {
   kind: "group",
@@ -413,7 +402,7 @@ const PM: CommandGroup = {
     }),
     pm("why", "Explain why a package is installed", {
       flags: F.PM_WHY,
-      positionals: [pos("package", "Package name or glob", { required: true })],
+      positionals: [pos("package", "Package name or glob")],
     }),
     pm("hash", "Print the hash of the current lockfile"),
     pm("hash-string", "Print the string the lockfile hash is computed from"),

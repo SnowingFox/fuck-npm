@@ -13,16 +13,20 @@ mod diff;
 mod files;
 mod info;
 mod inspect;
+mod json_text;
+mod licenses;
 mod link;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
 pub(crate) mod patch;
+mod pkg;
 mod publish;
 mod scan;
 mod scripts;
 mod table;
 mod update_interactive;
+mod why;
 pub(crate) use update_interactive::edits as interactive_edits;
 
 use std::path::PathBuf;
@@ -233,7 +237,7 @@ pub async fn dispatch(
     let cx = Ctx::new(request, events, env);
     match path.as_slice() {
         ["outdated"] => outdated::run(&cx).await,
-        ["why"] | ["pm", "why"] => inspect::why(&cx),
+        ["why"] | ["pm", "why"] => why::why(&cx),
         ["ls"] | ["list"] | ["pm", "ls" | "list"] => inspect::ls(&cx),
         ["info" | "view" | "show"] | ["pm", "view" | "info"] => info::view(&cx).await,
         ["whoami"] | ["pm", "whoami"] => info::whoami(&cx).await,
@@ -247,7 +251,7 @@ pub async fn dispatch(
         ["init"] => files::init(&cx),
         ["migrate"] | ["pm", "migrate"] => maintenance::migrate(&cx, false).await,
         ["cache", rest @ ..] | ["pm", "cache", rest @ ..] => maintenance::cache(&cx, rest),
-        ["pkg", rest @ ..] | ["pm", "pkg", rest @ ..] => files::pkg(&cx, rest),
+        ["pkg", rest @ ..] | ["pm", "pkg", rest @ ..] => pkg::run(&cx, rest),
         ["store", rest @ ..] => maintenance::store(&cx, rest),
         ["doctor"] => maintenance::doctor(&cx).await,
         ["pm", "bin"] => inspect::bin(&cx),
@@ -258,13 +262,13 @@ pub async fn dispatch(
         ["pm", "trust"] => scripts::trust(&cx).await,
         ["pm", "default-trusted"] => scripts::default_trusted(),
         ["pm", "version"] => files::version(&cx).await,
-        ["pm", "licenses"] => inspect::licenses(&cx),
+        ["pm", "licenses"] => licenses::run(&cx),
         ["pm", "fetch"] => maintenance::fetch(&cx).await,
         ["lock", "migrate"] => maintenance::migrate(&cx, true).await,
         ["lock", "export"] => maintenance::export(&cx),
         ["lock", "verify"] => inspect::verify(&cx),
         ["lock", "diff"] => inspect::diff(&cx),
-        ["lock", "why"] => inspect::why(&cx),
+        ["lock", "why"] => why::why(&cx),
         ["lock", "print"] => inspect::print(&cx),
         ["lock", "dedupe"] => maintenance::dedupe(&cx, true).await,
         ["lock", "audit"] => info::audit(&cx, true).await,

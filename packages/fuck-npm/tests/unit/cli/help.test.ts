@@ -95,7 +95,7 @@ describe("help and tree entry points", () => {
     [["add", "react", "--help"], "fnpm add"],
     [["help", "pm", "cache", "rm"], "fnpm pm cache rm"],
     [["pm", "cache", "rm", "-h"], "fnpm pm cache rm"],
-    [["pm"], "fnpm pm <subcommand>"],
+    [["pm"], "Usage: fnpm pm [flags] [<command>]"],
     [[], "fnpm <command>"],
   ])("%j prints %s help without loading the core", async (args, expected) => {
     const bed = testBed();

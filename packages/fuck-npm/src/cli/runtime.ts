@@ -72,6 +72,7 @@ export async function runParsedCli(
       return 0;
     }
     if (plan.wantsHelp) {
+      if (isPm(registry, plan.matched)) return await writePmHelp(runtime);
       return await writeHelp(registry, runtime, plan.matched.join(" "));
     }
     if (plan.wantsVersion) {
@@ -92,6 +93,11 @@ export async function runParsedCli(
     let path = plan.matched;
     if (node.kind === "group") {
       if (plan.unknownSegment !== undefined) {
+        if (isPm(registry, path)) {
+          await writePmHelp(runtime);
+          runtime.stderr.write(`\nerror: "${plan.unknownSegment}" unknown command\n`);
+          return 1;
+        }
         throw new SilentError(
           `Unknown command: ${[registry.bin, ...path, plan.unknownSegment].join(" ")}`,
           { code: "UNKNOWN_COMMAND" },
@@ -104,6 +110,7 @@ export async function runParsedCli(
           : group.children.find((child) => child.name === group.defaultChild);
       if (fallback === undefined || fallback.kind !== "leaf") {
         // A bare group prints its own help, like `bun pm`.
+        if (isPm(registry, path)) return await writePmHelp(runtime);
         return await writeHelp(registry, runtime, path.join(" "));
       }
       node = fallback;
@@ -165,6 +172,15 @@ async function writeHelp(registry: Registry, runtime: CliRuntime, path?: string)
   return 0;
 }
 
+/** `fnpm pm` itself (not one of its commands). */
+const isPm = (registry: Registry, path: string[]) => registry.bin === "fnpm" && path.length === 1 && path[0] === "pm";
+
+async function writePmHelp(runtime: CliRuntime): Promise<number> {
+  const { renderPmHelp } = await import("./pm-help.ts");
+  runtime.stdout.write(renderPmHelp(stdoutColors(runtime)));
+  return 0;
+}
+
 const stdoutColors = (runtime: CliRuntime) =>
   createColors(colorEnabled(runtime, runtime.stdoutIsTTY));
 
@@ -189,12 +205,12 @@ function reportError(
   const message = formatError(error);
   const wantsJson =
     plan?.wantsJson ?? (argv.slice(2, argv.includes("--") ? argv.indexOf("--") : undefined).includes("--json"));
-  if (wantsJson) {
-    runtime.stdout.write(`${JSON.stringify({ ok: false, error: { code: errorCode(error), message } })}\n`);
+  if (errorCode(error) === "REPORTED") {
+    // The core already printed why (on stderr, also with --json).
     return 1;
   }
-  if (errorCode(error) === "REPORTED") {
-    // The core already printed why.
+  if (wantsJson) {
+    runtime.stdout.write(`${JSON.stringify({ ok: false, error: { code: errorCode(error), message } })}\n`);
     return 1;
   }
   runtime.stderr.write(`error: ${message}\n`);

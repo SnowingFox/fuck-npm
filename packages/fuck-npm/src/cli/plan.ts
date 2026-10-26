@@ -1,4 +1,4 @@
-import { SilentError } from "../errors.ts";
+import { CoreError, SilentError } from "../errors.ts";
 import { stripRuntimeFlags, translateForeignFlags } from "./foreign-flags.ts";
 import {
   allowedFlagNames,
@@ -291,6 +291,10 @@ export function rejectUnknownFlags(plan: Invocation, registry: Registry): void {
     for (const candidate of names) {
       if (allowed.has(candidate)) {
         continue;
+      }
+      if (registry.bin === "fnpm" && plan.matched[0] === "pm" && (candidate === "filter" || candidate === "F")) {
+        // bun's wording, with no pointer to --help: the flag belongs to one pm command.
+        throw new CoreError("--filter is only supported by `fnpm pm licenses`", "USAGE");
       }
       throw new SilentError(`${command} has no ${spell(candidate)} flag.`, {
         code: "UNKNOWN_FLAG",

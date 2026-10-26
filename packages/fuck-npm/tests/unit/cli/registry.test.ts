@@ -71,8 +71,7 @@ describe("bun command parity", () => {
     ["pm", "hash-print"], ["pm", "cache", "path"], ["pm", "cache", "rm"],
     ["pm", "cache", "prune"], ["pm", "cache", "pack"], ["pm", "cache", "unpack"],
     ["pm", "migrate"], ["pm", "untrusted"], ["pm", "trust"], ["pm", "default-trusted"],
-    ["pm", "version"], ["pm", "pkg", "get"], ["pm", "pkg", "set"], ["pm", "pkg", "delete"],
-    ["pm", "pkg", "fix"], ["pm", "whoami"], ["pm", "licenses"], ["pm", "view"],
+    ["pm", "version"], ["pm", "pkg"], ["pm", "whoami"], ["pm", "licenses"], ["pm", "view"],
     ["pm", "pack"], ["pm", "diff"], ["pm", "scan"], ["pm", "fetch"],
     ["store", "path"], ["store", "prune"], ["store", "status"], ["doctor"], ["completions"],
   ])("fnpm %s is registered", (...path) => {

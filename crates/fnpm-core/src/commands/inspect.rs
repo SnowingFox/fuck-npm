@@ -1,14 +1,14 @@
-//! Read-only views of the lockfile: `why`, `ls`, `pm bin`, `pm hash*`, `pm licenses`, and
+//! Read-only views of the lockfile: `ls`, `pm bin`, `pm hash*`, and
 //! `fnpm-lock verify | diff | why | print`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use fnpm_lockfile::Format;
 use fnpm_types::{Behavior, LockGraph, PackageId, Resolution};
 use serde_json::{Value, json};
 
-use super::{Ctx, exit, ok, table};
+use super::{Ctx, exit, ok};
 use crate::install::name_matches;
 use crate::{CoreResult, Error, Result};
 
@@ -23,237 +23,6 @@ fn shown_version(graph: &LockGraph, id: PackageId) -> String {
         Resolution::Workspace { .. } => p.version.clone(),
         r => r.to_string(),
     }
-}
-
-fn display_name(graph: &LockGraph, id: PackageId) -> String {
-    let p = &graph.packages[id.index()];
-    if p.name.is_empty() {
-        if id == PackageId::ROOT {
-            "(root)".into()
-        } else {
-            p.resolution.to_string()
-        }
-    } else {
-        p.name.clone()
-    }
-}
-
-fn dep_type(b: Behavior) -> &'static str {
-    if b.is_dev() {
-        "dev "
-    } else if b.is_optional_peer() {
-        "optional peer "
-    } else if b.is_peer() {
-        "peer "
-    } else if b.is_optional() {
-        "optional "
-    } else {
-        ""
-    }
-}
-
-/// `pattern` with an optional `@range`: matches a package name (glob) and version.
-fn matches_pattern(pattern: &str, name: &str, version: &str) -> bool {
-    let (name_pat, range) = fnpm_types::name::split_name_and_maybe_version(pattern);
-    if !name_matches(name_pat, name) {
-        return false;
-    }
-    match range {
-        None => true,
-        Some(r) => fnpm_semver::satisfies(version, r),
-    }
-}
-
-struct Dependent {
-    from: PackageId,
-    spec: String,
-    behavior: Behavior,
-    alias: Option<String>,
-}
-
-fn dependents(graph: &LockGraph) -> HashMap<PackageId, Vec<Dependent>> {
-    let mut map: HashMap<PackageId, Vec<Dependent>> = HashMap::new();
-    for (i, p) in graph.packages.iter().enumerate() {
-        for e in &p.dependencies {
-            let Some(t) = e.target else { continue };
-            let target_name = &graph.packages[t.index()].name;
-            map.entry(t).or_default().push(Dependent {
-                from: PackageId(i as u32),
-                spec: e.literal.clone(),
-                behavior: e.behavior,
-                alias: (e.name != *target_name).then(|| e.name.clone()),
-            });
-        }
-    }
-    for list in map.values_mut() {
-        list.sort_by(|a, b| {
-            let la = graph.packages[a.from.index()].resolution.is_local_tree();
-            let lb = graph.packages[b.from.index()].resolution.is_local_tree();
-            lb.cmp(&la).then_with(|| {
-                graph.packages[a.from.index()]
-                    .name
-                    .cmp(&graph.packages[b.from.index()].name)
-            })
-        });
-    }
-    map
-}
-
-fn dependent_line(graph: &LockGraph, d: &Dependent) -> String {
-    let p = &graph.packages[d.from.index()];
-    let mut s = String::from(dep_type(d.behavior));
-    s.push_str(&display_name(graph, d.from));
-    match &p.resolution {
-        Resolution::Workspace { .. } => s.push_str("@workspace"),
-        Resolution::Root => {}
-        _ => {
-            s.push('@');
-            s.push_str(&shown_version(graph, d.from));
-        }
-    }
-    if !d.spec.is_empty() {
-        match &d.alias {
-            Some(a) => s.push_str(&format!(" (requires {a}@{})", d.spec)),
-            None => s.push_str(&format!(" (requires {})", d.spec)),
-        }
-    }
-    s
-}
-
-#[allow(clippy::too_many_arguments)]
-fn why_tree(
-    graph: &LockGraph,
-    deps: &HashMap<PackageId, Vec<Dependent>>,
-    id: PackageId,
-    prefix: &str,
-    depth: usize,
-    max_depth: usize,
-    path: &mut Vec<PackageId>,
-    expanded: &mut HashSet<PackageId>,
-    lines: &mut Vec<String>,
-) -> Value {
-    let Some(list) = deps.get(&id) else {
-        return json!([]);
-    };
-    let mut out = Vec::new();
-    if depth >= max_depth {
-        lines.push(format!("{prefix}└─ (deeper dependencies hidden)"));
-        return json!([]);
-    }
-    for (i, d) in list.iter().enumerate() {
-        let last = i + 1 == list.len();
-        let (branch, cont) = if last {
-            ("└─ ", "   ")
-        } else {
-            ("├─ ", "│  ")
-        };
-        lines.push(format!("{prefix}{branch}{}", dependent_line(graph, d)));
-        let mut node = json!({
-            "name": display_name(graph, d.from),
-            "version": shown_version(graph, d.from),
-            "spec": d.spec,
-            "type": dep_type(d.behavior).trim(),
-        });
-        let child_prefix = format!("{prefix}{cont}");
-        if path.contains(&d.from) {
-            lines.push(format!("{child_prefix}└─ *circular"));
-        } else if !graph.packages[d.from.index()].resolution.is_local_tree() {
-            if !expanded.insert(d.from) {
-                if deps.contains_key(&d.from) {
-                    lines.push(format!("{child_prefix}└─ *deduped"));
-                }
-            } else {
-                path.push(d.from);
-                node["dependents"] = why_tree(
-                    graph,
-                    deps,
-                    d.from,
-                    &child_prefix,
-                    depth + 1,
-                    max_depth,
-                    path,
-                    expanded,
-                    lines,
-                );
-                path.pop();
-            }
-        }
-        out.push(node);
-    }
-    Value::Array(out)
-}
-
-/// `fnpm why <pattern>` / `pm why` / `fnpm-lock why`.
-pub(crate) fn why(cx: &Ctx) -> Result<CoreResult> {
-    let Some(pattern) = cx.req.positionals.first().cloned() else {
-        return Err(Error::usage(
-            "Missing package name. Usage: fnpm why <package>",
-        ));
-    };
-    let (_, _, graph) = cx.load_locked("nothing to explain")?;
-    let max_depth = cx
-        .number("depth")
-        .map_or(usize::MAX, |d| usize::try_from(d).unwrap_or(usize::MAX));
-    let top = cx.flag("top");
-    let deps = dependents(&graph);
-    let mut lines = Vec::new();
-    let mut packages = Vec::new();
-    for id in graph.ids().skip(1) {
-        let p = &graph.packages[id.index()];
-        if p.resolution.is_local_tree() && !matches!(p.resolution, Resolution::Workspace { .. }) {
-            continue;
-        }
-        let version = shown_version(&graph, id);
-        if !matches_pattern(&pattern, &p.name, &version) {
-            continue;
-        }
-        lines.push(format!("{}@{version}", p.name));
-        let tree = if !deps.contains_key(&id) {
-            lines.push("  └─ No dependents found".into());
-            json!([])
-        } else if top || max_depth == 0 {
-            let list = &deps[&id];
-            if max_depth == 0 {
-                lines.push("  └─ (deeper dependencies hidden)".into());
-            } else {
-                for (i, d) in list.iter().enumerate() {
-                    let branch = if i + 1 == list.len() {
-                        "  └─ "
-                    } else {
-                        "  ├─ "
-                    };
-                    lines.push(format!("{branch}{}", dependent_line(&graph, d)));
-                }
-            }
-            json!([])
-        } else {
-            let mut path = vec![id];
-            let mut expanded = HashSet::new();
-            why_tree(
-                &graph,
-                &deps,
-                id,
-                "  ",
-                0,
-                max_depth,
-                &mut path,
-                &mut expanded,
-                &mut lines,
-            )
-        };
-        lines.push(String::new());
-        packages.push(json!({ "name": p.name, "version": version, "dependents": tree }));
-    }
-    if packages.is_empty() {
-        return Ok(exit(
-            1,
-            json!({ "packages": [] }),
-            vec![format!(
-                "error: No packages matching '{pattern}' found in lockfile"
-            )],
-        ));
-    }
-    Ok(ok(json!({ "packages": packages }), lines))
 }
 
 fn ls_tree(
@@ -408,37 +177,6 @@ pub(crate) fn hash(cx: &Ctx, which: Hash) -> Result<CoreResult> {
         }
     };
     Ok(ok(json!({ "hash": text }), vec![text]))
-}
-
-/// `fnpm pm licenses`: the license of every installed registry package, from the store.
-pub(crate) fn licenses(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to list")?;
-    let store = project.store()?;
-    let mut by_license: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for p in graph.packages.iter().skip(1) {
-        let Some(key) = crate::fetch::store_key(p) else {
-            continue;
-        };
-        let license = p.meta.license.clone().or_else(|| {
-            let entry = store.get(&key).ok().flatten()?;
-            let pj: Value = serde_json::from_str(entry.index.package_json.as_deref()?).ok()?;
-            match pj.get("license")? {
-                Value::String(s) => Some(s.clone()),
-                Value::Object(o) => o.get("type").and_then(Value::as_str).map(str::to_owned),
-                _ => None,
-            }
-        });
-        by_license
-            .entry(license.unwrap_or_else(|| "UNKNOWN".into()))
-            .or_default()
-            .push(format!("{}@{}", p.name, p.version));
-    }
-    let rows: Vec<Vec<String>> = by_license
-        .iter()
-        .map(|(l, pkgs)| vec![l.clone(), pkgs.len().to_string()])
-        .collect();
-    let lines = table::render(&["License", "Packages"], &rows, cx.unicode());
-    Ok(ok(json!({ "licenses": by_license }), lines))
 }
 
 /// `fnpm-lock verify [--integrity]`.
@@ -611,18 +349,4 @@ pub(crate) fn print(cx: &Ctx) -> Result<CoreResult> {
     };
     let lines: Vec<String> = text.lines().map(str::to_owned).collect();
     Ok(ok(json!({ "text": text }), lines))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::matches_pattern;
-
-    #[test]
-    fn why_patterns() {
-        assert!(matches_pattern("react", "react", "18.0.0"));
-        assert!(matches_pattern("@types/*", "@types/node", "20.0.0"));
-        assert!(matches_pattern("react@^18", "react", "18.2.0"));
-        assert!(!matches_pattern("react@^17", "react", "18.2.0"));
-        assert!(!matches_pattern("react", "react-dom", "18.2.0"));
-    }
 }

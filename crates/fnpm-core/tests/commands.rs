@@ -65,8 +65,8 @@ async fn why_ls_hash_and_licenses() {
     assert_eq!(lines[0], "b@1.0.0");
     assert_eq!(lines[1], "  └─ a@1.0.0 (requires ^1.0.0)");
     assert_eq!(lines[2], "     └─ app (requires ^1.0.0)");
-    let r = p.invoke(&["why"], &["nope"], json!({})).await.unwrap();
-    assert_eq!(r.exit_code, 1);
+    let err = p.invoke(&["why"], &["nope"], json!({})).await.unwrap_err();
+    assert_eq!(err.code(), "REPORTED");
 
     let r = p.invoke(&["ls"], &[], json!({})).await.unwrap();
     let lines = r.lines.unwrap();
@@ -104,7 +104,7 @@ async fn why_ls_hash_and_licenses() {
     assert!(s.iter().any(|l| l.contains("b@1.0.0")), "{s:?}");
 
     let r = p.invoke(&["pm", "licenses"], &[], json!({})).await.unwrap();
-    assert!(r.lines.unwrap().iter().any(|l| l.contains("UNKNOWN")));
+    assert!(r.lines.unwrap().iter().any(|l| l.starts_with("Unknown (")));
 
     let r = p.invoke(&["pm", "bin"], &[], json!({})).await.unwrap();
     assert!(r.lines.unwrap()[0].ends_with("node_modules/.bin"));
@@ -179,7 +179,8 @@ async fn pkg_get_set_delete_keep_formatting() {
         .invoke(&["pm", "pkg", "set"], &["novalue"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    // Said on stderr, like bun.
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -213,7 +214,7 @@ async fn version_bump_and_init() {
         .invoke(&["pm", "version"], &["1.3.1-beta.0"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    assert_eq!(err.code(), "REPORTED");
 
     let r = p
         .invoke(&["init"], &["sub/My Pkg"], json!({}))
@@ -645,7 +646,7 @@ async fn version_like_bun_dry_run_scripts_and_git() {
         .invoke(&["pm", "version"], &["patch"], json!({}))
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("not clean"), "{err}");
+    assert_eq!(err.code(), "REPORTED");
     assert_eq!(p.json("package.json")["version"], "1.1.0");
     std::fs::remove_file(p.path("dirty.js")).unwrap();
 
@@ -746,7 +747,7 @@ async fn link_rejects_names_that_leave_the_registry() {
         .invoke(&["pm", "pkg", "set"], &["files[99999999]=x"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -24,8 +24,8 @@ describe("dispatch", () => {
   test("an unknown subcommand names the full path", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["pm", "bogus"])).toBe(1);
-    expect(bed.stderr.text()).toContain("Unknown command: fnpm pm bogus");
+    expect(await bed.run(["pm", "cache", "bogus"])).toBe(1);
+    expect(bed.stderr.text()).toContain("Unknown command: fnpm pm cache bogus");
   });
 
   test("a group's default child runs when the group is bare", async () => {
@@ -38,8 +38,8 @@ describe("dispatch", () => {
   test("a missing required positional is reported before the core loads", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["why"])).toBe(1);
-    expect(bed.stderr.text()).toContain("`fnpm why` needs <package>");
+    expect(await bed.run(["pm", "cache", "pack"])).toBe(1);
+    expect(bed.stderr.text()).toContain("`fnpm pm cache pack` needs <file>");
     expect(bed.coreLoads()).toBe(0);
   });
 
