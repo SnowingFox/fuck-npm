@@ -300,7 +300,7 @@ describe.each([
     expect({ a: bazFrom("a"), b: bazFrom("b") }).toEqual({ a: "0.0.3", b: "0.0.5" });
 
     for (const version of ["0.0.3", "0.0.5"]) {
-      const cached = cacheEntryDirs(cacheDir, "baz", version);
+      const cached = cacheEntryDirs(cacheDir, "baz", version, env.FNPM_STORE_DIR);
       expect(cached).toHaveLength(1);
       expect(versionOf(join(cached[0], "package.json"))).toBe(version);
       expect(statSync(join(cached[0], "index.js")).size).toBeGreaterThan(0);
