@@ -94,6 +94,15 @@ pub enum Error {
     /// The registry, git or a tarball download failed.
     #[error(transparent)]
     Registry(#[from] fnpm_registry::Error),
+    /// git could not read the repository of a git dependency; bun names the dependency after
+    /// git's own error.
+    #[error("{source}\nerror: \"git clone\" for \"{name}\" failed")]
+    GitFailed {
+        /// The dependency name.
+        name: String,
+        /// What git said.
+        source: fnpm_registry::Error,
+    },
     /// A dist-tag the manifest does not have.
     #[error("Package \"{name}\" with tag \"{tag}\" not found, but package exists")]
     DistTagNotFound {

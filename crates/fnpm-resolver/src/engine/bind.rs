@@ -116,6 +116,23 @@ pub(crate) fn path_escapes(target: &str) -> bool {
 /// A resolved commit must be a full SHA-1 or SHA-256 object name: it ends up in the lockfile, in
 /// download URLs and in checkout paths, so a remote answering with anything else (`../x`, a
 /// branch name, an empty line) is an error rather than something to interpolate.
+/// The error of a dependency whose git, GitHub or tarball source failed. A repository git
+/// cannot read is reported like bun's clone failure, which names the dependency.
+fn remote_error(edge: &DepEdge, e: &fnpm_registry::Error) -> Error {
+    match e {
+        fnpm_registry::Error::Git(message)
+            if message.starts_with("git ls-remote failed")
+                || message.starts_with("git clone failed") =>
+        {
+            Error::GitFailed {
+                name: edge.name.clone(),
+                source: clone_registry_error(e),
+            }
+        }
+        _ => Error::Registry(clone_registry_error(e)),
+    }
+}
+
 pub(crate) fn checked_commit(sha: String, origin: &str) -> fnpm_registry::Result<String> {
     if matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
         Ok(sha)
@@ -1468,7 +1485,7 @@ impl Engine<'_> {
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
-            Some(RState::Failed(e)) => return Err(Error::Registry(clone_registry_error(e))),
+            Some(RState::Failed(e)) => return Err(remote_error(edge, e)),
             Some(_) => {
                 self.remote_waiters.entry(key).or_default().push(row);
                 return Ok(Step::Done);
@@ -1636,7 +1653,7 @@ impl Engine<'_> {
                         self.set_target(w, target);
                         continue;
                     }
-                    self.fail(w, &edge, Error::Registry(clone_registry_error(&e)))?;
+                    self.fail(w, &edge, remote_error(&edge, &e))?;
                 }
                 Ok(())
             }

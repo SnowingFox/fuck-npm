@@ -35,6 +35,18 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
     match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+        // bun prints the commit, not the `owner-repo-commit` folder name fnpm.lock records.
+        Resolution::Github {
+            owner,
+            repo,
+            resolved_commit,
+            ..
+        } => {
+            let commit = resolved_commit
+                .rsplit_once('-')
+                .map_or(resolved_commit.as_str(), |(_, c)| c);
+            format!("github:{owner}/{repo}#{commit}")
+        }
         resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }
