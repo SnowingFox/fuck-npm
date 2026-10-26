@@ -256,7 +256,18 @@ fn prepare_with_patch(
     cli.update = opts.command == InstallCommand::Update;
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
-    let project = Project::load_with_root(&opts.pm.cwd, cli, env, is_add, opts.dlx.is_some())?;
+    // `add --filter` edits existing workspaces: without a project there is nothing to select,
+    // and bun creates no package.json for it.
+    let create = is_add && opts.filter.is_empty();
+    let project = match Project::load_with_root(&opts.pm.cwd, cli, env, create, opts.dlx.is_some())
+    {
+        Err(Error::Workspace(fnpm_workspace::Error::NoProject(_))) if is_add => {
+            return Err(Error::usage(
+                "fnpm could not find a package.json file to install from\nnote: Run \"fnpm init\" to initialize a project",
+            ));
+        }
+        other => other?,
+    };
     phases.mark("config");
 
     // 1. Fast path.

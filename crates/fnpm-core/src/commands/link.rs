@@ -74,8 +74,32 @@ fn package_here(cwd: &Path) -> Result<(PathBuf, fnpm_workspace::PackageJson)> {
             cwd.to_path_buf()
         })
         .unwrap_or_else(|| cwd.to_path_buf());
-    let pj = fnpm_workspace::PackageJson::read(&dir.join("package.json"))?;
+    let file = dir.join("package.json");
+    if !file.is_file() {
+        return Err(Error::usage(
+            "fnpm could not find a package.json file to install from\nnote: Run \"fnpm init\" to initialize a project",
+        ));
+    }
+    let pj = fnpm_workspace::PackageJson::read(&file)?;
     Ok((dir, pj))
+}
+
+/// The name of the package in `dir`, which `fnpm link` / `fnpm unlink` register under: bun
+/// refuses a package.json without one, or with one that is not a valid package name.
+fn own_name(dir: &Path, pj: &fnpm_workspace::PackageJson) -> Result<String> {
+    let file = dir.join("package.json");
+    match pj.name.clone().filter(|n| !n.is_empty()) {
+        None => Err(Error::usage(format!(
+            "package.json missing \"name\" in \"{}\"",
+            file.display()
+        ))),
+        Some(name) if !fnpm_types::name::is_npm_package_name(&name) => Err(Error::usage(format!(
+            "invalid package.json name \"{}\" in \"{}\"",
+            super::pack::out::escape_control(&name),
+            file.display()
+        ))),
+        Some(name) => Ok(name),
+    }
 }
 
 /// `fnpm link` registers the current package; `fnpm link <names>` installs registered ones.
@@ -83,12 +107,7 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
     let links = links_dir(cx)?;
     if cx.req.positionals.is_empty() {
         let (dir, pj) = package_here(&cx.req.cwd)?;
-        let Some(name) = pj.name.clone().filter(|n| !n.is_empty()) else {
-            return Err(Error::usage(
-                "package.json missing \"name\" in this directory",
-            ));
-        };
-        checked_name(&name)?;
+        let name = own_name(&dir, &pj)?;
         for link in registrations(&links, &name) {
             if let Some(parent) = link.parent() {
                 std::fs::create_dir_all(parent).map_err(Error::io(parent))?;
@@ -158,12 +177,7 @@ pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
     let links = links_dir(cx)?;
     if cx.req.positionals.is_empty() {
         let (dir, pj) = package_here(&cx.req.cwd)?;
-        let Some(name) = pj.name.clone().filter(|n| !n.is_empty()) else {
-            return Err(Error::usage(
-                "package.json missing \"name\" in this directory",
-            ));
-        };
-        checked_name(&name)?;
+        let name = own_name(&dir, &pj)?;
         let link = fnpm_linker::fsutil::join_name(&links, &name);
         if std::fs::symlink_metadata(&link).is_err() {
             return Err(Error::usage(format!("package \"{name}\" is not linked")));
