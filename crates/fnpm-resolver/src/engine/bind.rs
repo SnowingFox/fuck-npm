@@ -257,6 +257,9 @@ impl Engine<'_> {
                 other => format!("{other} (peer dependency \"{name}\")"),
             };
             self.warnings.push(message);
+        } else if let Error::Refused { message, .. } = &err {
+            // bun warns why and leaves the optional dependency out.
+            self.warnings.push(message.clone());
         } else if !matches!(
             err,
             Error::NoMatchingVersion { .. }
@@ -1252,9 +1255,9 @@ impl Engine<'_> {
         let (abs, stored) = if is_link_path(path) {
             if !self.trusted_path(row, edge) && !asked.from_rule {
                 let declarer = &self.graph.packages[row.pkg.index()];
-                return Err(Error::InvalidSpec {
-                    name: edge.name.clone(),
-                    spec: edge.literal.clone(),
+                return Err(Error::Refused {
+                    name: fnpm_types::text::escape_control_chars(&edge.name),
+                    spec: fnpm_types::text::escape_control_chars(&edge.literal),
                     message: format!(
                         "refusing to resolve \"{}@{}\" declared by {}@{}: {LINK_PATH_RULE}",
                         edge.name, edge.literal, declarer.name, declarer.resolution
@@ -1359,9 +1362,9 @@ impl Engine<'_> {
                     || root_declares_same
                     || matches!(declarer.resolution, Resolution::LocalTarball { .. });
                 if !may_name {
-                    return Err(Error::InvalidSpec {
-                        name: edge.name.clone(),
-                        spec: edge.literal.clone(),
+                    return Err(Error::Refused {
+                        name: fnpm_types::text::escape_control_chars(&edge.name),
+                        spec: fnpm_types::text::escape_control_chars(&edge.literal),
                         message: format!(
                             "refusing to resolve \"{}@{}\" declared by {}@{}: local tarballs are only allowed in this project's package.json files",
                             edge.name, edge.literal, declarer.name, declarer.resolution
@@ -1535,20 +1538,18 @@ impl Engine<'_> {
                                 committish.reference.as_deref().unwrap_or(""),
                             )
                             .await?;
-                        let prefix = format!("{owner}-{repo}-");
-                        let archive_tag = fnpm_registry::git::is_safe_resolved_tag(&sha)
-                            && sha
-                                .get(..prefix.len())
-                                .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
-                            && sha.get(prefix.len()..).is_some_and(|c| {
-                                (7..=40).contains(&c.len())
-                                    && c.bytes().all(|b| b.is_ascii_hexdigit())
+                        // The tag is the archive's root directory (bun `is_safe_resolved_tag`):
+                        // it names a folder and goes into fnpm.lock, so anything else is refused.
+                        if !fnpm_registry::git::is_safe_resolved_tag(&sha) {
+                            return Err(fnpm_registry::Error::Network {
+                                url: String::new(),
+                                message: format!(
+                                    "Refusing to install \"{}\": tarball root directory \"{}\" is not a valid folder name",
+                                    fnpm_types::text::escape_control_chars(&name),
+                                    fnpm_types::text::escape_control_chars(&sha)
+                                ),
                             });
-                        let sha = if archive_tag {
-                            sha
-                        } else {
-                            checked_commit(sha, &format!("github:{owner}/{repo}"))?
-                        };
+                        }
                         (
                             Resolution::Github {
                                 owner,

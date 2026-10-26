@@ -18,25 +18,22 @@ const MAX_SCANNED: u64 = 1 << 30;
 /// Returns the text of the tarball's top-level `package.json` (the first path component, usually
 /// `package/`, is stripped like npm does). Pax `path` records and GNU long names are honoured.
 pub(crate) fn package_json_from_tgz(tgz: &[u8]) -> Result<String, String> {
-    scan(flate2::read::GzDecoder::new(tgz), true).map(|(json, _)| json)
+    scan_archive(tgz).map(|(json, _)| json)
 }
 
-/// GitHub records the archive root (`owner-repo-sha7`) as its resolved tag.
-/// Validate the repository and commit before using an archive-controlled path in a lockfile.
-pub(crate) fn github_tag_from_tgz(tgz: &[u8], owner: &str, repo: &str) -> Result<String, String> {
-    let (_, root) = scan(flate2::read::GzDecoder::new(tgz), true)?;
-    let prefix = format!("{owner}-{repo}-");
-    let valid = root
-        .get(..prefix.len())
-        .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
-        && root.get(prefix.len()..).is_some_and(|commit| {
-            (7..=40).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit())
-        })
-        && fnpm_registry::git::is_safe_resolved_tag(&root);
-    if valid {
-        Ok(root)
+/// GitHub's archive root (`owner-repo-sha7`), which bun records as the resolved tag: the first
+/// path component of the archive's first entry. The caller refuses a name that is not a safe
+/// folder name before it reaches a lockfile or a path.
+pub(crate) fn github_tag_from_tgz(tgz: &[u8]) -> Result<String, String> {
+    scan_archive(tgz).map(|(_, root)| root)
+}
+
+/// [`scan`] over a gzipped tarball, or a plain tar as bun (libarchive) also reads it.
+fn scan_archive(bytes: &[u8]) -> Result<(String, String), String> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        scan(flate2::read::GzDecoder::new(bytes), true)
     } else {
-        Err("invalid GitHub archive root".into())
+        scan(bytes, false)
     }
 }
 
@@ -138,9 +135,20 @@ fn padding(size: u64) -> u64 {
     size.div_ceil(512) * 512 - size
 }
 
+/// The path of a tar entry: its name, under the ustar prefix when there is one.
+fn entry_name(header: &[u8; 512]) -> String {
+    let mut name = String::from_utf8_lossy(cstr(&header[0..100])).into_owned();
+    let prefix = cstr(&header[345..500]);
+    if &header[257..262] == b"ustar" && !prefix.is_empty() {
+        name = format!("{}/{}", String::from_utf8_lossy(prefix), name);
+    }
+    name
+}
+
 fn scan<R: Read>(mut r: R, gzip: bool) -> Result<(String, String), String> {
     let mut header = [0u8; 512];
     let mut next_name: Option<String> = None;
+    let mut root: Option<String> = None;
     let mut scanned: u64 = 0;
     while read_block(&mut r, &mut header, gzip)? {
         if header.iter().all(|&b| b == 0) {
@@ -152,6 +160,12 @@ fn scan<R: Read>(mut r: R, gzip: bool) -> Result<(String, String), String> {
             return Err("no package.json in the first 1 GiB of the tarball".into());
         }
         let typeflag = header[156];
+        // The first entry that is not a pax or GNU name record names the archive root.
+        if root.is_none() && !matches!(typeflag, b'x' | b'g' | b'L' | b'K') {
+            // As written: `./package.json` is in the root `.`, which the caller refuses.
+            let name = next_name.clone().unwrap_or_else(|| entry_name(&header));
+            root = Some(name.split('/').next().unwrap_or("").to_owned());
+        }
         match typeflag {
             b'x' | b'L' => {
                 if size > MAX_NAME_RECORD {
@@ -165,31 +179,14 @@ fn scan<R: Read>(mut r: R, gzip: bool) -> Result<(String, String), String> {
                 };
             }
             b'0' | 0 | b'7' => {
-                let name = match next_name.take() {
-                    Some(n) => n,
-                    None => {
-                        let mut name = String::from_utf8_lossy(cstr(&header[0..100])).into_owned();
-                        let prefix = cstr(&header[345..500]);
-                        if &header[257..262] == b"ustar" && !prefix.is_empty() {
-                            name = format!("{}/{}", String::from_utf8_lossy(prefix), name);
-                        }
-                        name
-                    }
-                };
+                let name = next_name.take().unwrap_or_else(|| entry_name(&header));
                 if strip_first_component(&name) == "package.json" {
                     if size > MAX_PACKAGE_JSON {
                         return Err("package.json is too large".into());
                     }
                     let data = read_data(&mut r, size, gzip)?;
-                    let root = name
-                        .strip_prefix("./")
-                        .unwrap_or(&name)
-                        .split('/')
-                        .next()
-                        .unwrap_or("")
-                        .to_owned();
                     return String::from_utf8(data)
-                        .map(|json| (json, root))
+                        .map(|json| (json, root.unwrap_or_default()))
                         .map_err(|_| "package.json is not UTF-8".to_owned());
                 }
                 skip(&mut r, size, gzip)?;
@@ -233,23 +230,14 @@ mod tests {
     }
 
     #[test]
-    fn github_archive_roots_are_repository_bound_and_safe() {
-        for root in ["owner-repo-abc1234", "OWNER-repo-0123456789abcdef"] {
-            let bytes = gzip(&entry(&format!("{root}/package.json"), b"{}", b'0'));
-            assert_eq!(github_tag_from_tgz(&bytes, "owner", "repo").unwrap(), root);
-        }
-        for root in [
-            "other-repo-abc1234",
-            "owner-repo-main",
-            "owner-repo-abc",
-            "../owner-repo-abc1234",
-        ] {
-            let bytes = gzip(&entry(&format!("{root}/package.json"), b"{}", b'0'));
-            assert!(
-                github_tag_from_tgz(&bytes, "owner", "repo").is_err(),
-                "{root}"
-            );
-        }
+    fn github_archive_root_is_the_first_entry() {
+        let bytes = gzip(&entry("owner-repo-abc1234/package.json", b"{}", b'0'));
+        assert_eq!(github_tag_from_tgz(&bytes).unwrap(), "owner-repo-abc1234");
+        let mut tar = entry("pkg.root/extra/", b"", b'5');
+        tar.extend(entry("pkg.root/package.json", b"{}", b'0'));
+        assert_eq!(github_tag_from_tgz(&gzip(&tar)).unwrap(), "pkg.root");
+        // A plain tar is read too.
+        assert_eq!(github_tag_from_tgz(&tar).unwrap(), "pkg.root");
     }
 
     #[test]

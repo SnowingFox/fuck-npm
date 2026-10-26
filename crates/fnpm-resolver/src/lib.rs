@@ -99,6 +99,17 @@ pub enum Error {
         /// The unsafe name, escaped for the terminal.
         bad: String,
     },
+    /// A dependency a package may not declare (a path outside what it may reach). bun reports
+    /// why, then the dependency that failed.
+    #[error("{message}\nerror: {name}@{spec} failed to resolve")]
+    Refused {
+        /// The dependency name, escaped for the terminal.
+        name: String,
+        /// The specifier as written, escaped for the terminal.
+        spec: String,
+        /// Why, in bun's words.
+        message: String,
+    },
     /// The registry, git or a tarball download failed.
     #[error(transparent)]
     Registry(#[from] fnpm_registry::Error),

@@ -230,12 +230,12 @@ impl PackageFetcher for RegistrySource {
                         fnpm_types::text::format_size(bytes.len() as u64)
                     )
                 });
-                let tag = crate::tarball::github_tag_from_tgz(&bytes, &owner, &repo).map_err(
-                    |message| fnpm_registry::Error::InvalidManifest {
+                let tag = crate::tarball::github_tag_from_tgz(&bytes).map_err(|message| {
+                    fnpm_registry::Error::InvalidManifest {
                         name: url.clone(),
                         message,
-                    },
-                )?;
+                    }
+                })?;
                 let package = this.finish_tarball(&url, &bytes)?;
                 this.github
                     .lock()
