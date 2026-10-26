@@ -33,6 +33,30 @@ const availableOf = (version: string | undefined, pc: Colors): string =>
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
+/**
+ * `fnpm update --dry-run`: the rows of what would move and bun's `N packages would be updated`,
+ * or `Checked N packages, nothing to update`.
+ */
+export function formatUpdatePlan(summary: InstallSummary, pc: Colors, opts: { color: boolean } = { color: true }): string[] {
+  const lines: string[] = [""];
+  const time = timeOf(summary.elapsedMs, pc);
+  const arrowUp = opts.color ? "↑" : "^";
+  const arrow = opts.color ? "→" : "->";
+  for (const pkg of summary.updated) {
+    const to = opts.color ? pc.bold(pc.cyan(pkg.to)) : pc.bold(pkg.to);
+    lines.push(
+      `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
+    );
+  }
+  const n = summary.updated.length;
+  if (n > 0) {
+    lines.push("", `${pc.green(String(n))} package${n === 1 ? "" : "s"} would be updated ${time}`);
+  } else {
+    lines.push(`Checked ${plural(summary.checked?.packages ?? 0, "package")}, nothing to update ${time}`);
+  }
+  return lines;
+}
+
 export function formatInstallSummary(
   summary: InstallSummary,
   command: InstallCommand,

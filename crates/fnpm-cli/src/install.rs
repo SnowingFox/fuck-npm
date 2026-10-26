@@ -18,7 +18,7 @@ use crate::parse::{parse_flags, reject_unknown_flags};
 use crate::plan::Invocation;
 use crate::progress::{DiagnosticsSink, ProgressSink, wants_progress};
 use crate::spec::{BinDef, LeafDef, VERSION};
-use crate::summary::format_install_summary_at;
+use crate::summary::{format_install_summary_at, format_update_plan};
 use crate::terminal::{Terminal, color_enabled};
 
 /// What the core did with an install.
@@ -166,6 +166,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
     };
 
     let command = options.command;
+    let dry_run = options.pm.dry_run;
     let show_summary = !silent && options.pm.summary;
     let outcome = core.install(options, sink);
     if let Some(progress) = progress {
@@ -200,13 +201,22 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                         (started.elapsed().as_secs_f64() * 1000.0).max(summary.elapsed_ms as f64)
                     });
                 let stdout_color = color_enabled(&terminal.env, terminal.stdout_is_tty);
-                let lines = format_install_summary_at(
-                    &summary,
-                    command,
-                    Colors::new(stdout_color),
-                    mode == Mode::Rich && stdout_color,
-                    elapsed_ms,
-                );
+                let lines = if dry_run && command == InstallCommand::Update {
+                    format_update_plan(
+                        &summary,
+                        Colors::new(stdout_color),
+                        mode == Mode::Rich && stdout_color,
+                        elapsed_ms,
+                    )
+                } else {
+                    format_install_summary_at(
+                        &summary,
+                        command,
+                        Colors::new(stdout_color),
+                        mode == Mode::Rich && stdout_color,
+                        elapsed_ms,
+                    )
+                };
                 let mut text = String::new();
                 for line in lines {
                     text.push_str(&line);

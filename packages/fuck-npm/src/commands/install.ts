@@ -5,7 +5,7 @@ import { installOptions } from "../core/options.ts";
 import type { EventSink, InstallCommand, InstallOptions, InstallSummary } from "../core/types.ts";
 import { colorEnabled } from "../output/output.ts";
 import { createProgress, diagnosticsSink, wantsProgress, type Progress } from "../output/progress.ts";
-import { formatInstallSummary } from "../output/summary.ts";
+import { formatInstallSummary, formatUpdatePlan } from "../output/summary.ts";
 import type { CommandContext } from "./context.ts";
 
 /**
@@ -91,7 +91,11 @@ export function finishInstall(
     const color = ctx.output.mode === "rich" && colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY);
     // Like bun, the time since the process started.
     const elapsedMs = Math.max(summary.elapsedMs, ctx.runtime.now());
-    for (const line of formatInstallSummary({ ...summary, elapsedMs }, options.command, ctx.output.colors, { color })) {
+    const lines =
+      options.dryRun && options.command === "update"
+        ? formatUpdatePlan({ ...summary, elapsedMs }, ctx.output.colors, { color })
+        : formatInstallSummary({ ...summary, elapsedMs }, options.command, ctx.output.colors, { color });
+    for (const line of lines) {
       ctx.output.line(line);
     }
   }

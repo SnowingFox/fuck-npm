@@ -39,6 +39,49 @@ fn plural(count: u32, word: &str) -> String {
     format!("{count} {word}{}", if count == 1 { "" } else { "s" })
 }
 
+/// `fnpm update --dry-run`: the rows of what would move and bun's
+/// `N packages would be updated` count, or `Checked N packages, nothing to update`.
+pub fn format_update_plan(
+    summary: &InstallSummary,
+    pc: Colors,
+    color: bool,
+    elapsed_ms: f64,
+) -> Vec<String> {
+    let mut lines = vec![String::new()];
+    let time = time_of(elapsed_ms, pc);
+    let (arrow_up, arrow) = if color { ("↑", "→") } else { ("^", "->") };
+    for pkg in &summary.updated {
+        let to = if color {
+            pc.bold(&pc.cyan(&pkg.to))
+        } else {
+            pc.bold(&pkg.to)
+        };
+        lines.push(format!(
+            "{} {} {} {to}{}",
+            pc.cyan(arrow_up),
+            pc.bold(&pkg.name),
+            pc.dim(&format!("{} {arrow}", pkg.from)),
+            available_of(&pkg.available_version, pc)
+        ));
+    }
+    let n = summary.updated.len() as u32;
+    if n > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "{} package{} would be updated {time}",
+            pc.green(&n.to_string()),
+            if n == 1 { "" } else { "s" }
+        ));
+    } else {
+        let packages = summary.checked.map_or(0, |c| c.packages);
+        lines.push(format!(
+            "Checked {}, nothing to update {time}",
+            plural(packages, "package")
+        ));
+    }
+    lines
+}
+
 /// The summary lines (each printed with a trailing newline). `color` selects the Unicode
 /// arrows; `pc` is the stdout palette.
 pub fn format_install_summary(

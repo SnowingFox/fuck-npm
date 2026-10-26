@@ -47,7 +47,8 @@ pub use tls::CaStore;
 /// Errors of registry operations. URLs in messages never carry credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("GET {url}: {status}")]
+    /// bun's `GET <url> - <status>`.
+    #[error("GET {url} - {status}")]
     Status { url: String, status: u16 },
     #[error("package \"{0}\" not found")]
     NotFound(String),

@@ -585,6 +585,17 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
+    // A requested optional dependency that did not resolve was warned about; the command
+    // still fails, before anything is written.
+    let named = |name: &String| {
+        planned.requests.iter().any(|r| &r.name == name)
+            || (opts.command == InstallCommand::Update
+                && !opts.packages.is_empty()
+                && planned.updates.iter().any(|u| &u.name == name))
+    };
+    if out.failed_requests.iter().any(named) {
+        return Err(Error::Reported);
+    }
     phases.mark("resolve");
     let ResolveOutput {
         mut graph,
@@ -718,6 +729,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         }
         if let Some(rollback) = &mut patch_rollback {
             rollback.finish();
+        }
+        // `update --dry-run` reports the plan against what it checked.
+        if config.dry_run && opts.command == InstallCommand::Update {
+            summary.checked = Some(CheckedCount {
+                installs: 0,
+                packages: graph.len() as u32,
+            });
         }
         summary.elapsed_ms = start.elapsed().as_millis() as u64;
         client.flush_cache_writes().await;

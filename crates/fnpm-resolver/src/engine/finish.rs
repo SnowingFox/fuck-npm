@@ -194,6 +194,9 @@ impl Engine<'_> {
             .collect();
         let mut warnings = std::mem::take(&mut self.warnings);
         warnings.extend(std::mem::take(&mut self.kept_patched));
+        let mut not_checked = std::mem::take(&mut self.not_checked);
+        not_checked.sort();
+        warnings.extend(not_checked);
         let mut seen = std::collections::HashSet::new();
         warnings.retain(|w| seen.insert(w.clone()));
         Ok(EngineOutput {
@@ -201,6 +204,7 @@ impl Engine<'_> {
             requests,
             warnings,
             manifest_order: self.manifest_order,
+            failed_requests: self.failed_requests,
         })
     }
 }

@@ -50,6 +50,14 @@ pub enum Error {
     /// The registry has no such package.
     #[error("package \"{0}\" not found")]
     NotFound(String),
+    /// The registry answered 404 for the manifest of `name` (bun: `GET <url> - 404`).
+    #[error("GET {url} - 404")]
+    ManifestNotFound {
+        /// The registry name.
+        name: String,
+        /// The manifest URL.
+        url: String,
+    },
     /// A `workspace:` dependency names no workspace member.
     #[error("Workspace dependency \"{name}\" not found")]
     WorkspaceNotFound {
@@ -252,6 +260,9 @@ pub struct ResolveOutput {
     pub requests: Vec<(Request, PackageId)>,
     /// Non-fatal problems (peer warnings, deprecations, ignored overrides).
     pub warnings: Vec<String>,
+    /// Requested optional dependencies (`add --optional`, `update <name>`) that could not be
+    /// resolved: only warned about, but the command fails and writes nothing (bun).
+    pub failed_requests: Vec<String>,
 }
 
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
@@ -405,6 +416,7 @@ impl Resolver {
             changed,
             requests: out.requests,
             warnings,
+            failed_requests: out.failed_requests,
         })
     }
 
@@ -445,6 +457,7 @@ impl Resolver {
             changed: false,
             requests: Vec::new(),
             warnings,
+            failed_requests: Vec::new(),
         })
     }
 }

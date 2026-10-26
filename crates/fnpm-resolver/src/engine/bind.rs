@@ -256,6 +256,24 @@ impl Engine<'_> {
         if !tolerated {
             return Err(err);
         }
+        let requested = self.requested_rows.contains_key(&(row.pkg, row.edge))
+            || (self.update.active
+                && self.st[row.pkg.index()].kind == Kind::Project
+                && self.update.names.contains(&edge.name));
+        // Only a download that failed; a range nothing satisfies leaves the entry as it is.
+        let download = !matches!(
+            err,
+            Error::NoMatchingVersion { .. }
+                | Error::DistTagNotFound { .. }
+                | Error::TooRecent { .. }
+        );
+        if requested
+            && download
+            && !edge.behavior.is_peer()
+            && !self.failed_requests.contains(&edge.name)
+        {
+            self.failed_requests.push(edge.name.clone());
+        }
         if edge.behavior.is_peer() {
             let literal = &edge.literal;
             let name = &edge.name;
@@ -723,6 +741,23 @@ impl Engine<'_> {
             .map(|(_, v)| v)
     }
 
+    /// The manifest URL of `name` as messages show it (`/` of a scope encoded as `%2f`).
+    fn manifest_url(&self, name: &str) -> String {
+        let registry = self.cfg.registry_for(name).url.trim_end_matches('/');
+        fnpm_registry::redact_url(&format!("{registry}/{}", name.replace('/', "%2f")))
+    }
+
+    /// The package that `edge` of `row`'s owner reached in the previous graph.
+    fn locked_target(&self, row: Row, edge: &DepEdge) -> Option<PackageId> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        prev.get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && e.behavior.is_peer() == edge.behavior.is_peer())?
+            .target
+    }
+
     /// The version of the package that `edge` of `row`'s owner reached in the previous graph,
     /// with the ranges of every previous edge into that package; `None` when there is none or
     /// one of them is not a plain range.
@@ -860,8 +895,33 @@ impl Engine<'_> {
                     self.set_target(row, id);
                     return Ok(Step::Done);
                 }
+                // `fnpm update`: a transitive dependency whose manifest cannot be read keeps the
+                // package of the lockfile, with a warning (bun).
+                if should_update
+                    && self.st[row.pkg.index()].kind != Kind::Project
+                    && let Some(prev_id) = self.locked_target(row, edge)
+                    && let Some(target) = self.import_prev(prev_id)
+                {
+                    let p = &self.graph.packages[target.index()];
+                    let reason = match &*e {
+                        fnpm_registry::Error::NotFound(_) => {
+                            format!("GET {} - 404", self.manifest_url(&name))
+                        }
+                        e => e.to_string(),
+                    };
+                    let warning = format!(
+                        "{}@{} was not checked for updates: {reason}",
+                        p.name, p.version
+                    );
+                    if !self.not_checked.contains(&warning) {
+                        self.not_checked.push(warning);
+                    }
+                    self.set_target(row, target);
+                    return Ok(Step::Done);
+                }
                 if matches!(*e, fnpm_registry::Error::NotFound(_)) {
-                    return Err(Error::NotFound(name));
+                    let url = self.manifest_url(&name);
+                    return Err(Error::ManifestNotFound { name, url });
                 }
                 return Err(Error::Registry(clone_registry_error(&e)));
             }

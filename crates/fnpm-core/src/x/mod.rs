@@ -520,6 +520,14 @@ fn install_error(error: &crate::Error, registry: &str) -> String {
         | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Status { url, status })) => {
             format!("GET {url} - {status}")
         }
+        crate::Error::Resolve(fnpm_resolver::Error::ManifestNotFound { name, .. }) => {
+            let base = if registry.ends_with('/') {
+                registry.to_owned()
+            } else {
+                format!("{registry}/")
+            };
+            format!("GET {base}{} - 404", name.replace('/', "%2f"))
+        }
         crate::Error::Registry(R::Network { url, message })
         | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Network { url, message }))
             if url.is_empty() =>
