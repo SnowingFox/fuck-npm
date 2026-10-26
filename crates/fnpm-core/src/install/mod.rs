@@ -1590,21 +1590,25 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
 /// `fnpm_lockfile::tree::hoist` records a workspace's own `node_modules` entries with the
 /// workspace's node as parent and lists them in `workspace_roots`; the linker places
 /// `workspace_roots` entries as top-level nodes of that workspace, so they are made tops here.
+/// `reserved`: workspaces in the lockfile that a frozen install leaves out (pruned from disk),
+/// whose root folders stay theirs.
 pub(crate) fn plan_layout(
     linker: &Linker,
     view: &LockGraph,
     kind: NodeLinker,
     selected: Option<Vec<PackageId>>,
+    reserved: &[&str],
 ) -> Layout {
     match kind {
         NodeLinker::Hoisted => {
-            let mut layout = Layout::Hoisted(fnpm_lockfile::tree::hoist(
+            let mut layout = Layout::Hoisted(fnpm_lockfile::tree::hoist_reserving(
                 view,
                 &fnpm_lockfile::tree::HoistOptions {
                     include: linker.include(),
                     platform: linker.config().platform,
                     workspaces: selected,
                 },
+                reserved,
             ));
             if let Layout::Hoisted(tree) = &mut layout {
                 for (_, ids) in &tree.workspace_roots {
@@ -1647,6 +1651,16 @@ async fn link(
         migrated_npm,
         &root,
     );
+    // The names of the workspaces fnpm.lock has that a frozen install skips (not on disk).
+    let pruned: Vec<&str> = match lock.graph.as_ref() {
+        Some(prev) if config.frozen_lockfile => prev
+            .workspaces
+            .iter()
+            .filter(|(path, _)| !path.is_empty() && !ws.members.iter().any(|m| &m.path == *path))
+            .filter_map(|(_, id)| prev.get(*id).map(|p| p.name.as_str()))
+            .collect(),
+        _ => Vec::new(),
+    };
     let mut failed = 0u32;
     let mut offline_missing = false;
     loop {
@@ -1671,7 +1685,7 @@ async fn link(
                 }
             }
         }
-        let layout = plan_layout(&linker, &view, kind, selected.clone());
+        let layout = plan_layout(&linker, &view, kind, selected.clone(), &pruned);
         // The previous install's tree, for packages that keep their place (hoisted only,
         // without patches, whose files may have changed under the same key).
         let previous = match (intact, &layout) {
@@ -1681,7 +1695,7 @@ async fn link(
                     && selected.is_none() =>
             {
                 let prev_view = link_view(prev);
-                match plan_layout(&linker, &prev_view, NodeLinker::Hoisted, None) {
+                match plan_layout(&linker, &prev_view, NodeLinker::Hoisted, None, &[]) {
                     Layout::Hoisted(tree) => Some(fnpm_linker::Previous {
                         graph: Arc::new(prev_view),
                         tree: Arc::new(tree),
@@ -1778,7 +1792,8 @@ async fn link(
                 .filter(|previous| *previous != graph)
                 .map(|previous| {
                     let old_view = link_view(previous);
-                    let Layout::Hoisted(old_tree) = plan_layout(&linker, &old_view, kind, None)
+                    let Layout::Hoisted(old_tree) =
+                        plan_layout(&linker, &old_view, kind, None, &[])
                     else {
                         unreachable!("hoisted layout requested");
                     };
@@ -1844,7 +1859,7 @@ async fn link(
             fresh: !root.join("node_modules").exists(),
             selected_workspaces: selected.clone(),
             hoisted_prune_tree: (selected.is_some() && kind == NodeLinker::Hoisted).then(|| {
-                match plan_layout(&linker, &view, kind, None) {
+                match plan_layout(&linker, &view, kind, None, &pruned) {
                     Layout::Hoisted(tree) => tree,
                     _ => unreachable!("hoisted layout requested"),
                 }

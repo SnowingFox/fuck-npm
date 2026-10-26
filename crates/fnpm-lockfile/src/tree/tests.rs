@@ -400,3 +400,34 @@ fn names_that_are_not_one_folder_are_never_placed() {
     let t = hoist(&g, &all());
     assert_eq!(keys(&t), ["ok"]);
 }
+
+/// A pruned workspace keeps its root folder: its registry twin, a dependency of another
+/// workspace, stays in that workspace's node_modules. The root's own dependency still goes there.
+#[test]
+fn reserved_root_folders_are_not_hoisted_into() {
+    let mut g = root();
+    let app = g.add_workspace(Package::new(
+        "app",
+        "1.0.0",
+        Resolution::Workspace {
+            path: "packages/app".into(),
+        },
+    ));
+    let twin = npm(&mut g, "no-deps", "1.1.0");
+    edge(&mut g, app, "no-deps", "^1.0.0", Behavior::PROD, Some(twin));
+    let at_root = |t: &Tree| t.nodes.iter().any(|n| n.path == "no-deps");
+    assert!(at_root(&hoist(&g, &all())));
+    let reserved = hoist_reserving(&g, &all(), &["no-deps"]);
+    assert!(!at_root(&reserved));
+    assert!(reserved.nodes.iter().any(|n| n.package == twin));
+
+    edge(
+        &mut g,
+        PackageId::ROOT,
+        "no-deps",
+        "1.1.0",
+        Behavior::PROD,
+        Some(twin),
+    );
+    assert!(at_root(&hoist_reserving(&g, &all(), &["no-deps"])));
+}
