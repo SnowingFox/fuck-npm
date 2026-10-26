@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "astro",
+  "installCommand": "npm ci",
+  "buildCommand": "DOCS_SITE=https://fuck-npm.vercel.app npm run build",
+  "outputDirectory": "dist",
+  "trailingSlash": true
+}
