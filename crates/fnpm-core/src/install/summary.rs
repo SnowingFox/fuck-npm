@@ -48,6 +48,15 @@ pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
                 .unwrap_or(resolved_commit);
             fnpm_registry::redact_url(&format!("github:{owner}/{repo}#{commit}"))
         }
+        // An ssh login without a password (`ssh://git@host/...`) is no secret; bun prints it.
+        Resolution::Git { url, .. }
+            if url
+                .strip_prefix("ssh://")
+                .and_then(|rest| rest.split_once('@'))
+                .is_some_and(|(user, _)| !user.contains([':', '/'])) =>
+        {
+            p.resolution.to_string()
+        }
         resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }
