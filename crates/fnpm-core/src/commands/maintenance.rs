@@ -34,7 +34,11 @@ pub(crate) fn current_layout(
             )
         });
     let kind = fnpm_linker::prune::detect_layout(&project.root_dir, graph, configured);
-    let linker = Linker::new(config.clone(), project.store()?);
+    let self_contained =
+        fnpm_workspace::Workspace::load_with(&project.root_dir, &Default::default())
+            .map(|(ws, _)| ws.self_contained().0)
+            .unwrap_or_default();
+    let linker = Linker::new(config.clone(), project.store()?).with_self_contained(self_contained);
     let view = crate::install::link_view(graph);
     let layout = crate::install::plan_layout(&linker, &view, kind, None);
     Ok((linker, layout))

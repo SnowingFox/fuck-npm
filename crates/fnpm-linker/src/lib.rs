@@ -298,6 +298,8 @@ pub struct Linker {
     store: Store,
     trusted: TrustFn,
     native_binlinks: Vec<String>,
+    /// Paths of the self-contained workspaces ([`Linker::with_self_contained`]).
+    self_contained: Vec<String>,
     pool: parking_lot::Mutex<Option<(usize, Arc<rayon::ThreadPool>)>>,
 }
 
@@ -353,6 +355,7 @@ impl Linker {
                 .iter()
                 .map(|s| (*s).to_owned())
                 .collect(),
+            self_contained: Vec::new(),
             pool: parking_lot::Mutex::new(None),
         }
     }
@@ -367,6 +370,22 @@ impl Linker {
     /// packages whose bins link straight into their platform package; `Some(vec![])` turns the
     /// optimisation off (also `FNPM_FEATURE_FLAG_DISABLE_NATIVE_DEPENDENCY_LINKER`, which the
     /// core maps to this).
+    /// Workspaces (by path) whose `node_modules` must be complete and physical: a hoisting
+    /// barrier, and real copies instead of links into the store (bun's self-contained
+    /// workspaces, `installConfig.hoistingLimits` / `workspaces.selfContained`).
+    pub fn with_self_contained(mut self, paths: Vec<String>) -> Self {
+        self.self_contained = paths;
+        self
+    }
+
+    /// The package ids in `graph` of [`Linker::with_self_contained`]'s workspaces.
+    pub fn self_contained_ids(&self, graph: &LockGraph) -> Vec<PackageId> {
+        self.self_contained
+            .iter()
+            .filter_map(|path| graph.workspaces.get(path).copied())
+            .collect()
+    }
+
     pub fn with_native_dependencies(mut self, list: Option<Vec<String>>) -> Self {
         if let Some(l) = list {
             self.native_binlinks = l;
@@ -414,6 +433,7 @@ impl Linker {
                     include: self.include(),
                     platform: self.config.platform,
                     workspaces: None,
+                    self_contained: self.self_contained_ids(graph),
                 },
             )),
             NodeLinker::Isolated => Layout::Isolated(self.plan_isolated(graph, None)),
@@ -477,6 +497,12 @@ impl Linker {
         let _ = bins::exec_mode();
         let pool = self.pool(opts.threads)?;
         let mat = fsutil::Materializer::new(opts.backend);
+        // Real copies for self-contained workspaces: clonefile is one where it works.
+        let physical = fsutil::Materializer::new(match opts.backend {
+            fnpm_config::Backend::Clonefile => fnpm_config::Backend::Clonefile,
+            _ => fnpm_config::Backend::Copyfile,
+        });
+        let self_contained = self.self_contained_ids(graph);
         let cx = LinkCx {
             project_dir,
             graph,
@@ -484,6 +510,8 @@ impl Linker {
             opts,
             events,
             mat: &mat,
+            physical: &physical,
+            self_contained: &self_contained,
             store: &self.store,
             platform: self.config.platform,
             native: &self.native_binlinks,
@@ -516,6 +544,10 @@ pub(crate) struct LinkCx<'a> {
     pub opts: &'a LinkOptions,
     pub events: &'a dyn EventSink,
     pub mat: &'a fsutil::Materializer,
+    /// Real copies (the trees of self-contained workspaces).
+    pub physical: &'a fsutil::Materializer,
+    /// The self-contained workspaces.
+    pub self_contained: &'a [PackageId],
     #[allow(dead_code)]
     pub store: &'a Store,
     pub platform: fnpm_types::Platform,
@@ -559,6 +591,20 @@ impl LinkCx<'_> {
     /// Waits for the package and copies it into `dest` (which must not exist), then writes the
     /// `.fnpm-tag` for git/tarball packages.
     pub fn materialize(&self, id: PackageId, dest: &Path) -> Result<()> {
+        self.materialize_with(self.mat, id, dest)
+    }
+
+    /// [`LinkCx::materialize`] with real copies.
+    pub fn materialize_physical(&self, id: PackageId, dest: &Path) -> Result<()> {
+        self.materialize_with(self.physical, id, dest)
+    }
+
+    fn materialize_with(
+        &self,
+        mat: &fsutil::Materializer,
+        id: PackageId,
+        dest: &Path,
+    ) -> Result<()> {
         if self.events.wants_progress() {
             self.events.emit(Event::Link {
                 done: self.done.load(Ordering::Relaxed),
@@ -570,8 +616,7 @@ impl LinkCx<'_> {
             package: self.label(id),
             message,
         })?;
-        self.mat
-            .materialize(&entry.root, &entry.index, dest)
+        mat.materialize(&entry.root, &entry.index, dest)
             .map_err(|source| Error::Materialize {
                 package: self.label(id),
                 source,

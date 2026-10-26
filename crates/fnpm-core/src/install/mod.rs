@@ -362,7 +362,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             (ws, warnings, lock)
         }
     };
-    for w in ws_warnings {
+    for w in ws_warnings.into_iter().chain(ws.self_contained().1) {
         events.emit(Event::warn(w, None));
     }
     for w in &lock.warnings {
@@ -1611,6 +1611,7 @@ pub(crate) fn plan_layout(
                     include: linker.include(),
                     platform: linker.config().platform,
                     workspaces: selected,
+                    self_contained: linker.self_contained_ids(view),
                 },
             ));
             if let Layout::Hoisted(tree) = &mut layout {
@@ -1667,7 +1668,8 @@ async fn link(
         });
         let linker = Linker::new(config.clone(), fetcher.store().clone())
             .with_trust(trusted)
-            .with_native_dependencies(native_dependencies(config, ws));
+            .with_native_dependencies(native_dependencies(config, ws))
+            .with_self_contained(ws.self_contained().0);
         let mut view = link_view(graph);
         // A root scanner remains available even when its devDependency group is
         // omitted. Only the linking view changes; the saved declaration stays dev.
@@ -1858,6 +1860,7 @@ async fn link(
             .then(|| {
                 let mut all =
                     fnpm_lockfile::tree::HoistOptions::all(fnpm_types::Platform::current());
+                all.self_contained = linker.self_contained_ids(&view);
                 // A peer that `--omit=peer` leaves out has no place of its own to keep.
                 if config.omit.peer {
                     all.include = all.include.with(fnpm_types::Behavior::PEER, false);
