@@ -13,6 +13,7 @@ import os from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inject } from "vitest";
+import { bunNames } from "./compat/lockfile.ts";
 import { Archive, deepMatch, file, parseJsonc, resolveSync, semver, sleepSync, spawn, type Subprocess } from "./compat/bun.ts";
 
 export type { Subprocess };
@@ -355,7 +356,7 @@ export function cwdScope(cwd: string) {
 }
 
 export async function readdirSorted(path: string): Promise<string[]> {
-  const results = await readdir(path);
+  const results = bunNames(await readdir(path));
   results.sort();
   return results;
 }

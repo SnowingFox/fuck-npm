@@ -189,6 +189,8 @@ const gitEnv = {
   GIT_COMMITTER_NAME: "bun-test",
   GIT_COMMITTER_EMAIL: "bun-test@example.com",
   GIT_CONFIG_NOSYSTEM: "1",
+  // The fixture repositories must not pick up the user's git config (tag.gpgsign opens an editor).
+  GIT_CONFIG_GLOBAL: "/dev/null",
 };
 
 async function git(cwd: string, args: string[], stdin?: string): Promise<string> {
