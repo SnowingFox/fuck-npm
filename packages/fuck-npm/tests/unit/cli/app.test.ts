@@ -38,8 +38,8 @@ describe("dispatch", () => {
   test("a missing required positional is reported before the core loads", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["pm", "cache", "pack"])).toBe(1);
-    expect(bed.stderr.text()).toContain("`fnpm pm cache pack` needs <file>");
+    expect(await bed.run(["exec"])).toBe(1);
+    expect(bed.stderr.text()).toContain("`fnpm exec` needs <command>");
     expect(bed.coreLoads()).toBe(0);
   });
 
