@@ -264,10 +264,10 @@ reviewed, and all PARITY.md rows outside "Excluded" ticked.
 |---|---|
 | CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | partial; selected store/binding/patch tests, strict Clippy and binding/adapter JS tests pass on native Linux/macOS/Windows; full suites and btrfs remain |
 | Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | addon builds and native smoke installs pass for all eight targets; native executable packaging remains |
-| npm packages: `fuck-npm`, `@fuck-npm/binding`, `@fuck-npm/binding-<triple>`; postinstall swap and JS shim fallback | not started |
+| npm CLI, binding and eight platform packages; postinstall swap and JS shim fallback | staged namespace-aware packaging and tarball validation implemented; unscoped name is occupied; npm authentication/owned namespace and complete release artifacts still required |
 | Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | selected store/patch/binding tests and both release addon smoke jobs pass; native executable distribution and full bin conformance remain |
-| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | not started |
-| Publish dry run, then the first release (manual, behind `NPM_TOKEN`) | not started |
+| Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` install smoke on Linux x64; published-package and other-manager checks remain |
+| Publish dry run, then the first release (manual authentication on release machine) | staging/pack/publish scripts implemented; no npm package published yet; see [RELEASING.md](RELEASING.md) |
 
 Exit criteria:
 

@@ -9,6 +9,27 @@ Two binaries: `fnpm` (the package manager) and `fnpm-lock` (a lockfile toolkit).
 > execution and security commands are wired end to end. Full Bun conformance and the
 > requirement to beat Bun on every benchmark remain open. See the [roadmap](#roadmap).
 
+## Try the development build
+
+This repository has not published an npm release yet. The existing unscoped
+`fuck-npm` package on npm belongs to another maintainer. Do not install it to
+try this project. [Release preparation](docs/RELEASING.md) documents the package
+namespace, complete native artifacts, tarball checks, and local publication.
+
+From a source checkout with Node 20.19+ and Rust 1.90+:
+
+```sh
+npm ci --ignore-scripts
+npm run build -w fuck-npm
+npm run build:native -w @fuck-npm/binding
+node packages/fuck-npm/dist/fnpm.js --help
+node packages/fuck-npm/dist/fnpm.js install --cwd /path/to/project
+node packages/fuck-npm/dist/fnpm-lock.js --help
+```
+
+This path runs the Node CLI with the Rust addon. Release platform packages also
+need the native launcher for the startup times shown in the benchmarks.
+
 ## Why
 
 bun showed that a package manager can be an order of magnitude faster than npm. fnpm uses bun's
