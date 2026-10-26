@@ -499,9 +499,9 @@ pub fn plan_filtered(
                     if a_ws != dep_is_ws_literal {
                         break 'dont_dedupe;
                     }
-                    if a_ws
-                        && ctx.edge(dd).behavior.is_workspace()
-                            != ctx.edge(dep).behavior.is_workspace()
+                    // A membership edge does not create a dependency link, while a
+                    // declared dependency does. Reusing its node loses that distinction.
+                    if ctx.edge(dd).behavior.is_workspace() != ctx.edge(dep).behavior.is_workspace()
                     {
                         break 'dont_dedupe;
                     }

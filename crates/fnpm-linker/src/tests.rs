@@ -493,6 +493,35 @@ fn plan_workspaces_and_links() {
 }
 
 #[test]
+fn plan_workspace_alias_keeps_its_incoming_edge() {
+    let mut b = G::new();
+    let ui = b.workspace("@app/ui", "packages/ui");
+    let consumer = b.workspace("consumer", "examples/consumer");
+    for edge in &mut b.g.packages[0].dependencies {
+        edge.literal = if edge.target == Some(ui) {
+            "packages/ui".into()
+        } else {
+            "examples/consumer".into()
+        };
+    }
+    b.edge(consumer, "@app/ui", ui, Behavior::PROD, "npm:@app/ui");
+    let layout = plan_default(&b.g);
+    let deps = &layout
+        .roots
+        .iter()
+        .find(|(id, _)| *id == consumer)
+        .unwrap()
+        .1;
+    let entry = deps
+        .iter()
+        .find(|(name, _)| name == "@app/ui")
+        .expect("the consumer must link its declared workspace alias")
+        .1;
+    assert_eq!(layout.entries[entry as usize].package, ui);
+    assert!(!layout.roots[0].1.iter().any(|(name, _)| name == "@app/ui"));
+}
+
+#[test]
 fn plan_filter_selects_workspaces() {
     let mut b = G::new();
     let w1 = b.workspace("w1", "packages/w1");
