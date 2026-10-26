@@ -3801,6 +3801,7 @@
           "cpu": [],
           "os": [],
           "libc": [],
+          "minimumReleaseAgeMs": 0,
           "command": "install",
           "packages": [],
           "saveProd": false,
