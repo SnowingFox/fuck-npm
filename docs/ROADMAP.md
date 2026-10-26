@@ -19,28 +19,20 @@ Store v2 is preserved. Integration fixes cover explicit omitted-peer adds, local
 audit repairs replacing installed files, running previously blocked scripts after trust changes,
 full scanner scope after node_modules removal, and a single metadata request with a release-age gate.
 
-The integrated main CI run ([40251319935](https://github.com/SnowingFox/fuck-npm/actions/runs/40251319935))
-failed on macOS (`libc::CLONE_NOFOLLOW` is unavailable), Windows Clippy (unused/dead store code),
-and Linux ARM GNU cross-compilation (the bundled GCC is too old for libdeflate). Linux x64 and ARM64
-binding test jobs passed, as did Linux GNU x64, both musl, and both Windows release addon builds.
-Release smoke jobs were skipped because the build matrix failed. The follow-up defines the Darwin clone flag
-from verified platform references and corrects Unix-only store guards for Windows. ARM GNU now uses Zig
-with an explicit glibc 2.17 target. Store tests join the native platform test jobs so the clonefile regression
-runs on macOS. The follow-up run ([40253207146](https://github.com/SnowingFox/fuck-npm/actions/runs/40253207146))
-passed the ARM GNU release build and all Linux test jobs. It exposed the same missing clone flag in the
-linker and two Windows store test failures (file-identity accounting and path separators). The linker
-now uses the same verified clone flag; store status queries the Windows volume and 128-bit file ID,
-and traversal regressions compare native paths. Linux follow-up checks passed 249 combined store,
-linker and binding tests (3 ignored), plus strict Clippy. Native Windows execution and the remaining
-Windows-only lint/patch fixes are integrated: Unix-only helpers and signal states have accurate platform
-guards, and Windows patch ancestor preparation preserves file/directory links instead of emptying them.
-The patch regressions cover nested scopes, shared-store isolation and unmanaged-link refusal; native CI
-runs them on every test host. The separate Windows track passed 375 Linux tests, strict Clippy and focused
-Windows compilation checks; full native CI remains the final platform gate.
-The next [branch run](https://github.com/SnowingFox/fuck-npm/actions/runs/40254449613) built both
-macOS release addons and passed their native smoke tests, including Intel and Apple Silicon. The
-macOS store suite exposed APFS not updating access times after index reads; the store now explicitly
-refreshes those access times at most once a day without modifying the index contents or mtime.
+Platform follow-ups are integrated. Both store and linker define the verified Darwin clone flag
+missing from libc 0.2.191, Windows status deduplicates hard links by volume and 128-bit file ID,
+and Unix-only helpers have accurate platform guards. Windows patch ancestor preparation preserves
+file/directory links; regressions cover nested scopes, shared-store isolation and unmanaged-link refusal.
+The ARM GNU addon uses Zig with an explicit glibc 2.17 baseline instead of the obsolete bundled GCC.
+
+The [native branch run](https://github.com/SnowingFox/fuck-npm/actions/runs/40254449613) built both
+macOS release addons and passed their smoke tests on Intel and Apple Silicon. Its store tests exposed
+APFS leaving access times unchanged after index reads. The store now refreshes those access times at
+most once a day while preserving index contents and mtime. Linux follow-up checks passed 249 combined
+store/linker/binding tests (3 ignored); the separate Windows track passed 375 Linux tests and strict
+Clippy. Windows scripts and focused filesystem/command probes also passed cross-target checks.
+The [combined native CI run](https://github.com/SnowingFox/fuck-npm/actions/runs/40256027231) checks
+all follow-ups; native Windows runtime and complete platform test validation remain pending.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
