@@ -110,6 +110,8 @@ export type InstallSummary = {
   noop: boolean;
   /** `update` rewrote package.json with nothing else to install (`up to date, package.json synced`). */
   packageJsonSynced?: boolean;
+  /** `update`: `kept <name>@<version> (patched, v<x> available)` rows. */
+  kept?: string[];
 };
 
 /** Progress and diagnostics streamed while the core works (batched ≤ every 50 ms). */

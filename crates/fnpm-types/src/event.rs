@@ -220,6 +220,9 @@ pub struct InstallSummary {
     /// (up to date, package.json synced)`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub package_json_synced: bool,
+    /// `update`: `kept <name>@<version> (patched, v<x> available)` rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<String>,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon

@@ -607,6 +607,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         mut graph,
         changed,
         requests: resolved_requests,
+        kept,
         ..
     } = out;
 
@@ -681,6 +682,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         updated,
         removed,
         requested,
+        kept: if opts.command == InstallCommand::Update {
+            kept
+        } else {
+            Vec::new()
+        },
         ..InstallSummary::default()
     };
     let lockfile_dirty = pending_patch.is_some()

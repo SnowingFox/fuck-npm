@@ -64,6 +64,10 @@ pub fn format_update_plan(
             available_of(&pkg.available_version, pc)
         ));
     }
+    lines.extend(summary.kept.iter().cloned());
+    if !summary.kept.is_empty() && summary.updated.is_empty() {
+        lines.push(String::new());
+    }
     let n = summary.updated.len() as u32;
     if n > 0 {
         lines.push(String::new());
@@ -142,6 +146,10 @@ pub fn format_install_summary_at(
             pc.dim(&format!("{} {arrow}", pkg.from)),
             available(&pkg.available_version)
         ));
+        rows += 1;
+    }
+    for line in &summary.kept {
+        lines.push(line.clone());
         rows += 1;
     }
     if rows > 0 {

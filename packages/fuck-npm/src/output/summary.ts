@@ -48,6 +48,9 @@ export function formatUpdatePlan(summary: InstallSummary, pc: Colors, opts: { co
       `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
     );
   }
+  const kept = summary.kept ?? [];
+  lines.push(...kept);
+  if (kept.length > 0 && summary.updated.length === 0) lines.push("");
   const n = summary.updated.length;
   if (n > 0) {
     lines.push("", `${pc.green(String(n))} package${n === 1 ? "" : "s"} would be updated ${time}`);
@@ -87,6 +90,10 @@ export function formatInstallSummary(
     lines.push(
       `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
     );
+    rows += 1;
+  }
+  for (const line of summary.kept ?? []) {
+    lines.push(line);
     rows += 1;
   }
   if (rows > 0) {

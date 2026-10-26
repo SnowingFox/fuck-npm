@@ -212,6 +212,7 @@ pub(crate) struct EngineOutput {
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
     pub failed_requests: Vec<String>,
+    pub kept: Vec<String>,
 }
 
 /// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A

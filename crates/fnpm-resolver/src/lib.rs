@@ -263,6 +263,8 @@ pub struct ResolveOutput {
     /// Requested optional dependencies (`add --optional`, `update <name>`) that could not be
     /// resolved: only warned about, but the command fails and writes nothing (bun).
     pub failed_requests: Vec<String>,
+    /// `kept <name>@<version> (patched, v<x> available)`: patched packages an update held.
+    pub kept: Vec<String>,
 }
 
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
@@ -417,6 +419,11 @@ impl Resolver {
             requests: out.requests,
             warnings,
             failed_requests: out.failed_requests,
+            kept: {
+                let mut kept = out.kept;
+                kept.dedup();
+                kept
+            },
         })
     }
 
@@ -458,6 +465,7 @@ impl Resolver {
             requests: Vec::new(),
             warnings,
             failed_requests: Vec::new(),
+            kept: Vec::new(),
         })
     }
 }

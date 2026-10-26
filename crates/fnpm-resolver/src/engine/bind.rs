@@ -1046,30 +1046,6 @@ impl Engine<'_> {
         {
             chosen = kept;
         }
-        // A transitive edge moves its locked package only to a version that every edge sharing
-        // that package accepts, so the update does not fork it (bun holds the edge otherwise).
-        if should_update
-            && !latest
-            && !is_peer
-            && !asked.replaced
-            && self.st[row.pkg.index()].kind != Kind::Project
-            && let Some(ranges) = self.ranges_sharing_locked(row, edge)
-        {
-            let gate = gate_data.as_ref().map(|(ms, excludes)| AgeGate {
-                min_age_ms: *ms,
-                now_ms: self.now_ms,
-                excludes,
-            });
-            let shared = peers::version_every_peer_accepts(&manifest, &ranges.1, gate.as_ref())
-                .and_then(|p| match p {
-                    Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
-                    Picked::Err(_) => None,
-                })
-                .filter(|v| v.version.cmp(&ranges.0) != std::cmp::Ordering::Less);
-            if let Some(v) = shared.or_else(|| manifest.find(&ranges.0)) {
-                chosen = v;
-            }
-        }
         if latest
             && let Some(t) = &tag
             && let Some(tagged) = manifest.dist_tag(t)
@@ -1096,6 +1072,31 @@ impl Engine<'_> {
                     patched = true;
                     break;
                 }
+            }
+        }
+        // A transitive edge moves its locked package only to a version that every edge sharing
+        // that package accepts, so the update does not fork it (bun holds the edge otherwise).
+        if should_update
+            && !patched
+            && !latest
+            && !is_peer
+            && !asked.replaced
+            && self.st[row.pkg.index()].kind != Kind::Project
+            && let Some(ranges) = self.ranges_sharing_locked(row, edge)
+        {
+            let gate = gate_data.as_ref().map(|(ms, excludes)| AgeGate {
+                min_age_ms: *ms,
+                now_ms: self.now_ms,
+                excludes,
+            });
+            let shared = peers::version_every_peer_accepts(&manifest, &ranges.1, gate.as_ref())
+                .and_then(|p| match p {
+                    Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
+                    Picked::Err(_) => None,
+                })
+                .filter(|v| v.version.cmp(&ranges.0) != std::cmp::Ordering::Less);
+            if let Some(v) = shared.or_else(|| manifest.find(&ranges.0)) {
+                chosen = v;
             }
         }
         let reusable = !should_update && !patched && !latest;
