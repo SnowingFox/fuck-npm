@@ -32,7 +32,11 @@ linker and two Windows store test failures (file-identity accounting and path se
 now uses the same verified clone flag; store status queries the Windows volume and 128-bit file ID,
 and traversal regressions compare native paths. Linux follow-up checks passed 249 combined store,
 linker and binding tests (3 ignored), plus strict Clippy. Native Windows execution and the remaining
-Windows-only lint/patch fixes still require another CI run before the blockers can be considered closed.
+Windows-only lint/patch fixes are integrated: Unix-only helpers and signal states have accurate platform
+guards, and Windows patch ancestor preparation preserves file/directory links instead of emptying them.
+The patch regressions cover nested scopes, shared-store isolation and unmanaged-link refusal; native CI
+runs them on every test host. The separate Windows track passed 375 Linux tests, strict Clippy and focused
+Windows compilation checks; full native CI remains the final platform gate.
 The next [branch run](https://github.com/SnowingFox/fuck-npm/actions/runs/40254449613) built both
 macOS release addons and passed their native smoke tests, including Intel and Apple Silicon. The
 macOS store suite exposed APFS not updating access times after index reads; the store now explicitly

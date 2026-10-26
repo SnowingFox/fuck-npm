@@ -116,6 +116,7 @@ jobs:
           key: napi-test
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: cargo test -p fnpm-store -p fnpm-napi
+      - run: cargo test -p fnpm-core ancestor_materialization
       - if: runner.os == 'macOS'
         run: cargo test -p fnpm-linker clone_dir_preserves_source_symlinks
       - run: cargo clippy -p fnpm-store -p fnpm-napi --all-targets --features fnpm-napi/testing -- -D warnings
