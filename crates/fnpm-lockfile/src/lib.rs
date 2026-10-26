@@ -76,7 +76,7 @@ pub const FNPM_LOCK: &str = "fnpm.lock";
 /// (`LockGraph::lockfile_version`) so the writer picks it the way bun picks it for a new
 /// lockfile: 3 with scoped overrides, else 2, or 1 when a package breaks a v2 invariant.
 /// A loaded lockfile keeps its version (v0 is written as v1).
-pub const TEXT_LOCKFILE_VERSION_CURRENT: u32 = 3;
+pub const TEXT_LOCKFILE_VERSION_CURRENT: u32 = LockGraph::LOCKFILE_VERSION;
 
 /// A lockfile format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

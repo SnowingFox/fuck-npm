@@ -402,6 +402,7 @@ impl<'a> Engine<'a> {
         }
         self.graph.trusted_dependencies = crate::frozen::trusted(self.ws)?;
         if let Some(prev) = self.prev {
+            self.graph.lockfile_version = prev.lockfile_version;
             self.graph.node_linker = prev.node_linker;
             self.graph.config_version = prev.config_version;
         }
@@ -467,6 +468,7 @@ impl<'a> Engine<'a> {
             patched_dependencies: std::mem::take(&mut self.graph.patched_dependencies),
             trusted_dependencies: self.graph.trusted_dependencies.take(),
             package_extensions: std::mem::take(&mut self.graph.package_extensions),
+            lockfile_version: self.graph.lockfile_version,
             node_linker: self.graph.node_linker,
             config_version: self.graph.config_version,
             ..LockGraph::new(root)
