@@ -33,9 +33,11 @@ const assets = {};
 for (const t of inputs) {
   const filename = `fnpm-v${original.version}-${t.abi}.tar.gz`;
   const archive = join(assetsDir, filename);
-  const r = spawnSync('tar', ['-czf', archive, '-C', t.directory, ...t.files], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(r.stderr);
-  const bytes = readFileSync(archive);
+  // Stream archive bytes: GNU tar treats a Windows drive letter as a remote host.
+  const r = spawnSync('tar', ['-czf', '-', ...t.files], { cwd: t.directory, maxBuffer: 256 << 20 });
+  if (r.error || r.status !== 0) throw new Error(r.error?.message ?? r.stderr.toString());
+  const bytes = r.stdout;
+  writeFileSync(archive, bytes);
   assets[t.abi] = { url: new URL(filename, assetBase.href.replace(/\/?$/, '/')).href, integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`, files: t.files, size: bytes.length };
 }
 const cli = join(output, 'cli'); mkdirSync(cli);
