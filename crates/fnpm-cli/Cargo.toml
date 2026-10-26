@@ -34,4 +34,5 @@ libc.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+fnpm-scripts.workspace = true
 tempfile.workspace = true

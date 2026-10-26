@@ -205,7 +205,19 @@ where
         return guarded(work(Arc::new(NoopSink))).await;
     };
     let sink = BatchingSink::new(Arc::new(move |events: Vec<Event>| {
-        listener.deliver(&events);
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                Event::Script {
+                    foreground: true,
+                    ..
+                } | Event::Output { .. }
+            )
+        }) {
+            listener.deliver_before_output(&events);
+        } else {
+            listener.deliver(&events);
+        }
     }));
     let flusher = Flusher::start(sink.clone());
     let outcome = guarded(work(sink)).await;

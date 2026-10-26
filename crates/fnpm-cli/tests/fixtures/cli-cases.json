@@ -7234,7 +7234,7 @@
       "expected": {
         "exit": 0,
         "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
-        "stderr": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/3\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -7335,7 +7335,7 @@
       "expected": {
         "exit": 0,
         "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
-        "stderr": "\r\u001b[2KResolving 1/3\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -7435,7 +7435,7 @@
       "expected": {
         "exit": 0,
         "stdout": "\u001b[1mfnpm add \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
-        "stderr": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/3\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K⠋ Resolvi\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -7639,7 +7639,7 @@
       "expected": {
         "exit": 0,
         "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
-        "stderr": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/3\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -8234,7 +8234,7 @@
       "expected": {
         "exit": 0,
         "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
-        "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -8434,7 +8434,7 @@
       "expected": {
         "exit": 0,
         "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
-        "stderr": "\r\u001b[2KResolving 1/3\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,
@@ -8535,7 +8535,7 @@
       "expected": {
         "exit": 0,
         "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
-        "stderr": "\r\u001b[2KResolving 1/3\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
+        "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
           "yarn": false,

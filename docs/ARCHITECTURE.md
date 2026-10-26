@@ -1709,7 +1709,7 @@ byte-identical. Shared golden fixtures and the conformance suite catch any diver
 | `--version` / `-v` with no command, or on a native command | native (`VERSION` is the npm package version from the spec) |
 | a native command with `-h` / `--help` or `-t` / `--tree` | node |
 | `update -i` / `--interactive` | node, after the native side has validated the flags |
-| `x` / `dlx` / `fnpmx`, `create` | native execution planner; selected JavaScript tools/templates may run Node |
+| `x` / `dlx` / `fnpx` / `fnpmx`, `create` | native execution planner; selected JavaScript tools/templates may run Node |
 | other commands (`outdated`, `why`, `pm …`, `run`, `publish`, …), `help`, `completions`, top-level aliases (`whoami`, `migrate`), unknown commands, no arguments | node |
 | every `fnpm-lock` invocation except `--version` | node |
 | argv that is not valid UTF-8 | node |
@@ -1938,7 +1938,7 @@ The unscoped npm name `fuck-npm` belongs to an unrelated package.
 
 | package | contents |
 |---|---|
-| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm`, `bin/fnpm-lock` and `bin/fnpmx` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
+| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm`, `bin/fnpm-lock`, `bin/fnpx`, and `bin/fnpmx` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
 | `@fuck-npm/binding` | the loader (`index.js`, `index.d.ts`) that finds `fnpm.<triple>.node` |
 | `@fuck-npm/binding-<triple>` | `fnpm.<triple>.node`, plus the native `fnpm` and `fnpm-lock` executables (`.exe` on Windows); `os` / `cpu` / `libc` set so package managers install only the matching one |
 
@@ -2016,3 +2016,28 @@ Rules that keep it there:
 
 Node-hosted commands keep the TS CLI's rules (compile cache, lazy imports); their cost is Node's
 startup plus the bundle, which is fine for commands that are not in the benchmark.
+
+
+### Interactive installation progress
+
+Native and TypeScript launch paths share golden fixtures for a progress region on stderr.
+A 100 ms heartbeat animates even while a request or lifecycle script emits no events;
+event bursts are throttled to 50 ms. The region shows the current stage and its counts,
+current package or oldest running script, script completion/failure counts and elapsed time.
+Concurrent scripts have unique identities, so two versions of the same package cannot
+remove each other from the running list. Discovery totals remain unknown until known;
+stage counts are not presented as an overall percentage.
+
+A 500 ms sample reports registry response bytes and recent response-byte throughput,
+active requests and the adaptive request limit, manifest/tarball request count, manifest
+cache reuse (including 304 responses), and retries. CPU cores means available parallelism;
+I/O workers and link workers are the configured runtime size and the pool size selected for
+the link pass, respectively. These are not measurements of busy cores, total OS threads,
+CPU utilization, or total interface traffic. Native dependency tools have their own network
+activity outside these counters. Timers are absent for no-op installs without core work,
+non-terminal diagnostics, JSON, quiet/silent modes, CI, and disabled progress.
+
+Before inherited script output or captured failure diagnostics, the renderer clears and
+pauses its region. The N-API listener acknowledges the JS callback before inherited output
+starts, keeping the addon and native launch paths consistent. Stop cancels the heartbeat
+and erases the region before the final result.

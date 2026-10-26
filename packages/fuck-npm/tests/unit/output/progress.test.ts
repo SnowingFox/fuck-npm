@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { createProgress, formatBytes, THROTTLE_MS, wantsProgress } from "@/output/progress.ts";
+import { createProgress, formatBytes, HEARTBEAT_MS, THROTTLE_MS, wantsProgress } from "@/output/progress.ts";
 import { plain, testBed } from "../harness.ts";
 
-const draws = (text: string): number => text.split("\r\u001B[2K").length - 1;
+const draws = (text: string): number => (plain(text).match(/Resolving/g) ?? []).length;
 
 describe("wantsProgress", () => {
   const flags = { silent: false, quiet: false, noProgress: false };
@@ -93,6 +93,82 @@ describe("createProgress", () => {
     expect(line.length).toBeLessThanOrEqual(20);
     progress.stop();
   });
+  test("animates and updates elapsed time while a script emits no events", () => {
+    const bed = testBed({ stderrIsTTY: true });
+    const progress = createProgress(bed.runtime);
+    progress.sink({ type: "link", done: 512, total: 512 });
+    progress.sink({ type: "scriptplan", total: 2 });
+    progress.sink({ type: "script", package: "@prisma/client", script: "postinstall", phase: "start", id: "a" });
+    bed.advance(THROTTLE_MS);
+    const first = bed.stderr.text();
+    bed.advance(HEARTBEAT_MS);
+    expect(bed.stderr.text()).not.toBe(first);
+    bed.advance(10_000);
+    const output = plain(bed.stderr.text());
+    expect(output).toContain("Installed 512/512  Scripts 0/2");
+    expect(output).toContain("Running @prisma/client postinstall 10.2s");
+    progress.stop();
+    const stopped = bed.stderr.text();
+    bed.advance(1000);
+    expect(bed.stderr.text()).toBe(stopped);
+  });
+
+  test("tracks concurrent scripts by identity and never displays a completed one as running", () => {
+    const bed = testBed({ stderrIsTTY: true });
+    const progress = createProgress(bed.runtime);
+    progress.sink({ type: "scriptplan", total: 2 });
+    progress.sink({ type: "script", package: "sqlite", script: "install", phase: "start", id: "v1" });
+    progress.sink({ type: "script", package: "sqlite", script: "install", phase: "start", id: "v2" });
+    bed.advance(50);
+    expect(plain(bed.stderr.text())).toContain("(+1 running)");
+    progress.sink({ type: "script", package: "sqlite", script: "install", phase: "end", exitCode: 0, id: "v2" });
+    bed.advance(50);
+    expect(plain(bed.stderr.text()).split("Scripts").at(-1)).toContain("1/2");
+    progress.sink({ type: "script", package: "sqlite", script: "install", phase: "end", exitCode: 1, id: "v1" });
+    bed.advance(50);
+    const final = plain(bed.stderr.text()).split("Scripts").at(-1)!;
+    expect(final).toContain("2/2 (1 failed)");
+    expect(final).not.toContain("Running");
+    progress.stop();
+  });
+
+  test("clears and pauses around inherited script output then resumes", () => {
+    const bed = testBed({ stderrIsTTY: true });
+    const progress = createProgress(bed.runtime);
+    progress.sink({ type: "resolve", resolved: 3, total: 0, name: "react" });
+    progress.sink({ type: "script", package: "root", script: "prepare", phase: "start", foreground: true, id: "root" });
+    const paused = bed.stderr.text();
+    bed.advance(5000);
+    expect(bed.stderr.text()).toBe(paused);
+    progress.sink({ type: "script", package: "root", script: "prepare", phase: "end", exitCode: 0, foreground: true, id: "root" });
+    expect(bed.stderr.text()).not.toBe(paused);
+    progress.stop();
+  });
+
+  test("shows real network samples, worker configuration and current package", () => {
+    const bed = testBed({ stderrIsTTY: true });
+    const progress = createProgress(bed.runtime);
+    progress.sink({ type: "resolve", resolved: 1, total: 0, name: "react" });
+    bed.advance(500);
+    progress.sink({ type: "telemetry", cpus: 8, ioThreads: 4, linkThreads: 0, networkActive: 3, networkLimit: 64, bytes: 1_048_576, requests: 7, cacheHits: 5, retries: 1 });
+    bed.advance(50);
+    const output = plain(bed.stderr.text());
+    expect(output).toContain("react");
+    expect(output).toContain("Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries");
+    expect(output).toContain("8 CPU cores · workers: 4 I/O, 0 link");
+    progress.stop();
+  });
+
+  test("draws while waiting for the first core event and handles terminals narrower than 20", () => {
+    const bed = testBed({ stderrIsTTY: true, columns: 5 });
+    const progress = createProgress(bed.runtime);
+    bed.advance(100);
+    const line = plain(bed.stderr.text()).replaceAll("\r", "");
+    expect(line.length).toBeLessThanOrEqual(4);
+    expect(line).toContain("⠙");
+    progress.stop();
+  });
+
 });
 
 describe("formatBytes", () => {

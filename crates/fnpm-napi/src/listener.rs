@@ -29,10 +29,13 @@ struct Inner {
 }
 
 /// Released when dropped: marks one batch as handled by JS.
-pub struct Ack(Arc<Inner>);
+pub struct Ack(Arc<Inner>, Option<std::sync::mpsc::Sender<()>>);
 
 impl Drop for Ack {
     fn drop(&mut self) {
+        if let Some(ready) = self.1.take() {
+            let _ = ready.send(());
+        }
         if self.0.in_flight.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.0.idle.notify_waiters();
         }
@@ -73,12 +76,29 @@ impl Listener {
 
     /// Sends a batch that is already a JSON array.
     pub fn deliver_json(&self, batch: Value) -> bool {
+        self.send_json(batch, None)
+    }
+
+    /// Wait for the JS renderer to clear its region before inherited output starts.
+    pub fn deliver_before_output(&self, events: &[Event]) -> bool {
+        let Ok(batch) = serde_json::to_value(events) else {
+            return false;
+        };
+        let (ready, wait) = std::sync::mpsc::channel();
+        let sent = self.send_json(batch, Some(ready));
+        if sent {
+            let _ = wait.recv();
+        }
+        sent
+    }
+
+    fn send_json(&self, batch: Value, ready: Option<std::sync::mpsc::Sender<()>>) -> bool {
         let guard = self.transport.lock().unwrap_or_else(|e| e.into_inner());
         let Some(transport) = guard.as_ref() else {
             return false;
         };
         self.inner.in_flight.fetch_add(1, Ordering::AcqRel);
-        transport.send(batch, Ack(self.inner.clone()))
+        transport.send(batch, Ack(self.inner.clone(), ready))
     }
 
     /// Batches sent but not yet acknowledged.
@@ -153,7 +173,11 @@ mod tests {
     fn close_waits_for_every_batch_and_releases_the_transport() {
         let (listener, js) = slow();
         for done in 0..5 {
-            assert!(listener.deliver(&[Event::Link { done, total: 5 }]));
+            assert!(listener.deliver(&[Event::Link {
+                done,
+                total: 5,
+                name: None
+            }]));
         }
         runtime().block_on(listener.close());
         assert_eq!(listener.in_flight(), 0);
@@ -168,7 +192,11 @@ mod tests {
         let (listener, js) = slow();
         assert!(!listener.deliver(&[]));
         runtime().block_on(listener.close());
-        assert!(!listener.deliver(&[Event::Link { done: 1, total: 1 }]));
+        assert!(!listener.deliver(&[Event::Link {
+            done: 1,
+            total: 1,
+            name: None
+        }]));
         assert_eq!(listener.in_flight(), 0);
         assert!(js.join().unwrap().is_empty());
     }
@@ -189,8 +217,36 @@ mod tests {
             }
         }
         let listener = Listener::new(Box::new(Refuse));
-        assert!(!listener.deliver(&[Event::Link { done: 1, total: 1 }]));
+        assert!(!listener.deliver(&[Event::Link {
+            done: 1,
+            total: 1,
+            name: None
+        }]));
         assert_eq!(listener.in_flight(), 0);
+        runtime().block_on(listener.close());
+    }
+
+    #[test]
+    fn output_boundary_waits_for_js_acknowledgment() {
+        struct Hold(std::sync::mpsc::Sender<Ack>);
+        impl Transport for Hold {
+            fn send(&self, _batch: Value, ack: Ack) -> bool {
+                self.0.send(ack).is_ok()
+            }
+        }
+        let (acks, incoming) = std::sync::mpsc::channel();
+        let listener = Listener::new(Box::new(Hold(acks)));
+        let sender = listener.clone();
+        let (done, completion) = std::sync::mpsc::channel();
+        let worker = thread::spawn(move || {
+            assert!(sender.deliver_before_output(&[Event::Output { active: true }]));
+            done.send(()).unwrap();
+        });
+        let ack = incoming.recv().unwrap();
+        assert!(completion.try_recv().is_err());
+        drop(ack);
+        completion.recv().unwrap();
+        worker.join().unwrap();
         runtime().block_on(listener.close());
     }
 

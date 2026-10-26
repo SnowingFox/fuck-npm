@@ -1,5 +1,7 @@
 //! The `node-gyp` shim on lifecycle scripts' PATH (bun `ensure_temp_node_gyp_script`): a
 //! script that runs `$npm_config_node_gyp` when set, else `fnpm x --silent node-gyp`.
+//! The fallback tells `fnpm x` to exclude this directory from executable lookup, so it
+//! cannot recursively select the shim and grow PATH until exec fails with E2BIG.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -10,11 +12,11 @@ const FILE_NAME: &str = "node-gyp.cmd";
 const FILE_NAME: &str = "node-gyp";
 
 #[cfg(windows)]
-const CONTENT: &str = "if not defined npm_config_node_gyp (\n  fnpm x --silent node-gyp %*\n) else (\n  node \"%npm_config_node_gyp%\" %*\n)\n";
+const CONTENT: &str = "if not defined npm_config_node_gyp (\n  set \"FNPM_WHICH_IGNORE_CWD=%~dp0\"\n  fnpm x --silent node-gyp %*\n) else (\n  node \"%npm_config_node_gyp%\" %*\n)\n";
 #[cfg(all(not(windows), not(target_os = "android")))]
-const CONTENT: &str = "#!/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then\n  fnpm x --silent node-gyp $@\nelse\n  \"$npm_config_node_gyp\" $@\nfi\n";
+const CONTENT: &str = "#!/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then\n  FNPM_WHICH_IGNORE_CWD=\"${0%/*}\" exec fnpm x --silent node-gyp \"$@\"\nelse\n  exec \"$npm_config_node_gyp\" \"$@\"\nfi\n";
 #[cfg(target_os = "android")]
-const CONTENT: &str = "#!/system/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then\n  fnpm x --silent node-gyp $@\nelse\n  \"$npm_config_node_gyp\" $@\nfi\n";
+const CONTENT: &str = "#!/system/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then\n  FNPM_WHICH_IGNORE_CWD=\"${0%/*}\" exec fnpm x --silent node-gyp \"$@\"\nelse\n  exec \"$npm_config_node_gyp\" \"$@\"\nfi\n";
 
 /// A temporary directory holding the shim; removed on drop.
 #[derive(Debug)]

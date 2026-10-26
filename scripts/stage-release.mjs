@@ -20,7 +20,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const saveJson = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 
-export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
+export function stageRelease({ name, artifacts, out, target, registry = 'https://registry.npmjs.org/', root = ROOT }) {
+  const registryUrl = new URL(registry);
+  if (!['http:', 'https:'].includes(registryUrl.protocol) || registryUrl.username || registryUrl.password || registryUrl.search || registryUrl.hash) {
+    throw new Error('--registry must be an HTTP(S) URL without credentials, query, or fragment');
+  }
+  registry = `${registryUrl.href.replace(/\/+$/, '')}/`;
   if (!/^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name ?? '')) {
     throw new Error('--name must be a lowercase npm package name (optionally scoped)');
   }
@@ -32,7 +37,7 @@ export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
   const cliManifest = json(join(cliSource, 'package.json'));
   const version = cliManifest.version;
   if (json(join(bindingSource, 'package.json')).version !== version) throw new Error('CLI and binding versions differ');
-  for (const bin of ['fnpm', 'fnpm-lock', 'fnpmx']) {
+  for (const bin of ['fnpm', 'fnpm-lock', 'fnpmx', 'fnpx']) {
     if (!existsSync(join(cliSource, 'dist', `${bin}.js`))) throw new Error('Build the CLI bundle before staging');
   }
   checkBundle(cliSource);
@@ -45,7 +50,7 @@ export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
     homepage: 'https://github.com/SnowingFox/fuck-npm#readme',
     bugs: 'https://github.com/SnowingFox/fuck-npm/issues',
     engines: cliManifest.engines,
-    publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
+    publishConfig: { access: 'public', registry },
   };
   // Validate the complete input set before writing anything. --target is only for smoke tests.
   const inputs = selected.map((item) => {
@@ -113,7 +118,7 @@ export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
   }
   rewrite(cli);
   for (const bin of Object.values(cliManifest.bin)) chmodSync(join(cli, bin), 0o755);
-  const release = { name, bindingName, version, complete: !target, packages };
+  const release = { name, bindingName, version, registry, complete: !target, packages };
   saveJson(join(out, 'release.json'), release);
   return release;
 }
@@ -121,9 +126,9 @@ export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const { values } = parseArgs({ options: {
-      name: { type: 'string' }, artifacts: { type: 'string' }, out: { type: 'string' }, target: { type: 'string' },
+      name: { type: 'string' }, artifacts: { type: 'string' }, out: { type: 'string' }, target: { type: 'string' }, registry: { type: 'string' },
     } });
-    if (!values.artifacts || !values.out) throw new Error('Usage: node scripts/stage-release.mjs --name <npm-name> --artifacts <dir> --out <new-dir> [--target <target> (smoke only)]');
+    if (!values.artifacts || !values.out) throw new Error('Usage: node scripts/stage-release.mjs --name <npm-name> --artifacts <dir> --out <new-dir> [--registry <url>] [--target <target> (smoke only)]');
     console.log(JSON.stringify(stageRelease({ ...values, artifacts: resolve(values.artifacts), out: resolve(values.out) }), null, 2));
   } catch (error) {
     console.error(error.message);

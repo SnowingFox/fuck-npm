@@ -144,15 +144,13 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
     let mut progress: Option<Arc<ProgressSink>> = None;
     let sink: Arc<dyn EventSink> = if mode == Mode::Json || silent {
         Arc::new(NoopSink)
-    } else if mode == Mode::Rich
-        && wants_progress(
-            &terminal.env,
-            terminal.stderr_is_tty,
-            false,
-            options.pm.log_level == fnpm_config::LogLevel::Quiet,
-            !options.pm.progress,
-        )
-    {
+    } else if wants_progress(
+        &terminal.env,
+        terminal.stderr_is_tty,
+        false,
+        options.pm.log_level == fnpm_config::LogLevel::Quiet,
+        !options.pm.progress,
+    ) {
         let live = ProgressSink::start(
             stderr_colors,
             terminal.columns,

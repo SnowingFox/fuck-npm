@@ -6,7 +6,7 @@ A ticked row is implemented and tested in its owning crate (unit and integration
 
 Conventions:
 
-- Names: `bun` becomes `fnpm`, `bunx` becomes `fnpmx` / `fnpm x`, `bun.lock` becomes `fnpm.lock`, `bunfig.toml` becomes `fnpm.toml`. fnpm still reads `bunfig.toml` and reads `bun.lock`/`bun.lockb` for migration. `BUN_*` env vars become `FNPM_*`; the `BUN_*` spelling is read as a fallback. The `node_modules/.bun` store becomes `node_modules/.fnpm`.
+- Names: `bun` becomes `fnpm`, `bunx` becomes `fnpx` / `fnpmx` / `fnpm x`, `bun.lock` becomes `fnpm.lock`, `bunfig.toml` becomes `fnpm.toml`. fnpm still reads `bunfig.toml` and reads `bun.lock`/`bun.lockb` for migration. `BUN_*` env vars become `FNPM_*`; the `BUN_*` spelling is read as a fallback. The `node_modules/.bun` store becomes `node_modules/.fnpm`.
 - Paths after `bun:` are relative to `submodule/bun`.
 - Owners: `fnpm-types`, `fnpm-semver`, `fnpm-config`, `fnpm-registry`, `fnpm-store`, `fnpm-resolver`, `fnpm-lockfile`, `fnpm-linker`, `fnpm-scripts`, `fnpm-workspace`, `fnpm-core`, `cli` (TS CLI in `packages/fuck-npm`: argv parsing, flag validation, help, prompts/TUI, progress and install-summary rendering). Every other command behaviour, including the pre-rendered `lines` a command prints, belongs to `fnpm-core` (see the command table in `docs/ARCHITECTURE.md`).
 
@@ -264,9 +264,9 @@ Conventions:
 - [x] **NODE_CHANNEL_FD IPC passthrough** — keep IPC fd for node-style parent/child IPC (POSIX) · bun: `src/runtime/cli/run_command.rs` · owner: `fnpm-scripts`
 - [ ] **Shell completions via getcompletes** — script names list (skip pre/post), descriptions · bun: `src/runtime/cli/run_command.rs` · owner: `cli`
 
-### fnpm x / fnpmx
+### fnpm x / fnpx / fnpmx
 
-- [ ] **Invocation and flags** — `fnpmx` argv0 or `fnpm x`; `--package/-p`, `--no-install`, `--trust`, `--ignore-scripts`, `--registry`, `--ca/--cafile`, `--cwd`, `--env-file`, `--minimum-release-age`, `--verbose/--silent` · bun: `src/runtime/cli/bunx_command.rs` · owner: `cli`
+- [ ] **Invocation and flags** — `fnpx` / `fnpmx` argv0 or `fnpm x`; `--package/-p`, `--no-install`, `--trust`, `--ignore-scripts`, `--registry`, `--ca/--cafile`, `--cwd`, `--env-file`, `--minimum-release-age`, `--verbose/--silent` · bun: `src/runtime/cli/bunx_command.rs` · owner: `cli`
 - [ ] **Flag boundary and foreign flags** — flags must precede spec; npx/pnpm/yarn flags skipped; unknown flag error · bun: `src/runtime/cli/bunx_command.rs` · owner: `cli`
 - [ ] **Spec parsing and bin inference** — aliases `tsc`→typescript, `claude`; scoped name bin is a guess; GitHub repo name · bun: `src/runtime/cli/bunx_command.rs` · owner: `fnpm-core`
 - [ ] **Lookup order** — PATH, project node_modules bin, cache tree, then install; versioned specs skip PATH · bun: `src/runtime/cli/bunx_command.rs` · owner: `fnpm-core`

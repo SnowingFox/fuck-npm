@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// The native fnpm executable runs `fnpm x` when started as fnpx.
+require("../lib/shim.cjs").main("fnpx");

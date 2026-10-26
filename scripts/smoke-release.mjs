@@ -68,14 +68,16 @@ try {
     const fixture = join(root, 'project');
     mkdirSync(fixture);
     writeFileSync(join(fixture, 'package.json'), '{"name":"release-project","private":true}');
-    const bins = Object.fromEntries(['fnpm', 'fnpm-lock', 'fnpmx'].map((bin) => [bin, join(cli, 'bin', bin)]));
+    const bins = Object.fromEntries(['fnpm', 'fnpm-lock', 'fnpmx', 'fnpx'].map((bin) => [bin, join(cli, 'bin', bin)]));
     const invoke = (bin, args, cwd = fixture) => process.platform === 'win32'
       ? run(process.execPath, [bins[bin], ...args], cwd) : run(bins[bin], args, cwd);
     for (const bin of ['fnpm', 'fnpm-lock']) {
       assert.equal((await invoke(bin, ['--version'])).trim(), release.version);
       assert.match(await invoke(bin, ['--help']), /Usage:/i);
     }
-    await invoke('fnpmx', ['--help']);
+    for (const alias of ['fnpmx', 'fnpx']) {
+      await invoke(alias, ['--help']);
+    }
     await invoke('fnpm', ['install', '--offline', '--ignore-scripts']);
     await invoke('fnpm', ['install', '--offline', '--ignore-scripts']);
     await invoke('fnpm', ['ci', '--offline', '--ignore-scripts']);
@@ -89,6 +91,9 @@ try {
     const packed = JSON.parse(await run(npm, ['pack', '--json', '--ignore-scripts'], dep));
     await invoke('fnpm', ['add', join(dep, packed[0].filename), '--ignore-scripts']);
     assert.equal(createRequire(join(fixture, 'package.json'))('fnpm-release-fixture'), 42);
+    for (const alias of ['fnpmx', 'fnpx']) {
+      assert.equal((await invoke(alias, ['--no-install', 'release-fixture'])).trim(), '42');
+    }
     await invoke('fnpm', ['install', '--offline', '--ignore-scripts']);
     rmSync(join(fixture, 'node_modules'), { recursive: true });
     await invoke('fnpm', ['ci', '--offline', '--ignore-scripts']);

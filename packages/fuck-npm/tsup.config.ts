@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 /**
- * Two bins from one build. `splitting` lets them share chunks (registry
+ * CLI bins from one build. `splitting` lets them share chunks (registry
  * helpers, cac, picocolors) and keeps everything reached only through a
  * dynamic import (help, completions, @clack/prompts, command handlers) out of
  * the startup path.
@@ -18,6 +18,7 @@ export default defineConfig({
     fnpm: "./src/bin/fnpm.ts",
     "fnpm-lock": "./src/bin/fnpm-lock.ts",
     fnpmx: "./src/bin/fnpmx.ts",
+    fnpx: "./src/bin/fnpx.ts",
   },
   outDir: "dist",
   target: "node20",

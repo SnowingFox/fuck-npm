@@ -51,7 +51,7 @@ ports and the owning crate. Checked rows have crate-level tests; command and end
 
 - **Commands:** `install`/`i`, `ci`, `add`, `remove`, `update` (including `-i`), `outdated`,
   `why`, `ls`, `info`, `dedupe`, `prune`, `link`/`unlink`, `patch`/`patch-commit`, `audit`,
-  `pack`, `publish`, `run`, `exec`, `x`/`dlx`/`fnpmx`, `create`, `init`, `store`, `doctor`,
+  `pack`, `publish`, `run`, `exec`, `x`/`dlx`/`fnpx`/`fnpmx`, `create`, `init`, `store`, `doctor`,
   `whoami`, `migrate`, `completions`, and the `pm` subcommands (`cache`, `pkg`, `trust`,
   `version`, `hash`, `licenses`, ...).
 - **Layouts:** hoisted (npm-style) and isolated (pnpm-style), with bun's default (hoisted for

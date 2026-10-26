@@ -494,7 +494,11 @@ impl Linker {
         report.backend_used = mat.used();
         if events.enabled() {
             let total = cx.total.load(Ordering::Relaxed);
-            events.emit(Event::Link { done: total, total });
+            events.emit(Event::Link {
+                done: total,
+                total,
+                name: None,
+            });
         }
         Ok(report)
     }
@@ -543,6 +547,7 @@ impl LinkCx<'_> {
             self.events.emit(Event::Link {
                 done,
                 total: self.total.load(Ordering::Relaxed),
+                name: None,
             });
         }
     }
@@ -550,6 +555,13 @@ impl LinkCx<'_> {
     /// Waits for the package and copies it into `dest` (which must not exist), then writes the
     /// `.fnpm-tag` for git/tarball packages.
     pub fn materialize(&self, id: PackageId, dest: &Path) -> Result<()> {
+        if self.events.wants_progress() {
+            self.events.emit(Event::Link {
+                done: self.done.load(Ordering::Relaxed),
+                total: self.total.load(Ordering::Relaxed),
+                name: Some(self.label(id)),
+            });
+        }
         let entry = self.source.wait(id).map_err(|message| Error::Missing {
             package: self.label(id),
             message,

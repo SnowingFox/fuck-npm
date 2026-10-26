@@ -20,7 +20,7 @@ for (const pkg of release.packages) {
   const files = info.files.map((file) => file.path);
   const manifest = JSON.parse(readFileSync(join(pkg.directory, 'package.json'), 'utf8'));
   const required = pkg.name === release.name
-    ? ['dist/fnpm.js', 'dist/fnpm-lock.js', 'dist/fnpmx.js', 'bin/fnpm', 'bin/fnpm-lock', 'bin/fnpmx', 'bin/package.json', 'lib/native.cjs', 'lib/shim.cjs', 'scripts/postinstall.js']
+    ? ['dist/fnpm.js', 'dist/fnpm-lock.js', 'dist/fnpmx.js', 'dist/fnpx.js', 'bin/fnpm', 'bin/fnpm-lock', 'bin/fnpmx', 'bin/fnpx', 'bin/package.json', 'lib/native.cjs', 'lib/shim.cjs', 'scripts/postinstall.js']
     : pkg.name === release.bindingName ? ['index.js', 'index.d.ts'] : manifest.files;
   for (const file of ['package.json', 'LICENSE', ...required]) {
     if (!files.includes(file)) throw new Error(`${pkg.name} tarball is missing ${file}`);

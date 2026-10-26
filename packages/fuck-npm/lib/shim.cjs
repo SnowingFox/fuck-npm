@@ -78,9 +78,9 @@ function fail(error) {
   process.exitCode = 1;
 }
 
-/** Entry point of the bin shims. `fnpmx` is `fnpm x`. */
+/** Entry point of the bin shims. `fnpmx` and `fnpx` are `fnpm x`. */
 function main(bin) {
-  if (bin === 'fnpmx') {
+  if (bin === 'fnpmx' || bin === 'fnpx') {
     process.argv.splice(2, 0, 'x');
     bin = 'fnpm';
   }

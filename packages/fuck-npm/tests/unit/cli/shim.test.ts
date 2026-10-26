@@ -52,7 +52,7 @@ function layout(): Layout {
   const root = mkdtempSync(join(tmpdir(), "fnpm-shim-"));
   roots.push(root);
   const pkg = join(root, "node_modules", "fuck-npm");
-  for (const file of ["package.json", "bin/fnpm", "bin/fnpm-lock", "bin/package.json", "lib/native.cjs", "lib/shim.cjs", "scripts/postinstall.js"]) {
+  for (const file of ["package.json", "bin/fnpm", "bin/fnpm-lock", "bin/fnpmx", "bin/fnpx", "bin/package.json", "lib/native.cjs", "lib/shim.cjs", "scripts/postinstall.js"]) {
     mkdirSync(dirname(join(pkg, file)), { recursive: true });
     copyFileSync(join(PACKAGE, file), join(pkg, file));
   }
@@ -126,6 +126,18 @@ describe.runIf(unix)("bin shim", () => {
       `lock=${join(pkg, "dist", "fnpm-lock.js")}`,
       "",
     ]);
+  });
+
+  test.each(["fnpmx", "fnpx"])("%s prepends x for the JS fallback and native child", (alias) => {
+    const { pkg, platformDir } = layout();
+    const args = ["--package", "tool", "tool-bin", "--", "a b"];
+    const fallback = runShim(pkg, alias, args);
+    expect(fallback.status).toBe(5);
+    expect(JSON.parse(fallback.stdout)).toMatchObject({ js: "fnpm", args: ["x", ...args] });
+    installPlatformPackage(platformDir);
+    const result = runShim(pkg, alias, args);
+    expect(result.status).toBe(3);
+    expect(result.stdout.split("\n").slice(0, args.length + 2)).toEqual(["native:fnpm", "x", ...args]);
   });
 
   test("keeps an explicit FNPM_JS_ENTRY", () => {
@@ -214,6 +226,9 @@ describe.runIf(unix)("postinstall swap", () => {
     for (const bin of ["fnpm", "fnpm-lock"]) {
       expect(statSync(join(pkg, "bin", bin)).ino).toBe(statSync(join(platformDir, bin)).ino);
       expect(statSync(join(pkg, "bin", bin)).mode & 0o111).not.toBe(0);
+    }
+    for (const alias of ["fnpmx", "fnpx"]) {
+      expect(statSync(join(pkg, "bin", alias)).ino).toBe(statSync(join(platformDir, "fnpm")).ino);
     }
     // .bin/fnpm -> ../fuck-npm/bin/fnpm now starts the native executable directly.
     const dotBin = join(pkg, "..", ".bin");

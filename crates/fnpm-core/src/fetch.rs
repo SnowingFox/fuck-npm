@@ -298,6 +298,14 @@ fn start_fetch(
     let task_inner = inner.clone();
     inner.handle.spawn(async move {
         let inner = task_inner;
+        if inner.events.wants_progress() {
+            inner.events.emit(Event::Download {
+                done: inner.counters.done.load(Ordering::Relaxed),
+                total: inner.counters.total.load(Ordering::Relaxed),
+                bytes: Some(inner.counters.bytes.load(Ordering::Relaxed)),
+                name: Some(name.clone()),
+            });
+        }
         let outcome = fetch_one(&inner, &name, &version, &resolution).await;
         if outcome.is_ok() {
             let done = inner.counters.done.fetch_add(1, Ordering::Relaxed) + 1;

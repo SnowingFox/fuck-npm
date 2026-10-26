@@ -446,6 +446,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 4. + 5. Resolve, streaming packages to the fetcher.
     let client = project.client()?;
     client.set_event_sink(events.clone());
+    let telemetry = crate::events::TelemetryGuard::start(
+        &client,
+        &events,
+        opts.pm.progress
+            && matches!(
+                opts.pm.log_level,
+                fnpm_config::LogLevel::Default | fnpm_config::LogLevel::Verbose
+            ),
+    );
     // `add <name>`: start reading (or fetching) the requested manifests while the resolve is
     // set up; the resolver joins the request in flight.
     let registry_names: Vec<String> = planned
@@ -805,6 +814,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         intact.then_some(previous).flatten(),
         &events,
         opts.dlx,
+        telemetry.as_ref(),
     )
     .await?;
     phases.mark("link");
@@ -1390,6 +1400,7 @@ async fn link(
     intact: Option<&LockGraph>,
     events: &Arc<dyn EventSink>,
     dlx: Option<crate::options::DlxMode>,
+    telemetry: Option<&crate::events::TelemetryGuard>,
 ) -> Result<Linked> {
     let config = &project.config;
     let root = project.root_dir.clone();
@@ -1459,6 +1470,9 @@ async fn link(
             }
             _ => LinkOptions::default().threads,
         };
+        if let Some(telemetry) = telemetry {
+            telemetry.link_threads(threads);
+        }
         let reachable = installable(
             &view,
             linker.include(),

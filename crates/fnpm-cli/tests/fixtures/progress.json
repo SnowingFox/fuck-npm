@@ -363,7 +363,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KResolving 1/100\r\u001b[2KResolving 50/100\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 1/100  0.0s\r\u001b[2K\r\u001b[2K⠋ Resolving 50/100  0.1s\r\u001b[2K"
     },
     {
       "name": "burst then trailing redraw (colors=True)",
@@ -727,7 +727,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/100\r\u001b[2K\u001b[36mResolving\u001b[39m 50/100\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/100  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 50/100  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "unknown total (colors=False)",
@@ -745,7 +745,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KResolving 3/?\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 3/?  0.0s\r\u001b[2K"
     },
     {
       "name": "unknown total (colors=True)",
@@ -763,7 +763,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 3/?\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 3/?  \u001b[2m0.0s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "phases (colors=False)",
@@ -826,7 +826,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KResolving 1/5\r\u001b[2KDownloading 2/5 3.0 MiB  Extracted 0/5\r\u001b[2KDownloading 2/5 3.0 MiB  Extracted 1/5\r\u001b[2KLinking 4/5\r\u001b[2KRunning esbuild postinstall\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 1/5  0.0s\r\u001b[2K\r\u001b[2K⠋ Downloading 2/5 3.0 MiB  Extracted 0/5  0.1s\r\u001b[2K\r\u001b[2K⠙ Downloading 2/5 3.0 MiB  Extracted 1/5  0.1s\r\u001b[2K\r\u001b[2K⠙ Installing 4/5  0.2s\r\u001b[2K\r\u001b[2K⠹ Installed 4/5  Scripts 0/?  0.2s\n  Running esbuild postinstall 0.0s\r\u001b[2K\u001b[1A\r\u001b[2K"
     },
     {
       "name": "phases (colors=True)",
@@ -889,7 +889,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/5\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/5\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 1/5\r\u001b[2K\u001b[36mLinking\u001b[39m 4/5\r\u001b[2K\u001b[36mRunning\u001b[39m esbuild \u001b[2mpostinstall\u001b[22m\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/5  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/5  \u001b[2m0.1s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mDownloading\u001b[39m 2/5 \u001b[2m3.0 MiB\u001b[22m  \u001b[36mExtracted\u001b[39m 1/5  \u001b[2m0.1s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mInstalling\u001b[39m 4/5  \u001b[2m0.2s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠹\u001b[39m \u001b[36mInstalled\u001b[39m 4/5  \u001b[36mScripts\u001b[39m 0/?  \u001b[2m0.2s\u001b[22m\n  \u001b[36mRunning\u001b[39m esbuild \u001b[2mpostinstall\u001b[22m 0.0s\r\u001b[2K\u001b[1A\r\u001b[2K"
     },
     {
       "name": "extract before download (colors=False)",
@@ -920,7 +920,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KDownloading 0/0 0 B  Extracted 1/0\r\u001b[2KDownloading 1/4 0 B  Extracted 1/4\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Downloading 0/? 0 B  Extracted 1/?  0.0s\r\u001b[2K\r\u001b[2K⠋ Downloading 1/4 0 B  Extracted 1/4  0.1s\r\u001b[2K"
     },
     {
       "name": "extract before download (colors=True)",
@@ -951,7 +951,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mDownloading\u001b[39m 0/0 \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/0\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/4 \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/4\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mDownloading\u001b[39m 0/? \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/?  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mDownloading\u001b[39m 1/4 \u001b[2m0 B\u001b[22m  \u001b[36mExtracted\u001b[39m 1/4  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "bytes (colors=False)",
@@ -994,7 +994,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KDownloading 1/2 512 B  Extracted 0/2\r\u001b[2KDownloading 1/2 1.3 KiB  Extracted 0/2\r\u001b[2KDownloading 2/2 1.3 KiB  Extracted 0/2\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Downloading 1/2 512 B  Extracted 0/2  0.0s\r\u001b[2K\r\u001b[2K⠋ Downloading 1/2 1.3 KiB  Extracted 0/2  0.1s\r\u001b[2K\r\u001b[2K⠙ Downloading 2/2 1.3 KiB  Extracted 0/2  0.1s\r\u001b[2K"
     },
     {
       "name": "bytes (colors=True)",
@@ -1037,7 +1037,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/2 \u001b[2m512 B\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K\u001b[36mDownloading\u001b[39m 1/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K\u001b[36mDownloading\u001b[39m 2/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mDownloading\u001b[39m 1/2 \u001b[2m512 B\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mDownloading\u001b[39m 1/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2  \u001b[2m0.1s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mDownloading\u001b[39m 2/2 \u001b[2m1.3 KiB\u001b[22m  \u001b[36mExtracted\u001b[39m 0/2  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "warn above line (colors=False)",
@@ -1071,7 +1071,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KLinking 1/2\r\u001b[2Kwarn: deprecated: request\nerror: boom\n\r\u001b[2KLinking 1/2\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Installing 1/2  0.0s\r\u001b[2Kwarn: deprecated: request\nerror: boom\n\r\u001b[2K⠋ Installing 1/2  0.1s\r\u001b[2K"
     },
     {
       "name": "warn above line (colors=True)",
@@ -1105,7 +1105,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mLinking\u001b[39m 1/2\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request\n\u001b[31merror:\u001b[39m boom\n\r\u001b[2K\u001b[36mLinking\u001b[39m 1/2\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mInstalling\u001b[39m 1/2  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request\n\u001b[31merror:\u001b[39m boom\n\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mInstalling\u001b[39m 1/2  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "warn before any draw (colors=False)",
@@ -1135,7 +1135,7 @@
           "stop": true
         }
       ],
-      "expected": "warn: first\n\r\u001b[2KResolving 0/?\r\u001b[2KResolving 1/1\r\u001b[2K"
+      "expected": "warn: first\n\r\u001b[2K⠋ Resolving 0/?  0.0s\r\u001b[2K\r\u001b[2K⠋ Resolving 1/1  0.1s\r\u001b[2K"
     },
     {
       "name": "warn before any draw (colors=True)",
@@ -1165,7 +1165,7 @@
           "stop": true
         }
       ],
-      "expected": "\u001b[33mwarn:\u001b[39m first\n\r\u001b[2K\u001b[36mResolving\u001b[39m 0/?\r\u001b[2K\u001b[36mResolving\u001b[39m 1/1\r\u001b[2K"
+      "expected": "\u001b[33mwarn:\u001b[39m first\n\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 0/?  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/1  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "summary event ignored (colors=False)",
@@ -1196,7 +1196,7 @@
           "stop": true
         }
       ],
-      "expected": ""
+      "expected": "\r\u001b[2K⠙ Resolving 0/?  0.1s\r\u001b[2K"
     },
     {
       "name": "summary event ignored (colors=True)",
@@ -1227,7 +1227,7 @@
           "stop": true
         }
       ],
-      "expected": ""
+      "expected": "\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mResolving\u001b[39m 0/?  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "stop cancels pending (colors=False)",
@@ -1255,7 +1255,7 @@
           "advance": 100
         }
       ],
-      "expected": "\r\u001b[2KResolving 1/2\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 1/2  0.0s\r\u001b[2K"
     },
     {
       "name": "stop cancels pending (colors=True)",
@@ -1283,7 +1283,7 @@
           "advance": 100
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/2\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/2  \u001b[2m0.0s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "partial advance (colors=False)",
@@ -1330,7 +1330,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KResolving 1/9\r\u001b[2KResolving 2/9\r\u001b[2KResolving 3/9\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 1/9  0.0s\r\u001b[2K\r\u001b[2K⠋ Resolving 2/9  0.1s\r\u001b[2K\r\u001b[2K⠙ Resolving 3/9  0.1s\r\u001b[2K"
     },
     {
       "name": "partial advance (colors=True)",
@@ -1377,7 +1377,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/9\r\u001b[2K\u001b[36mResolving\u001b[39m 2/9\r\u001b[2K\u001b[36mResolving\u001b[39m 3/9\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/9  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 2/9  \u001b[2m0.1s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mResolving\u001b[39m 3/9  \u001b[2m0.1s\u001b[22m\r\u001b[2K"
     },
     {
       "name": "narrow terminal (colors=False)",
@@ -1396,7 +1396,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KDownloading 1000/200\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Downloading 1000/2\r\u001b[2K"
     },
     {
       "name": "narrow terminal (colors=True)",
@@ -1415,7 +1415,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KDownloading 1000/200\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Downloading 1000/2\r\u001b[2K"
     },
     {
       "name": "minimum width (colors=False)",
@@ -1434,7 +1434,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KRunning a-very-long-\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Re\n  Ru\r\u001b[2K\u001b[1A\r\u001b[2K"
     },
     {
       "name": "minimum width (colors=True)",
@@ -1453,7 +1453,7 @@
           "stop": true
         }
       ],
-      "expected": "\r\u001b[2KRunning a-very-long-\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Re\n  Ru\r\u001b[2K\u001b[1A\r\u001b[2K"
     },
     {
       "name": "no stop (colors=False)",
@@ -1468,7 +1468,7 @@
           }
         }
       ],
-      "expected": "\r\u001b[2KResolving 1/1"
+      "expected": "\r\u001b[2K⠋ Resolving 1/1  0.0s"
     },
     {
       "name": "no stop (colors=True)",
@@ -1483,7 +1483,399 @@
           }
         }
       ],
-      "expected": "\r\u001b[2K\u001b[36mResolving\u001b[39m 1/1"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/1  \u001b[2m0.0s\u001b[22m"
+    },
+    {
+      "name": "heartbeat without events (colors=False)",
+      "steps": [
+        {
+          "advance": 100
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        },
+        {
+          "advance": 1000
+        }
+      ],
+      "columns": 120,
+      "colors": false,
+      "expected": "\r\u001b[2K⠙ Resolving 0/?  0.1s\r\u001b[2K\r\u001b[2K⠹ Resolving 0/?  0.2s\r\u001b[2K"
+    },
+    {
+      "name": "heartbeat without events (colors=True)",
+      "steps": [
+        {
+          "advance": 100
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        },
+        {
+          "advance": 1000
+        }
+      ],
+      "columns": 120,
+      "colors": true,
+      "expected": "\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mResolving\u001b[39m 0/?  \u001b[2m0.1s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠹\u001b[39m \u001b[36mResolving\u001b[39m 0/?  \u001b[2m0.2s\u001b[22m\r\u001b[2K"
+    },
+    {
+      "name": "script heartbeat concurrent identities and completed removal (colors=False)",
+      "steps": [
+        {
+          "event": {
+            "type": "link",
+            "done": 512,
+            "total": 512
+          }
+        },
+        {
+          "event": {
+            "type": "scriptplan",
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "start",
+            "id": "a"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "start",
+            "id": "b"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "advance": 10000
+        },
+        {
+          "event": {
+            "type": "warn",
+            "message": "slow script"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "end",
+            "exitCode": 0,
+            "id": "b"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "end",
+            "exitCode": 1,
+            "id": "a"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": false,
+      "expected": "\r\u001b[2K⠋ Installing 512/512  0.0s\r\u001b[2K\r\u001b[2K⠙ Installed 512/512  Scripts 0/2  0.1s\n  Running @prisma/client postinstall 0.1s (+1 running)\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠙ Installed 512/512  Scripts 0/2  10.1s\n  Running @prisma/client postinstall 10.1s (+1 running)\r\u001b[2K\u001b[1A\r\u001b[2Kwarn: slow script\n\r\u001b[2K⠹ Installed 512/512  Scripts 1/2  10.2s\n  Running @prisma/client postinstall 10.2s\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠸ Installed 512/512  Scripts 2/2 (1 failed)  10.3s\n  Finalizing install\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "script heartbeat concurrent identities and completed removal (colors=True)",
+      "steps": [
+        {
+          "event": {
+            "type": "link",
+            "done": 512,
+            "total": 512
+          }
+        },
+        {
+          "event": {
+            "type": "scriptplan",
+            "total": 2
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "start",
+            "id": "a"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "start",
+            "id": "b"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "advance": 10000
+        },
+        {
+          "event": {
+            "type": "warn",
+            "message": "slow script"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "end",
+            "exitCode": 0,
+            "id": "b"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "@prisma/client",
+            "script": "postinstall",
+            "phase": "end",
+            "exitCode": 1,
+            "id": "a"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": true,
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mInstalling\u001b[39m 512/512  \u001b[2m0.0s\u001b[22m\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mInstalled\u001b[39m 512/512  \u001b[36mScripts\u001b[39m 0/2  \u001b[2m0.1s\u001b[22m\n  \u001b[36mRunning\u001b[39m @prisma/client \u001b[2mpostinstall\u001b[22m 0.1s (+1 running)\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mInstalled\u001b[39m 512/512  \u001b[36mScripts\u001b[39m 0/2  \u001b[2m10.1s\u001b[22m\n  \u001b[36mRunning\u001b[39m @prisma/client \u001b[2mpostinstall\u001b[22m 10.1s (+1 running)\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[33mwarn:\u001b[39m slow script\n\r\u001b[2K\u001b[36m⠹\u001b[39m \u001b[36mInstalled\u001b[39m 512/512  \u001b[36mScripts\u001b[39m 1/2  \u001b[2m10.2s\u001b[22m\n  \u001b[36mRunning\u001b[39m @prisma/client \u001b[2mpostinstall\u001b[22m 10.2s\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠸\u001b[39m \u001b[36mInstalled\u001b[39m 512/512  \u001b[36mScripts\u001b[39m 2/2 (1 failed)  \u001b[2m10.3s\u001b[22m\n  \u001b[2mFinalizing install\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "foreground output pause and resume (colors=False)",
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 0,
+            "name": "react"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "root",
+            "script": "prepare",
+            "phase": "start",
+            "id": "root",
+            "foreground": true
+          }
+        },
+        {
+          "advance": 5000
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "root",
+            "script": "prepare",
+            "phase": "end",
+            "exitCode": 0,
+            "id": "root",
+            "foreground": true
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": false,
+      "expected": "\r\u001b[2K⠋ Resolving 3/?  0.0s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠋ Resolved 3/?  Scripts 1/?  5.0s\n  Finalizing install\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠙ Resolved 3/?  Scripts 1/?  5.1s\n  Finalizing install\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "foreground output pause and resume (colors=True)",
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 3,
+            "total": 0,
+            "name": "react"
+          }
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "root",
+            "script": "prepare",
+            "phase": "start",
+            "id": "root",
+            "foreground": true
+          }
+        },
+        {
+          "advance": 5000
+        },
+        {
+          "event": {
+            "type": "script",
+            "package": "root",
+            "script": "prepare",
+            "phase": "end",
+            "exitCode": 0,
+            "id": "root",
+            "foreground": true
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": true,
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 3/?  \u001b[2m0.0s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolved\u001b[39m 3/?  \u001b[36mScripts\u001b[39m 1/?  \u001b[2m5.0s\u001b[22m\n  \u001b[2mFinalizing install\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mResolved\u001b[39m 3/?  \u001b[36mScripts\u001b[39m 1/?  \u001b[2m5.1s\u001b[22m\n  \u001b[2mFinalizing install\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "network telemetry and current linking package (colors=False)",
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 0,
+            "name": "react"
+          }
+        },
+        {
+          "advance": 500
+        },
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 0,
+            "networkActive": 3,
+            "networkLimit": 64,
+            "bytes": 1048576,
+            "requests": 7,
+            "cacheHits": 5,
+            "retries": 1
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 4,
+            "total": 10,
+            "name": "react@19.0.0"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": false,
+      "expected": "\r\u001b[2K⠋ Resolving 1/?  0.0s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠴ Resolving 1/?  0.5s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠦ Resolving 1/?  0.6s\n  react\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠧ Installing 4/10  0.7s\n  react@19.0.0\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "network telemetry and current linking package (colors=True)",
+      "steps": [
+        {
+          "event": {
+            "type": "resolve",
+            "resolved": 1,
+            "total": 0,
+            "name": "react"
+          }
+        },
+        {
+          "advance": 500
+        },
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 0,
+            "networkActive": 3,
+            "networkLimit": 64,
+            "bytes": 1048576,
+            "requests": 7,
+            "cacheHits": 5,
+            "retries": 1
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 4,
+            "total": 10,
+            "name": "react@19.0.0"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": true,
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.0s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠴\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.5s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠦\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.6s\u001b[22m\n  react\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠧\u001b[39m \u001b[36mInstalling\u001b[39m 4/10  \u001b[2m0.7s\u001b[22m\n  react@19.0.0\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
     }
   ]
 }

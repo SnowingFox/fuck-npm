@@ -65,7 +65,6 @@ export function startListener(
     return {};
   }
   if (
-    ctx.output.mode === "rich" &&
     wantsProgress(ctx.runtime, {
       silent: false,
       quiet: options.logLevel === "quiet",

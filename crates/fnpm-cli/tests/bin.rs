@@ -192,3 +192,91 @@ fn script_version_flag_is_forwarded_to_node() {
     assert_eq!(output.status.code(), Some(7));
     assert!(stdout(&output).contains("script.cjs\n--version\n"));
 }
+
+#[test]
+fn node_gyp_shim_reaches_package_once_and_preserves_arguments() {
+    assert_node_gyp_shim_runs_once(std::ffi::OsStr::new("shim directory with spaces"));
+}
+
+#[test]
+fn node_gyp_shim_works_with_non_utf8_tempdir() {
+    use std::os::unix::ffi::OsStrExt;
+
+    assert_node_gyp_shim_runs_once(std::ffi::OsStr::from_bytes(b"caf\xe9"));
+}
+
+fn assert_node_gyp_shim_runs_once(shim_dir_name: &std::ffi::OsStr) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("project with spaces");
+    let package = project.join("node_modules/node-gyp");
+    let helpers = tmp.path().join("helpers");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::create_dir_all(&helpers).unwrap();
+    std::fs::write(project.join("binding.gyp"), "{}").unwrap();
+    std::fs::write(
+        project.join("package.json"),
+        r#"{"name":"native-project","private":true}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("package.json"),
+        r#"{"name":"node-gyp","version":"1.0.0","bin":{"node-gyp":"gyp"}}"#,
+    )
+    .unwrap();
+    let gyp = package.join("gyp");
+    std::fs::write(&gyp, "#!/bin/sh\nprintf '<%s>\\n' \"$@\"\nexit 7\n").unwrap();
+    std::fs::set_permissions(&gyp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Exercise the real `fnpm x` resolver. Bound recursion so a broken shim fails promptly
+    // instead of growing PATH until the OS rejects exec with E2BIG.
+    let launcher = helpers.join("fnpm");
+    std::fs::write(
+        &launcher,
+        r#"#!/bin/sh
+printf '%s\n' "${#PATH}" >> "$FNPM_TEST_TRACE"
+depth=${FNPM_TEST_DEPTH:-0}
+if [ "$depth" -ge 3 ]; then
+  echo 'node-gyp shim recursed through fnpm x' >&2
+  exit 97
+fi
+export FNPM_TEST_DEPTH=$((depth + 1))
+exec "$FNPM_TEST_BINARY" "$@"
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let shim_root = tmp.path().join(shim_dir_name);
+    std::fs::create_dir(&shim_root).unwrap();
+    let shim = fnpm_scripts::node_gyp::NodeGypShim::create(&shim_root).unwrap();
+    let trace = tmp.path().join("invocations");
+    let path = std::env::join_paths([
+        helpers.as_path(),
+        shim.dir(),
+        Path::new("/usr/bin"),
+        Path::new("/bin"),
+    ])
+    .unwrap();
+    let output = Command::new(shim.dir().join("node-gyp"))
+        .args(["rebuild", "--release", "argument with spaces", "", "*.gyp"])
+        .current_dir(&project)
+        .env_clear()
+        .env("HOME", tmp.path())
+        .env("PATH", path)
+        .env("FNPM_TEST_BINARY", FNPM)
+        .env("FNPM_TEST_TRACE", &trace)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(7), "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "<rebuild>\n<--release>\n<argument with spaces>\n<>\n<*.gyp>\n"
+    );
+    let invocations = std::fs::read_to_string(trace).unwrap();
+    assert_eq!(
+        invocations.lines().count(),
+        1,
+        "recursive PATH lengths: {invocations}"
+    );
+}

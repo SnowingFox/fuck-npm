@@ -242,8 +242,11 @@ async fn npm_run_in_scripts_is_rewritten_to_fnpm() {
 async fn node_gyp_is_always_available() {
     let (_t, p) = project();
     let d = dep(&p, "native");
-    let fake_gyp = p.join("fake-gyp.sh");
-    write(&fake_gyp, "#!/bin/sh\necho \"gyp $@\" > \"$PWD/gyp.txt\"\n");
+    let fake_gyp = p.join("fake gyp.sh");
+    write(
+        &fake_gyp,
+        "#!/bin/sh\nprintf '<%s>\\n' \"$@\" > \"$PWD/gyp.txt\"\n",
+    );
     std::fs::set_permissions(
         &fake_gyp,
         std::os::unix::fs::PermissionsExt::from_mode(0o755),
@@ -252,9 +255,19 @@ async fn node_gyp_is_always_available() {
     let mut o = opts(&p);
     o.env
         .push(("npm_config_node_gyp".into(), fake_gyp.display().to_string()));
-    let j = job("native", &d, &[("install", "node-gyp rebuild")]);
+    let j = job(
+        "native",
+        &d,
+        &[(
+            "install",
+            "node-gyp rebuild --release 'argument with spaces' '' '*.gyp'",
+        )],
+    );
     run_jobs(vec![vec![j]], &o, &NoopSink).await.unwrap();
-    assert_eq!(read(&d.join("gyp.txt")).trim(), "gyp rebuild");
+    assert_eq!(
+        read(&d.join("gyp.txt")),
+        "<rebuild>\n<--release>\n<argument with spaces>\n<>\n<*.gyp>\n"
+    );
     // The shim directory is removed afterwards.
     let leftover = std::fs::read_dir(std::env::temp_dir())
         .unwrap()

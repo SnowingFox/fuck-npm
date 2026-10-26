@@ -178,7 +178,6 @@ impl Limiter {
         self.state.lock().limit
     }
 
-    #[cfg(test)]
     pub fn in_flight(&self) -> usize {
         self.state.lock().in_flight
     }

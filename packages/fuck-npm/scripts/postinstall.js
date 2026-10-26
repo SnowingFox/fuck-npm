@@ -276,9 +276,11 @@ export async function postinstall({ root = native.PACKAGE_ROOT, env = process.en
     for (const [bin, exe] of executables) {
       swapIn(exe, join(root, "bin", bin));
     }
-    // The native fnpm runs `fnpm x` when it is started as fnpmx.
+    // The native fnpm runs `fnpm x` when started under either alias.
     const fnpm = executables.find(([bin]) => bin === "fnpm")?.[1];
-    if (fnpm && existsSync(join(root, "bin", "fnpmx"))) swapIn(fnpm, join(root, "bin", "fnpmx"));
+    for (const alias of ["fnpmx", "fnpx"]) {
+      if (fnpm && existsSync(join(root, "bin", alias))) swapIn(fnpm, join(root, "bin", alias));
+    }
     return "swapped";
   } catch (error) {
     return `kept shim: ${error?.message ?? String(error)}`;

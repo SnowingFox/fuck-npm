@@ -189,7 +189,7 @@ Exit criteria:
 ## P4: Remaining commands (in progress)
 
 `outdated`, `why`, `ls`, `info`, `dedupe`, `prune`, `link` / `unlink`, `patch` / `patch-commit`,
-`audit` (+ `fix`), `pack`, `publish`, `run`, `exec`, `x` / `dlx` / `fnpmx`, `create`, `init`,
+`audit` (+ `fix`), `pack`, `publish`, `run`, `exec`, `x` / `dlx` / `fnpx` / `fnpmx`, `create`, `init`,
 `store`, the `pm` subcommands (`cache`, `pkg`, `trust`, `version`, ...), `doctor`, `whoami`,
 `completions`. Execution through `x` / `create` has a native launcher path; the other
 commands use the TS CLI and `fnpm_core::invoke`.

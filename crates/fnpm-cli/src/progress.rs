@@ -1,10 +1,9 @@
-//! The single-line progress renderer on stderr and the diagnostics-only sink: a port of
+//! The terminal progress renderer on stderr and the diagnostics-only sink: a port of
 //! `packages/fuck-npm/src/output/progress.ts`.
 //!
 //! [`Renderer`] is the renderer's state machine with time passed in, so the shared golden
-//! fixtures can drive it exactly like the TS tests drive theirs (manual clock, one pending
-//! timer). [`ProgressSink`] wraps it for real use: core threads call `emit`, and a timer
-//! thread performs the trailing redraw.
+//! fixtures drive it with the same manual clock as the TS tests. [`ProgressSink`] serializes
+//! producer events with timer redraws and keeps long-running tasks visibly alive.
 
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -73,6 +72,28 @@ enum Phase {
     Script,
 }
 
+#[derive(Debug)]
+struct ActiveScript {
+    id: Option<String>,
+    package: String,
+    script: String,
+    started: f64,
+    foreground: bool,
+}
+
+#[derive(Debug)]
+struct Telemetry {
+    cpus: u32,
+    io_threads: u32,
+    link_threads: u32,
+    network_active: u32,
+    network_limit: u32,
+    bytes: u64,
+    requests: u64,
+    cache_hits: u64,
+    retries: u64,
+}
+
 /// The renderer state. Every method appends what it would write to stderr to `out`.
 #[derive(Debug)]
 pub struct Renderer {
@@ -88,16 +109,47 @@ pub struct Renderer {
     extract_total: u32,
     linked: u32,
     link_total: u32,
-    script: Option<String>,
+    current: String,
+    scripts: Vec<ActiveScript>,
+    scripts_done: u32,
+    scripts_total: u32,
+    scripts_failed: u32,
+    telemetry: Option<Telemetry>,
+    sample_at: f64,
+    sample_bytes: u64,
+    speed: u64,
     last_draw: f64,
-    drawn: bool,
-    /// When the pending trailing redraw is due (ms on the caller's clock).
+    drawn_lines: usize,
     pending: Option<f64>,
     stopped: bool,
+    output_active: bool,
+}
+
+const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+pub const HEARTBEAT_MS: f64 = 100.0;
+
+fn clean(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+fn seconds(ms: f64) -> String {
+    format!("{}s", to_fixed(ms.max(0.0) / 1000.0, 1))
+}
+
+fn count(done: u32, total: u32) -> String {
+    format!(
+        "{done}/{}",
+        if total == 0 {
+            "?".to_owned()
+        } else {
+            total.to_string()
+        }
+    )
 }
 
 impl Renderer {
-    /// A renderer for a terminal `columns` wide, colouring with `pc`.
     pub fn new(pc: Colors, columns: usize) -> Self {
         Self {
             pc,
@@ -112,145 +164,320 @@ impl Renderer {
             extract_total: 0,
             linked: 0,
             link_total: 0,
-            script: None,
+            current: String::new(),
+            scripts: Vec::new(),
+            scripts_done: 0,
+            scripts_total: 0,
+            scripts_failed: 0,
+            telemetry: None,
+            sample_at: 0.0,
+            sample_bytes: 0,
+            speed: 0,
             last_draw: f64::NEG_INFINITY,
-            drawn: false,
-            pending: None,
+            drawn_lines: 0,
+            pending: Some(HEARTBEAT_MS),
             stopped: false,
+            output_active: false,
         }
     }
 
-    /// When the pending redraw is due, if one is scheduled.
     pub fn deadline(&self) -> Option<f64> {
         self.pending
     }
 
-    fn text(&self) -> String {
+    fn paused(&self) -> bool {
+        self.output_active || self.scripts.iter().any(|script| script.foreground)
+    }
+
+    fn clear(&mut self, out: &mut String) {
+        if self.drawn_lines == 0 {
+            return;
+        }
+        out.push_str(ERASE);
+        for _ in 1..self.drawn_lines {
+            out.push_str("\x1b[1A");
+            out.push_str(ERASE);
+        }
+        self.drawn_lines = 0;
+    }
+
+    fn lines(&self, now: f64) -> Vec<String> {
         let pc = self.pc;
-        let or_question = |total: u32| {
-            if total == 0 {
-                "?".to_owned()
-            } else {
-                total.to_string()
-            }
+        let phase = if self.scripts.is_empty() {
+            self.phase
+        } else {
+            Phase::Script
         };
-        match self.phase {
+        let main = match phase {
             Phase::Resolve => format!(
-                "{} {}/{}",
+                "{} {}",
                 pc.cyan("Resolving"),
-                self.resolved,
-                or_question(self.resolve_total)
+                count(self.resolved, self.resolve_total)
             ),
             Phase::Download | Phase::Extract => format!(
-                "{} {}/{} {}  {} {}/{}",
+                "{} {} {}  {} {}",
                 pc.cyan("Downloading"),
-                self.downloaded,
-                self.download_total,
+                count(self.downloaded, self.download_total),
                 pc.dim(&format_bytes(self.bytes)),
                 pc.cyan("Extracted"),
-                self.extracted,
-                if self.extract_total == 0 {
-                    self.download_total
+                count(
+                    self.extracted,
+                    if self.extract_total == 0 {
+                        self.download_total
+                    } else {
+                        self.extract_total
+                    }
+                )
+            ),
+            Phase::Link => format!(
+                "{} {}",
+                pc.cyan("Installing"),
+                count(self.linked, self.link_total)
+            ),
+            Phase::Script => format!(
+                "{} {}  {} {}{}",
+                pc.cyan(if self.link_total > 0 {
+                    "Installed"
                 } else {
-                    self.extract_total
+                    "Resolved"
+                }),
+                if self.link_total > 0 {
+                    count(self.linked, self.link_total)
+                } else {
+                    count(self.resolved, self.resolve_total)
+                },
+                pc.cyan("Scripts"),
+                count(self.scripts_done, self.scripts_total),
+                if self.scripts_failed > 0 {
+                    format!(" ({} failed)", self.scripts_failed)
+                } else {
+                    String::new()
                 }
             ),
-            Phase::Link => format!("{} {}/{}", pc.cyan("Linking"), self.linked, self.link_total),
-            Phase::Script => format!(
-                "{} {}",
-                pc.cyan("Running"),
-                self.script.as_deref().unwrap_or("")
-            ),
+        };
+        let frame = FRAMES[(now / HEARTBEAT_MS).floor() as usize % FRAMES.len()].to_string();
+        let mut lines = vec![format!(
+            "{} {main}  {}",
+            pc.cyan(&frame),
+            pc.dim(&seconds(now))
+        )];
+        if phase == Phase::Script {
+            lines.push(match self.scripts.first() {
+                Some(active) => format!(
+                    "  {} {} {} {}{}",
+                    pc.cyan("Running"),
+                    clean(&active.package),
+                    pc.dim(&clean(&active.script)),
+                    seconds(now - active.started),
+                    if self.scripts.len() > 1 {
+                        format!(" (+{} running)", self.scripts.len() - 1)
+                    } else {
+                        String::new()
+                    }
+                ),
+                None => format!("  {}", pc.dim("Finalizing install")),
+            });
+        } else if !self.current.is_empty() {
+            lines.push(format!("  {}", clean(&self.current)));
         }
+        if let Some(t) = &self.telemetry {
+            let rate = if now - self.sample_at > 1500.0 {
+                0
+            } else {
+                self.speed
+            };
+            lines.push(pc.dim(&format!(
+                "  Network {}/{} · {}/s · {} · {} requests · {} cached{}",
+                t.network_active,
+                t.network_limit,
+                format_bytes(rate),
+                format_bytes(t.bytes),
+                t.requests,
+                t.cache_hits,
+                if t.retries > 0 {
+                    format!(" · {} retries", t.retries)
+                } else {
+                    String::new()
+                }
+            )));
+            lines.push(pc.dim(&format!(
+                "  {} CPU cores · workers: {} I/O, {} link",
+                t.cpus, t.io_threads, t.link_threads
+            )));
+        }
+        lines
     }
 
     fn draw(&mut self, now: f64, out: &mut String) {
         self.pending = None;
-        if self.stopped {
+        if self.stopped || self.paused() {
             return;
         }
         self.last_draw = now;
-        let width = self.columns.saturating_sub(1).max(20);
-        let line = self.text();
-        // Never wrap: a wrapped line cannot be erased with \r.
-        let visible = strip_ansi(&line);
+        self.clear(out);
+        let width = self.columns.saturating_sub(1).max(1);
+        let lines = self.lines(now);
         out.push_str(ERASE);
-        if visible.chars().count() > width {
-            out.extend(visible.chars().take(width));
-        } else {
-            out.push_str(&line);
+        for (index, line) in lines.iter().enumerate() {
+            if index > 0 {
+                out.push('\n');
+            }
+            let visible = strip_ansi(line);
+            if visible.chars().count() > width {
+                out.extend(visible.chars().take(width));
+            } else {
+                out.push_str(line);
+            }
         }
-        self.drawn = true;
+        self.drawn_lines = lines.len();
+        self.pending = Some(now + HEARTBEAT_MS);
     }
 
     fn schedule(&mut self, now: f64, out: &mut String) {
-        if self.stopped || self.pending.is_some() {
+        if self.stopped || self.paused() {
             return;
         }
-        let elapsed = now - self.last_draw;
-        if elapsed >= THROTTLE_MS {
+        let delay = THROTTLE_MS - (now - self.last_draw);
+        if delay <= 0.0 {
             self.draw(now, out);
-            return;
+        } else {
+            self.pending = Some(now + delay);
         }
-        self.pending = Some(now + (THROTTLE_MS - elapsed));
     }
 
     fn above(&mut self, message: &str, now: f64, out: &mut String) {
-        if self.drawn {
-            out.push_str(ERASE);
-        }
+        self.clear(out);
         out.push_str(message);
         out.push('\n');
-        self.drawn = false;
         self.schedule(now, out);
     }
 
-    /// One core event at time `now`.
     pub fn event(&mut self, event: &Event, now: f64, out: &mut String) {
+        if self.stopped {
+            return;
+        }
         match event {
             Event::Resolve {
-                resolved, total, ..
+                resolved,
+                total,
+                name,
             } => {
                 self.phase = Phase::Resolve;
                 self.resolved = *resolved;
                 self.resolve_total = *total;
+                self.current = name.clone().unwrap_or_default();
             }
             Event::Download {
-                done, total, bytes, ..
+                done,
+                total,
+                bytes,
+                name,
             } => {
                 self.phase = Phase::Download;
                 self.downloaded = *done;
                 self.download_total = *total;
+                self.current = name.clone().unwrap_or_default();
                 if let Some(bytes) = bytes {
                     self.bytes = *bytes;
                 }
             }
-            Event::Extract { done, total, .. } => {
+            Event::Extract { done, total, name } => {
                 if self.phase == Phase::Resolve {
                     self.phase = Phase::Extract;
                 }
                 self.extracted = *done;
                 self.extract_total = *total;
+                if let Some(name) = name {
+                    self.current.clone_from(name);
+                }
             }
-            Event::Link { done, total } => {
+            Event::Link { done, total, name } => {
                 self.phase = Phase::Link;
                 self.linked = *done;
                 self.link_total = *total;
+                self.current = name.clone().unwrap_or_default();
             }
+            Event::ScriptPlan { total } => self.scripts_total += total,
             Event::Script {
-                package, script, ..
+                package,
+                script,
+                phase,
+                exit_code,
+                id,
+                foreground,
             } => {
                 self.phase = Phase::Script;
-                self.script = Some(format!("{package} {}", self.pc.dim(script)));
+                match phase {
+                    fnpm_types::event::ScriptPhase::Start => {
+                        self.scripts.push(ActiveScript {
+                            id: id.clone(),
+                            package: package.clone(),
+                            script: script.clone(),
+                            started: now,
+                            foreground: *foreground,
+                        });
+                        if self.paused() {
+                            self.pending = None;
+                            self.clear(out);
+                        }
+                    }
+                    fnpm_types::event::ScriptPhase::End => {
+                        if let Some(index) = self.scripts.iter().position(|active| match id {
+                            Some(id) => active.id.as_ref() == Some(id),
+                            None => active.package == *package && active.script == *script,
+                        }) {
+                            self.scripts.remove(index);
+                            self.scripts_done += 1;
+                            if *exit_code != Some(0) {
+                                self.scripts_failed += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            Event::Telemetry {
+                cpus,
+                io_threads,
+                link_threads,
+                network_active,
+                network_limit,
+                bytes,
+                requests,
+                cache_hits,
+                retries,
+            } => {
+                if now > self.sample_at {
+                    self.speed = (bytes.saturating_sub(self.sample_bytes) as f64 * 1000.0
+                        / (now - self.sample_at))
+                        .floor() as u64;
+                }
+                self.sample_at = now;
+                self.sample_bytes = *bytes;
+                self.telemetry = Some(Telemetry {
+                    cpus: *cpus,
+                    io_threads: *io_threads,
+                    link_threads: *link_threads,
+                    network_active: *network_active,
+                    network_limit: *network_limit,
+                    bytes: *bytes,
+                    requests: *requests,
+                    cache_hits: *cache_hits,
+                    retries: *retries,
+                });
+            }
+            Event::Output { active } => {
+                self.output_active = *active;
+                if *active {
+                    self.pending = None;
+                    self.clear(out);
+                }
             }
             Event::Warn { message, .. } => {
-                let line = format!("{} {message}", self.pc.yellow("warn:"));
-                self.above(&line, now, out);
+                self.above(&format!("{} {message}", self.pc.yellow("warn:")), now, out);
                 return;
             }
             Event::Error { message, .. } => {
-                let line = format!("{} {message}", self.pc.red("error:"));
-                self.above(&line, now, out);
+                self.above(&format!("{} {message}", self.pc.red("error:")), now, out);
                 return;
             }
             Event::Status { .. } | Event::Summary { .. } => return,
@@ -258,21 +485,16 @@ impl Renderer {
         self.schedule(now, out);
     }
 
-    /// The pending timer fired at `now`.
     pub fn fire(&mut self, now: f64, out: &mut String) {
-        if self.pending.is_some() {
+        if self.pending.is_some_and(|due| due <= now) {
             self.draw(now, out);
         }
     }
 
-    /// Erase the line and cancel the pending redraw. Call before printing the summary.
     pub fn stop(&mut self, out: &mut String) {
         self.stopped = true;
         self.pending = None;
-        if self.drawn {
-            out.push_str(ERASE);
-            self.drawn = false;
-        }
+        self.clear(out);
     }
 }
 
@@ -282,8 +504,8 @@ struct Shared {
     done: bool,
 }
 
-/// The live progress line: an [`EventSink`] for the core plus a timer thread for the
-/// trailing redraw. Writes go straight to stderr under the state lock, so lines never
+/// The live progress region: an [`EventSink`] for the core plus a timer thread for the
+/// heartbeat. Writes go straight to stderr under the state lock, so lines never
 /// interleave.
 pub struct ProgressSink {
     state: Arc<(Mutex<Shared>, Condvar)>,
@@ -374,19 +596,20 @@ fn timer_loop(state: &(Mutex<Shared>, Condvar), stderr: &dyn Stream, epoch: Inst
 }
 
 impl EventSink for ProgressSink {
+    fn wants_progress(&self) -> bool {
+        true
+    }
+
     fn emit(&self, event: Event) {
         let now = self.now();
         let (lock, cond) = &*self.state;
         let mut shared = lock.lock().unwrap_or_else(|poison| poison.into_inner());
         let mut out = String::new();
-        let had_deadline = shared.renderer.deadline().is_some();
         shared.renderer.event(&event, now, &mut out);
         if !out.is_empty() {
             self.stderr.write(&out);
         }
-        if !had_deadline && shared.renderer.deadline().is_some() {
-            cond.notify_all();
-        }
+        cond.notify_all();
     }
 }
 
@@ -457,8 +680,8 @@ mod tests {
         assert_eq!(out.matches(ERASE).count(), 1);
         assert_eq!(renderer.deadline(), Some(THROTTLE_MS));
         renderer.fire(THROTTLE_MS, &mut out);
-        assert_eq!(out.matches(ERASE).count(), 2);
-        assert!(out.ends_with("Resolving 100/100"));
+        assert_eq!(out.matches("Resolving").count(), 2);
+        assert!(out.contains("Resolving 100/100"));
     }
 
     #[test]

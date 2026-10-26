@@ -115,14 +115,32 @@ export type CoreEvent =
   | { type: "resolve"; resolved: number; total: number; name?: string }
   | { type: "download"; done: number; total: number; bytes?: number; name?: string }
   | { type: "extract"; done: number; total: number; name?: string }
-  | { type: "link"; done: number; total: number }
+  | { type: "link"; done: number; total: number; name?: string }
+  | {
+      type: "telemetry";
+      cpus: number;
+      ioThreads: number;
+      linkThreads: number;
+      networkActive: number;
+      networkLimit: number;
+      bytes: number;
+      requests: number;
+      cacheHits: number;
+      retries: number;
+    }
+  /** One runner invocation adds this many scripts to the install plan. */
+  | { type: "scriptplan"; total: number }
   | {
       type: "script";
       package: string;
       script: string;
       phase: "start" | "end";
+      id?: string;
+      /** Inherited output: suspend live drawing from start through end. */
+      foreground?: boolean;
       exitCode?: number;
     }
+  | { type: "output"; active: boolean }
   | { type: "warn"; message: string; code?: string }
   | { type: "error"; message: string; code?: string }
   /**

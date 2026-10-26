@@ -6,6 +6,7 @@
 //! (keeping the position of the first one in the batch); every other event is delivered once,
 //! in order.
 
+use std::io::IsTerminal as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,13 +16,14 @@ use parking_lot::Mutex;
 /// The interval the TS renderer expects.
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 
-/// The four progress kinds, as indices into [`Pending::progress_slot`].
+/// The five progress kinds, as indices into [`Pending::progress_slot`].
 fn progress_kind(event: &Event) -> Option<usize> {
     match event {
         Event::Resolve { .. } => Some(0),
         Event::Download { .. } => Some(1),
         Event::Extract { .. } => Some(2),
         Event::Link { .. } => Some(3),
+        Event::Telemetry { .. } => Some(4),
         _ => None,
     }
 }
@@ -30,7 +32,7 @@ fn progress_kind(event: &Event) -> Option<usize> {
 struct Pending {
     events: Vec<Event>,
     /// Where the pending progress event of each kind sits in `events`.
-    progress_slot: [Option<usize>; 4],
+    progress_slot: [Option<usize>; 5],
 }
 
 /// The deliver callback: receives one non-empty batch.
@@ -41,6 +43,7 @@ pub type Deliver = Arc<dyn Fn(Vec<Event>) + Send + Sync>;
 /// and once at the end, handing the batch to `deliver` (the napi ThreadsafeFunction).
 pub struct BatchingSink {
     deliver: Deliver,
+    wants_progress: bool,
     pending: Mutex<Pending>,
     /// Held while a batch is taken and delivered, so the flusher task and the final flush
     /// never hand two batches over out of order.
@@ -53,6 +56,10 @@ impl BatchingSink {
     pub fn new(deliver: Deliver) -> Arc<Self> {
         Arc::new(Self {
             deliver,
+            wants_progress: live_progress(
+                std::io::stderr().is_terminal(),
+                &fnpm_config::Env::from_process(),
+            ),
             pending: Mutex::new(Pending::default()),
             delivering: Mutex::new(()),
         })
@@ -63,7 +70,7 @@ impl BatchingSink {
         let _order = self.delivering.lock();
         let batch = {
             let mut p = self.pending.lock();
-            p.progress_slot = [None; 4];
+            p.progress_slot = [None; 5];
             std::mem::take(&mut p.events)
         };
         let n = batch.len();
@@ -97,8 +104,30 @@ impl BatchingSink {
     }
 }
 
+/// Mirror the native/TS renderer gate once per sink, keeping per-package checks cheap.
+fn live_progress(stderr_is_tty: bool, env: &fnpm_config::Env) -> bool {
+    stderr_is_tty
+        && env
+            .get("FNPM_PROGRESS")
+            .or_else(|| env.get("BUN_INSTALL_PROGRESS"))
+            != Some("0")
+        && !env.is_ci()
+}
+
 impl EventSink for BatchingSink {
+    fn wants_progress(&self) -> bool {
+        self.wants_progress
+    }
+
     fn emit(&self, event: Event) {
+        // Hand inherited-output boundaries to JS before the runner acknowledges a start.
+        let foreground = matches!(
+            &event,
+            Event::Script {
+                foreground: true,
+                ..
+            } | Event::Output { .. }
+        );
         let mut p = self.pending.lock();
         match progress_kind(&event) {
             Some(kind) => match p.progress_slot[kind] {
@@ -110,6 +139,10 @@ impl EventSink for BatchingSink {
                 }
             },
             None => p.events.push(event),
+        }
+        drop(p);
+        if foreground {
+            self.flush();
         }
     }
 }
@@ -138,6 +171,104 @@ impl FlushGuard {
 impl Drop for FlushGuard {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Registry sampling exists only for a live progress consumer. The timer keeps a weak
+/// reference, so cancellation cannot retain the client after the guard is dropped.
+pub(crate) struct TelemetryGuard {
+    state: Arc<Telemetry>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+struct Telemetry {
+    client: fnpm_registry::RegistryClient,
+    sink: Arc<dyn EventSink>,
+    cpus: u32,
+    io_threads: u32,
+    /// Serializes timer emissions, link-setting updates and the final snapshot.
+    settings: Mutex<TelemetrySettings>,
+}
+
+#[derive(Default)]
+struct TelemetrySettings {
+    link_threads: u32,
+    stopped: bool,
+}
+
+impl Telemetry {
+    fn emit(&self, settings: &TelemetrySettings) {
+        let stats = self.client.stats();
+        self.sink.emit(Event::Telemetry {
+            cpus: self.cpus,
+            io_threads: self.io_threads,
+            link_threads: settings.link_threads,
+            network_active: self.client.active_requests().min(u32::MAX as usize) as u32,
+            network_limit: self.client.concurrency_limit().min(u32::MAX as usize) as u32,
+            bytes: stats.bytes_downloaded,
+            requests: stats
+                .manifest_requests
+                .saturating_add(stats.tarball_requests),
+            cache_hits: stats.manifest_cache_hits.saturating_add(stats.not_modified),
+            retries: stats.retries,
+        });
+    }
+
+    fn sample(&self) {
+        let settings = self.settings.lock();
+        if !settings.stopped {
+            self.emit(&settings);
+        }
+    }
+}
+
+impl TelemetryGuard {
+    pub(crate) fn start(
+        client: &fnpm_registry::RegistryClient,
+        sink: &Arc<dyn EventSink>,
+        progress: bool,
+    ) -> Option<Self> {
+        if !progress || !sink.enabled() || !sink.wants_progress() {
+            return None;
+        }
+        let state = Arc::new(Telemetry {
+            client: client.clone(),
+            sink: sink.clone(),
+            cpus: fnpm_types::available_parallelism().min(u32::MAX as usize) as u32,
+            io_threads: crate::io_threads().min(u32::MAX as usize) as u32,
+            settings: Mutex::default(),
+        });
+        state.sample();
+        let weak = Arc::downgrade(&state);
+        let task = tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_millis(500));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                let Some(state) = weak.upgrade() else { break };
+                state.sample();
+            }
+        });
+        Some(Self { state, task })
+    }
+
+    /// The pool size actually selected for this linking pass, rather than a CPU estimate.
+    pub(crate) fn link_threads(&self, threads: usize) {
+        let mut settings = self.state.settings.lock();
+        settings.link_threads = threads.min(u32::MAX as usize) as u32;
+        if !settings.stopped {
+            self.state.emit(&settings);
+        }
+    }
+}
+
+impl Drop for TelemetryGuard {
+    fn drop(&mut self) {
+        self.task.abort();
+        let mut settings = self.state.settings.lock();
+        settings.stopped = true;
+        self.state.emit(&settings);
     }
 }
 
@@ -171,7 +302,11 @@ mod tests {
             total: 10,
             name: None,
         });
-        sink.emit(Event::Link { done: 1, total: 2 });
+        sink.emit(Event::Link {
+            done: 1,
+            total: 2,
+            name: None,
+        });
         sink.emit(Event::warn("second", Some("W")));
         assert_eq!(sink.flush(), 4);
         let got = batches.lock().clone();
@@ -184,7 +319,11 @@ mod tests {
                     name: None
                 },
                 Event::warn("first", None),
-                Event::Link { done: 1, total: 2 },
+                Event::Link {
+                    done: 1,
+                    total: 2,
+                    name: None
+                },
                 Event::warn("second", Some("W")),
             ]]
         );
@@ -192,8 +331,110 @@ mod tests {
         assert_eq!(sink.flush(), 0);
         assert_eq!(batches.lock().len(), 1);
         // A new batch starts a new coalescing window.
-        sink.emit(Event::Link { done: 2, total: 2 });
+        sink.emit(Event::Link {
+            done: 2,
+            total: 2,
+            name: None,
+        });
         assert_eq!(sink.flush(), 1);
+    }
+
+    #[test]
+    fn batch_sampling_gate_matches_live_renderer_environment() {
+        let empty = fnpm_config::Env::default();
+        assert!(!live_progress(false, &empty));
+        assert!(live_progress(true, &empty));
+        for (key, value) in [
+            ("FNPM_PROGRESS", "0"),
+            ("BUN_INSTALL_PROGRESS", "0"),
+            ("CI", "1"),
+            ("GITHUB_ACTIONS", "true"),
+        ] {
+            let env = fnpm_config::Env::from_pairs([(key, value)]);
+            assert!(!live_progress(true, &env), "{key}={value}");
+        }
+        let env = fnpm_config::Env::from_pairs([
+            ("FNPM_PROGRESS", "1"),
+            ("BUN_INSTALL_PROGRESS", "0"),
+            ("CI", "false"),
+        ]);
+        assert!(
+            live_progress(true, &env),
+            "fnpm setting takes precedence over bun fallback"
+        );
+    }
+
+    #[test]
+    fn foreground_boundaries_flush_before_emit_returns() {
+        let (sink, batches) = collecting();
+        sink.emit(Event::ScriptPlan { total: 1 });
+        for phase in [
+            fnpm_types::event::ScriptPhase::Start,
+            fnpm_types::event::ScriptPhase::End,
+        ] {
+            sink.emit(Event::Script {
+                package: "root".into(),
+                script: "install".into(),
+                phase,
+                id: Some("0:/root:install".into()),
+                foreground: true,
+                exit_code: None,
+            });
+            let batches = batches.lock();
+            assert!(matches!(batches.last().unwrap().last().unwrap(),
+                Event::Script { phase: delivered, .. } if *delivered == phase));
+        }
+        assert_eq!(batches.lock().len(), 2);
+        assert_eq!(sink.flush(), 0);
+    }
+
+    #[tokio::test]
+    async fn telemetry_is_opt_in_periodic_and_finishes_without_retaining_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Arc::new(fnpm_config::Config::defaults(dir.path()));
+        let client =
+            fnpm_registry::RegistryClient::with_env(config, fnpm_config::Env::default()).unwrap();
+        let passive: Arc<dyn EventSink> = Arc::new(fnpm_types::event::VecSink::default());
+        assert!(TelemetryGuard::start(&client, &passive, true).is_none());
+        let events = Arc::new(Mutex::new(Vec::new()));
+        struct Live(Arc<Mutex<Vec<Event>>>);
+        impl EventSink for Live {
+            fn emit(&self, event: Event) {
+                self.0.lock().push(event);
+            }
+            fn wants_progress(&self) -> bool {
+                true
+            }
+        }
+        let sink: Arc<dyn EventSink> = Arc::new(Live(events.clone()));
+        assert!(TelemetryGuard::start(&client, &sink, false).is_none());
+        assert!(events.lock().is_empty());
+        let guard = TelemetryGuard::start(&client, &sink, true).unwrap();
+        let weak = Arc::downgrade(&guard.state);
+        assert_eq!(events.lock().len(), 1, "immediate snapshot");
+        assert!(matches!(events.lock()[0], Event::Telemetry {
+            cpus, io_threads, link_threads: 0, network_active: 0, network_limit,
+            bytes: 0, requests: 0, cache_hits: 0, retries: 0
+        } if cpus > 0 && io_threads > 0 && network_limit > 0));
+        guard.link_threads(3);
+        assert!(matches!(
+            events.lock().last().unwrap(),
+            Event::Telemetry {
+                link_threads: 3,
+                ..
+            }
+        ));
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        assert!(events.lock().len() >= 3, "500ms snapshot");
+        let before = events.lock().len();
+        drop(guard);
+        assert_eq!(events.lock().len(), before + 1, "final snapshot");
+        assert!(
+            weak.upgrade().is_none(),
+            "timer must not retain its registry client"
+        );
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        assert_eq!(events.lock().len(), before + 1, "sampling stopped");
     }
 
     #[test]

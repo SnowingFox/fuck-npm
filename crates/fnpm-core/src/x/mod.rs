@@ -328,10 +328,10 @@ fn run_env(opts: &XArgs, env: &Env, project: &Path) -> EnvMap {
 
 /// `PATH` without the directory `ignore` (bun `BUN_WHICH_IGNORE_CWD`: a temporary node-gyp
 /// script must not find itself).
-fn path_without(path: &OsStr, ignore: &str) -> OsString {
-    let ignore = ignore.trim_end_matches('/');
+fn path_without(path: &OsStr, ignore: &OsStr) -> OsString {
+    let ignore = Path::new(ignore);
     let kept: Vec<PathBuf> = std::env::split_paths(path)
-        .filter(|p| p.to_string_lossy().trim_end_matches('/') != ignore)
+        .filter(|p| p != ignore)
         .collect();
     std::env::join_paths(kept).unwrap_or_default()
 }
@@ -624,7 +624,7 @@ fn plan_with(opts: &XArgs, out: &Out) -> Result<Outcome, i32> {
     let mut run_env = run_env(opts, &env, &project);
     let ignore_cwd = ["FNPM_WHICH_IGNORE_CWD", "BUN_WHICH_IGNORE_CWD"]
         .iter()
-        .find_map(|k| run_env.get(k).map(|v| v.to_string_lossy().into_owned()))
+        .find_map(|k| run_env.get(k).map(OsStr::to_owned))
         .filter(|v| !v.is_empty());
     run_env.remove("FNPM_WHICH_IGNORE_CWD");
     run_env.remove("BUN_WHICH_IGNORE_CWD");
@@ -1048,6 +1048,33 @@ mod tests {
             ]))
         );
         assert_eq!(create_args(&s(&["react"]), Path::new("/"), &out), Err(1));
+    }
+
+    #[test]
+    fn node_gyp_lookup_excludes_shim_with_trailing_separator() {
+        let shim = Path::new("temporary directory").join("fnpm-node-gyp");
+        let other = Path::new("other");
+        let path = std::env::join_paths([shim.as_path(), other]).unwrap();
+        let mut ignore = shim.into_os_string();
+        ignore.push(std::path::MAIN_SEPARATOR_STR);
+        assert_eq!(
+            path_without(&path, &ignore),
+            std::env::join_paths([other]).unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_gyp_lookup_preserves_non_utf8_paths() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let shim = OsStr::from_bytes(b"/tmp/caf\xe9/fnpm-node-gyp");
+        let other = Path::new("/other");
+        let path = std::env::join_paths([Path::new(shim), other]).unwrap();
+        assert_eq!(
+            path_without(&path, shim),
+            std::env::join_paths([other]).unwrap()
+        );
     }
 
     #[test]

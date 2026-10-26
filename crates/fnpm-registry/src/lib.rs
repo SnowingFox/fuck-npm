@@ -336,6 +336,11 @@ impl RegistryClient {
         self.inner.stats()
     }
 
+    /// Requests currently holding a network slot, including streamed response bodies.
+    pub fn active_requests(&self) -> usize {
+        self.inner.limiter.in_flight()
+    }
+
     /// The current request limit (lower than configured after repeated failures).
     pub fn concurrency_limit(&self) -> usize {
         self.inner.limiter.limit()

@@ -46,13 +46,39 @@ pub enum Event {
     Link {
         done: u32,
         total: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    /// Resource settings and cumulative registry counters for the live renderer.
+    Telemetry {
+        cpus: u32,
+        io_threads: u32,
+        link_threads: u32,
+        network_active: u32,
+        network_limit: u32,
+        bytes: u64,
+        requests: u64,
+        cache_hits: u64,
+        retries: u64,
+    },
+    /// Scripts scheduled by one runner invocation; successive plans are additive.
+    ScriptPlan {
+        total: u32,
     },
     Script {
         package: String,
         script: String,
         phase: ScriptPhase,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        /// The script inherits output, so live renderers must suspend drawing until its end.
+        #[serde(default, skip_serializing_if = "is_false")]
+        foreground: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         exit_code: Option<i32>,
+    },
+    Output {
+        active: bool,
     },
     Warn {
         message: String,
@@ -75,6 +101,10 @@ pub enum Event {
     },
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 impl Event {
     pub fn status(message: impl Into<String>) -> Self {
         Self::Status {
@@ -94,7 +124,11 @@ impl Event {
     pub fn is_progress(&self) -> bool {
         matches!(
             self,
-            Self::Resolve { .. } | Self::Download { .. } | Self::Extract { .. } | Self::Link { .. }
+            Self::Resolve { .. }
+                | Self::Download { .. }
+                | Self::Extract { .. }
+                | Self::Link { .. }
+                | Self::Telemetry { .. }
         )
     }
 }
@@ -175,6 +209,11 @@ pub trait EventSink: Send + Sync {
     fn enabled(&self) -> bool {
         true
     }
+
+    /// Opts into periodic resource sampling when progress is also enabled in the options.
+    fn wants_progress(&self) -> bool {
+        false
+    }
 }
 
 /// Drops everything.
@@ -195,6 +234,9 @@ impl<T: EventSink + ?Sized> EventSink for Arc<T> {
     fn enabled(&self) -> bool {
         (**self).enabled()
     }
+    fn wants_progress(&self) -> bool {
+        (**self).wants_progress()
+    }
 }
 
 /// Collects events in memory (tests).
@@ -212,11 +254,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn telemetry_and_script_contract_are_backward_compatible() {
+        let telemetry = Event::Telemetry {
+            cpus: 8,
+            io_threads: 4,
+            link_threads: 3,
+            network_active: 2,
+            network_limit: 48,
+            bytes: 1024,
+            requests: 10,
+            cache_hits: 6,
+            retries: 1,
+        };
+        let json = serde_json::json!({
+            "type": "telemetry", "cpus": 8, "ioThreads": 4, "linkThreads": 3,
+            "networkActive": 2, "networkLimit": 48,
+            "bytes": 1024, "requests": 10, "cacheHits": 6, "retries": 1,
+        });
+        assert_eq!(serde_json::to_value(&telemetry).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Event>(json).unwrap(), telemetry);
+        assert!(telemetry.is_progress());
+        assert_eq!(
+            serde_json::to_value(Event::ScriptPlan { total: 7 }).unwrap(),
+            serde_json::json!({"type": "scriptplan", "total": 7})
+        );
+        assert!(!Event::ScriptPlan { total: 7 }.is_progress());
+        let legacy = serde_json::json!({
+            "type": "script", "package": "pkg", "script": "install", "phase": "start"
+        });
+        let event = serde_json::from_value::<Event>(legacy.clone()).unwrap();
+        assert!(matches!(
+            &event,
+            Event::Script {
+                id: None,
+                foreground: false,
+                ..
+            }
+        ));
+        assert_eq!(serde_json::to_value(event).unwrap(), legacy);
+        let foreground = serde_json::json!({
+            "type": "script", "package": "pkg", "script": "install", "phase": "start",
+            "id": "0:/pkg:install", "foreground": true
+        });
+        let event = serde_json::from_value::<Event>(foreground.clone()).unwrap();
+        assert_eq!(serde_json::to_value(event).unwrap(), foreground);
+        let link = serde_json::json!({"type": "link", "done": 0, "total": 2});
+        assert_eq!(
+            serde_json::to_value(serde_json::from_value::<Event>(link.clone()).unwrap()).unwrap(),
+            link
+        );
+    }
+
+    #[test]
+    fn progress_sampling_requires_explicit_opt_in_and_arc_delegates() {
+        struct Progress;
+        impl EventSink for Progress {
+            fn emit(&self, _: Event) {}
+            fn wants_progress(&self) -> bool {
+                true
+            }
+        }
+        assert!(!NoopSink.wants_progress());
+        assert!(!VecSink::default().wants_progress());
+        let sink: Arc<dyn EventSink> = Arc::new(Progress);
+        assert!(sink.wants_progress());
+        assert!(Arc::new(sink).wants_progress());
+    }
+
+    #[test]
     fn json_matches_ts_contract() {
         let e = Event::Script {
             package: "esbuild".into(),
             script: "postinstall".into(),
             phase: ScriptPhase::End,
+            id: None,
+            foreground: false,
             exit_code: Some(0),
         };
         assert_eq!(
@@ -250,7 +362,14 @@ mod tests {
         assert_eq!(j["summary"]["noop"], false);
         let back: Event = serde_json::from_value(j).unwrap();
         assert_eq!(back, Event::Summary { summary: s });
-        assert!(Event::Link { done: 0, total: 1 }.is_progress());
+        assert!(
+            Event::Link {
+                done: 0,
+                total: 1,
+                name: None
+            }
+            .is_progress()
+        );
         assert!(!Event::warn("x", None).is_progress());
         let sink = VecSink::default();
         sink.emit(Event::warn("w", Some("W1")));

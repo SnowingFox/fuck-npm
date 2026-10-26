@@ -16,7 +16,7 @@ use fnpm_types::event::ScriptPhase;
 use fnpm_types::{Event, EventSink};
 use parking_lot::Mutex;
 use tokio::io::AsyncReadExt as _;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::env::{BaseEnv, PackageVars};
@@ -116,6 +116,30 @@ struct JobDone {
     result: std::result::Result<(), JobFailure>,
 }
 
+/// Acknowledged starts keep inherited command/output behind the renderer's suspension.
+struct ScriptEvent {
+    event: Event,
+    acknowledged: Option<oneshot::Sender<()>>,
+}
+
+impl ScriptEvent {
+    fn deliver(self, sink: &dyn EventSink) {
+        sink.emit(self.event);
+        if let Some(acknowledged) = self.acknowledged {
+            let _ = acknowledged.send(());
+        }
+    }
+}
+
+impl From<Event> for ScriptEvent {
+    fn from(event: Event) -> Self {
+        Self {
+            event,
+            acknowledged: None,
+        }
+    }
+}
+
 /// Runs the DAG. `deps[i]` lists the nodes `i` waits for.
 pub(crate) async fn execute(
     nodes: Vec<Node>,
@@ -128,12 +152,17 @@ pub(crate) async fn execute(
     let n = nodes.len();
     debug_assert_eq!(deps.len(), n);
     let mut report = Report::default();
-    if nodes
-        .iter()
-        .all(|node| !matches!(node, Node::Job(j) if !j.scripts.is_empty()))
-    {
+    let total = nodes.iter().fold(0u32, |total, node| {
+        let scripts = match node {
+            Node::Job(job) => job.scripts.len().min(u32::MAX as usize) as u32,
+            Node::Barrier => 0,
+        };
+        total.saturating_add(scripts)
+    });
+    if total == 0 {
         return Ok(report);
     }
+    events.emit(Event::ScriptPlan { total });
 
     let flags = Flags::from_options(opts);
     let base = BaseEnv::lifecycle(
@@ -182,7 +211,7 @@ pub(crate) async fn execute(
     let mut finished = 0usize;
     let mut ready: VecDeque<usize> = (0..n).filter(|&i| remaining[i] == 0).collect();
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<ScriptEvent>();
     let mut set: JoinSet<JobDone> = JoinSet::new();
     let mut ticker = tokio::time::interval(Duration::from_millis(500));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -231,7 +260,7 @@ pub(crate) async fn execute(
         }
         tokio::select! {
             biased;
-            Some(event) = rx.recv() => events.emit(event),
+            Some(event) = rx.recv() => event.deliver(events),
             joined = set.join_next() => {
                 let Some(joined) = joined else { continue };
                 let done_job = match joined {
@@ -243,7 +272,7 @@ pub(crate) async fn execute(
                 };
                 // Deliver this job's events before acting on its result.
                 while let Ok(event) = rx.try_recv() {
-                    events.emit(event);
+                    event.deliver(events);
                 }
                 report.ran += done_job.ran;
                 let i = done_job.index;
@@ -276,10 +305,12 @@ pub(crate) async fn execute(
                         set.abort_all();
                         while set.join_next().await.is_some() {}
                         while let Ok(event) = rx.try_recv() {
-                            events.emit(event);
+                            event.deliver(events);
                         }
                         if !ctx.silent {
+                            events.emit(Event::Output { active: true });
                             print_failure_output(&failure, done_job.is_dependency);
+                            events.emit(Event::Output { active: false });
                         }
                         return Err(match failure.failure {
                             Failure::Exited(code) => Error::Failed { package: done_job.name, script: failure.script, code },
@@ -298,7 +329,7 @@ pub(crate) async fn execute(
         }
     }
     while let Ok(event) = rx.try_recv() {
-        events.emit(event);
+        event.deliver(events);
     }
     report.failed_optional.sort();
     report.failed_optional_dirs.sort();
@@ -310,7 +341,7 @@ async fn run_job(
     index: usize,
     job: Job,
     ctx: Arc<Ctx>,
-    tx: mpsc::UnboundedSender<Event>,
+    tx: mpsc::UnboundedSender<ScriptEvent>,
 ) -> JobDone {
     let semaphore = if job.foreground {
         &ctx.foreground
@@ -352,15 +383,34 @@ async fn run_job(
     for (event, script) in &job.scripts {
         env.set_lifecycle(event, script);
         let command = crate::rewrite::replace_package_manager_run(script);
-        if job.foreground && !ctx.silent {
-            print_command(&command);
-        }
-        let _ = tx.send(Event::Script {
+        let id = Some(format!("{index}:{}:{event}", job.dir.display()));
+        let foreground = !ctx.silent && (job.foreground || ctx.verbose);
+        let start = Event::Script {
             package: job.name.clone(),
             script: event.clone(),
             phase: ScriptPhase::Start,
+            id: id.clone(),
+            foreground,
             exit_code: None,
-        });
+        };
+        if foreground {
+            let (acknowledged, ready) = oneshot::channel();
+            if tx
+                .send(ScriptEvent {
+                    event: start,
+                    acknowledged: Some(acknowledged),
+                })
+                .is_err()
+                || ready.await.is_err()
+            {
+                break;
+            }
+        } else {
+            let _ = tx.send(start.into());
+        }
+        if job.foreground && !ctx.silent {
+            print_command(&command);
+        }
         ctx.active
             .lock()
             .push((index, job.name.clone(), Instant::now()));
@@ -371,12 +421,17 @@ async fn run_job(
         let (failure, stdout, stderr) = match outcome {
             Ok((status, stdout, stderr)) => match exit_failure(status) {
                 None => {
-                    let _ = tx.send(Event::Script {
-                        package: job.name.clone(),
-                        script: event.clone(),
-                        phase: ScriptPhase::End,
-                        exit_code: Some(0),
-                    });
+                    let _ = tx.send(
+                        Event::Script {
+                            package: job.name.clone(),
+                            script: event.clone(),
+                            phase: ScriptPhase::End,
+                            id: id.clone(),
+                            foreground,
+                            exit_code: Some(0),
+                        }
+                        .into(),
+                    );
                     continue;
                 }
                 Some(f) => (f, stdout, stderr),
@@ -389,12 +444,17 @@ async fn run_job(
             Failure::Signaled(signal) => Some(128 + *signal),
             Failure::Spawn(_) => None,
         };
-        let _ = tx.send(Event::Script {
-            package: job.name.clone(),
-            script: event.clone(),
-            phase: ScriptPhase::End,
-            exit_code,
-        });
+        let _ = tx.send(
+            Event::Script {
+                package: job.name.clone(),
+                script: event.clone(),
+                phase: ScriptPhase::End,
+                id,
+                foreground,
+                exit_code,
+            }
+            .into(),
+        );
         done.result = Err(JobFailure {
             script: event.clone(),
             failure,
@@ -718,6 +778,176 @@ pub fn signal_name(signal: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn test_job(dir: &std::path::Path, foreground: bool, scripts: &[(&str, &str)]) -> Node {
+        std::fs::create_dir_all(dir).unwrap();
+        let package_json = dir.join("package.json");
+        std::fs::write(
+            &package_json,
+            r#"{"name":"same-package","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        Node::Job(Box::new(Job {
+            package: fnpm_types::PackageId(1),
+            name: "same-package".into(),
+            version: "1.0.0".into(),
+            dir: dir.to_path_buf(),
+            package_json,
+            scripts: scripts
+                .iter()
+                .map(|(name, command)| (name.to_string(), command.to_string()))
+                .collect(),
+            optional: false,
+            foreground,
+        }))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn script_plans_precede_jobs_are_additive_and_ids_disambiguate_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let sink = fnpm_types::event::VecSink::default();
+        let mut opts = RunOptions::new(&root);
+        opts.silent = true;
+        opts.concurrency = 2;
+        for run in 0..2 {
+            let nodes = vec![
+                test_job(
+                    &root.join(format!("a-{run}")),
+                    false,
+                    &[("install", ":"), ("postinstall", ":")],
+                ),
+                Node::Barrier,
+                test_job(
+                    &root.join(format!("b-{run}")),
+                    false,
+                    &[("postinstall", ":")],
+                ),
+                test_job(&root.join(format!("empty-{run}")), false, &[]),
+            ];
+            let report = execute(nodes, vec![vec![]; 4], &opts, &sink, None, None)
+                .await
+                .unwrap();
+            assert_eq!(report.ran, 3);
+        }
+        let events = sink.0.into_inner().unwrap();
+        let mut active = std::collections::HashSet::new();
+        let mut all_ids = std::collections::HashSet::new();
+        let mut plans = 0;
+        let mut starts = 0;
+        let mut ends = 0;
+        for event in events {
+            match event {
+                Event::ScriptPlan { total } => {
+                    assert!(active.is_empty());
+                    assert_eq!(total, 3, "barriers and empty jobs are excluded");
+                    plans += 1;
+                }
+                Event::Script {
+                    id: Some(id),
+                    phase,
+                    foreground: false,
+                    ..
+                } => {
+                    assert!(plans > 0, "a plan must precede every job start");
+                    match phase {
+                        ScriptPhase::Start => {
+                            assert!(
+                                all_ids.insert(id.clone()),
+                                "same-name jobs must have distinct IDs"
+                            );
+                            assert!(active.insert(id));
+                            starts += 1;
+                        }
+                        ScriptPhase::End => {
+                            assert!(active.remove(&id), "end must match one active start");
+                            ends += 1;
+                        }
+                    }
+                }
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        assert_eq!((plans, starts, ends), (2, 6, 6));
+        assert!(active.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inherited_output_waits_for_start_delivery_and_precedes_end() {
+        struct Acknowledging {
+            dir: std::path::PathBuf,
+            events: std::sync::Mutex<Vec<Event>>,
+        }
+        impl EventSink for Acknowledging {
+            fn emit(&self, event: Event) {
+                match &event {
+                    Event::Script {
+                        phase: ScriptPhase::Start,
+                        foreground: true,
+                        ..
+                    } => {
+                        assert!(!self.dir.join("finished").exists());
+                        std::fs::write(self.dir.join("acknowledged"), "ready").unwrap();
+                    }
+                    Event::Script {
+                        phase: ScriptPhase::End,
+                        foreground: true,
+                        exit_code: Some(0),
+                        ..
+                    } => {
+                        assert!(
+                            self.dir.join("finished").exists(),
+                            "end follows child output"
+                        );
+                    }
+                    Event::Script { .. } => panic!("inherited scripts must be marked foreground"),
+                    _ => {}
+                }
+                self.events.lock().unwrap().push(event);
+            }
+        }
+        for foreground in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(dir.path()).unwrap();
+            let sink = Acknowledging {
+                dir: root.clone(),
+                events: Default::default(),
+            };
+            let mut opts = RunOptions::new(&root);
+            opts.env
+                .push(("FNPM_VERBOSE".into(), (!foreground).to_string()));
+            let node = test_job(
+                &root,
+                foreground,
+                &[(
+                    "install",
+                    "test -f acknowledged && printf complete > finished",
+                )],
+            );
+            let report = execute(vec![node], vec![vec![]], &opts, &sink, None, None)
+                .await
+                .unwrap();
+            assert_eq!(report.ran, 1);
+            let events = sink.events.into_inner().unwrap();
+            assert!(matches!(
+                events.as_slice(),
+                [
+                    Event::ScriptPlan { total: 1 },
+                    Event::Script {
+                        phase: ScriptPhase::Start,
+                        ..
+                    },
+                    Event::Script {
+                        phase: ScriptPhase::End,
+                        ..
+                    }
+                ]
+            ));
+        }
+    }
 
     #[test]
     fn durations_like_bun() {
