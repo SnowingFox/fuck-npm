@@ -134,8 +134,11 @@ fn mask_token_markers(url: &str) -> String {
         };
         out.push_str(&url[i..i + marker.len()]);
         i += marker.len();
+        // Up to the end of the value: a URL separator, or what ends a URL quoted in a message.
         let end = url[i..]
-            .find(['/', '&', '#', '?'])
+            .find([
+                '/', '&', '#', '?', '"', '\'', ' ', '\t', '\n', ',', ')', ']', '}',
+            ])
             .map_or(url.len(), |e| i + e);
         if end > i {
             out.push_str("***");
@@ -153,6 +156,12 @@ pub fn redacted(text: &str) -> std::borrow::Cow<'_, str> {
     } else {
         std::borrow::Cow::Borrowed(text)
     }
+}
+
+/// A warning or error as it may be shown: the credentials of every URL in it masked, as bun
+/// masks each URL it echoes. Text without a URL is unchanged.
+pub fn redacted_message(text: &str) -> std::borrow::Cow<'_, str> {
+    redacted(text)
 }
 
 /// Masks a secret for display, keeping nothing of it.
@@ -195,5 +204,16 @@ mod tests {
             redact_url("https://h/?TOKEN=x&a=1"),
             "https://h/?TOKEN=***&a=1"
         );
+        assert_eq!(
+            redacted_message("unrecognised dependency format: @https://u:p@h:1/o/r"),
+            "unrecognised dependency format: @https://***@h:1/o/r"
+        );
+        assert_eq!(redacted_message("ftp://a:b@c@h/x"), "ftp://***@h/x");
+        assert_eq!(
+            redact_url("\"host?_AuthToken=s3cret\""),
+            "\"host?_AuthToken=***\""
+        );
+        let uuid = "no url, 12345678-1234-1234-1234-123456789abc";
+        assert_eq!(redacted_message(uuid), uuid);
     }
 }

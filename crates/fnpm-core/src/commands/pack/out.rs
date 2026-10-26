@@ -162,8 +162,11 @@ pub(crate) fn escape_control(text: &str) -> String {
 }
 
 /// [`escape_control`] that keeps the line breaks of a message with several lines.
+/// A message for the terminal: URL credentials masked and control characters escaped, line by
+/// line, as bun prints what a package or the user wrote.
 fn escape_message(text: &str) -> String {
-    text.split('\n')
+    fnpm_config::redact::redacted_message(text)
+        .split('\n')
         .map(escape_control)
         .collect::<Vec<_>>()
         .join("\n")

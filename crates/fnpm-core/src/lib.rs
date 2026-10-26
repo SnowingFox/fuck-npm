@@ -152,6 +152,12 @@ impl Error {
         }
     }
 
+    /// The message as the CLIs print it: every URL with its credentials masked, as bun masks
+    /// each URL it echoes.
+    pub fn shown_message(&self) -> String {
+        fnpm_config::redact::redacted_message(&self.to_string()).into_owned()
+    }
+
     /// A [`Error::Usage`].
     pub fn usage(message: impl Into<String>) -> Self {
         Self::Usage {

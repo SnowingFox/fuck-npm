@@ -311,7 +311,9 @@ pub fn report_error(
     }
     let mut text = format!(
         "error: {}\n",
-        fnpm_types::text::escape_control_chars_in_lines(&error.message)
+        fnpm_types::text::escape_control_chars_in_lines(&fnpm_config::redact::redacted_message(
+            &error.message
+        ))
     );
     if error.code == "UNKNOWN_FLAG" {
         text.push_str(&format!(

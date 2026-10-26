@@ -8,6 +8,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use fnpm_config::redact::redacted_message;
 use fnpm_types::text::escape_control_chars_in_lines;
 use fnpm_types::{Event, EventSink};
 
@@ -494,12 +495,12 @@ impl Renderer {
                 }
             }
             Event::Warn { message, .. } => {
-                let message = escape_control_chars_in_lines(message);
+                let message = escape_control_chars_in_lines(&redacted_message(message));
                 self.above(&format!("{} {message}", self.pc.yellow("warn:")), now, out);
                 return;
             }
             Event::Error { message, .. } => {
-                let message = escape_control_chars_in_lines(message);
+                let message = escape_control_chars_in_lines(&redacted_message(message));
                 self.above(&format!("{} {message}", self.pc.red("error:")), now, out);
                 return;
             }
@@ -669,12 +670,12 @@ impl DiagnosticsSink {
             Event::Warn { message, .. } => Some(format!(
                 "{} {}\n",
                 self.pc.yellow("warn:"),
-                escape_control_chars_in_lines(message)
+                escape_control_chars_in_lines(&redacted_message(message))
             )),
             Event::Error { message, .. } => Some(format!(
                 "{} {}\n",
                 self.pc.red("error:"),
-                escape_control_chars_in_lines(message)
+                escape_control_chars_in_lines(&redacted_message(message))
             )),
             Event::Status { message } => Some(format!("{message}\n")),
             Event::Notice { message } => Some(format!("{}\n", self.pc.dim(message))),
