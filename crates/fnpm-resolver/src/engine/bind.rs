@@ -452,10 +452,7 @@ impl Engine<'_> {
         // even when only that peer holds it, as in a pruned checkout); its other peers resolve
         // again.
         let project = self.st[row.pkg.index()].kind == Kind::Project;
-        if self.update.active
-            || (project && !edge.behavior.is_optional_peer())
-            || self.changed_peer_providers.contains(&asked.name)
-        {
+        if self.update.active || (project && !edge.behavior.is_optional_peer()) {
             return None;
         }
         let prev = self.prev?;
@@ -471,9 +468,33 @@ impl Engine<'_> {
         if package.name != asked.name || !matches!(package.resolution, Resolution::Npm { .. }) {
             return None;
         }
+        // bun never resolves a peer that no version satisfied again: once what held its
+        // version is gone, it moves to another version of the name in the tree, or keeps the
+        // one it had when none is left.
+        let unmet = match &asked.spec {
+            DependencySpec::Npm { range, .. } => matches!(
+                (Range::parse(range), self.prev_versions[target.index()].as_ref()),
+                (Ok(r), Some(v)) if !r.satisfies(v)
+            ),
+            _ => false,
+        };
+        let held =
+            !self.prev_non_peer_targets.contains(&target) || self.imported.contains_key(&target);
+        if unmet && !held {
+            let other = self
+                .candidates(&asked.name)
+                .into_iter()
+                .filter_map(|(c, v)| match c {
+                    Cand::New(id) => Some((id, v)),
+                    Cand::Prev(_) => None,
+                })
+                .max_by(|a, b| a.1.cmp(&b.1))
+                .map(|(id, _)| id);
+            return other.or_else(|| self.import_prev(target));
+        }
         // A target formerly provided by a non-peer dependency is reusable only when that
         // dependency is still in the current graph. Peer-only locked copies have no such holder.
-        if self.prev_non_peer_targets.contains(&target) && !self.imported.contains_key(&target) {
+        if self.changed_peer_providers.contains(&asked.name) || !held {
             return None;
         }
         self.import_prev(target)
