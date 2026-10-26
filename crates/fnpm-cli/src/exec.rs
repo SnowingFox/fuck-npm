@@ -7,10 +7,16 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
+use fnpm_core::x::{Display, Done};
+use fnpm_types::EventSink;
+
+use crate::color::{Colors, to_fixed};
 use crate::plan::{consumes_next, is_flag_token};
-use crate::spec::BinDef;
-use crate::terminal::Env;
+use crate::progress::{ProgressSink, format_bytes, wants_progress};
+use crate::spec::{BinDef, VERSION};
+use crate::terminal::{Env, Stream, Terminal, color_enabled};
 
 /// Where the JS entry of `bin` is: `FNPM_JS_ENTRY` (and, for `fnpm-lock`,
 /// `FNPM_LOCK_JS_ENTRY` or `fnpm-lock.js` next to `FNPM_JS_ENTRY`), else `../dist/<bin>.js`
@@ -160,15 +166,136 @@ fn launch(bin: &BinDef, args: &[OsString], env: &Env, mut command: Command) -> i
     }
 }
 
+/// The install of `fnpm x` on a terminal: a `fnpm x <package>` header, the live progress
+/// region of `fnpm install`, and one line saying what was installed before the bin's output.
+pub struct XDisplay {
+    pc: Colors,
+    columns: usize,
+    stderr: Arc<dyn Stream>,
+    live: Mutex<Option<Arc<ProgressSink>>>,
+}
+
+impl XDisplay {
+    /// Draws on `stderr`.
+    pub fn new(pc: Colors, columns: usize, stderr: Arc<dyn Stream>) -> Self {
+        Self {
+            pc,
+            columns,
+            stderr,
+            live: Mutex::new(None),
+        }
+    }
+
+    /// A view for this terminal, when it shows progress (a TTY stderr, not CI or
+    /// `FNPM_PROGRESS=0`).
+    pub fn for_terminal(terminal: &Terminal) -> Option<Self> {
+        wants_progress(&terminal.env, terminal.stderr_is_tty, false, false, false).then(|| {
+            Self::new(
+                Colors::new(color_enabled(&terminal.env, terminal.stderr_is_tty)),
+                terminal.columns,
+                Arc::clone(&terminal.stderr),
+            )
+        })
+    }
+
+    fn take_live(&self) -> Option<Arc<ProgressSink>> {
+        self.live
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+    }
+
+    /// The line for `done`.
+    pub fn done_line(&self, done: &Done) -> String {
+        let pc = self.pc;
+        match done {
+            Done::Installed {
+                package,
+                packages,
+                bytes,
+                elapsed_ms,
+            } => {
+                let mut details = Vec::new();
+                if *packages > 0 {
+                    details.push(format!(
+                        "{packages} package{}",
+                        if *packages == 1 { "" } else { "s" }
+                    ));
+                }
+                if *bytes > 0 {
+                    details.push(format!("{} downloaded", format_bytes(*bytes)));
+                }
+                details.push(duration(*elapsed_ms));
+                format!(
+                    "{} {} {} {}\n",
+                    pc.green("✓"),
+                    pc.bold(package),
+                    if *packages > 0 {
+                        "installed"
+                    } else {
+                        "up to date"
+                    },
+                    pc.dim(&format!("· {}", details.join(" · ")))
+                )
+            }
+            Done::Cached { package } => {
+                format!(
+                    "{} {}\n",
+                    pc.green("✓"),
+                    pc.dim(&format!("{package} (cached)"))
+                )
+            }
+        }
+    }
+}
+
+/// `840ms`, `1.24s`.
+fn duration(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else {
+        format!("{}s", to_fixed(ms as f64 / 1000.0, 2))
+    }
+}
+
+impl Display for XDisplay {
+    fn start(&self, title: &str) -> Arc<dyn EventSink> {
+        if let Some(previous) = self.take_live() {
+            previous.stop();
+        }
+        self.stderr.write(&format!(
+            "{} {}\n",
+            self.pc.bold(&format!("fnpm {title}")),
+            self.pc.dim(&format!("v{VERSION}"))
+        ));
+        let live = ProgressSink::start(self.pc, self.columns, Arc::clone(&self.stderr));
+        *self
+            .live
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(Arc::clone(&live));
+        live
+    }
+
+    fn stop(&self, done: Option<Done>) {
+        if let Some(live) = self.take_live() {
+            live.stop();
+        }
+        if let Some(done) = done {
+            self.stderr.write(&self.done_line(&done));
+        }
+    }
+}
+
 /// `fnpm x` / `fnpm create` / `fnpmx`: resolve (and install) the bin with `fnpm_core::x`, then
 /// replace this process with it (Unix) or run it and exit with its status.
 pub fn run_x(args: Vec<String>, create: bool) -> i32 {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let terminal = Terminal::from_process();
     let request = fnpm_core::x::Request {
         args,
-        cwd,
+        cwd: terminal.cwd.clone(),
         create,
-        version: crate::spec::VERSION.to_owned(),
+        version: VERSION.to_owned(),
+        display: XDisplay::for_terminal(&terminal).map(|view| Arc::new(view) as Arc<dyn Display>),
     };
     match fnpm_core::x::plan(&request) {
         fnpm_core::x::Outcome::Exit(code) => code,
@@ -203,6 +330,86 @@ fn exec_bin(run: &fnpm_core::x::Exec) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::terminal::Capture;
+    use fnpm_types::Event;
+
+    #[test]
+    fn x_display_draws_and_reports() {
+        let capture = Arc::new(Capture::default());
+        let view = XDisplay::new(
+            Colors::new(false),
+            80,
+            Arc::clone(&capture) as Arc<dyn Stream>,
+        );
+        let sink = view.start("x create-vite");
+        sink.emit(Event::Resolve {
+            resolved: 1,
+            total: 3,
+            name: Some("create-vite".into()),
+        });
+        view.stop(Some(Done::Installed {
+            package: "create-vite@6.5.0".into(),
+            packages: 3,
+            bytes: 2048,
+            elapsed_ms: 1240,
+        }));
+        let text = capture.text();
+        assert!(
+            text.starts_with(&format!("fnpm x create-vite v{VERSION}\n")),
+            "{text}"
+        );
+        assert!(text.contains("Resolving 1/3"), "{text}");
+        assert!(
+            text.ends_with(
+                "✓ create-vite@6.5.0 installed · 3 packages · 2.0 KiB downloaded · 1.24s\n"
+            ),
+            "{text}"
+        );
+        // The progress region is erased before the result line.
+        let tail = &text[text.rfind("\x1b[2K").unwrap()..];
+        assert!(tail.contains("✓"), "{text}");
+    }
+
+    #[test]
+    fn x_display_lines() {
+        let view = XDisplay::new(Colors::new(false), 80, Arc::new(Capture::default()));
+        assert_eq!(
+            view.done_line(&Done::Installed {
+                package: "cowsay@1.6.0".into(),
+                packages: 0,
+                bytes: 0,
+                elapsed_ms: 310,
+            }),
+            "✓ cowsay@1.6.0 up to date · 310ms\n"
+        );
+        assert_eq!(
+            view.done_line(&Done::Installed {
+                package: "cowsay@1.6.0".into(),
+                packages: 1,
+                bytes: 0,
+                elapsed_ms: 5,
+            }),
+            "✓ cowsay@1.6.0 installed · 1 package · 5ms\n"
+        );
+        assert_eq!(
+            view.done_line(&Done::Cached {
+                package: "cowsay@1.6.0".into()
+            }),
+            "✓ cowsay@1.6.0 (cached)\n"
+        );
+        // Stopping a view that never started prints only the result.
+        let capture = Arc::new(Capture::default());
+        let view = XDisplay::new(
+            Colors::new(false),
+            80,
+            Arc::clone(&capture) as Arc<dyn Stream>,
+        );
+        view.stop(Some(Done::Cached {
+            package: "a@1.0.0".into(),
+        }));
+        view.stop(None);
+        assert_eq!(capture.text(), "✓ a@1.0.0 (cached)\n");
+    }
 
     #[test]
     fn entry_overrides() {

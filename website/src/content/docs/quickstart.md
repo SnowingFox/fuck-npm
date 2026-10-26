@@ -7,7 +7,11 @@ Start in a project containing `package.json`. Use a branch so you can inspect lo
 
 ## Existing npm, pnpm, Yarn or Bun project
 
-An install without `fnpm.lock` can import a supported existing lockfile. To make the migration explicit before changing node_modules, use:
+An install without `fnpm.lock` imports a supported existing lockfile automatically, as Bun does, and says so (`migrated lockfile from bun.lock`). It writes `fnpm.lock` next to the original, which is left unchanged.
+
+In an isolated install, a project with `bun.lock` / `bun.lockb` also gets `node_modules/.bun`, and one with `pnpm-lock.yaml` gets `node_modules/.pnpm`. Both link to `node_modules/.fnpm`, whose entries use the same `@scope+name@version` names, so postinstall scripts that look for packages there keep working.
+
+To make the migration explicit before changing node_modules, use:
 
 ```sh
 fnpm-lock migrate --dry-run

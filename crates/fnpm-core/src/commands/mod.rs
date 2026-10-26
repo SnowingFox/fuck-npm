@@ -210,6 +210,7 @@ async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
         version: cx
             .string("cliVersion")
             .unwrap_or_else(|| crate::version().to_owned()),
+        display: None,
     };
     let code = tokio::task::spawn_blocking(move || crate::x::run(&req))
         .await

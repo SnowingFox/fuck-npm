@@ -27,6 +27,15 @@ fnpmx cowsay 'Hello from fnpm'
 fnpm x cowsay 'Hello from fnpm'
 ```
 
+On a terminal, the install into the execution cache shows the same live progress as `fnpm install`: resolution, downloads, extraction, linking, registry traffic and workers. The progress region is erased before the executable starts and leaves one line:
+
+```text
+✓ cowsay@1.6.0 installed · 33 packages · 1.2 MiB downloaded · 2.69s
+✓ cowsay@1.6.0 (cached)
+```
+
+When another fnpx process is installing the same package, fnpx says it is waiting for that install. With output piped or in CI, fnpx prints Bun's status lines instead (`Resolving dependencies`, `Resolved, downloaded and extracted [N]`, `Saved lockfile`); a cached run prints nothing. `--silent` keeps all install output off the terminal. `fnpm create` shows the same progress while it downloads a GitHub template and installs the template's dependencies.
+
 A package spec can pin a version. Package installation and executable resolution use the configured registry and policy; a cached executable is still third-party code.
 
 ## Package name differs from binary name

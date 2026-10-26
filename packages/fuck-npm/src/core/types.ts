@@ -149,6 +149,8 @@ export type CoreEvent =
    * `Resolved, downloaded and extracted [N]`, `Saved lockfile`). The progress line ignores it.
    */
   | { type: "status"; message: string }
+  /** A line every renderer prints, above the progress line too (`migrated lockfile from bun.lock`). */
+  | { type: "notice"; message: string }
   | { type: "summary"; summary: InstallSummary };
 
 export type EventSink = (event: CoreEvent) => void;

@@ -500,6 +500,10 @@ impl Renderer {
                 self.above(&format!("{} {message}", self.pc.red("error:")), now, out);
                 return;
             }
+            Event::Notice { message } => {
+                self.above(&self.pc.dim(&clean(message)), now, out);
+                return;
+            }
             Event::Status { .. } | Event::Summary { .. } => return,
         }
         self.schedule(now, out);
@@ -661,6 +665,7 @@ impl DiagnosticsSink {
             Event::Warn { message, .. } => Some(format!("{} {message}\n", self.pc.yellow("warn:"))),
             Event::Error { message, .. } => Some(format!("{} {message}\n", self.pc.red("error:"))),
             Event::Status { message } => Some(format!("{message}\n")),
+            Event::Notice { message } => Some(format!("{}\n", self.pc.dim(message))),
             _ => None,
         }
     }
