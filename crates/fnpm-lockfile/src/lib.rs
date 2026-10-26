@@ -40,7 +40,7 @@ pub enum Error {
         /// What is wrong, in bun's wording.
         message: String,
     },
-    /// The format is read-only (bun.lockb, yarn berry).
+    /// The format is read-only (yarn berry).
     #[error("{format:?} lockfiles cannot be written")]
     Unsupported {
         /// The format that was asked for.
@@ -363,19 +363,18 @@ pub fn parse(format: Format, bytes: &[u8], workspace: &Workspace) -> Result<Lock
     }
 }
 
-/// Serialises to a format (`fnpm-lock export`). bun.lockb and yarn berry are read-only.
+/// Serialises to a format (`fnpm-lock export`). Yarn berry is read-only.
 pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
     match format {
         Format::Fnpm => Ok(formats::fnpm::serialize(graph).into_bytes()),
-        // bun's dialect of the shared writer: byte-identical with every bun.lock in bun's test
-        // snapshots (`text::roundtrip_tests`).
-        Format::BunText => Ok(text::write::write(graph, text::Dialect::Bun)
-            .text
-            .into_bytes()),
+        // The shared writer: byte-identical with every bun.lock in bun's test snapshots
+        // (`text::roundtrip_tests`).
+        Format::BunText => Ok(text::write::write(graph).text.into_bytes()),
         Format::Npm => formats::npm::serialize(graph).map(String::into_bytes),
         Format::YarnV1 => Ok(formats::yarn_v1::serialize(graph).into_bytes()),
         Format::Pnpm => formats::pnpm::serialize(graph).map(String::into_bytes),
-        Format::BunBinary | Format::YarnBerry => Err(Error::Unsupported { format }),
+        Format::BunBinary => formats::bun_binary::serialize(graph),
+        Format::YarnBerry => Err(Error::Unsupported { format }),
     }
 }
 
@@ -452,6 +451,21 @@ pub fn save_prepared_with(
         let _ = sidecar::write_at(sidecar_path, bytes);
     }
     Ok(*hash)
+}
+
+/// bun's binary lockfile name.
+pub const BUN_LOCKB: &str = "bun.lockb";
+
+/// Writes `graph` as bun.lockb (atomic, skipped when the bytes are unchanged). Returns whether
+/// the file changed.
+pub fn save_binary(dir: &Path, graph: &LockGraph) -> Result<bool> {
+    let bytes = formats::bun_binary::serialize(graph)?;
+    let path = dir.join(BUN_LOCKB);
+    if read(&path)?.is_some_and(|old| old == bytes) {
+        return Ok(false);
+    }
+    write_atomic(&path, &bytes)?;
+    Ok(true)
 }
 
 /// Writes `yarn.lock` v1 next to the lockfile (`--yarn`, `install.lockfile.print = "yarn"`),

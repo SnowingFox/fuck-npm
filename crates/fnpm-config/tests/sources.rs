@@ -875,7 +875,12 @@ fn cli_flags() {
     };
     let cfg = fx.load_with(&[], cli);
     assert!(cfg.omit.optional && cfg.omit.peer && !cfg.omit.dev && !cfg.auto_install_peers);
-    assert!(cfg.ignore_scripts && cfg.exact && !cfg.save_text_lockfile && !cfg.verify_integrity);
+    assert!(
+        cfg.ignore_scripts
+            && cfg.exact
+            && cfg.save_text_lockfile == Some(false)
+            && !cfg.verify_integrity
+    );
     assert_eq!(cfg.concurrent_scripts, 3);
     assert_eq!(
         (cfg.network.tls.ca.clone(), cfg.network.tls.ca_file.clone()),

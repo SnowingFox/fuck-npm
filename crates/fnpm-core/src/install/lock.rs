@@ -39,6 +39,27 @@ pub(crate) struct LockState {
     pub sidecar_missing: bool,
 }
 
+/// The project keeps bun.lockb (bun `save_format`): `--save-text-lockfile` writes fnpm.lock, a
+/// loaded bun.lockb stays binary, and a new or migrated lockfile is binary only with
+/// `saveTextLockfile = false`.
+pub(crate) fn saves_binary(config: &Config, lock: &LockState) -> bool {
+    match config.save_text_lockfile {
+        Some(true) => false,
+        _ if lock.graph.is_some() && !lock.migrated => lock.format == Some(Format::BunBinary),
+        Some(false) => true,
+        None => false,
+    }
+}
+
+/// The lockfile an install writes ([`saves_binary`]).
+pub(crate) fn target_name(config: &Config, lock: &LockState) -> &'static str {
+    if saves_binary(config, lock) {
+        fnpm_lockfile::BUN_LOCKB
+    } else {
+        fnpm_lockfile::FNPM_LOCK
+    }
+}
+
 /// The parsed-lockfile sidecar in the project's cache metadata directory, validated by the
 /// lockfile hash. With the default cache, it survives `rm -rf node_modules` (`fnpm ci`).
 pub(crate) fn sidecar_path(config: &Config, root: &Path) -> PathBuf {
@@ -222,7 +243,13 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
                     state.hash = None;
                     state.sidecar_missing = false;
                 }
-                state.migrated = loaded.format != Format::Fnpm;
+                // bun.lockb stays the project's lockfile unless `--save-text-lockfile` asks
+                // for fnpm.lock (bun `save_format`); bun.lock is migrated to fnpm.lock.
+                state.migrated = match loaded.format {
+                    Format::Fnpm => false,
+                    Format::BunBinary => config.save_text_lockfile == Some(true),
+                    _ => true,
+                };
                 state.format = Some(loaded.format);
                 state.path = Some(loaded.path);
                 state.graph = Some(loaded.graph);

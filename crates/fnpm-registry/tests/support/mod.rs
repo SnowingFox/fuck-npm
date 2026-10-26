@@ -256,7 +256,7 @@ pub fn config(registry: &str, cache_dir: &Path) -> Config {
         exact: false,
         ignore_scripts: false,
         verify_integrity: true,
-        save_text_lockfile: true,
+        save_text_lockfile: None,
         lockfile: LockfileConfig {
             save: true,
             print_yarn: false,

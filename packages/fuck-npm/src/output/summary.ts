@@ -45,11 +45,11 @@ export function formatInstallSummary(
 
   // `--lockfile-only`: bun prints its one line and no package rows.
   if (summary.lockfileOnly) {
-    const { saved, packages } = summary.lockfileOnly;
+    const { saved, packages, binary } = summary.lockfileOnly;
     const noun = packages === 1 ? "package" : "packages";
     lines.push(
       saved
-        ? `Saved ${pc.green("fnpm.lock")} (${packages} ${noun}) ${time}`
+        ? `Saved ${pc.green(binary ? "bun.lockb" : "fnpm.lock")} (${packages} ${noun}) ${time}`
         : `${pc.green("Done")}! Checked ${packages} ${noun} ${pc.dim("(no changes)")} ${time}`,
     );
     return lines;

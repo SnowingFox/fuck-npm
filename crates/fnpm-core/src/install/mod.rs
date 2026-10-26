@@ -380,6 +380,37 @@ fn load_workspace(
     Ok((ws, warnings, lock))
 }
 
+/// Writes fnpm.lock (with its sidecar), or bun.lockb when the project keeps it. Converting
+/// bun.lockb to fnpm.lock removes it, as bun does. Returns whether a file changed.
+fn write_lockfile(
+    root: &Path,
+    config: &Config,
+    lock: &lock::LockState,
+    graph: &LockGraph,
+    prepared: Option<fnpm_lockfile::PreparedSave>,
+) -> Result<bool> {
+    if lock::saves_binary(config, lock) {
+        return Ok(fnpm_lockfile::save_binary(root, graph)?);
+    }
+    let path = root.join(fnpm_lockfile::FNPM_LOCK);
+    let before = std::fs::read(&path).ok();
+    let hash = match prepared {
+        Some(p) => {
+            fnpm_lockfile::save_prepared_with(root, &p, Some(&lock::sidecar_path(config, root)))?
+        }
+        None => fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?,
+    };
+    if lock.format == Some(Format::BunBinary) {
+        let lockb = root.join(fnpm_lockfile::BUN_LOCKB);
+        match std::fs::remove_file(&lockb) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io(&lockb)(e)),
+        }
+    }
+    Ok(before.is_none_or(|b| fnpm_lockfile::content_hash(&b) != hash))
+}
+
 /// Steps 2-8.
 async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Result<InstallSummary> {
     let PreparedInstall {
@@ -707,7 +738,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         || lock.migrated
         // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces.
         || lock.graph.as_ref().is_some_and(|g| g.lockfile_version == 0)
-        || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
+        || !root.join(lock::target_name(&config, &lock)).exists();
 
     let mut patch_rollback = if !config.dry_run {
         pending_patch
@@ -755,23 +786,19 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too, so the file is in
             // the writer's form afterwards; `Saved lockfile` only when that changed its bytes.
             if !saved && config.lockfile.save {
-                let path = root.join(fnpm_lockfile::FNPM_LOCK);
-                let text = fnpm_lockfile::serialize(Format::Fnpm, &graph)?;
-                if std::fs::read(&path).ok().as_deref() != Some(text.as_slice()) {
-                    fnpm_lockfile::save_with(
-                        &root,
-                        &graph,
-                        Some(&lock::sidecar_path(&config, &root)),
-                    )?;
+                if write_lockfile(&root, &config, &lock, &graph, None)? {
                     events.emit(Event::status("Saved lockfile"));
                 }
                 saved = true;
             }
-            // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`.
-            summary.lockfile_only = Some(fnpm_types::LockfileOnly {
-                saved,
-                packages: graph.len() as u32,
-            });
+            // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`;
+            // nothing when the lockfile is not saved (`--frozen-lockfile`).
+            summary.lockfile_only =
+                (config.lockfile.save || saved).then(|| fnpm_types::LockfileOnly {
+                    saved,
+                    packages: graph.len() as u32,
+                    binary: lock::saves_binary(&config, &lock),
+                });
         }
         if let Some(rollback) = &mut patch_rollback {
             rollback.finish();
@@ -1907,8 +1934,12 @@ fn save(
     if config.save_package_json && !edits.is_empty() {
         edits.apply(root, ws)?;
     }
-    let save_lock =
-        config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());
+    // `--save-text-lockfile` turns bun.lockb into fnpm.lock even when nothing else is saved
+    // (bun `converts_binary_lockfile_to_text`).
+    let converts =
+        lock.format == Some(Format::BunBinary) && config.save_text_lockfile == Some(true);
+    let save_lock = converts
+        || config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());
     if !save_lock {
         return Ok(false);
     }
@@ -1939,12 +1970,7 @@ fn save(
         }
         return Ok(true);
     }
-    match prepared {
-        Some(p) => {
-            fnpm_lockfile::save_prepared_with(root, &p, Some(&lock::sidecar_path(config, root)))?
-        }
-        None => fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?,
-    };
+    write_lockfile(root, config, lock, graph, prepared)?;
     events.emit(Event::status("Saved lockfile"));
     if config.lockfile.print_yarn {
         fnpm_lockfile::save_yarn(
@@ -2240,7 +2266,7 @@ fn write_state(
     linker: &NodeLinker,
     installs: u32,
 ) {
-    let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
+    let Some(bytes) = fast_path::lockfile_bytes(root) else {
         return;
     };
     let (files, workspace_patterns, workspace_dirs) = watched_files(ws, graph);

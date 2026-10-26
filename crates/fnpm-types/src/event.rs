@@ -227,6 +227,9 @@ pub struct InstallSummary {
 pub struct LockfileOnly {
     pub saved: bool,
     pub packages: u32,
+    /// The lockfile is bun.lockb, not fnpm.lock.
+    #[serde(default)]
+    pub binary: bool,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon

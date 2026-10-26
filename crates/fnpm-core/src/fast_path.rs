@@ -23,6 +23,13 @@ pub fn meta_dir(cache_dir: &Path, project_dir: &Path) -> std::path::PathBuf {
     cache_dir.join("projects").join(format!("{key:016x}"))
 }
 
+/// The bytes of the project's lockfile: fnpm.lock, else the bun.lockb a project keeps.
+pub(crate) fn lockfile_bytes(project_dir: &Path) -> Option<Vec<u8>> {
+    std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK))
+        .or_else(|_| std::fs::read(project_dir.join(fnpm_lockfile::BUN_LOCKB)))
+        .ok()
+}
+
 /// `dir_identity`, or zeros when the directory does not exist (the hoisted layout has no
 /// `node_modules/.fnpm`).
 fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
@@ -191,8 +198,8 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         Ok(id) if id == state.virtual_store => {}
         _ => return false,
     }
-    match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK)) {
-        Ok(bytes) if fnpm_lockfile::content_hash(&bytes) == state.lockfile_hash => {}
+    match lockfile_bytes(project_dir) {
+        Some(bytes) if fnpm_lockfile::content_hash(&bytes) == state.lockfile_hash => {}
         _ => return false,
     }
     // A pnpm-workspace.yaml that appeared since the install changes the workspace.

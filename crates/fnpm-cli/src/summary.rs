@@ -74,7 +74,11 @@ pub fn format_install_summary_at(
         lines.push(if only.saved {
             format!(
                 "Saved {} ({} {noun}) {time}",
-                pc.green("fnpm.lock"),
+                pc.green(if only.binary {
+                    "bun.lockb"
+                } else {
+                    "fnpm.lock"
+                }),
                 only.packages
             )
         } else {
