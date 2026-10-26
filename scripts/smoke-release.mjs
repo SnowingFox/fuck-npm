@@ -60,7 +60,7 @@ try {
   for (const ignoreScripts of [false, true]) {
     const root = join(scratch, ignoreScripts ? 'ignore-scripts' : 'normal');
     mkdirSync(root);
-    writeFileSync(join(root, 'package.json'), '{"name":"release-smoke","private":true}');
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'release-smoke', private: true, allowScripts: { [release.name]: true } }));
     await run(npm, ['install', `${release.name}@${release.version}`, '--no-audit', '--no-fund', ...(ignoreScripts ? ['--ignore-scripts'] : [])], root);
     const cli = join(root, 'node_modules', release.name);
     await run(process.execPath, ['-e', `const {createRequire}=require('node:module'); const binding=createRequire(${JSON.stringify(join(cli, 'package.json'))})(${JSON.stringify(release.bindingName)}); if(typeof binding.install!=='function')process.exit(1);`], root);

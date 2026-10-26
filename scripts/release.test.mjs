@@ -99,3 +99,23 @@ test('conflicting published integrity stops before publishing another package', 
     return { status: 0, stdout: '"sha512-other"' };
   }), /different integrity/);
 });
+
+for (const code of ['E404', 'E403']) {
+  test(`bnpm stderr ${code} ${code === 'E404' ? 'permits a new version' : 'stops publication'}`, () => {
+    const { dir, release } = fixture();
+    const published = [];
+    const run = (_command, args) => {
+      if (args[0] === 'whoami') return { status: 0, stdout: 'release-user' };
+      if (args[0] === 'view') return { status: 1, stdout: '', stderr: `npm ERR! code ${code}\nnpm ERR! registry diagnostic\n{ "error": { "code": "${code}" } }\n` };
+      published.push(args[1]);
+      return { status: 0 };
+    };
+    if (code === 'E404') {
+      publishRelease({ dir, cli: 'bnpm', publish: true }, run);
+      assert.deepEqual(published, release.packages.map(pkg => pkg.tarball));
+    } else {
+      assert.throws(() => publishRelease({ dir, cli: 'bnpm', publish: true }, run), /Cannot check registry version/);
+      assert.deepEqual(published, []);
+    }
+  });
+}

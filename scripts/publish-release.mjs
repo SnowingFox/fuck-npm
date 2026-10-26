@@ -46,7 +46,9 @@ export function publishRelease({ dir, cli = 'npm', registry, publish = false }, 
       }
       let error;
       try { error = JSON.parse(existing.stdout).error; } catch {}
-      if (error?.code !== 'E404') throw new Error(`Cannot check registry version for ${pkg.name}: ${existing.stderr}`);
+      // bnpm's npm wrapper can put both diagnostics and JSON on stderr.
+      const code = error?.code ?? /^npm ERR! code (\S+)$/m.exec(existing.stderr ?? '')?.[1];
+      if (code !== 'E404') throw new Error(`Cannot check registry version for ${pkg.name}: ${existing.stderr}`);
     }
     const args = ['publish', pkg.tarball, '--access', 'public', '--registry', registry, '--ignore-scripts'];
     if (!publish) args.push('--dry-run');
