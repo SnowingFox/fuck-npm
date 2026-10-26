@@ -419,7 +419,8 @@ impl Resolver {
                 &stripped
             };
             // bun installs an edited `file:` folder as the lockfile has it, and says so.
-            for path in frozen::folder_edits(workspace, prev) {
+            // Only its dependencies: bun links a folder's bins from its package.json.
+            for path in frozen::folder_edits(workspace, prev, false) {
                 events.emit(Event::warn(
                     format!(
                         "dependencies in {path}/package.json changed since lockfile was saved (run 'fnpm install')"

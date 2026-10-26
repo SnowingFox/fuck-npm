@@ -295,7 +295,7 @@ pub(crate) fn classified(
         return Ok((out, edges));
     }
     // A frozen install warns about an edited `file:` folder; a plain one reads it again.
-    for path in folder_edits(ws, prev) {
+    for path in folder_edits(ws, prev, true) {
         out.push(format!("folder {path} changed"));
     }
     // A frozen install links a workspace's bin from its package.json; a plain one records it.
@@ -368,8 +368,8 @@ pub(crate) fn classified(
 }
 
 /// The `file:` folders (paths relative to the root, as fnpm.lock has them) whose package.json
-/// now declares other dependencies or bins than `prev` records for them.
-pub(crate) fn folder_edits(ws: &Workspace, prev: &LockGraph) -> Vec<String> {
+/// now declares other dependencies than `prev` records for them, or (`with_bins`) other bins.
+pub(crate) fn folder_edits(ws: &Workspace, prev: &LockGraph, with_bins: bool) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for p in &prev.packages {
         let fnpm_types::Resolution::Folder { path } = &p.resolution else {
@@ -386,7 +386,7 @@ pub(crate) fn folder_edits(ws: &Workspace, prev: &LockGraph) -> Vec<String> {
         };
         let mut changes = Vec::new();
         edge_changes("", &edges, &p.dependencies, &mut changes);
-        if !changes.is_empty() || pj.bin != p.bin {
+        if !changes.is_empty() || (with_bins && pj.bin != p.bin) {
             out.push(path.clone());
         }
     }
