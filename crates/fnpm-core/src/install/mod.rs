@@ -563,6 +563,55 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         )
         .await?;
     }
+    // bun writes an added range to package.json before it resolves it, so a range that the
+    // workspace of that name satisfies links the workspace: `fnpm add no-deps@latest` next to
+    // a no-deps 2.0.0 member writes `^2.0.0` and links the member. Resolve once more with it.
+    if config.link_workspace_packages {
+        let mut relinked = false;
+        for add in &mut planned.adds {
+            let req = &planned.requests[add.request];
+            if add.catalog.is_some() || !add.positional.has_version() {
+                continue;
+            }
+            let Some(member) = ws.member(&req.name) else {
+                continue;
+            };
+            let Some(version) = out
+                .requests
+                .iter()
+                .find(|(r, _)| r == req)
+                .and_then(|(_, id)| out.graph.get(*id))
+                .filter(|p| p.name == req.name)
+                .and_then(|p| p.resolution.npm_version())
+            else {
+                continue;
+            };
+            let literal = crate::spec::added_literal(&add.positional, version, config.exact);
+            let links = matches!(
+                (
+                    fnpm_semver::Range::parse(&literal),
+                    fnpm_semver::Version::parse(&member.version),
+                ),
+                (Ok(r), Ok(v)) if r.satisfies(&v)
+            );
+            if links {
+                planned.requests[add.request].spec = literal;
+                add.relinked = true;
+                relinked = true;
+            }
+        }
+        if relinked {
+            out = resolve(
+                &resolver,
+                &ws,
+                previous,
+                &planned,
+                stream.then(|| (&fetcher, skip.clone())),
+                &events,
+            )
+            .await?;
+        }
+    }
     // bun announces the resolve when it had to ask the network; its warnings follow.
     let mut announced = false;
     announce_resolving(&client, &*events, &mut announced);
@@ -601,6 +650,29 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .entry(workspace)
             .or_default()
             .extend(updates);
+    }
+
+    // bun writes the ranges `update` picks to package.json before it resolves them, so a range
+    // that now reaches the workspace of that name (directly or through a rule) links it.
+    if opts.command == InstallCommand::Update
+        && config.link_workspace_packages
+        && let Some(edited) = edits::edited_for_members(&ws, &edits)
+    {
+        let again = resolver
+            .resolve(
+                ResolveInput {
+                    workspace: &edited,
+                    previous,
+                    mode: Mode::Normal,
+                    requests: Vec::new(),
+                    removals: Vec::new(),
+                },
+                None,
+                &*events,
+            )
+            .await?;
+        graph = again.graph;
+        changed = true;
     }
 
     let kind = fnpm_linker::choose_linker(
@@ -1188,7 +1260,9 @@ fn package_json_edits(
         let literal = match &pkg.resolution {
             Resolution::Npm { version, .. } => added_literal(p, version, config.exact),
             Resolution::Workspace { .. } => {
-                if p.literal.starts_with("workspace:")
+                if add.relinked {
+                    req.spec.clone()
+                } else if p.literal.starts_with("workspace:")
                     || crate::spec::split_npm_alias(&p.literal).is_some()
                 {
                     p.literal.clone()

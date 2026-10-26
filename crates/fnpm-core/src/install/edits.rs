@@ -76,6 +76,34 @@ impl Edits {
     }
 }
 
+/// The project as it is once `edits` are written, when one of them sets a dependency named
+/// like a workspace member (that range may now link the member). `None` otherwise.
+pub(crate) fn edited_for_members(ws: &Workspace, edits: &Edits) -> Option<Workspace> {
+    let names_member = edits.by_workspace.values().flatten().any(|e| match e {
+        Edit::Set { name, .. } | Edit::Update { name, .. } => ws.member(name).is_some(),
+        _ => false,
+    });
+    if !names_member {
+        return None;
+    }
+    let mut edited = ws.clone();
+    for (path, list) in &edits.by_workspace {
+        let manifest = if path.is_empty() {
+            &mut edited.root
+        } else {
+            &mut edited
+                .members
+                .iter_mut()
+                .find(|m| &m.path == path)?
+                .manifest
+        };
+        let text = serde_json::to_string(&manifest.raw).ok()?;
+        let out = apply_text(&text, list).ok()?;
+        *manifest = fnpm_workspace::PackageJson::parse(&out).ok()?;
+    }
+    Some(edited)
+}
+
 fn group_of(value: &Value, name: &str) -> Option<DependencyGroup> {
     DependencyGroup::ALL
         .into_iter()

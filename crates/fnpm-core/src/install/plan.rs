@@ -25,6 +25,9 @@ pub(crate) struct Add {
     pub catalog: Option<String>,
     /// The catalog already had an entry (it is kept).
     pub catalog_existing: Option<String>,
+    /// The request was resolved again with the range it writes, which links the workspace
+    /// of that name.
+    pub relinked: bool,
 }
 
 /// A direct dependency `fnpm update` may rewrite in package.json.
@@ -236,6 +239,7 @@ pub(crate) fn plan(
                         request: planned.requests.len(),
                         catalog: opts.catalog.clone(),
                         catalog_existing,
+                        relinked: false,
                     });
                     planned.requests.push(Request {
                         workspace: target.clone(),
@@ -306,6 +310,7 @@ pub(crate) fn plan(
                                     request: planned.requests.len() - 1,
                                     catalog: None,
                                     catalog_existing: None,
+                                    relinked: false,
                                 });
                             }
                         }

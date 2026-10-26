@@ -443,6 +443,11 @@ impl Engine<'_> {
                 .prev_effective_literal(prev_owner, prev_edge)
                 .as_deref()
                 == Some(asked.literal.as_str());
+        // A changed dependency loses its lockfile resolution, and then a workspace its range
+        // links wins (bun `settle_without_manifest`).
+        if !unchanged && self.linked_workspace(asked).is_some() {
+            return None;
+        }
         if !self.prev_satisfies(target, asked, unchanged) {
             return None;
         }
@@ -771,6 +776,18 @@ impl Engine<'_> {
         }
         if let Some(target) = self.linked_workspace(asked) {
             self.set_target(row, target);
+            return Ok(Step::Done);
+        }
+        // `fnpm add <name>` asks for no version and no tag, so it links a workspace as `*`
+        // would (bun `is_bare_add_request`).
+        if tag.is_some()
+            && edge.literal.is_empty()
+            && !asked.replaced
+            && self.cfg.link_workspace_packages
+            && self.requested_rows.contains_key(&(row.pkg, row.edge))
+            && let Some(id) = self.member_id_by_name(&name)
+        {
+            self.set_target(row, id);
             return Ok(Step::Done);
         }
         if row.install_peer && is_peer {
