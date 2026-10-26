@@ -507,6 +507,7 @@ pub fn path_for_run(cwd: &Path, original: &OsStr) -> OsString {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn s(p: &OsStr) -> String {
         p.to_string_lossy().into_owned()
     }
