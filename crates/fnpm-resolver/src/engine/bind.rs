@@ -976,11 +976,13 @@ impl Engine<'_> {
             });
         };
         // An update never moves a range below the version in the lockfile (one published above
-        // `latest` included); `--latest` not below the tag either. A dist-tag is followed.
+        // `latest` included); `--latest` not below the tag either. A dist-tag is followed, and
+        // an update leaves a locked version that got deprecated.
         if (latest || (should_update && range.is_some()))
             && let Some(locked) = self.locked_version(&name, range.as_ref())
             && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
             && let Some(kept) = manifest.find(&locked)
+            && (latest || kept.deprecated.is_none())
         {
             chosen = kept;
         }
