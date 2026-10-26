@@ -35,6 +35,19 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
     match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+        // bun prints the commit of the `owner-repo-<commit>` tag, after its last `-`.
+        Resolution::Github {
+            owner,
+            repo,
+            resolved_commit,
+            ..
+        } => {
+            let commit = resolved_commit
+                .rsplit('-')
+                .next()
+                .unwrap_or(resolved_commit);
+            fnpm_registry::redact_url(&format!("github:{owner}/{repo}#{commit}"))
+        }
         resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }
@@ -86,7 +99,8 @@ pub(crate) fn changes(
 }
 
 /// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
-/// run wrote (`written`, per package id), workspace links excluded, by name.
+/// run wrote (`written`, per package id), by name. A dependency on a workspace member
+/// (`bar: "workspace:*"`) is a row once its link is written; the root itself is not.
 pub(crate) fn installed_direct(
     graph: &LockGraph,
     ws_path: &str,
@@ -104,10 +118,7 @@ pub(crate) fn installed_direct(
             continue;
         }
         let Some(t) = graph.get(id) else { continue };
-        if matches!(
-            t.resolution,
-            Resolution::Workspace { .. } | Resolution::Root
-        ) {
+        if matches!(t.resolution, Resolution::Root) {
             continue;
         }
         let entry = AddedPackage {
