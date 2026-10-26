@@ -28,8 +28,11 @@ from verified platform references and corrects Unix-only store guards for Window
 with an explicit glibc 2.17 target. Store tests join the native platform test jobs so the clonefile regression
 runs on macOS. The follow-up run ([40253207146](https://github.com/SnowingFox/fuck-npm/actions/runs/40253207146))
 passed the ARM GNU release build and all Linux test jobs. It exposed the same missing clone flag in the
-linker and two Windows store test failures (file-identity accounting and path separators); those fixes
-require another native CI run before the blockers can be considered closed.
+linker and two Windows store test failures (file-identity accounting and path separators). The linker
+now uses the same verified clone flag; store status queries the Windows volume and 128-bit file ID,
+and traversal regressions compare native paths. Linux follow-up checks passed 249 combined store,
+linker and binding tests (3 ignored), plus strict Clippy. Native Windows execution and the remaining
+Windows-only lint/patch fixes still require another CI run before the blockers can be considered closed.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
