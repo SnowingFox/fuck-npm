@@ -173,10 +173,9 @@ impl Engine<'_> {
             replaced = true;
         }
         let mut rule_name = edge.name.clone();
-        if !replaced
-            && !matches!(declared, DependencySpec::Workspace { .. })
-            && !self.overrides.is_empty()
-        {
+        // bun never overrides the root's edges to its members; a declared `workspace:`
+        // dependency is overridden like any other.
+        if !replaced && !edge.behavior.is_workspace() && !self.overrides.is_empty() {
             let owner = self.owner(row.pkg);
             if let Some(rule) = self.overrides.lookup(Some(owner), &edge.name, &declared) {
                 let (target_name, value) = (rule.selector.target.name.clone(), rule.value.clone());
