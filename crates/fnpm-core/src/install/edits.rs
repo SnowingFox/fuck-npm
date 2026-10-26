@@ -147,7 +147,25 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
                     .and_then(Value::as_object)
                     .cloned()
                     .unwrap_or_default();
-                entries.insert(name.clone(), Value::String(spec.clone()));
+                if entries.contains_key(name) {
+                    entries.insert(name.clone(), Value::String(spec.clone()));
+                } else {
+                    // A new entry goes in name order, like bun writes it.
+                    let at = entries.keys().position(|k| k.as_str() > name.as_str());
+                    let mut sorted = Map::new();
+                    let mut placed = false;
+                    for (i, (k, v)) in std::mem::take(&mut entries).into_iter().enumerate() {
+                        if at == Some(i) {
+                            sorted.insert(name.clone(), Value::String(spec.clone()));
+                            placed = true;
+                        }
+                        sorted.insert(k, v);
+                    }
+                    if !placed {
+                        sorted.insert(name.clone(), Value::String(spec.clone()));
+                    }
+                    entries = sorted;
+                }
                 set_object(&mut editor, &current, &path, entries);
             }
             Edit::Trust { names } => {

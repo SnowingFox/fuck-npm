@@ -1286,7 +1286,11 @@ fn package_json_edits(
         };
         explicit.push((req.workspace.clone(), req.name.clone()));
         if let Some(cat) = &add.catalog {
-            let entry = add.catalog_existing.clone().unwrap_or(literal);
+            let entry = add
+                .catalog_existing
+                .clone()
+                .or_else(|| add.catalog_seed.clone())
+                .unwrap_or(literal);
             if add.catalog_existing.is_none() {
                 edits.push(
                     "",
@@ -1362,6 +1366,46 @@ fn package_json_edits(
             continue;
         };
         let is_peer_only = plan::declared(ws, &u.workspace, &u.name).is_none();
+        // A `catalog:` reference stays; the catalog entry it reads moves instead (bun).
+        // bun moves the entry of a `catalog:` reference, and neither the entry nor the reference
+        // of ` catalog:` (leading whitespace).
+        if u.original.trim_start() != u.original && u.original.trim().starts_with("catalog:") {
+            continue;
+        }
+        if let Some(catalog) = u.original.strip_prefix("catalog:") {
+            let catalog = match catalog.trim() {
+                "default" => "",
+                c => c,
+            };
+            let Some(entry) = edits::catalog_entry(&ws.root.raw, catalog, &u.name) else {
+                continue;
+            };
+            let entry = entry.trim().to_owned();
+            let new = updated_literal(&entry, &version, config.exact, planned.latest)
+                .unwrap_or_else(|| entry.clone());
+            let map = if catalog.is_empty() {
+                &mut graph.catalogs.default
+            } else {
+                graph.catalogs.named.entry(catalog.to_owned()).or_default()
+            };
+            if map.get(&u.name) == Some(&new) && new == entry {
+                continue;
+            }
+            map.insert(u.name.clone(), new.clone());
+            let edit = Edit::Catalog {
+                catalog: catalog.to_owned(),
+                name: u.name.clone(),
+                spec: new,
+            };
+            if !edits
+                .by_workspace
+                .get("")
+                .is_some_and(|e| e.contains(&edit))
+            {
+                edits.push("", edit);
+            }
+            continue;
+        }
         if let Some(new) = updated_literal(
             &u.original,
             &version,

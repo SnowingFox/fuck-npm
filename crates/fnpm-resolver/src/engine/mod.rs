@@ -114,6 +114,8 @@ pub(crate) struct Asked {
     pub replaced: bool,
     /// The replacement came from a root-level override rule.
     pub from_rule: bool,
+    /// A project's `catalog:` reference was replaced by its catalog entry.
+    pub from_catalog: bool,
 }
 
 /// Update scope of `fnpm update`.

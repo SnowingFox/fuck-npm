@@ -158,6 +158,7 @@ impl Engine<'_> {
         let mut literal = edge.literal.clone();
         let mut replaced = false;
         let mut from_rule = false;
+        let mut from_catalog = false;
         if let DependencySpec::Catalog { .. } = &declared
             && owner_kind != Kind::Project
         {
@@ -207,6 +208,7 @@ impl Engine<'_> {
                         })?;
                     literal = entry;
                     replaced = true;
+                    from_catalog = !from_rule;
                 }
                 None => {
                     return Err(Error::CatalogEntryMissing {
@@ -226,6 +228,7 @@ impl Engine<'_> {
             literal,
             replaced,
             from_rule,
+            from_catalog,
         }))
     }
 
@@ -377,9 +380,10 @@ impl Engine<'_> {
     /// `fnpm update --latest`: a direct npm dependency that keeps its declared spec moves to the
     /// `latest` tag.
     pub(crate) fn picks_latest(&self, row: Row, edge: &DepEdge, asked: &Asked) -> bool {
+        // bun's `update --latest` moves a catalog entry too, and then writes the catalog.
         self.update.active
             && self.update.latest
-            && !asked.replaced
+            && (!asked.replaced || asked.from_catalog)
             && asked.spec.tag().is_npm()
             && self.st[row.pkg.index()].kind == Kind::Project
             && (self.update.names.is_empty()
