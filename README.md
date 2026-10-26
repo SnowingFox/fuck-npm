@@ -100,6 +100,12 @@ the binary `bun.lockb` for migration but never writes it.
 
 ## Benchmarks
 
+The documentation site contains the same results on its
+[home page](website/src/content/docs/index.mdx),
+[benchmark overview](website/src/content/docs/benchmarks/overview.md) and
+[real-project details](website/src/content/docs/benchmarks/real-projects.md).
+[Run the documentation site locally](website/README.md); no hosted deployment is configured yet.
+
 ### Real repositories: OpenNext, OpenCode, tRPC, Excalidraw and Jest
 
 These are installs of five pinned upstream repositories, followed by actual project
@@ -315,6 +321,7 @@ tests/
   conformance       bun's test/cli/install suite ported to vitest (see INDEX.md)
 bench/              hyperfine benchmark harness, fixtures, results
 docs/               architecture, parity checklist, roadmap, decisions
+website/            fnpm documentation site, search and benchmark pages
 submodule/bun       bun's source, the reference implementation
 ```
 
