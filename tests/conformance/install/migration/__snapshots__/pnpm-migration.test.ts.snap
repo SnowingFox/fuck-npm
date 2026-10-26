@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`basic: fnpm.lock 1`] = `
+exports[`basic > fnpm.lock 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,
