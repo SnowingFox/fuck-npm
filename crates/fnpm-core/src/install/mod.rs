@@ -141,6 +141,8 @@ fn registry_lookup<'c>(config: &'c Config) -> impl for<'x> Fn(&'x str) -> &'c st
     move |name| config.registry_for(name).url.as_str()
 }
 
+pub(crate) use lock::workspace_warnings;
+
 /// The previous graph for `ws` (fnpm.lock, bun.lock(b) or a migrated foreign lockfile).
 pub(crate) fn load_lock(config: &Config, ws: &Workspace) -> Result<lock::LockState> {
     lock::load(config, ws)
@@ -459,8 +461,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         Some(l) => l,
         None => load_workspace(&config, &root)?,
     };
-    for w in ws_warnings {
-        events.emit(Event::warn(w, None));
+    for w in lock::workspace_warnings(&ws_warnings, &lock) {
+        events.emit(Event::warn(w.clone(), None));
     }
     for e in &lock.failures {
         events.emit(e.clone());

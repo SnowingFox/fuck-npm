@@ -41,6 +41,19 @@ pub(crate) struct LockState {
     pub sidecar_missing: bool,
 }
 
+/// The workspace's warnings that are not the migration's to give. A pnpm migration reads
+/// pnpm-workspace.yaml again and reports its skipped entries as bun counts them (scalars are
+/// copied as written), so the workspace loader's count of them is left out.
+pub(crate) fn workspace_warnings<'a>(
+    warnings: &'a [String],
+    lock: &LockState,
+) -> impl Iterator<Item = &'a String> {
+    let skipped = |w: &str| w.starts_with("skipping non-string entries of ");
+    let rereads = (lock.migrated && lock.format == Some(Format::Pnpm))
+        || lock.warnings.iter().any(|w| skipped(w));
+    warnings.iter().filter(move |w| !(rereads && skipped(w)))
+}
+
 /// The project keeps bun.lockb (bun `save_format`): `--save-text-lockfile` writes fnpm.lock, a
 /// loaded bun.lockb stays binary, and a new or migrated lockfile is binary only with
 /// `saveTextLockfile = false`.

@@ -169,7 +169,8 @@ fn migration_sources(from: Option<&str>) -> Result<Vec<&'static str>> {
 /// `fnpm migrate` / `pm migrate` / `fnpm-lock migrate [--from x] [--dry-run] [--force]`.
 pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     let project = cx.project()?;
-    let ws = project.workspace(&*cx.events)?;
+    let (ws, ws_warnings) =
+        fnpm_workspace::Workspace::load_with(&project.root_dir, &Default::default())?;
     let root = project.root_dir.clone();
     let target = root.join(fnpm_lockfile::FNPM_LOCK);
     if target.exists() && !cx.pm.force && !cx.pm.dry_run {
@@ -183,6 +184,9 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if state.migrated {
         let client = project.client()?;
         crate::install::backfill_migrated(&mut state, &client, &project.config).await;
+    }
+    for w in crate::install::workspace_warnings(&ws_warnings, &state) {
+        cx.events.emit(Event::warn(w.clone(), None));
     }
     for e in &state.failures {
         cx.events.emit(e.clone());
