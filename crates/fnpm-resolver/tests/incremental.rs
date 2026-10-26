@@ -287,11 +287,11 @@ async fn update_holds_patched_versions() {
         .unwrap();
     assert_eq!(root_dep(&out.graph, "x").as_deref(), Some("1.0.0"));
     assert!(
-        out.warnings
+        out.kept
             .iter()
             .any(|w| w == "kept x@1.0.0 (patched, v1.1.0 available)"),
         "{:?}",
-        out.warnings
+        out.kept
     );
 }
 
