@@ -216,6 +216,10 @@ pub struct InstallSummary {
     pub blocked_scripts: u32,
     pub elapsed_ms: u64,
     pub noop: bool,
+    /// `update` rewrote package.json with nothing else to install: bun's `Checked ...
+    /// (up to date, package.json synced)`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub package_json_synced: bool,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon

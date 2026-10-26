@@ -108,6 +108,8 @@ export type InstallSummary = {
   elapsedMs: number;
   /** Lockfile and node_modules were already in sync; nothing written. */
   noop: boolean;
+  /** `update` rewrote package.json with nothing else to install (`up to date, package.json synced`). */
+  packageJsonSynced?: boolean;
 };
 
 /** Progress and diagnostics streamed while the core works (batched ≤ every 50 ms). */

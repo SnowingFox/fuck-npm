@@ -372,6 +372,26 @@ pub(crate) fn plan(
                     }
                 }
             }
+            // A bare update from the root moves the catalogs, which members reference.
+            if opts.packages.is_empty()
+                && !opts.latest
+                && !selected
+                && targets.iter().all(|t| t.is_empty())
+            {
+                for m in &ws.members {
+                    for g in &groups {
+                        for (name, literal) in m.manifest.group(*g) {
+                            if literal.starts_with("catalog:") {
+                                planned.updates.push(UpdateTarget {
+                                    workspace: m.path.clone(),
+                                    name: name.clone(),
+                                    original: literal.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             for pat in &patterns {
                 // A name declared only in peerDependencies is left as it is.
                 let peer = targets.iter().any(|t| {

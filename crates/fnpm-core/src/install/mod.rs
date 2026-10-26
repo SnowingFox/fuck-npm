@@ -725,6 +725,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 lockfile_dirty,
                 None,
                 &*events,
+                &mut false,
             )?;
         }
         if let Some(rollback) = &mut patch_rollback {
@@ -989,7 +990,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lockfile_dirty || integrity_filled,
         prepared,
         &*events,
+        &mut summary.package_json_synced,
     )?;
+    summary.package_json_synced &= opts.command == InstallCommand::Update;
     if let Some(rollback) = &mut patch_rollback {
         rollback.finish();
     }
@@ -1962,9 +1965,10 @@ fn save(
     dirty: bool,
     prepared: Option<fnpm_lockfile::PreparedSave>,
     events: &dyn EventSink,
+    wrote_package_json: &mut bool,
 ) -> Result<bool> {
     if config.save_package_json && !edits.is_empty() {
-        edits.apply(root, ws)?;
+        *wrote_package_json = !edits.apply(root, ws)?.is_empty();
     }
     let save_lock =
         config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());

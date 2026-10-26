@@ -238,7 +238,11 @@ pub fn format_install_summary_at(
                 pc.green("Done"),
                 checked.installs,
                 noun(checked.installs),
-                pc.dim("(no changes)"),
+                pc.dim(if summary.package_json_synced {
+                    "(up to date, package.json synced)"
+                } else {
+                    "(no changes)"
+                }),
             ));
         } else {
             lines.push(format!(
@@ -246,7 +250,11 @@ pub fn format_install_summary_at(
                 pc.green(&plural(checked.installs, "install")),
                 checked.packages,
                 noun(checked.packages),
-                pc.dim("(no changes)"),
+                pc.dim(if summary.package_json_synced {
+                    "(up to date, package.json synced)"
+                } else {
+                    "(no changes)"
+                }),
             ));
         }
         blocked(&mut lines);

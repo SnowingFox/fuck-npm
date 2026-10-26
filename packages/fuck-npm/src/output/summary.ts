@@ -64,6 +64,7 @@ export function formatInstallSummary(
   opts: { color: boolean } = { color: true },
 ): string[] {
   // bun's tree printer opens with a newline; the header above ends with one.
+  const note = summary.packageJsonSynced ? "(up to date, package.json synced)" : "(no changes)";
   const lines: string[] = [""];
   const time = timeOf(summary.elapsedMs, pc);
 
@@ -148,8 +149,8 @@ export function formatInstallSummary(
     // bun shortens the line when every package has exactly one place.
     lines.push(
       installs === packages
-        ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`
-        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
+        ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim(note)} ${time}`
+        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim(note)} ${time}`,
     );
     blocked();
   } else {
