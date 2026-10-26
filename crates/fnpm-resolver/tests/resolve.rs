@@ -209,7 +209,7 @@ async fn no_matching_version_and_missing_tags_are_errors() {
     );
     let ws = workspace(json!({"dependencies": {"missing": "^1"}}), &[]);
     assert!(
-        matches!(h.run(&ws, None, Mode::Normal).await.unwrap_err(), Error::NotFound(n) if n == "missing")
+        matches!(h.run(&ws, None, Mode::Normal).await.unwrap_err(), Error::ManifestNotFound { name, .. } if name == "missing")
     );
 }
 
@@ -271,7 +271,7 @@ async fn npm_aliases_keep_the_alias_as_edge_name() {
     );
     let g = h.run(&ws, None, Mode::Normal).await;
     // `npm:^2` is a range for the dependency's own name, which does not exist.
-    assert!(matches!(g, Err(Error::NotFound(n)) if n == "self"));
+    assert!(matches!(g, Err(Error::ManifestNotFound { name, .. }) if name == "self"));
     let ws = workspace(
         json!({"dependencies": {"alias": "npm:real@^1", "real": "^2", "scoped": "npm:@s/x"}}),
         &[],
@@ -398,7 +398,7 @@ async fn failures_below_an_optional_dependency_are_tolerated() {
     let ws = workspace(json!({"dependencies": {"opt": "1.0.0"}}), &[]);
     assert!(matches!(
         h.run(&ws, None, Mode::Normal).await,
-        Err(Error::NotFound(_))
+        Err(Error::ManifestNotFound { .. })
     ));
 }
 
