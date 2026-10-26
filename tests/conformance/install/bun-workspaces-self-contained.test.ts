@@ -5,7 +5,7 @@ import { spawn } from "../compat/bun.ts";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "../compat/bun-test.ts";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "fs";
 import { mkdir, rm, writeFile } from "../compat/fs-promises.ts";
-import { fnpmExe, fnpmEnv as env, isWindows, readdirSorted } from "../harness.ts";
+import { cacheEntryDirs, fnpmExe, fnpmEnv as env, isWindows, readdirSorted } from "../harness.ts";
 import { dirname, join } from "path";
 import {
   dummyAfterAll,
@@ -300,10 +300,10 @@ describe.each([
     expect({ a: bazFrom("a"), b: bazFrom("b") }).toEqual({ a: "0.0.3", b: "0.0.5" });
 
     for (const version of ["0.0.3", "0.0.5"]) {
-      const cached = (await readdirSorted(cacheDir)).filter(name => name.startsWith(`baz@${version}@`));
+      const cached = cacheEntryDirs(cacheDir, "baz", version);
       expect(cached).toHaveLength(1);
-      expect(versionOf(join(cacheDir, cached[0], "package.json"))).toBe(version);
-      expect(statSync(join(cacheDir, cached[0], "index.js")).size).toBeGreaterThan(0);
+      expect(versionOf(join(cached[0], "package.json"))).toBe(version);
+      expect(statSync(join(cached[0], "index.js")).size).toBeGreaterThan(0);
     }
 
     // a repeat install has nothing to do
