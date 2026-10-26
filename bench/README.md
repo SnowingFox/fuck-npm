@@ -1,8 +1,9 @@
 # bench
 
-Install benchmarks for fnpm against bun, pnpm, npm and yarn v1. Every run is timed with
-[hyperfine](https://github.com/sharkdp/hyperfine) against a local, pre-warmed registry mirror, so
-the numbers measure the package manager, not the network.
+Install benchmarks for fnpm against bun, pnpm, npm and yarn v1. The synthetic matrix uses
+[hyperfine](https://github.com/sharkdp/hyperfine) against a local, pre-warmed registry mirror.
+The real-project runner below records wall time directly, including process startup. Upstream
+tarball URLs pinned in original project locks can still bypass the mirror.
 
 ## Quick start
 
@@ -173,3 +174,62 @@ to the newest results file.
 - On a shared machine, other processes add variance. Look at σ and min next to the mean.
 - yarn v1 and npm resolve differently from bun/pnpm, so the installed trees differ a little in
   size. The entry and inode counts make that visible.
+
+## Real projects
+
+`real.ts` measures OpenNext Cloudflare, tRPC, Excalidraw, Jest and OpenCode from
+pinned git revisions. Sources must be git checkouts named `opennextjs-cloudflare`,
+`trpc`, `excalidraw`, `jest` and `opencode` under `--sources` (default:
+`FNPM_E2E_DIR` or `~/.cache/fnpm-e2e`). The four corpus revisions are in
+`tests/e2e/corpus.json`; OpenNext is pinned in `real.ts`. It creates immutable
+`git archive` copies and never installs into the source checkouts.
+
+```sh
+node bench/real.ts --root /absolute/empty-scratch --sources /absolute/checkouts \
+  --tools fnpm,bun,pnpm,yarn --fnpm /absolute/release/fnpm \
+  --source-revision <binary-source-commit> --runs 3 --timeout 0
+```
+
+Run on Linux with Node 24.5+ and GNU `timeout`, with the selected package managers
+on PATH and a warmed mirror at `BENCH_REGISTRY` (default `http://127.0.0.1:4873/`).
+Each project compares fnpm, Bun, and its own package manager. Install, preparation
+and verification have no time limit by default; `--timeout <seconds>` and
+`--prepare-timeout <seconds>` opt into caps (`0` disables them). npm is covered by
+the synthetic matrix; it cannot directly install these projects' original
+workspace/catalog/Bun formats.
+
+Preparation installs from the original committed lock without timing it, then
+retains the generated native lock and any migrated root manifest/workspace
+configuration. Timed scenarios are cold package-manager state with that lock,
+warm state with node_modules removed, and no-op. Each uses private HOME/cache/store
+and runs three times; medians, ranges, failed attempts, migration warnings and
+binary SHA-256 are recorded in `<scratch>/results.json`; command output is in
+`<scratch>/runs/<project>/<tool>/logs/`. OS and mirror caches remain warm. Timed installs
+disable lifecycle scripts. This runner resumes successful results; changing the
+fnpm binary hash invalidates its previous preparation and timings. Use a new
+scratch directory when changing other tools or sources. If an opted-in time cap
+interrupts a scenario, retain its samples/logs and rerun that failed scenario with
+`--timeout 0` to obtain completed measurements; successful results are reused.
+
+Verification restores the source and native lock, installs again, checks declared
+dependencies and package-version stability, records foreign OS/CPU exclusions only
+when supported by explicit text-lock metadata, and executes a direct project
+build/typecheck/test command. The command avoids invoking a package manager that
+could silently reinstall another tool's dependency tree. Disk measurement counts
+unique inodes across all node_modules and private package-manager state before
+project builds; it cannot identify shared reflink extents. Inspect package-set
+differences before comparing disk or speed. Project checks cover only the listed
+commands, and script-enabled installs require separate validation.
+
+The [2026-10-26 real-project report](results/2026-10-26-linux-x64-real-projects.md)
+contains the measurements and limits; the companion JSON preserves raw samples.
+Regenerate the portable JSON and Markdown from the scratch results with:
+
+```sh
+node bench/real-report.ts /absolute/scratch bench/results/my-real-projects
+```
+
+The exporter includes optional `clean-bun-trpc-disk.json` (only if its package set
+matches the baseline) and `opennext-lifecycle.json` evidence. It replaces machine
+home, scratch and executable paths with portable placeholders. Check the exported
+files for private registry/proxy values before publishing them.

@@ -82,3 +82,24 @@ does not establish permission to publish to its scope.
 The release has not happened merely because a dry run or source-checkout smoke
 passed. Full Bun parity and the performance gate remain separate requirements;
 see [ROADMAP.md](ROADMAP.md).
+
+## 2026-10-26 candidate status
+
+Candidate `0.0.1` uses source `048c97ddbfcf617c7f559ed70b15114ace6f5bfb`
+and [Actions run 40283402372](https://github.com/SnowingFox/fuck-npm/actions/runs/40283402372),
+which passed all 21 jobs. All eight native targets, the binding loader, and CLI
+were packed as ten leaf tarballs. Normal and `--ignore-scripts` tarball installs
+passed on macOS arm64, including the addon, four executable names, local dependency
+execution through `fnpx`/`fnpmx`, and offline/no-op/frozen reinstalls.
+
+The bnpm dry run passed. Actual publication of the first platform package returned
+`E403`: the candidate `@snowingfox` scope was unavailable to the publishing account.
+No candidate packages were published. A permitted registry scope is still required;
+these checks do not make the candidate installable from a registry.
+
+The release helper accepts bnpm's missing-version diagnostics on stderr while
+still stopping on authorization errors. With npm versions that enforce lifecycle
+approval, the local smoke explicitly allows this CLI's inspected postinstall in
+the fixture's `allowScripts` policy. Global installs on those npm versions need
+the package approved through npm's `--allow-scripts=<published-name>` setting to
+swap the shim for the native executable automatically.

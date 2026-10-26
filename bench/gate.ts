@@ -22,7 +22,12 @@ const { values, positionals } = parseArgs({
 });
 
 function newestResults(): string {
-  const files = existsSync(RESULTS_DIR) ? readdirSync(RESULTS_DIR).filter((f) => f.endsWith(".json")).sort() : [];
+  const files = existsSync(RESULTS_DIR) ? readdirSync(RESULTS_DIR).filter((f) => {
+    if (!f.endsWith(".json")) return false;
+    // Real-project reports use a different schema and do not feed this fixture gate.
+    try { return Array.isArray(JSON.parse(readFileSync(join(RESULTS_DIR, f), "utf8")).results); }
+    catch { return false; }
+  }).sort() : [];
   if (!files.length) {
     console.error("gate: no results in bench/results; run node bench/run.ts first");
     process.exit(1);
@@ -32,6 +37,10 @@ function newestResults(): string {
 
 const file = positionals[0] ?? newestResults();
 const res: Results = JSON.parse(readFileSync(file, "utf8"));
+if (!Array.isArray(res.results)) {
+  console.error("gate: expected a synthetic fixture report from bench/run.ts; real-project reports are separate");
+  process.exit(1);
+}
 const tolerance = Number(values.tolerance);
 const onlyScenarios = values.scenarios?.split(",");
 const onlyFixtures = values.fixtures?.split(",");

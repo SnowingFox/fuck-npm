@@ -3,7 +3,8 @@
 A Node.js package manager targeting bun's package-management feature set, built to install faster
 than bun and to use less disk than bun or pnpm.
 
-Two binaries: `fnpm` (the package manager) and `fnpm-lock` (a lockfile toolkit).
+`fnpm` is the package manager, `fnpm-lock` the lockfile toolkit, and `fnpx` / `fnpmx`
+run package executables.
 
 > **Status: in development.** Native installs, migrations, packing, publishing, patching,
 > execution and security commands are wired end to end. Full Bun conformance and the
@@ -120,6 +121,16 @@ Fnpm's extra store/cache usage is larger than Bun's on all four fixtures.
 `cold` and pnpm cold-lockfile timings include Verdaccio metadata serialization. These Linux measurements
 do not establish macOS or Windows performance. See [bench/README.md](bench/README.md) for isolation and caveats.
 
+Five larger projects are measured separately in the
+[real-project report](bench/results/2026-10-26-linux-x64-real-projects.md): OpenNext
+Cloudflare, tRPC, Excalidraw, Jest and OpenCode. It records cold/warm/no-op samples,
+combined node_modules plus cache/store usage, package-set differences and direct
+project checks. Timed installs disable lifecycle scripts; script-enabled OpenNext
+validation passed on Linux Node 24, including source-built better-sqlite3, the root
+build, 364 tests and a real SQL query. The original pnpm lock was unchanged. These
+results retain their own binary revision
+and do not replace the synthetic matrix above.
+
 ## How it works
 
 ```text
@@ -166,12 +177,15 @@ The 18-project corpus has **13 PASS / 5 KNOWN / 0 unexpected failures**.
 See [conformance status](tests/conformance/STATUS.md) and
 [corpus results](tests/e2e/results/2026-10-26-land.md). Full parity remains open.
 
-[Platform CI for `00ec69f`](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514)
+[Platform CI for `048c97d`](https://github.com/SnowingFox/fuck-npm/actions/runs/40283402372)
 passed all 21 jobs: eight builds containing the native `fnpm` / `fnpm-lock` executables and addon,
 eight npm tarball installation smokes, and five test jobs across Linux, macOS and Windows.
 Each installation smoke covers normal and `--ignore-scripts` installs, versions/help, addon loading,
-a local tarball dependency, and offline/no-op/frozen reinstalls. Public npm publication, installation
-through other package managers, and full platform conformance remain open.
+a local tarball dependency, `fnpx`/`fnpmx` execution, and offline/no-op/frozen reinstalls.
+The complete `0.0.1` candidate also passed macOS arm64 tarball checks. Its actual bnpm
+publication returned `E403` for the unavailable candidate scope, so no registry release
+is available yet. See [release status](docs/RELEASING.md#2026-10-26-candidate-status).
+Full platform conformance remains open.
 
 - **Lockfiles.** With no `fnpm.lock`, the first install migrates `package-lock.json` /
   `npm-shrinkwrap.json` (lockfileVersion 2 to 4; v1 isn't read), `yarn.lock` (v1 and berry), `pnpm-lock.yaml`
