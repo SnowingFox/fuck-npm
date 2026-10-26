@@ -123,48 +123,25 @@ fn parse_concurrent_scripts(value: Option<&str>) -> Option<usize> {
     (parsed > 0).then_some(parsed)
 }
 
-fn unit_seconds(unit: &str) -> Option<f64> {
-    Some(match unit {
-        "" => 1.0,
-        "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
-        "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
-        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
-        "d" | "day" | "days" => 86400.0,
-        "w" | "week" | "weeks" => 604_800.0,
-        _ => return None,
-    })
-}
-
-/// bun's `parse_seconds`: a number of seconds, or `90m`, `12 hours`, `3d`, `2 weeks`.
-/// Returns milliseconds; `None` for 0 (no gate).
+/// bun's `parse_seconds`: the whole value is a number of seconds, or digits and a unit (`90m`,
+/// `12 hours`, `3d`, `2 weeks`). Returns milliseconds; `None` for 0 (no gate).
 pub fn parse_release_age(value: Option<&str>) -> Result<Option<u64>, CliError> {
     let Some(value) = value else {
         return Ok(None);
     };
-    let fail = || {
+    let seconds = fnpm_config::files::parse_seconds(value).ok_or_else(|| {
         CliError::invalid(format!(
             "Expected --minimum-release-age to be a positive number: {value}"
         ))
-    };
-    // /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i
-    let text = value.trim();
-    let number_end = text
-        .find(|char: char| !(char.is_ascii_digit() || char == '.'))
-        .unwrap_or(text.len());
-    let number = &text[..number_end];
-    let unit = text[number_end..].trim_start();
-    let valid_number = match number.split_once('.') {
-        None => is_digits(number),
-        Some((whole, fraction)) => is_digits(whole) && is_digits(fraction),
-    };
-    if !valid_number || !unit.chars().all(|char| char.is_ascii_alphabetic()) {
-        return Err(fail());
-    }
-    let factor = unit_seconds(&unit.to_ascii_lowercase()).ok_or_else(fail)?;
-    let seconds: f64 = number.parse().map_err(|_| fail())?;
-    // Math.round; the value is never negative, where it agrees with `f64::round`.
-    let ms = (seconds * factor * 1000.0).round();
-    Ok(if ms == 0.0 { None } else { Some(ms as u64) })
+    })?;
+    let ms = (seconds * 1000.0).round();
+    Ok(if ms == 0.0 {
+        None
+    } else if ms >= u64::MAX as f64 {
+        Some(u64::MAX)
+    } else {
+        Some(ms as u64)
+    })
 }
 
 /// `--cpu` / `--os` / `--libc`: repeatable, comma-separated, `*` / `any` / `none`, `!name`.
@@ -199,57 +176,19 @@ fn parse_registry(value: Option<&str>) -> Result<Option<String>, CliError> {
     if value.starts_with("http://") || value.starts_with("https://") {
         return Ok(Some(value.to_owned()));
     }
-    Err(CliError::invalid(format!(
-        "Registry URL must start with 'https://' or 'http://': \"{}\"",
-        redact_url(value)
-    )))
+    // bun prints this one without the pointer to --help.
+    Err(CliError::core(
+        "INVALID_FLAG_VALUE",
+        format!(
+            "Registry URL must start with 'https://' or 'http://': \"{}\"",
+            redact_url(value)
+        ),
+    ))
 }
 
-/// Never echo credentials back: the first `//userinfo@` and every `token=` / `_authToken=`
-/// value (`redactUrl`).
+/// Never echo credentials back (bun `redacted_npm_url`).
 pub fn redact_url(value: &str) -> String {
-    // .replace(/\/\/[^/@]*@/, "//<redacted>@")
-    let mut text = value.to_owned();
-    let bytes = text.as_bytes();
-    let mut start = 0;
-    while let Some(found) = text[start..].find("//") {
-        let at = start + found;
-        let after = &text[at + 2..];
-        let end = after.find(['/', '@']);
-        if let Some(end) = end
-            && after.as_bytes()[end] == b'@'
-        {
-            text = format!("{}//<redacted>@{}", &text[..at], &after[end + 1..]);
-            break;
-        }
-        start = at + 1;
-        if start >= bytes.len() {
-            break;
-        }
-    }
-    // .replace(/(_authToken|token)=[^&]*/gi, "$1=<redacted>")
-    let mut out = String::with_capacity(text.len());
-    let lower = text.to_ascii_lowercase();
-    let mut index = 0;
-    while index < text.len() {
-        let matched = ["_authtoken=", "token="]
-            .into_iter()
-            .find(|needle| lower[index..].starts_with(needle));
-        if let Some(needle) = matched {
-            let name_len = needle.len() - 1;
-            out.push_str(&text[index..index + name_len]);
-            out.push_str("=<redacted>");
-            let value_start = index + needle.len();
-            index = text[value_start..]
-                .find('&')
-                .map_or(text.len(), |end| value_start + end);
-            continue;
-        }
-        let char = text[index..].chars().next().unwrap();
-        out.push(char);
-        index += char.len_utf8();
-    }
-    out
+    fnpm_config::redact_url(value)
 }
 
 fn ca_store_of(values: &Parsed) -> Option<String> {

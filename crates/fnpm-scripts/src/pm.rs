@@ -37,6 +37,7 @@ pub struct Untrusted {
     pub trusted_name: String,
     pub dir: PathBuf,
     pub depth: usize,
+    /// For display: a URL's credentials are masked.
     pub resolution: String,
     /// `(event, command)` that run once it is trusted.
     pub scripts: Vec<(String, String)>,
@@ -86,7 +87,7 @@ pub fn find_untrusted<'r>(
         out.push(Untrusted {
             trusted_name: trusted_name(&c.alias, &pkg.name, &pkg.resolution).to_owned(),
             can_trust: can_trust_by_name(graph, &c.alias, c.package),
-            resolution: pkg.resolution.to_string(),
+            resolution: fnpm_config::redact::redacted(&pkg.resolution.to_string()).into_owned(),
             package: c.package,
             alias: c.alias,
             dir: c.dir,

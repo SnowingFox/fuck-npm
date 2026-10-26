@@ -22,7 +22,7 @@ describe("bun's flag validation messages", () => {
 
   test("a bad registry URL is rejected with credentials redacted", () => {
     expect(() => pm({ registry: "ftp://user:secret@host" })).toThrow(
-      `Registry URL must start with 'https://' or 'http://': "ftp://<redacted>@host"`,
+      `Registry URL must start with 'https://' or 'http://': "ftp://***@host"`,
     );
   });
 });

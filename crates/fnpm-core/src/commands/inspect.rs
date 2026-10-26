@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use fnpm_config::redact::redacted;
 use fnpm_lockfile::Format;
 use fnpm_types::{Behavior, LockGraph, PackageId, Resolution};
 use serde_json::{Value, json};
@@ -21,7 +22,7 @@ fn shown_version(graph: &LockGraph, id: PackageId) -> String {
         Resolution::Root => String::new(),
         Resolution::Npm { version, .. } => version.clone(),
         Resolution::Workspace { .. } => p.version.clone(),
-        r => r.to_string(),
+        r => redacted(&r.to_string()).into_owned(),
     }
 }
 
@@ -31,7 +32,7 @@ fn display_name(graph: &LockGraph, id: PackageId) -> String {
         if id == PackageId::ROOT {
             "(root)".into()
         } else {
-            p.resolution.to_string()
+            redacted(&p.resolution.to_string()).into_owned()
         }
     } else {
         p.name.clone()
@@ -112,9 +113,10 @@ fn dependent_line(graph: &LockGraph, d: &Dependent) -> String {
         }
     }
     if !d.spec.is_empty() {
+        let spec = redacted(&d.spec);
         match &d.alias {
-            Some(a) => s.push_str(&format!(" (requires {a}@{})", d.spec)),
-            None => s.push_str(&format!(" (requires {})", d.spec)),
+            Some(a) => s.push_str(&format!(" (requires {a}@{spec})")),
+            None => s.push_str(&format!(" (requires {spec})")),
         }
     }
     s

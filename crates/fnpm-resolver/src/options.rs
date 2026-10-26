@@ -7,31 +7,10 @@ use fnpm_types::{CpuSet, LibcSet, OsSet, Platform};
 
 use crate::{Error, Result};
 
-/// bun `fmt::parse_seconds`: a number of seconds, or a number followed by a unit (`90m`, `3d`,
-/// `2 weeks`). Negative, infinite and malformed values are `None`.
+/// bun `fmt::parse_seconds`: the whole of `s` is a number of seconds, or digits followed by a
+/// unit (`90m`, `3d`, `2 weeks`). Negative, infinite and malformed values are `None`.
 pub fn parse_seconds(s: &str) -> Option<f64> {
-    let seconds = match s.parse::<f64>() {
-        Ok(v) if !s.is_empty() => v,
-        _ => {
-            let digits = s
-                .bytes()
-                .take_while(|c| c.is_ascii_digit() || *c == b'.')
-                .count();
-            let per_unit = match s[digits..].trim_start() {
-                "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
-                "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
-                "h" | "hr" | "hrs" | "hour" | "hours" => 3_600.0,
-                "d" | "day" | "days" => 86_400.0,
-                "w" | "week" | "weeks" => 604_800.0,
-                _ => return None,
-            };
-            if digits == 0 {
-                return None;
-            }
-            s[..digits].parse::<f64>().ok()? * per_unit
-        }
-    };
-    (seconds >= 0.0 && seconds.is_finite()).then_some(seconds)
+    fnpm_config::files::parse_seconds(s)
 }
 
 /// `--minimum-release-age <N|duration>` in milliseconds. `0` clears the gate (`None`); anything

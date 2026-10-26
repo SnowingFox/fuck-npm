@@ -35,7 +35,7 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
     match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
-        resolution => fnpm_registry::redact_url(&resolution.to_string()),
+        resolution => fnpm_config::redact::redacted(&resolution.to_string()).into_owned(),
     }
 }
 
