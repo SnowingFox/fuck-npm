@@ -18,6 +18,20 @@ const CONTENT: &str = "#!/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then
 #[cfg(target_os = "android")]
 const CONTENT: &str = "#!/system/bin/sh\nif [ \"x$npm_config_node_gyp\" = \"x\" ]; then\n  FNPM_WHICH_IGNORE_CWD=\"${0%/*}\" exec fnpm x --silent node-gyp \"$@\"\nelse\n  exec \"$npm_config_node_gyp\" \"$@\"\nfi\n";
 
+/// [`CONTENT`] running this fnpm when the process is the native launcher (bun's shim runs the
+/// bun that installs, which need not be on PATH); else whatever `fnpm` PATH finds.
+fn content() -> String {
+    #[cfg(not(windows))]
+    if let Ok(exe) = std::env::current_exe()
+        && exe.file_stem().is_some_and(|s| s == "fnpm")
+        && let Some(exe) = exe.to_str()
+    {
+        let quoted = format!("'{}'", exe.replace('\'', "'\\''"));
+        return CONTENT.replace("exec fnpm x", &format!("exec {quoted} x"));
+    }
+    CONTENT.to_owned()
+}
+
 /// A temporary directory holding the shim; removed on drop.
 #[derive(Debug)]
 pub struct NodeGypShim {
@@ -61,7 +75,7 @@ impl NodeGypShim {
             options.mode(0o755);
         }
         let mut file = options.open(&path)?;
-        file.write_all(CONTENT.as_bytes())
+        file.write_all(content().as_bytes())
     }
 }
 
