@@ -1,0 +1,11 @@
+---
+import { getCollection, render } from 'astro:content';
+import Page from '../components/Page.astro';
+export async function getStaticPaths() {
+  const entries = await getCollection('docs');
+  return entries.map(entry => ({ params: { slug: entry.id === 'index' ? undefined : entry.id }, props: { entry } }));
+}
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+<Page entry={entry}><Content /></Page>

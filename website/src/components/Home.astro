@@ -1,0 +1,91 @@
+---
+import BenchChart from './BenchChart.astro';
+import projects from '../data/benchmarks.json';
+const base = import.meta.env.BASE_URL;
+const scenarios = [
+  { title: 'Cold install, with a lockfile', description: 'Empty package cache · no node_modules · prepared lockfile', label: 'Cold install' },
+  { title: 'Fresh checkout, warm cache', description: 'Packages already cached · node_modules rebuilt', label: 'Warm cache' },
+  { title: 'Everything already up to date', description: 'Keep cache and node_modules · reinstall after nothing changed', label: 'No-op' },
+];
+---
+<section class="register home-hero">
+  <div class="home-container hero-grid">
+    <div class="hero-copy">
+      <a class="release-label label" href={`${base}project/releasing/`}><span>CANDIDATE</span> fnpm v0.0.2 <span aria-hidden="true">→</span></a>
+      <h1 class="display">Less time<br /> installing.<br /><span class="accent">Less disk.</span><br />Fuck NPM.</h1>
+      <p class="hero-description">A Rust-backed package manager for JavaScript. Native installs, a shared package store, and familiar Node.js projects. Bring your lockfile. Keep building.</p>
+      <div class="install-label">Try fnpm</div>
+      <div class="command-box cut"><span aria-hidden="true">$</span><code>npm install -g fnpm</code><button class="copy-install" aria-label="Copy install command">▢</button></div>
+      <p class="install-note">Public npm publication pending. <a href={`${base}project/development/`}>Build from source ↗</a></p>
+      <a class="quickstart-link" href={`${base}quickstart/`}>Then follow the quickstart <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="hero-benchmark">
+      <div class="project-tabs" role="group" aria-label="Benchmark repository">{projects.map((project, index) => <button data-project={index} aria-pressed={index === 0}>{project.short}</button>)}</div>
+      <div class="benchmark-panel">
+        <div class="benchmark-heading"><div><h2>Installing <span data-project-name>OpenNext Cloudflare</span></h2><p>Real repository · <span data-workspaces>23</span> workspaces</p></div><span class="label">LINUX X64</span></div>
+        <div class="scenario-tabs" role="group" aria-label="Installation scenario">{scenarios.map((scenario, index) => <button data-scenario-select={index} aria-pressed={index === 1}>{scenario.label}</button>)}</div>
+        <p class="scenario-caption">Warm cache · seconds, median of 3 runs</p>
+        <BenchChart hero />
+        <p class="benchmark-result" aria-live="polite"></p>
+      </div>
+      <p class="chart-method">Measured October 26, 2026 · fnpm 0.0.1 / Bun 1.4.4 · scripts disabled. Warm OS and registry caches. <a href={`${base}benchmarks/methodology/`}>Methodology ↗</a></p>
+    </div>
+  </div>
+</section>
+<section class="project-strip"><div class="home-container"><p class="label">MEASURED IN REAL REPOSITORIES</p><div>{projects.map(project => <a href={`https://github.com/${project.repo}`}>{project.short}<span> ↗</span></a>)}</div></div></section>
+<section class="register home-section" id="benchmarks">
+  <div class="home-container">
+    <div class="section-intro"><div><p class="label">INSTALL BENCHMARKS</p><h2 class="display">The install you<br />actually run.</h2><p>Cold cache, warm cache, or a no-op reinstall. Compare fnpm, Bun, and each project's original package manager in five pinned repositories.</p></div><a class="outline-button cut" href={`${base}benchmarks/real-projects/`}>Full results & methodology →</a></div>
+    <div class="benchmark-toolbar"><label for="benchmark-project">Repository</label><select id="benchmark-project">{projects.map((project,index) => <option value={index}>{project.name}</option>)}</select><span>Seconds · median of three runs · lower is better</span></div>
+    <div class="scenario-grid">{scenarios.map((scenario,index) => <article class="scenario-card"><h3>{scenario.title}</h3><p>{scenario.description}</p><BenchChart scenario={index} compact /><p class="scenario-result" data-result={index}></p></article>)}</div>
+    <p class="section-footnote">Linux x64 / ext4 · 8 CPU cores · Node 24.22.1 · private package-manager caches · lifecycle scripts disabled · shared machine. OpenNext contains 14 extra package versions in fnpm's tree versus Bun. <a href={`${base}benchmarks/real-projects/`}>See ranges, package sets, and project checks ↗</a></p>
+  </div>
+</section>
+<section class="home-section disk-section"><div class="home-container disk-grid"><div><p class="label">DISK USAGE</p><h2 class="display">Count the cache.<br />Not just the folder.</h2><p>Combined physical space for node_modules and the private package cache/store. Shared hardlinks count once.</p><p>fnpm used less than Bun on all five repositories in this snapshot. OpenNext used slightly more than pnpm.</p><a class="quickstart-link" href={`${base}pm/store/`}>How the package store works →</a></div><div class="disk-table-wrap"><table class="disk-table"><caption>Combined physical disk · MiB</caption><thead><tr><th>Repository</th><th>fnpm</th><th>Bun</th></tr></thead><tbody>{projects.map(project => <tr><th scope="row">{project.name}</th><td>{project.disk.fnpm.toLocaleString('en-US', {minimumFractionDigits:2})}</td><td>{project.disk.bun.toLocaleString('en-US', {minimumFractionDigits:2})}</td></tr>)}</tbody></table><p class="section-footnote">Measured before builds. Shared reflink extents are not identified. <a href={`${base}benchmarks/real-projects/`}>All baselines ↗</a></p></div></div></section>
+<section class="register home-section"><div class="home-container"><p class="label">ONE PACKAGE. FOUR COMMANDS.</p><h2 class="display features-heading">Familiar projects.<br />A native install path.</h2><div class="feature-grid">
+  <a href={`${base}pm/cli/install/`}><span class="feature-icon">◇</span><h3>fnpm</h3><p>Install, add, update, and manage dependencies. Native Rust launchers handle the hot paths.</p><code>fnpm install →</code></a>
+  <a href={`${base}pm/lockfile/`}><span class="feature-icon">⌘</span><h3>fnpm-lock</h3><p>Bring npm, pnpm, Yarn, or Bun lockfiles. Inspect, migrate, verify, compare, and export.</p><code>fnpm-lock verify →</code></a>
+  <a href={`${base}pm/fnpx/`}><span class="feature-icon">↗</span><h3>fnpx / fnpmx</h3><p>Run package executables with the same package store. Two aliases, one command.</p><code>fnpx cowsay hello →</code></a>
+</div><p class="development-note">Built in the open. Full Bun package-manager parity and the all-scenario speed target are still in progress. <a href={`${base}status/`}>Compatibility status →</a></p></div></section>
+<footer class="home-footer"><div class="home-container"><a class="fnpm-brand" href={base}>Fuck NPM</a><p>A package manager focused on install time and disk usage.</p><nav aria-label="Footer"><a href={`${base}docs/`}>Documentation</a><a href="https://github.com/SnowingFox/fuck-npm">GitHub ↗</a><a href={`${base}project/credits/`}>Credits & licenses</a></nav></div></footer>
+<script>
+  import projects from '../data/benchmarks.json';
+  let selectedProject = 0; let selectedScenario = 1;
+  const format = (n: number) => n < .1 ? `${(n * 1000).toFixed(1)}ms` : `${n.toFixed(n < 1 ? 3 : 2)}s`;
+  const scenarioLabels = ['Cold install', 'Warm cache', 'No-op'];
+  const comparison = (index: number) => {
+    const project = projects[selectedProject]; const fnpm = project.tools.find(tool => tool.name === 'fnpm')!.times[index]; const bun = project.tools.find(tool => tool.name === 'bun')!.times[index];
+    return fnpm <= bun ? `${(bun / fnpm).toFixed(2)}× faster than Bun in this snapshot` : `${(fnpm / bun).toFixed(2)}× Bun's duration in this snapshot`;
+  };
+  function render() {
+    const project = projects[selectedProject];
+    document.querySelectorAll<HTMLElement>('[data-project-name]').forEach(el => el.textContent = project.name);
+    document.querySelectorAll<HTMLElement>('[data-workspaces]').forEach(el => el.textContent = String(project.workspaces));
+    document.querySelectorAll<HTMLButtonElement>('[data-project]').forEach(el => el.setAttribute('aria-pressed', String(Number(el.dataset.project) === selectedProject)));
+    document.querySelectorAll<HTMLButtonElement>('[data-scenario-select]').forEach(el => el.setAttribute('aria-pressed', String(Number(el.dataset.scenarioSelect) === selectedScenario)));
+    (document.querySelector('#benchmark-project') as HTMLSelectElement).value = String(selectedProject);
+    document.querySelector('.scenario-caption')!.textContent = `${scenarioLabels[selectedScenario]} · seconds, median of 3 runs`;
+    for (const chart of document.querySelectorAll<HTMLElement>('.benchmark-chart')) {
+      const scenario = chart.hasAttribute('data-hero') ? selectedScenario : Number(chart.dataset.scenario);
+      const max = Math.max(...project.tools.map(tool => tool.times[scenario]));
+      const magnitude = 10 ** (1 - Math.floor(Math.log10(max))); const ceiling = Math.ceil(max * 1.05 * magnitude) / magnitude;
+      chart.querySelectorAll<HTMLElement>('.bar-row').forEach((row, index) => {
+        const tool = project.tools[index]; row.hidden = !tool; if (!tool) return;
+        row.querySelector('.tool-label strong')!.textContent = tool.name; row.querySelector('.tool-label small')!.textContent = `v${tool.version}`;
+        const fill = row.querySelector<HTMLElement>('.bar-fill')!; fill.style.width = `${tool.times[scenario] / ceiling * 100}%`; fill.classList.toggle('highlight', tool.name === 'fnpm');
+        row.querySelector('.bar-value')!.textContent = format(tool.times[scenario]);
+        row.querySelector('.bar-tooltip')!.textContent = `${tool.name} ${tool.version} · ${tool.times[scenario].toFixed(4)} seconds · median of 3 runs`;
+      });
+      const ticks = chart.querySelectorAll('.chart-axis span'); ticks[1].textContent = format(ceiling / 2); ticks[2].textContent = format(ceiling);
+      const body = chart.querySelector('tbody')!; body.replaceChildren();
+      for (const tool of project.tools) { const tr = document.createElement('tr'); const th = document.createElement('th'); th.scope = 'row'; th.textContent = `${tool.name} ${tool.version}`; const td = document.createElement('td'); td.textContent = tool.times[scenario].toFixed(4); tr.append(th,td); body.append(tr); }
+    }
+    document.querySelector('.benchmark-result')!.textContent = comparison(selectedScenario);
+    document.querySelectorAll<HTMLElement>('[data-result]').forEach(el => el.textContent = comparison(Number(el.dataset.result)));
+  }
+  document.querySelectorAll<HTMLButtonElement>('[data-project]').forEach(button => button.addEventListener('click', () => { selectedProject = Number(button.dataset.project); render(); }));
+  document.querySelectorAll<HTMLButtonElement>('[data-scenario-select]').forEach(button => button.addEventListener('click', () => { selectedScenario = Number(button.dataset.scenarioSelect); render(); }));
+  document.querySelector('#benchmark-project')?.addEventListener('change', event => { selectedProject = Number((event.target as HTMLSelectElement).value); render(); });
+  document.querySelector('.copy-install')?.addEventListener('click', async (event) => { const button = event.currentTarget as HTMLButtonElement; try { await navigator.clipboard.writeText('npm install -g fnpm'); button.textContent = '✓'; button.setAttribute('aria-label', 'Install command copied'); } catch { button.textContent = '!'; button.setAttribute('aria-label', 'Copy unavailable; select the command to copy'); } });
+  render();
+</script>

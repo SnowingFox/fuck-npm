@@ -1,0 +1,42 @@
+---
+title: Welcome to fnpm
+description: fnpm is a Rust-backed package manager for JavaScript and TypeScript projects, focused on install time and disk usage.
+---
+
+import DocCard from '../../components/DocCard.astro';
+
+<div class="card-group">
+  <DocCard icon="◇" title="fnpm Package Manager" href="../pm/cli/install/" cta="Get started with fnpm install →">Install dependencies, migrate existing lockfiles, and manage workspaces.</DocCard>
+  <DocCard icon="⌘" title="fnpm Lockfile Toolkit" href="../pm/lockfile/" cta="Explore fnpm-lock →">Migrate, inspect, verify, compare, and export your dependency lockfile.</DocCard>
+  <DocCard icon="↗" title="fnpx Package Runner" href="../pm/fnpx/" cta="Run a package with fnpx →">Execute package binaries with fnpx or its fnpmx alias.</DocCard>
+  <DocCard icon="▥" title="Real-project Benchmarks" href="../benchmarks/real-projects/" cta="Read the measured results →">OpenNext Cloudflare, OpenCode, tRPC, Excalidraw, and Jest — with build and test checks.</DocCard>
+</div>
+
+---
+
+## Get Started
+
+fnpm ships as one npm package with four commands. Use it in an existing Node.js project, or explore the installation and migration guides first.
+
+<div class="card-group">
+  <DocCard icon="↓" title="Install fnpm" href="../installation/">Platforms, native downloads, and current release availability.</DocCard>
+  <DocCard icon="⚡" title="Quickstart" href="../quickstart/">Install dependencies and run your first project.</DocCard>
+</div>
+
+---
+
+## What's Inside
+
+- **Package manager:** dependency installation, workspaces, overrides, scripts, and lockfile migration.
+- **Native hot paths:** Rust launchers handle installation without Node startup.
+- **Shared package store:** clone or link package files to reduce duplicate disk use.
+- **Lockfile toolkit:** inspect and verify `fnpm.lock`, migrate existing formats, and export for other tools.
+- **Package runner:** `fnpx` and `fnpmx` run package executables.
+
+## Current status
+
+`fnpm@0.0.2` is a release candidate. Public npm publication is pending; use the [source build](../project/development/) to try it now. Full Bun package-manager parity and the target to beat Bun in every scenario remain open. See [compatibility status](../status/) and [release status](../project/releasing/).
+
+## Measured in real repositories
+
+The Linux snapshot records three-run medians of cold, warm, and no-op installs in five pinned repositories. fnpm had lower warm and no-op medians than Bun in all five; cold installs were lower in two of five. Read the [full results and limitations](../benchmarks/real-projects/), including package-set differences and project checks.

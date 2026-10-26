@@ -1,0 +1,57 @@
+---
+import '../styles/custom.css';
+import SiteHeader from './SiteHeader.astro';
+import Home from './Home.astro';
+import docs from '../../docs.json';
+import { getCollection } from 'astro:content';
+const { entry } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const path = Astro.url.pathname.slice(base.length).replace(/\/$/, '');
+const home = path === '';
+const entries = await getCollection('docs');
+const titleFor = (slug: string) => entries.find((entry) => entry.id.replace(/\/$/, '') === slug)?.data.title ?? slug;
+const linkFor = (slug: string) => `${base}${slug === 'index' ? 'docs' : slug}/`;
+const groups = docs.navigation.tabs.flatMap(tab => tab.groups);
+const section = path.startsWith('benchmarks') ? 'Benchmarks' : path.startsWith('project') ? 'Project' : 'Package manager';
+---
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>{`${entry.data.title} | fnpm`}</title><meta name="description" content={entry.data.description} /><link rel="icon" href={`${base}logo/favicon.svg`} /><meta property="og:title" content={entry.data.title} /><meta property="og:description" content={entry.data.description} /><meta name="theme-color" content="#ffffff" /><script is:inline>try { const t = localStorage.getItem('fnpm-theme'); if (t) document.documentElement.classList.add(t); } catch {}</script></head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <SiteHeader docs={!home} />
+    {home ? <main id="main" data-pagefind-body><Home /></main> : <>
+      <nav class="docs-sections" aria-label="Documentation sections"><div>
+        <a href={`${base}docs/`} aria-current={section === 'Package manager' ? 'page' : undefined}>◇ &nbsp; Package Manager</a>
+        <a href={`${base}benchmarks/overview/`} aria-current={section === 'Benchmarks' ? 'page' : undefined}>▥ &nbsp; Benchmarks</a>
+        <a href={`${base}project/architecture/`} aria-current={section === 'Project' ? 'page' : undefined}>⌘ &nbsp; Project</a>
+        <a href={`${base}quickstart/`}>▤ &nbsp; Guides</a>
+      </div></nav>
+      <div class="docs-layout">
+        <button class="browse-docs" popovertarget="docs-sidebar">☰ Browse docs</button>
+        <aside id="docs-sidebar" popover="auto" class="docs-sidebar" data-pagefind-ignore>
+          <button class="close-sidebar" popovertarget="docs-sidebar" popovertargetaction="hide" aria-label="Close navigation">×</button>
+          <nav aria-label="Documentation navigation">{groups.map(group => <section><h2>{group.group}</h2><ul>{group.pages.map(slug => <li><a href={linkFor(slug)} aria-current={(path === slug || (path === 'docs' && slug === 'index')) ? 'page' : undefined}>{slug === 'index' ? 'Welcome to fnpm' : titleFor(slug)}</a></li>)}</ul></section>)}</nav>
+        </aside>
+        <main id="main" class="docs-main" data-pagefind-body>
+          <article>
+            <header class="docs-page-heading"><div class="breadcrumb">{section} <span>›</span> <span>{entry.data.title}</span><button class="copy-page">▢ &nbsp; Copy page</button></div>
+            <h1 class="display">{entry.data.title}</h1><p>{entry.data.description}</p></header>
+            <div class="docs-prose prose"><slot /></div>
+            <footer class="docs-footer" data-pagefind-ignore><a href={`https://github.com/SnowingFox/fuck-npm/edit/main/website/src/content/docs/${entry.id === 'docs' ? 'docs.mdx' : `${entry.id}.md`}`}>Edit this page on GitHub ↗</a><a href={`${base}project/credits/`}>Credits & licenses</a></footer>
+          </article>
+        </main>
+      </div>
+    </>}
+    <script>
+      const sidebar = document.querySelector<HTMLElement>('.docs-sidebar');
+      const desktop = matchMedia('(min-width: 800px)');
+      const updateSidebar = () => { if (sidebar) { if (desktop.matches) sidebar.removeAttribute('popover'); else sidebar.setAttribute('popover', 'auto'); } };
+      updateSidebar(); desktop.addEventListener('change', updateSidebar);
+      document.querySelector('.copy-page')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget as HTMLButtonElement;
+        try { await navigator.clipboard.writeText(document.querySelector('.docs-main article')?.textContent ?? ''); button.textContent = 'Copied ✓'; } catch { button.textContent = 'Copy unavailable'; }
+      });
+    </script>
+  </body>
+</html>

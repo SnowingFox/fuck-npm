@@ -1,0 +1,4 @@
+---
+const { icon, title, href, cta } = Astro.props;
+---
+<a href={href} class="doc-card card not-prose"><span class="doc-card-icon" aria-hidden="true">{icon}</span><strong>{title}</strong><span class="doc-card-description"><slot /></span>{cta && <span class="doc-card-cta">{cta}</span>}</a>

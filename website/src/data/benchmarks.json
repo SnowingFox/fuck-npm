@@ -1,0 +1,197 @@
+[
+  {
+    "id": "opennextjs-cloudflare",
+    "short": "OpenNext",
+    "name": "OpenNext Cloudflare",
+    "repo": "opennextjs/opennextjs-cloudflare",
+    "workspaces": 23,
+    "tools": [
+      {
+        "name": "fnpm",
+        "version": "0.0.1",
+        "times": [
+          7.2118,
+          0.5771,
+          0.0089
+        ]
+      },
+      {
+        "name": "bun",
+        "version": "1.4.4",
+        "times": [
+          4.9949,
+          0.6028,
+          0.0798
+        ]
+      },
+      {
+        "name": "pnpm",
+        "version": "10.33.0",
+        "times": [
+          17.4433,
+          6.8035,
+          2.8804
+        ]
+      }
+    ],
+    "disk": {
+      "bun": 2653.39,
+      "pnpm": 2580.16,
+      "fnpm": 2592.87
+    }
+  },
+  {
+    "id": "opencode",
+    "short": "OpenCode",
+    "name": "OpenCode",
+    "repo": "anomalyco/opencode",
+    "workspaces": 39,
+    "tools": [
+      {
+        "name": "fnpm",
+        "version": "0.0.1",
+        "times": [
+          9.4839,
+          0.6254,
+          0.0102
+        ]
+      },
+      {
+        "name": "bun",
+        "version": "1.4.4",
+        "times": [
+          11.363,
+          0.7154,
+          0.1249
+        ]
+      }
+    ],
+    "disk": {
+      "bun": 3238.86,
+      "fnpm": 3138.05
+    }
+  },
+  {
+    "id": "trpc",
+    "short": "tRPC",
+    "name": "tRPC",
+    "repo": "trpc/trpc",
+    "workspaces": 43,
+    "tools": [
+      {
+        "name": "fnpm",
+        "version": "0.0.1",
+        "times": [
+          10.0058,
+          0.8811,
+          0.0121
+        ]
+      },
+      {
+        "name": "bun",
+        "version": "1.4.4",
+        "times": [
+          5.6106,
+          1.4238,
+          0.1905
+        ]
+      },
+      {
+        "name": "pnpm",
+        "version": "12.4.1",
+        "times": [
+          150.1458,
+          2.997,
+          0.4394
+        ]
+      }
+    ],
+    "disk": {
+      "bun": 2558.46,
+      "pnpm": 3541.51,
+      "fnpm": 2490.91
+    }
+  },
+  {
+    "id": "excalidraw",
+    "short": "Excalidraw",
+    "name": "Excalidraw",
+    "repo": "excalidraw/excalidraw",
+    "workspaces": 10,
+    "tools": [
+      {
+        "name": "fnpm",
+        "version": "0.0.1",
+        "times": [
+          2.0217,
+          0.2277,
+          0.0098
+        ]
+      },
+      {
+        "name": "bun",
+        "version": "1.4.4",
+        "times": [
+          2.3536,
+          0.3205,
+          0.0661
+        ]
+      },
+      {
+        "name": "yarn",
+        "version": "1.22.22",
+        "times": [
+          196.8902,
+          18.8943,
+          1.025
+        ]
+      }
+    ],
+    "disk": {
+      "bun": 934.82,
+      "yarn": 4294.92,
+      "fnpm": 901.8
+    }
+  },
+  {
+    "id": "jest",
+    "short": "Jest",
+    "name": "Jest",
+    "repo": "jestjs/jest",
+    "workspaces": 70,
+    "tools": [
+      {
+        "name": "fnpm",
+        "version": "0.0.1",
+        "times": [
+          2.3337,
+          0.3237,
+          0.0103
+        ]
+      },
+      {
+        "name": "bun",
+        "version": "1.4.4",
+        "times": [
+          2.2663,
+          0.3629,
+          0.089
+        ]
+      },
+      {
+        "name": "yarn",
+        "version": "4.18.0",
+        "times": [
+          39.0481,
+          24.3643,
+          4.433
+        ]
+      }
+    ],
+    "disk": {
+      "bun": 828.7,
+      "yarn": 1007.64,
+      "fnpm": 805.96
+    }
+  }
+]

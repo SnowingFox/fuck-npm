@@ -38,7 +38,7 @@ npm run build
 npm run preview
 ```
 
-The build produces static files in `website/dist/` and a Pagefind search index. It needs no hosted documentation service. The adapted Bun `website/docs.json` supplies the navigation; pages live in `website/src/content/docs`. The site uses Starlight components for callouts, code blocks, navigation and search.
+The build produces static files in `website/dist/` and a Pagefind search index. It needs no hosted documentation service. The adapted Bun `website/docs.json` supplies the navigation; pages live in `website/src/content/docs`. The page shell adapts Bun’s site layout and styles. Astro renders MDX, Expressive Code renders code blocks, and Pagefind provides search. The homepage and documentation welcome page use the same header and search.
 
 No hosted deployment is configured. The default build serves from `/` without a canonical host or sitemap. For a future GitHub Pages project deployment, set the host and base explicitly:
 

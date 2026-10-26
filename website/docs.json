@@ -2,12 +2,12 @@
   "theme": "aspen",
   "name": "Fuck NPM",
   "colors": {
-    "light": "#3f6212",
-    "primary": "#a3e635",
-    "dark": "#a3e635"
+    "light": "#d60066",
+    "primary": "#ff1f8f",
+    "dark": "#ff5cb0"
   },
   "background": {
-    "decoration": "gradient"
+    "decoration": "none"
   },
   "icons": {
     "library": "lucide"

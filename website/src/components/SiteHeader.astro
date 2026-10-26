@@ -1,0 +1,56 @@
+---
+const base = import.meta.env.BASE_URL;
+const { docs = false } = Astro.props;
+const href = (path = '') => `${base}${path}`;
+---
+<header class:list={['site-header', { 'docs-header': docs }]} data-pagefind-ignore>
+  <div class="site-nav">
+    <a class="fnpm-brand" href={href()} aria-label="Fuck NPM — home"><span class="brand-mark" aria-hidden="true">f<span>_</span></span><span>Fuck NPM</span></a>
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a href={href('docs/')} aria-current={docs ? 'page' : undefined}>Docs</a>
+      <a href={href('quickstart/')}>Quickstart</a>
+      <a href={href('benchmarks/overview/')}>Benchmarks</a>
+    </nav>
+    <button class="search-trigger" data-search-open aria-label="Search documentation"><span aria-hidden="true">⌕</span><span>Search docs, commands, guides...</span><kbd>/</kbd></button>
+    <a class="github-link" href="https://github.com/SnowingFox/fuck-npm" aria-label="fnpm on GitHub"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5v-3.8a3.3 3.3 0 0 0-.9-2.6c3-.3 6.2-1.5 6.2-6.9a5.4 5.4 0 0 0-1.5-3.8 5 5 0 0 0-.1-3.7s-1.2-.4-3.8 1.5a13 13 0 0 0-6.9 0C5.4.1 4.2.5 4.2.5a5 5 0 0 0-.1 3.7A5.4 5.4 0 0 0 2.6 8c0 5.4 3.2 6.6 6.2 6.9a3.3 3.3 0 0 0-.9 2.6v3.8" transform="translate(1 1) scale(.9)"/></svg></a>
+    <button class="theme-toggle" aria-label="Switch color theme" title="Switch color theme">◐</button>
+    <a class="install-button cut" href={href('installation/')}>Install</a>
+  </div>
+</header>
+<dialog class="search-dialog" aria-label="Search documentation">
+  <div class="search-heading"><label for="site-search">Search documentation</label><button data-search-close aria-label="Close search">Esc</button></div>
+  <input id="site-search" type="search" placeholder="Search docs, commands, guides..." autocomplete="off" />
+  <p class="search-status" role="status">Type to search the fnpm documentation.</p><ul class="search-results"></ul>
+</dialog>
+<script>
+  const root = document.documentElement;
+  try { const theme = localStorage.getItem('fnpm-theme'); if (theme) root.classList.add(theme); } catch {}
+  document.querySelector('.theme-toggle')?.addEventListener('click', () => {
+    const dark = root.classList.contains('dark') || (!root.classList.contains('light') && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.classList.toggle('dark', !dark); root.classList.toggle('light', dark);
+    try { localStorage.setItem('fnpm-theme', dark ? 'light' : 'dark'); } catch {}
+  });
+  const dialog = document.querySelector<HTMLDialogElement>('.search-dialog')!;
+  const input = document.querySelector<HTMLInputElement>('#site-search')!;
+  document.querySelector('[data-search-open]')?.addEventListener('click', () => { dialog.showModal(); input.focus(); });
+  document.querySelector('[data-search-close]')?.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+  document.addEventListener('keydown', (event) => {
+    if ((event.key === '/' || ((event.metaKey || event.ctrlKey) && event.key === 'k')) && !/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement)?.tagName)) { event.preventDefault(); dialog.showModal(); input.focus(); }
+  });
+  let searchModule: Promise<any> | undefined; let generation = 0;
+  input.addEventListener('input', async () => {
+    const request = ++generation; const term = input.value.trim();
+    const status = document.querySelector<HTMLElement>('.search-status')!; const list = document.querySelector('.search-results')!;
+    list.replaceChildren(); if (!term) { status.textContent = 'Type to search the fnpm documentation.'; return; }
+    status.textContent = 'Searching…';
+    try {
+      searchModule ??= import(/* @vite-ignore */ `${import.meta.env.BASE_URL}pagefind/pagefind.js`);
+      const pagefind = await searchModule; const result = await pagefind.search(term);
+      const matches = await Promise.all(result.results.slice(0, 8).map((item: any) => item.data()));
+      if (request !== generation) return;
+      status.textContent = `${result.results.length} results`;
+      for (const match of matches) { const li = document.createElement('li'); const a = document.createElement('a'); a.href = match.url; a.textContent = match.meta.title; li.append(a); list.append(li); }
+    } catch { if (request === generation) status.textContent = 'Search is available in the built site. Please browse the documentation below.'; }
+  });
+</script>

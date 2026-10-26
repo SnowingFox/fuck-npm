@@ -1,0 +1,21 @@
+---
+import projects from '../data/benchmarks.json';
+const { scenario = 1, compact = false, hero = false } = Astro.props;
+const project = projects[0];
+const max = Math.max(...project.tools.map(tool => tool.times[scenario]));
+const ceiling = Math.ceil(max * 1.05 * 10 ** (1 - Math.floor(Math.log10(max)))) / 10 ** (1 - Math.floor(Math.log10(max)));
+const format = (n: number) => n < .1 ? `${(n * 1000).toFixed(1)}ms` : `${n.toFixed(n < 1 ? 3 : 2)}s`;
+---
+<div class:list={['benchmark-chart', { compact }]} data-scenario={scenario} data-hero={hero ? '' : undefined}>
+  <div class="bar-list" role="list" aria-label="Install duration comparison">
+    {project.tools.map(tool => <div class="bar-row" role="listitem" tabindex="0" data-tool={tool.name}>
+      <div class="tool-label"><strong>{tool.name}</strong><small>v{tool.version}</small></div>
+      <div class="bar-track"><div class:list={['bar-fill', { highlight: tool.name === 'fnpm' }]} style={`width:${tool.times[scenario] / ceiling * 100}%`}></div></div>
+      <strong class="bar-value">{format(tool.times[scenario])}</strong>
+      <span class="bar-tooltip" role="tooltip">{tool.name} {tool.version} · {tool.times[scenario].toFixed(4)} seconds · median of 3 runs</span>
+    </div>)}
+  </div>
+  <div class="chart-axis" aria-hidden="true"><span>0s</span><span>{format(ceiling / 2)}</span><span>{format(ceiling)}</span></div>
+  <div class="chart-legend"><span><i class="legend-highlight"></i>fnpm</span><span><i></i>Other package managers</span><span>Lower is better</span></div>
+  <details class="chart-table"><summary>View data table</summary><table><caption>Install duration in seconds — median of three runs</caption><thead><tr><th>Tool / version</th><th>Seconds</th></tr></thead><tbody>{project.tools.map(tool => <tr><th scope="row">{tool.name} {tool.version}</th><td>{tool.times[scenario].toFixed(4)}</td></tr>)}</tbody></table></details>
+</div>

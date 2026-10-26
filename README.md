@@ -101,7 +101,7 @@ the binary `bun.lockb` for migration but never writes it.
 ## Benchmarks
 
 The documentation site contains the same results on its
-[home page](website/src/content/docs/index.mdx),
+[home page](website/src/components/Home.astro),
 [benchmark overview](website/src/content/docs/benchmarks/overview.md) and
 [real-project details](website/src/content/docs/benchmarks/real-projects.md).
 [Run the documentation site locally](website/README.md); no hosted deployment is configured yet.
