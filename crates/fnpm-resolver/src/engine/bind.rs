@@ -364,14 +364,14 @@ impl Engine<'_> {
         if !self.update.active {
             return false;
         }
-        if self.update.names.is_empty() {
-            return self.st[row.pkg.index()].kind == Kind::Project;
-        }
         // A bundled dependency ships inside its owner's tarball: it is never re-resolved.
         if edge.behavior.is_bundled() || self.st[row.pkg.index()].in_bundle {
             return false;
         }
-        self.update.names.contains(&edge.name) || self.update.names.contains(&asked.name)
+        // A bare update re-resolves every edge within its range, transitive ones too (bun).
+        self.update.names.is_empty()
+            || self.update.names.contains(&edge.name)
+            || self.update.names.contains(&asked.name)
     }
 
     /// `fnpm update --latest`: a direct npm dependency that keeps its declared spec moves to the
@@ -723,6 +723,45 @@ impl Engine<'_> {
             .map(|(_, v)| v)
     }
 
+    /// The version of the package that `edge` of `row`'s owner reached in the previous graph,
+    /// with the ranges of every previous edge into that package; `None` when there is none or
+    /// one of them is not a plain range.
+    fn ranges_sharing_locked(
+        &self,
+        row: Row,
+        edge: &DepEdge,
+    ) -> Option<(Version, Vec<(String, Range)>)> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        let target = prev
+            .get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && !e.behavior.is_peer())?
+            .target?;
+        if !matches!(
+            prev.packages[target.index()].resolution,
+            Resolution::Npm { .. }
+        ) {
+            return None;
+        }
+        let locked = self.prev_versions[target.index()].clone()?;
+        // The root's and the workspaces' own edges are re-resolved by the update; they do not hold.
+        let mut ranges = Vec::new();
+        for p in prev.packages.iter().filter(|p| {
+            !matches!(
+                p.resolution,
+                Resolution::Root | Resolution::Workspace { .. }
+            )
+        }) {
+            for e in p.dependencies.iter().filter(|e| e.target == Some(target)) {
+                let range = Range::parse(&e.literal).ok()?;
+                ranges.push((e.literal.clone(), range));
+            }
+        }
+        Some((locked, ranges))
+    }
+
     /// `patchedDependencies` versions of `name` that `range` allows, highest first.
     fn patched_versions(&self, name: &str) -> Vec<Version> {
         let mut out: Vec<Version> = self
@@ -936,20 +975,45 @@ impl Engine<'_> {
                 },
             });
         };
-        if latest {
-            // `--latest` never moves below the version in the lockfile, nor below the tag.
-            if let Some(locked) = self.locked_version(&name, range.as_ref())
-                && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
-                && let Some(kept) = manifest.find(&locked)
-            {
-                chosen = kept;
+        // An update never moves a range below the version in the lockfile (one published above
+        // `latest` included); `--latest` not below the tag either. A dist-tag is followed.
+        if (latest || (should_update && range.is_some()))
+            && let Some(locked) = self.locked_version(&name, range.as_ref())
+            && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
+            && let Some(kept) = manifest.find(&locked)
+        {
+            chosen = kept;
+        }
+        // A transitive edge moves its locked package only to a version that every edge sharing
+        // that package accepts, so the update does not fork it (bun holds the edge otherwise).
+        if should_update
+            && !latest
+            && !is_peer
+            && !asked.replaced
+            && self.st[row.pkg.index()].kind != Kind::Project
+            && let Some(ranges) = self.ranges_sharing_locked(row, edge)
+        {
+            let gate = gate_data.as_ref().map(|(ms, excludes)| AgeGate {
+                min_age_ms: *ms,
+                now_ms: self.now_ms,
+                excludes,
+            });
+            let shared = peers::version_every_peer_accepts(&manifest, &ranges.1, gate.as_ref())
+                .and_then(|p| match p {
+                    Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
+                    Picked::Err(_) => None,
+                })
+                .filter(|v| v.version.cmp(&ranges.0) != std::cmp::Ordering::Less);
+            if let Some(v) = shared.or_else(|| manifest.find(&ranges.0)) {
+                chosen = v;
             }
-            if let Some(t) = &tag
-                && let Some(tagged) = manifest.dist_tag(t)
-                && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
-            {
-                chosen = tagged;
-            }
+        }
+        if latest
+            && let Some(t) = &tag
+            && let Some(tagged) = manifest.dist_tag(t)
+            && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
+        {
+            chosen = tagged;
         }
         // A patched version stays as long as the range allows it.
         let mut patched = false;

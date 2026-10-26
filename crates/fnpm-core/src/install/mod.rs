@@ -643,6 +643,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // bun lists `↑` rows only for `update`; an install shows what it wrote as `+` rows.
     if opts.command != InstallCommand::Update {
         updated.clear();
+    } else if let Some(previous) = lock.graph.as_ref() {
+        for row in summary::moved(previous, &graph) {
+            // A package that just became a direct dependency is reported as added.
+            if !updated.iter().any(|u| u.name == row.name)
+                && !added.iter().any(|a| a.name == row.name)
+            {
+                updated.push(row);
+            }
+        }
+        updated.sort_by(|a, b| a.name.cmp(&b.name));
     }
     for pkg in &mut updated {
         pkg.available_version =
@@ -1285,6 +1295,7 @@ fn package_json_edits(
     for (ws_path, name) in &planned.removals {
         edits.push(ws_path, Edit::Remove { name: name.clone() });
     }
+    let mut catalogs_done: HashSet<(String, String)> = HashSet::new();
     for u in &planned.updates {
         if explicit.contains(&(u.workspace.clone(), u.name.clone())) {
             continue;
@@ -1299,7 +1310,44 @@ fn package_json_edits(
         else {
             continue;
         };
+        // A `catalog:` reference stays; the catalog entry it names moves (bun).
+        if let Some(cat) = u.original.strip_prefix("catalog:") {
+            let cat = cat.trim();
+            if !catalogs_done.insert((cat.to_owned(), u.name.clone())) {
+                continue;
+            }
+            if let Some(entry) = edits::catalog_entry(&ws.root.raw, cat, &u.name)
+                && let Some(new) = updated_literal(&entry, &version, config.exact, planned.latest)
+                && new != entry
+            {
+                edits.push(
+                    "",
+                    Edit::Catalog {
+                        catalog: cat.to_owned(),
+                        name: u.name.clone(),
+                        spec: new.clone(),
+                    },
+                );
+                let map = if cat.is_empty() || cat == "default" {
+                    &mut graph.catalogs.default
+                } else {
+                    graph.catalogs.named.entry(cat.to_owned()).or_default()
+                };
+                map.insert(u.name.clone(), new);
+            }
+            continue;
+        }
         let is_peer_only = plan::declared(ws, &u.workspace, &u.name).is_none();
+        // A peer range that already accepts the new version stays as written (bun).
+        if plan::declared_as_peer_only(ws, &u.workspace, &u.name)
+            && let (Ok(range), Ok(v)) = (
+                fnpm_semver::Range::parse(&u.original),
+                fnpm_semver::Version::parse(&version),
+            )
+            && range.satisfies(&v)
+        {
+            continue;
+        }
         if let Some(new) = updated_literal(
             &u.original,
             &version,

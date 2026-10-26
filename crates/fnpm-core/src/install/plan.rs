@@ -54,6 +54,8 @@ pub(crate) struct Planned {
     pub unmatched: Vec<String>,
     /// `update`: the workspace paths it targets, and whether `-r` / `--filter` chose them.
     pub scope: (Vec<String>, bool),
+    /// A bare `update` limited to some workspaces: what they reach in the lockfile moves too.
+    pub bare_scope: bool,
 }
 
 fn manifest_of<'a>(ws: &'a Workspace, path: &str) -> &'a PackageJson {
@@ -199,6 +201,7 @@ pub(crate) fn plan(
         selected: None,
         unmatched: Vec::new(),
         scope: (Vec::new(), false),
+        bare_scope: false,
     };
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
@@ -290,12 +293,12 @@ pub(crate) fn plan(
                 let g = opts.update_groups;
                 DependencyGroup::ALL
                     .into_iter()
-                    .filter(|x| *x != DependencyGroup::Peer)
                     .filter(|x| match x {
                         DependencyGroup::Dev => !g.prod || g.dev,
                         DependencyGroup::Prod => !g.dev || g.prod,
                         DependencyGroup::Optional => !g.no_optional && !(g.dev && !g.prod),
-                        DependencyGroup::Peer => false,
+                        // `--latest` moves a peerDependencies range too (bun).
+                        DependencyGroup::Peer => opts.latest && !g.dev && !g.prod,
                     })
                     .collect()
             };
@@ -391,12 +394,17 @@ pub(crate) fn plan(
                 && opts.packages.is_empty()
                 && opts.depth.is_none()
                 && !selected
-                && groups.len() == 3
+                && targets.iter().all(|t| t.is_empty())
+                && groups.len() >= 3
             {
                 Vec::new()
             } else {
                 names
             };
+            planned.bare_scope = opts.packages.is_empty()
+                && opts.depth.is_none()
+                && groups.len() >= 3
+                && !names.is_empty();
             planned.mode = Mode::Update {
                 names,
                 latest: opts.latest,
@@ -423,7 +431,7 @@ pub(crate) fn update_from_lockfile(
     lockfile: &str,
     ws: &Workspace,
 ) -> Result<()> {
-    if planned.unmatched.is_empty() {
+    if planned.unmatched.is_empty() && !planned.bare_scope {
         return Ok(());
     }
     let reach = |path: &str| -> HashSet<String> {
@@ -461,6 +469,11 @@ pub(crate) fn update_from_lockfile(
         scoped.extend(reach(t));
     }
     let mut extra: Vec<String> = Vec::new();
+    if planned.bare_scope {
+        let mut reached: Vec<String> = scoped.iter().cloned().collect();
+        reached.sort();
+        extra.extend(reached);
+    }
     for pat in std::mem::take(&mut planned.unmatched) {
         let in_lock: Vec<String> = graph
             .map(|g| {
@@ -519,6 +532,11 @@ pub(crate) fn update_from_lockfile(
         }
     }
     Ok(())
+}
+
+/// Whether the package at `workspace` declares `name` in peerDependencies only.
+pub(crate) fn declared_as_peer_only(ws: &Workspace, workspace: &str, name: &str) -> bool {
+    declared_group(manifest_of(ws, workspace), name) == Some(DependencyGroup::Peer)
 }
 
 /// The declared literal of `name` in the package at `workspace`.

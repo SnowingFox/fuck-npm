@@ -97,6 +97,39 @@ pub(crate) fn changes(
     (added, updated, removed)
 }
 
+/// `update`: the packages that moved anywhere in the graph, by name, for the names whose
+/// one version before became one other version (transitive dependencies get `^` rows too).
+pub(crate) fn moved(previous: &LockGraph, next: &LockGraph) -> Vec<UpdatedPackage> {
+    let versions = |g: &LockGraph| {
+        let mut by_name: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for p in g.packages.iter().skip(1) {
+            if let Some(v) = p.resolution.npm_version() {
+                by_name
+                    .entry(p.name.clone())
+                    .or_default()
+                    .insert(v.to_owned());
+            }
+        }
+        by_name
+    };
+    let (before, after) = (versions(previous), versions(next));
+    let mut out = Vec::new();
+    for (name, new) in &after {
+        let Some(old) = before.get(name) else {
+            continue;
+        };
+        if old.len() == 1 && new.len() == 1 && old != new {
+            out.push(UpdatedPackage {
+                name: name.clone(),
+                from: old.iter().next().cloned().unwrap_or_default(),
+                to: new.iter().next().cloned().unwrap_or_default(),
+                available_version: None,
+            });
+        }
+    }
+    out
+}
+
 /// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
 /// run wrote (`written`, per package id), workspace links excluded, by name.
 pub(crate) fn installed_direct(
