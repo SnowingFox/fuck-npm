@@ -486,7 +486,11 @@ async fn remote(
     let known = integrity.or_else(|| {
         inner
             .reuse_unpinned
-            .then(|| inner.store.integrity_for_url(name, version, url))
+            .then(|| {
+                inner
+                    .store
+                    .integrity_for_url(&inner.cache_dir, name, version, url)
+            })
             .flatten()
     });
     if let Some(hit) = cached(inner, name, version, known) {
@@ -540,7 +544,9 @@ async fn remote(
                 .await
                 .map_err(FetchFailure::from)?;
             if inner.reuse_unpinned {
-                inner.store.remember_url(name, version, url, &key.integrity);
+                inner
+                    .store
+                    .remember_url(&inner.cache_dir, name, version, url, &key.integrity);
             }
             Ok(Fetched { entry, key })
         }
