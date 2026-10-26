@@ -119,6 +119,9 @@ pub struct RunOptions {
     pub env: Vec<(String, String)>,
     pub silent: bool,
     pub project_dir: PathBuf,
+    /// Each job whose scripts all exited 0 appends its directory (one line) to this file, so
+    /// the next install can run what an interrupted or failed run did not finish.
+    pub completed_log: Option<PathBuf>,
 }
 
 impl RunOptions {
@@ -130,6 +133,7 @@ impl RunOptions {
             env: Vec::new(),
             silent: false,
             project_dir: project_dir.into(),
+            completed_log: None,
         }
     }
 }

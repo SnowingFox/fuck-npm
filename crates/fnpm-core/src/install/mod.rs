@@ -288,6 +288,7 @@ fn prepare_with_patch(
         && opts.patch.is_none()
         && opts.manifest_updates.is_empty()
         && opts.interactive_choices.is_none()
+        && !scripts_pending_path(&project.root_dir).exists()
         && let Check::Noop { packages, installs } =
             fast_path::check(&project.root_dir, &project.meta_dir(), hash)
     {
@@ -2203,12 +2204,16 @@ async fn run_scripts(
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
+    let pending = scripts_pending(&root);
     let locate = |id: PackageId| -> Option<PathBuf> {
         let p = graph.get(id)?;
         match &p.resolution {
             Resolution::Root => Some(root.clone()),
             Resolution::Workspace { path } => Some(root.join(path)),
-            _ => dirs.get(&id).cloned(),
+            _ => dirs
+                .get(&id)
+                .cloned()
+                .or_else(|| pending.get(&p.key()).filter(|d| d.is_dir()).cloned()),
         }
     };
     let policy = TrustPolicy::from_graph(graph, trust_names.iter().cloned());
@@ -2234,12 +2239,29 @@ async fn run_scripts(
     if plan.jobs.is_empty() {
         return Ok(blocked);
     }
+    // The jobs of this run are recorded before they start and crossed off as they finish:
+    // after a failure, the next install runs what did not finish (bun), even for packages it
+    // does not write again.
+    let pending_file = scripts_pending_path(&root);
+    let mut record = String::new();
+    for job in &plan.jobs {
+        if let Some(p) = graph.get(job.package) {
+            record.push_str(&format!("{}\t{}\n", p.key(), job.dir.display()));
+        }
+    }
+    let done_file = pending_file.with_extension("done");
+    let _ = std::fs::remove_file(&done_file);
+    if let Some(parent) = pending_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&pending_file, record);
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
         shell: None,
         env: Vec::new(),
         silent: config.log_level == fnpm_config::LogLevel::Silent,
         project_dir: root.clone(),
+        completed_log: Some(done_file.clone()),
     };
     let cleanup = |failed: &Path| -> std::io::Result<()> {
         let Some(id) = linked
@@ -2302,9 +2324,48 @@ async fn run_scripts(
         }
         Ok(())
     };
-    fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
-        .await?;
+    let result =
+        fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
+            .await;
+    if result.is_ok() {
+        let _ = std::fs::remove_file(&pending_file);
+    } else {
+        // Keep only what did not finish.
+        let finished: HashSet<String> = std::fs::read_to_string(&done_file)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        let left: String = std::fs::read_to_string(&pending_file)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| {
+                l.split_once('\t')
+                    .is_none_or(|(_, dir)| !finished.contains(dir))
+            })
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let _ = std::fs::write(&pending_file, left);
+    }
+    let _ = std::fs::remove_file(&done_file);
+    result?;
     Ok(blocked)
+}
+
+/// `node_modules/.fnpm-scripts-pending`: `<package key>\t<dir>` lines of the lifecycle jobs a
+/// failed run did not finish.
+fn scripts_pending_path(root: &Path) -> PathBuf {
+    root.join("node_modules").join(".fnpm-scripts-pending")
+}
+
+/// The unfinished jobs of a previous run, by package key.
+fn scripts_pending(root: &Path) -> HashMap<String, PathBuf> {
+    std::fs::read_to_string(scripts_pending_path(root))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(k, d)| (k.to_owned(), PathBuf::from(d)))
+        .collect()
 }
 
 /// Remove isolated aliases and their bins while the failed package still exists, so realpath
