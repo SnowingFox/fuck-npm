@@ -56,6 +56,9 @@ pub(crate) struct Planned {
     pub scope: (Vec<String>, bool),
     /// A bare `update` limited to some workspaces: what they reach in the lockfile moves too.
     pub bare_scope: bool,
+    /// `update <glob>` and `update !<name|glob>`: matching transitive packages move (or stay).
+    pub globs: Vec<String>,
+    pub negations: Vec<String>,
 }
 
 fn manifest_of<'a>(ws: &'a Workspace, path: &str) -> &'a PackageJson {
@@ -202,6 +205,8 @@ pub(crate) fn plan(
         unmatched: Vec::new(),
         scope: (Vec::new(), false),
         bare_scope: false,
+        globs: Vec::new(),
+        negations: Vec::new(),
     };
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
@@ -404,6 +409,12 @@ pub(crate) fn plan(
                     planned.unmatched.push(pat.clone());
                 }
             }
+            planned.globs = patterns
+                .iter()
+                .filter(|p| p.contains('*'))
+                .cloned()
+                .collect();
+            planned.negations = negations.clone();
             if !negations.is_empty() && patterns.is_empty() && names.is_empty() {
                 // Everything was left out: an update of nothing.
                 names.push(String::new());
@@ -451,7 +462,11 @@ pub(crate) fn update_from_lockfile(
     lockfile: &str,
     ws: &Workspace,
 ) -> Result<()> {
-    if planned.unmatched.is_empty() && !planned.bare_scope {
+    if planned.unmatched.is_empty()
+        && !planned.bare_scope
+        && planned.globs.is_empty()
+        && planned.negations.is_empty()
+    {
         return Ok(());
     }
     let reach = |path: &str| -> HashSet<String> {
@@ -489,6 +504,21 @@ pub(crate) fn update_from_lockfile(
         scoped.extend(reach(t));
     }
     let mut extra: Vec<String> = Vec::new();
+    let negated = |n: &str| planned.negations.iter().any(|p| name_matches(p, n));
+    let mut reached: Vec<&String> = scoped.iter().collect();
+    reached.sort();
+    // A glob reaches the transitive packages it matches; negations alone select the rest.
+    for glob in &planned.globs {
+        extra.extend(
+            reached
+                .iter()
+                .filter(|n| name_matches(glob, n) && !negated(n))
+                .map(|n| (*n).clone()),
+        );
+    }
+    if !planned.negations.is_empty() && planned.globs.is_empty() {
+        extra.extend(reached.iter().filter(|n| !negated(n)).map(|n| (*n).clone()));
+    }
     if planned.bare_scope {
         let mut reached: Vec<String> = scoped.iter().cloned().collect();
         reached.sort();
@@ -545,6 +575,9 @@ pub(crate) fn update_from_lockfile(
         extra.extend(hits);
     }
     if let Mode::Update { names, .. } = &mut planned.mode {
+        if !extra.is_empty() {
+            names.retain(|n| !n.is_empty());
+        }
         for n in extra {
             if !names.contains(&n) {
                 names.push(n);

@@ -596,6 +596,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     if out.failed_requests.iter().any(named) {
         return Err(Error::Reported);
     }
+    // `update --frozen-lockfile` may resolve, but not change the lockfile.
+    if config.frozen_lockfile && opts.command == InstallCommand::Update && out.changed {
+        return Err(Error::Resolve(fnpm_resolver::Error::FrozenLockfile {
+            changes: Vec::new(),
+        }));
+    }
     phases.mark("resolve");
     let ResolveOutput {
         mut graph,
@@ -655,6 +661,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     if opts.command != InstallCommand::Update {
         updated.clear();
     } else if let Some(previous) = lock.graph.as_ref() {
+        // The direct dependencies' rows come first, then the transitive ones (bun), by name.
         for row in summary::moved(previous, &graph) {
             // A package that just became a direct dependency is reported as added.
             if !updated.iter().any(|u| u.name == row.name)
@@ -663,7 +670,6 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 updated.push(row);
             }
         }
-        updated.sort_by(|a, b| a.name.cmp(&b.name));
     }
     for pkg in &mut updated {
         pkg.available_version =
