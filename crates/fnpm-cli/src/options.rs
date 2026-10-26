@@ -124,7 +124,7 @@ fn parse_concurrent_scripts(value: Option<&str>) -> Option<usize> {
 }
 
 /// bun's `parse_seconds`: the whole value is a number of seconds, or digits and a unit (`90m`,
-/// `12 hours`, `3d`, `2 weeks`). Returns milliseconds; `None` for 0 (no gate).
+/// `12 hours`, `3d`, `2 weeks`). Returns milliseconds; `0` turns off a configured gate.
 pub fn parse_release_age(value: Option<&str>) -> Result<Option<u64>, CliError> {
     let Some(value) = value else {
         return Ok(None);
@@ -135,13 +135,11 @@ pub fn parse_release_age(value: Option<&str>) -> Result<Option<u64>, CliError> {
         ))
     })?;
     let ms = (seconds * 1000.0).round();
-    Ok(if ms == 0.0 {
-        None
-    } else if ms >= u64::MAX as f64 {
-        Some(u64::MAX)
+    Ok(Some(if ms >= u64::MAX as f64 {
+        u64::MAX
     } else {
-        Some(ms as u64)
-    })
+        ms as u64
+    }))
 }
 
 /// `--cpu` / `--os` / `--libc`: repeatable, comma-separated, `*` / `any` / `none`, `!name`.

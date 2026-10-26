@@ -97,7 +97,7 @@ function parseNumber(text: string): number | undefined {
 
 /**
  * bun's parse_seconds: the whole value is a number of seconds, or digits and a unit (`90m`,
- * `12 hours`, `3d`, `2 weeks`). Returns ms.
+ * `12 hours`, `3d`, `2 weeks`). Returns ms; 0 turns off a configured gate.
  */
 export function parseReleaseAge(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
@@ -112,8 +112,8 @@ export function parseReleaseAge(value: string | undefined): number | undefined {
   if (seconds === undefined || !(seconds >= 0) || !Number.isFinite(seconds)) {
     throw invalid(`Expected --minimum-release-age to be a positive number: ${value}`);
   }
-  const ms = Math.round(seconds * 1000);
-  return ms === 0 ? undefined : ms;
+  // 0 turns off a gate bunfig.toml or .npmrc configured.
+  return Math.round(seconds * 1000);
 }
 
 /**
