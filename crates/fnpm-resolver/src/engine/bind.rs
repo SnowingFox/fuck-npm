@@ -1187,14 +1187,41 @@ impl Engine<'_> {
             let pj = self
                 .fetcher
                 .read_package_json(&abs)
-                .map_err(Error::Registry)?
-                .ok_or_else(|| Error::MissingPackageJson {
-                    name: edge.name.clone(),
-                    message: format!(
-                        "package.json not found for \"file:{path}\" dependency \"{}\"",
-                        edge.name
-                    ),
-                })?;
+                .map_err(Error::Registry)?;
+            // A folder the lockfile has but that is gone keeps its locked package: the install
+            // reports it as failed and goes on with the rest (bun).
+            if pj.is_none()
+                && let Some(prev) = self.prev
+                && let Some(&prev_id) = self
+                    .prev_by_key
+                    .get(&Package::new(edge.name.clone(), "", resolution.clone()).key())
+            {
+                if let Some(&existing) = self.imported.get(&prev_id) {
+                    self.set_target(row, existing);
+                    return Ok(Step::Done);
+                }
+                let mut package = prev.packages[prev_id.index()].clone();
+                for e in &mut package.dependencies {
+                    e.target = None;
+                }
+                let mut state = PState::new(Kind::Folder, Version::parse(&package.version).ok());
+                state.dir = Some(abs);
+                state.local_declarer = true;
+                state.optional_only = owner.optional_only || edge.behavior.is_optional();
+                state.prev = Some(prev_id);
+                let id = self.add_package(package, state);
+                self.imported.insert(prev_id, id);
+                self.set_target(row, id);
+                self.push_rows(id, false);
+                return Ok(Step::Done);
+            }
+            let pj = pj.ok_or_else(|| Error::MissingPackageJson {
+                name: edge.name.clone(),
+                message: format!(
+                    "package.json not found for \"file:{path}\" dependency \"{}\"",
+                    edge.name
+                ),
+            })?;
             let mut package = local::package_from_json(&pj, &edge.name, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);

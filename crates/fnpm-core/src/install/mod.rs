@@ -1538,6 +1538,8 @@ async fn link(
         &root,
     );
     let mut failed = 0u32;
+    // Edges detached from a required package that could not be placed (see below).
+    let mut unplaced: Vec<(usize, usize, PackageId)> = Vec::new();
     let mut offline_missing = false;
     loop {
         let policy = Arc::new(TrustPolicy::from_graph(graph, trust_names.iter().cloned()));
@@ -1760,6 +1762,9 @@ async fn link(
         match result {
             Ok(_) if offline_missing => return Err(Error::Reported),
             Ok(report) => {
+                for (pi, ei, id) in unplaced {
+                    graph.packages[pi].dependencies[ei].target = Some(id);
+                }
                 return Ok(Linked {
                     report,
                     linker: kind,
@@ -1781,6 +1786,29 @@ async fn link(
                             for e in &mut p.dependencies {
                                 if e.target == Some(id) {
                                     e.target = None;
+                                }
+                            }
+                        }
+                        failed += 1;
+                    }
+                    // bun reports a folder dependency it cannot read and installs the rest;
+                    // the summary counts it as failed and the command exits 1.
+                    Some(id)
+                        if matches!(
+                            graph.packages[id.index()].resolution,
+                            Resolution::Folder { .. }
+                        ) && failed < 256 =>
+                    {
+                        events.emit(Event::Error {
+                            message: format!("{package}: {message}"),
+                            code: Some("INSTALL_FAILED".into()),
+                        });
+                        // Linked without it; the lockfile keeps it.
+                        for (pi, p) in graph.packages.iter_mut().enumerate() {
+                            for (ei, e) in p.dependencies.iter_mut().enumerate() {
+                                if e.target == Some(id) {
+                                    e.target = None;
+                                    unplaced.push((pi, ei, id));
                                 }
                             }
                         }
