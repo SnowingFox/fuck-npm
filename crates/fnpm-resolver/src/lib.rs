@@ -351,6 +351,7 @@ impl Resolver {
             && let Some(prev) = previous
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
+            && !dedupe::overrides_unmet(prev)
         {
             return self.unchanged(workspace, prev, tx, events, warnings);
         }
