@@ -894,7 +894,16 @@ describe.each(linkers)("linker: %s", linker => {
       );
       expect(await file(manifest).json()).toMatchObject({ version });
       const script = "require('no-deps/package.json').version";
-      expect(await spawnBun(packageDir, ["--no-install", "-p", script], app)).toEqual({
+      // Porting: `bun --no-install -p` is Bun's runtime, which fnpm is not; Node evaluates the same lookup.
+      await using proc = Bun.spawn({
+        cmd: [process.execPath, "-p", script],
+        cwd: app,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+      expect({ stdout, stderr, exitCode }).toEqual({
         stdout: `${version}\n`,
         stderr: "",
         exitCode: 0,
