@@ -48,9 +48,15 @@ normal and `--ignore-scripts` installs on both macOS and Windows architectures a
 on x64/ARM64. They verify versions/help, addon loading, a local tarball dependency, and
 offline/no-op/frozen reinstalls. Windows smoke exposed a positional parser that replaced paired
 backslashes instead of individual separators; the repair and its native regression tests pass.
-All ten npm tarballs were also packed and dry-run published from macOS, where the native preview
-was installed and exercised. Public npm publication is still blocked by local authentication and
-an owned package namespace; other package-manager installation tests and full conformance remain.
+The scoped `@tiktok-fe/fnpm@0.0.1` and its binding/platform packages were later
+published through bnpm. The `fnpm@0.0.2` candidate targets public npm with one
+package, eight GitHub native archives, embedded SHA-512 verification and
+postinstall or first-use installation. Its
+[CI run](https://github.com/SnowingFox/fuck-npm/actions/runs/40294225393) passed
+all 21 jobs, including installed tarball smoke on all eight targets with scripts
+enabled and disabled. Public npm authentication and final registry publication
+remain pending; see [RELEASING.md](RELEASING.md). Other package-manager registry
+installs and full conformance remain open.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
@@ -112,7 +118,7 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
 | fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (command groups integrated; conformance gaps remain) |
 | fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done; all eight release addon builds and native smoke tests pass in the recorded main CI run |
-| fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
+| fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; native release archives ship the executables in P6) |
 | Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
 | Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | done (`bench/results/2026-10-25-linux-x64.md`: small, all scenarios; medium warm/noop/ci/cold-lockfile) |
 
@@ -275,10 +281,10 @@ reviewed, and all PARITY.md rows outside "Excluded" ticked.
 |---|---|
 | CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | partial; selected store/binding/patch tests, strict Clippy and binding/adapter JS tests pass on native Linux/macOS/Windows; full suites and btrfs remain |
 | Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | done: [00ec69f run](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514) passed all eight complete builds and eight installed npm tarball smokes |
-| npm CLI, binding and eight platform packages; postinstall swap and JS shim fallback | staging, complete native artifacts, tarball validation, native swap and shim install paths verified; unscoped name is occupied; npm authentication/owned namespace and public publication remain |
+| Single npm CLI package with native archive postinstall and first-use shim fallback | implemented for `fnpm@0.0.2`: one package, eight native archives, embedded SHA-512, no npm dependencies; staged normal/disabled-script installs pass on all eight targets; public npm publication pending |
 | Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | native executables and addon build on x64/ARM64; installed JS shim launching native binaries passes both npm smoke jobs; selected store/patch/binding tests pass; full bin conformance and other package-manager installs remain |
 | Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | staged npm tarballs pass normal and `--ignore-scripts` smoke on all eight targets; local macOS ARM64 native preview verified; published-package and other-manager checks remain |
-| Publish dry run, then the first release (manual authentication on release machine) | all ten tarballs packed and publish dry run passed on macOS; authentication/owned namespace still required; no npm package published yet; see [RELEASING.md](RELEASING.md) |
+| Publish dry run, then the first release (manual authentication on release machine) | scoped `0.0.1` published through bnpm; public `fnpm@0.0.2` candidate uses one package and eight GitHub assets; final npm authentication/publication pending; see [RELEASING.md](RELEASING.md) |
 
 Exit criteria:
 

@@ -96,7 +96,16 @@ The earlier `@snowingfox` candidate returned a scope-permission error; the later
 `@tiktok-fe` publication succeeded. Existing `0.0.1` packages remain unchanged.
 
 `fnpm@0.0.2` targets public npm with the single-package layout above. The four
-commands, including `fnpx`, belong to that one package. Publication and
+commands, including `fnpx`, belong to that one package.
+[CI run 40294225393](https://github.com/SnowingFox/fuck-npm/actions/runs/40294225393)
+passed all 21 jobs at native artifact source `e64f2878de3a4ddbe80a4169a46736b930c9b343`.
+The release-name and documentation commit `ab814fccf499e563f611f4993efcd8db00968121`
+has identical CLI and Rust sources. Local CLI verification passed 677 tests in
+normal and no-color modes, type checking, bundle build and four Rust CLI fixture
+tests. Windows archive creation streams tar bytes to avoid drive-letter parsing.
+The public npm identity check currently requires renewed local authentication;
+`fnpm` metadata reports a historical unpublish, which does not establish name
+ownership. Publication and
 fresh-registry verification must complete before treating a candidate as released.
 Full Bun conformance and the strict speed gate remain separate open requirements;
 see [ROADMAP.md](ROADMAP.md).

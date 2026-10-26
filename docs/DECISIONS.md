@@ -161,3 +161,21 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   package's files with its `pkgs/` entry (files still hard linked into some `node_modules`
   stay there). Recovery of an incomplete entry pins it before checking and deleting children,
   so cleanup cannot recursively delete another importer's completed replacement.
+
+
+## 7. Single npm package with native release assets
+
+2026-10-26. Supersedes the platform npm package delivery described in decisions 1 and 2;
+the Rust core, napi bridge and native launcher remain the same.
+
+- **Decision:** publish only `fnpm` on public npm. Postinstall downloads the matching ABI
+  archive from GitHub Releases, validates its SHA-512 against the manifest embedded in
+  the npm tarball, checks both executable versions and installs the addon and launchers.
+  With scripts disabled, first execution downloads before launching.
+- **Why:** one registry package is the installation and versioning boundary. Users download
+  bytes for their own platform without binding or platform npm dependencies. `fnpx`,
+  `fnpmx` and `fnpm-lock` are bins in that same package.
+- **Cost:** installation or first use needs GitHub asset access as well as the npm registry.
+  Windows, pnpm and Yarn Berry retain Node shims because their bin wrappers invoke Node.
+  Mirrors must serve the exact pinned archive bytes. The release must upload assets before
+  publishing the npm tarball. See [RELEASING.md](RELEASING.md) for current release status.
