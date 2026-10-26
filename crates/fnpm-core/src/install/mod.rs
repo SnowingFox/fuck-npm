@@ -285,6 +285,9 @@ fn prepare_with_patch(
         && !opts.pm.trust
         && config.install_packages
         && config.security_scanner.is_none()
+        // `--save-text-lockfile` turns bun.lockb into fnpm.lock, even on a no-op install.
+        && !(config.save_text_lockfile == Some(true)
+            && project.root_dir.join(fnpm_lockfile::BUN_LOCKB).exists())
         && opts.patch.is_none()
         && opts.manifest_updates.is_empty()
         && opts.interactive_choices.is_none()

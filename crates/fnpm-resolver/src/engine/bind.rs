@@ -286,7 +286,14 @@ impl Engine<'_> {
             Err(e) => return self.fail(row, &edge, e),
         };
         let alias_ok = alias_is_safe_install_target(&edge.name);
-        if !alias_ok || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name)) {
+        // A range that links a workspace never asks the registry (bun turns it into a
+        // `workspace:` dependency when it parses package.json), so any workspace name passes.
+        let registry_name_ok = || {
+            !asked.spec.tag().is_npm()
+                || is_npm_package_name(&asked.name)
+                || self.linked_workspace(&asked).is_some()
+        };
+        if !alias_ok || !registry_name_ok() {
             let bad = if alias_ok { &asked.name } else { &edge.name };
             let err = Error::InvalidName {
                 name: fnpm_types::text::escape_control_chars(&edge.name),
