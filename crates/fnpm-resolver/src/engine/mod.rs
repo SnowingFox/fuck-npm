@@ -154,6 +154,8 @@ pub(crate) struct Engine<'a> {
     pub remote_turns: VecDeque<String>,
     pub remote: HashMap<String, RState>,
     pub remote_waiters: HashMap<String, Vec<Row>>,
+    /// Remote packages whose turn is queued (a download started ahead has none yet).
+    pub remote_turned: HashSet<String>,
     pub manifest_state: HashMap<String, MState>,
     pub done_tx: mpsc::UnboundedSender<Completion>,
     pub done_rx: mpsc::UnboundedReceiver<Completion>,
@@ -311,6 +313,7 @@ impl<'a> Engine<'a> {
             remote_turns: VecDeque::new(),
             remote: HashMap::new(),
             remote_waiters: HashMap::new(),
+            remote_turned: HashSet::new(),
             manifest_state: HashMap::new(),
             done_tx,
             done_rx,
@@ -831,7 +834,12 @@ impl<'a> Engine<'a> {
             }
             Completion::Remote(key, result) => {
                 let state = match result {
-                    Ok(r) => RState::Ready(r),
+                    Ok(r) => {
+                        // Its turn may wait for an earlier tarball: what it depends on is
+                        // requested now, like bun, so that one's download is not in its way.
+                        self.follow_remote_ahead(&r.1.manifest);
+                        RState::Ready(r)
+                    }
                     Err(e) => RState::Failed(Arc::new(e)),
                 };
                 self.remote.insert(key, state);

@@ -1502,22 +1502,48 @@ impl Engine<'_> {
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
-            Some(RState::Failed(e)) => return Err(Error::Registry(clone_registry_error(e))),
+            Some(RState::Failed(e)) if self.remote_turned.contains(&key) => {
+                return Err(Error::Registry(clone_registry_error(e)));
+            }
+            // In flight, or downloaded ahead of its turn ([`Engine::fetch_remote_ahead`]).
             Some(_) => {
+                if self.remote_turned.insert(key.clone()) {
+                    self.remote_turns.push_back(key.clone());
+                }
                 self.remote_waiters.entry(key).or_default().push(row);
                 return Ok(Step::Done);
             }
             None => {}
         }
-        self.remote.insert(key.clone(), RState::Pending);
+        self.remote_turned.insert(key.clone());
         self.remote_turns.push_back(key.clone());
         self.remote_waiters
             .entry(key.clone())
             .or_default()
             .push(row);
+        self.start_remote(key, kind, edge.name.clone());
+        Ok(Step::Done)
+    }
+
+    /// Starts downloading the git / tarball package a project row declares before the row's
+    /// turn: what it depends on is only known from it. Its turn still comes in queue order.
+    pub(crate) fn fetch_remote_ahead(&mut self, row: Row, edge: &DepEdge, asked: &Asked) {
+        let Ok(kind) = self.remote_kind(row, edge, asked) else {
+            return;
+        };
+        let key = Self::remote_key(&kind);
+        if self.remote.contains_key(&key)
+            || (!self.should_update(row, edge, asked) && self.locked_remote(&kind).is_some())
+        {
+            return;
+        }
+        self.start_remote(key, kind, edge.name.clone());
+    }
+
+    fn start_remote(&mut self, key: String, kind: RemoteKind, name: String) {
+        self.remote.insert(key.clone(), RState::Pending);
         let fetcher = self.fetcher.clone();
         let tx = self.done_tx.clone();
-        let name = edge.name.clone();
         self.in_flight += 1;
         tokio::spawn(async move {
             let result = async {
@@ -1606,7 +1632,6 @@ impl Engine<'_> {
             .await;
             let _ = tx.send(Completion::Remote(key, result));
         });
-        Ok(Step::Done)
     }
 
     /// The turn of a git / tarball package: create it and bind every dependency waiting for it.
