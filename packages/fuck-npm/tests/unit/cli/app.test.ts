@@ -275,10 +275,17 @@ describe("update --interactive", () => {
 
 describe("generic commands", () => {
   test("lines go to stdout in plain mode", async () => {
+    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["dep@1.0.0"] }) } });
+
+    expect(await bed.run(["pm", "ls"])).toBe(0);
+    expect(bed.stdout.text()).toBe("dep@1.0.0\n");
+  });
+
+  test("pm cache prints the directory without a newline, like bun", async () => {
     const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["/home/u/.fnpm/cache"] }) } });
 
     expect(await bed.run(["pm", "cache"])).toBe(0);
-    expect(bed.stdout.text()).toBe("/home/u/.fnpm/cache\n");
+    expect(bed.stdout.text()).toBe("/home/u/.fnpm/cache");
   });
 
   test("data becomes the --json payload and the exit code is the core's", async () => {
