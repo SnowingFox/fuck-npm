@@ -1,7 +1,7 @@
 import { createColors } from "picocolors";
 import type { CoreEvent, EventSink } from "../core/types.ts";
 import type { CliRuntime } from "../runtime/types.ts";
-import { colorEnabled } from "./output.ts";
+import { colorEnabled, escapeControlInLines } from "./output.ts";
 
 export const THROTTLE_MS = 50;
 export const HEARTBEAT_MS = 100;
@@ -167,8 +167,8 @@ export function createProgress(runtime: CliRuntime): Progress {
         outputActive = event.active;
         if (outputActive) { pending?.cancel(); pending = undefined; clear(); }
         break;
-      case "warn": above(`${pc.yellow("warn:")} ${event.message}`); return;
-      case "error": above(`${pc.red("error:")} ${event.message}`); return;
+      case "warn": above(`${pc.yellow("warn:")} ${escapeControlInLines(event.message)}`); return;
+      case "error": above(`${pc.red("error:")} ${escapeControlInLines(event.message)}`); return;
       case "notice": above(pc.dim(event.message)); return;
       case "status":
       case "summary": return;
@@ -185,8 +185,8 @@ export function diagnosticsSink(runtime: CliRuntime, silent: boolean): EventSink
   const pc = createColors(colorEnabled(runtime, runtime.stderrIsTTY));
   return (event) => {
     if (silent) return;
-    if (event.type === "warn") runtime.stderr.write(`${pc.yellow("warn:")} ${event.message}\n`);
-    else if (event.type === "error") runtime.stderr.write(`${pc.red("error:")} ${event.message}\n`);
+    if (event.type === "warn") runtime.stderr.write(`${pc.yellow("warn:")} ${escapeControlInLines(event.message)}\n`);
+    else if (event.type === "error") runtime.stderr.write(`${pc.red("error:")} ${escapeControlInLines(event.message)}\n`);
     else if (event.type === "status") runtime.stderr.write(`${event.message}\n`);
     else if (event.type === "notice") runtime.stderr.write(`${pc.dim(event.message)}\n`);
   };

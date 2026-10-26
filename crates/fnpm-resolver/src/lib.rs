@@ -137,8 +137,9 @@ pub enum Error {
         /// bun's message.
         message: String,
     },
-    /// A `patchedDependencies` entry whose patch file cannot be read.
-    #[error("patchedDependencies \"{key}\": {path}: {message}")]
+    /// A `patchedDependencies` entry whose patch file cannot be read. `message` is the whole
+    /// report, in bun's words for a missing file.
+    #[error("{message}")]
     PatchFile {
         /// The `name@version` key.
         key: String,

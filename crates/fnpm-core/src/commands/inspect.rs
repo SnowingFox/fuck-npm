@@ -255,7 +255,16 @@ pub(crate) fn why(cx: &Ctx) -> Result<CoreResult> {
             )],
         ));
     }
-    Ok(ok(json!({ "packages": packages }), lines))
+    Ok(ok(json!({ "packages": packages }), terminal_lines(lines)))
+}
+
+/// Names, versions and specifiers come from package.json files and manifests: escaped for the
+/// terminal as bun prints them (the JSON keeps them as they are).
+fn terminal_lines(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .map(|l| fnpm_types::text::escape_control_chars(&l))
+        .collect()
 }
 
 fn ls_tree(
@@ -355,7 +364,7 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
             .collect();
         return Ok(ok(
             json!({ "dependencies": data, "installed": installed }),
-            lines,
+            terminal_lines(lines),
         ));
     }
     let mut seen = HashSet::new();
@@ -370,7 +379,7 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
     );
     Ok(ok(
         json!({ "dependencies": tree, "installed": installed }),
-        lines,
+        terminal_lines(lines),
     ))
 }
 

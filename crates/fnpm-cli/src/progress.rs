@@ -8,6 +8,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use fnpm_types::text::escape_control_chars_in_lines;
 use fnpm_types::{Event, EventSink};
 
 use crate::color::{Colors, strip_ansi, to_fixed};
@@ -493,10 +494,12 @@ impl Renderer {
                 }
             }
             Event::Warn { message, .. } => {
+                let message = escape_control_chars_in_lines(message);
                 self.above(&format!("{} {message}", self.pc.yellow("warn:")), now, out);
                 return;
             }
             Event::Error { message, .. } => {
+                let message = escape_control_chars_in_lines(message);
                 self.above(&format!("{} {message}", self.pc.red("error:")), now, out);
                 return;
             }
@@ -662,8 +665,17 @@ impl DiagnosticsSink {
     /// The line an event prints, if any.
     pub fn line(&self, event: &Event) -> Option<String> {
         match event {
-            Event::Warn { message, .. } => Some(format!("{} {message}\n", self.pc.yellow("warn:"))),
-            Event::Error { message, .. } => Some(format!("{} {message}\n", self.pc.red("error:"))),
+            // A package, a registry or a config file wrote most of what these say.
+            Event::Warn { message, .. } => Some(format!(
+                "{} {}\n",
+                self.pc.yellow("warn:"),
+                escape_control_chars_in_lines(message)
+            )),
+            Event::Error { message, .. } => Some(format!(
+                "{} {}\n",
+                self.pc.red("error:"),
+                escape_control_chars_in_lines(message)
+            )),
             Event::Status { message } => Some(format!("{message}\n")),
             Event::Notice { message } => Some(format!("{}\n", self.pc.dim(message))),
             _ => None,

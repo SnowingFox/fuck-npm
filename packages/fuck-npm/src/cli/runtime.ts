@@ -5,7 +5,7 @@ import cac from "cac";
 import { errorCode, formatError, SilentError } from "../errors.ts";
 import { loadHandler } from "../commands/index.ts";
 import { createColors } from "picocolors";
-import { colorEnabled, createOutput, resolveMode } from "../output/output.ts";
+import { colorEnabled, createOutput, escapeControlInLines, resolveMode } from "../output/output.ts";
 import type { CliRuntime } from "../runtime/types.ts";
 import { parseFlags } from "./parse-flags.ts";
 import { planInvocation, rejectUnknownFlags, unknownFlagCommand, type Invocation } from "./plan.ts";
@@ -197,7 +197,7 @@ function reportError(
     // The core already printed why.
     return 1;
   }
-  runtime.stderr.write(`error: ${message}\n`);
+  runtime.stderr.write(`error: ${escapeControlInLines(message)}\n`);
   if (error instanceof SilentError && error.code === "UNKNOWN_FLAG") {
     runtime.stderr.write(`note: Run '${unknownFlagCommand(registry, plan?.matched ?? [])} --help' for more information\n`);
   } else if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {
