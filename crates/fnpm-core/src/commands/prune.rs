@@ -229,6 +229,18 @@ fn is_leftover(name: &str) -> bool {
             .any(|prefix| name.starts_with(prefix))
 }
 
+/// A folder (or one of its scopes) holds leftovers of a killed install.
+fn has_leftovers(dir: &Path) -> bool {
+    read_entries(dir, true).iter().any(|(name, is_link)| {
+        name.starts_with('.')
+            || (name.starts_with('@')
+                && !is_link
+                && read_entries(&dir.join(name), true)
+                    .iter()
+                    .any(|(inner, _)| inner.starts_with('.')))
+    })
+}
+
 fn is_dangling(path: &Path) -> bool {
     std::fs::metadata(path).is_err()
 }
@@ -1209,6 +1221,7 @@ fn plan_isolated(
             optional: true,
             peer: true,
             optional_peer: true,
+            follow_workspace_edges: false,
             ..walk
         };
         for (i, w) in full.packages_from(&unselected).into_iter().enumerate() {
@@ -1257,11 +1270,7 @@ fn plan_isolated(
             plan.checked += 1;
             if names.contains(&name) {
                 let nested = join(&join(STORE_DIR, &name), ROOT_DIR);
-                if plan.leftovers
-                    && read_entries(&root.join(&nested), true)
-                        .iter()
-                        .any(|(n, _)| n.starts_with('.'))
-                {
+                if plan.leftovers && has_leftovers(&root.join(&nested)) {
                     let checked = plan.checked;
                     scan_folder(root, (&nested, &nested), false, &|_| true, plan);
                     plan.checked = checked;
@@ -1299,8 +1308,7 @@ fn plan_isolated(
         } else {
             open_workspace_folder(root, &rel, &mut plan.linked_folders).is_some()
         };
-        // A workspace folder with nothing in it is one bun would not have created.
-        if !exists || (id != PackageId::ROOT && read_entries(&root.join(&rel), true).is_empty()) {
+        if !exists {
             continue;
         }
         let mut direct: Vec<String> = own
@@ -1309,6 +1317,10 @@ fn plan_isolated(
             .find(|(pkg, _)| *pkg == id)
             .map(|(_, links)| links.iter().map(|(alias, _)| alias.clone()).collect())
             .unwrap_or_default();
+        // The root's membership rows name every workspace (bun links them from there).
+        if id == PackageId::ROOT {
+            direct.extend(workspace_names.iter().cloned());
+        }
         direct.sort();
         direct.dedup();
         let idx = scan_folder(
@@ -1424,6 +1436,10 @@ fn leads_into_package(nm: &Path, target: &str) -> bool {
 /// build writes the file). Whether one went.
 fn prune_bins(nm: &Path) -> bool {
     let bin = nm.join(".bin");
+    // A symlinked `.bin` is never cleaned through.
+    if !real_dir(&bin) {
+        return false;
+    }
     let Ok(rd) = std::fs::read_dir(&bin) else {
         return false;
     };
@@ -1517,6 +1533,9 @@ fn hand_over_names(
 ) {
     use fnpm_linker::bins::{BinLinker, BinOptions, LinkOrder};
     if lost.is_empty() {
+        if let Layout::Isolated(iso) = layout {
+            relink_hidden_names(plan, iso, graph, root);
+        }
         return;
     }
     let lost_rel: HashSet<&str> = lost
@@ -1554,6 +1573,7 @@ fn hand_over_names(
             }
         }
         (Layout::Isolated(iso), _) => {
+            relink_hidden_names(plan, iso, graph, root);
             for (id, links) in &iso.roots {
                 let rel = if *id == PackageId::ROOT {
                     ROOT_DIR.to_owned()
@@ -1576,6 +1596,50 @@ fn hand_over_names(
             }
         }
         _ => {}
+    }
+}
+
+/// A removed store entry may have held a name in `node_modules/.fnpm/node_modules`: links each
+/// free name the layout hoists there to its entry, when that entry is on disk.
+fn relink_hidden_names(
+    plan: &Plan,
+    iso: &fnpm_linker::IsolatedLayout,
+    graph: &LockGraph,
+    root: &Path,
+) {
+    if !plan
+        .folders
+        .iter()
+        .any(|f| f.touched && f.kind == FolderKind::Store)
+    {
+        return;
+    }
+    let store = root.join(STORE_DIR);
+    let hidden = store.join(ROOT_DIR);
+    if !real_dir(&store) || !real_dir(&hidden) {
+        return;
+    }
+    for (name, entry) in &iso.hidden_hoist {
+        let Some(e) = iso.entries.get(*entry as usize) else {
+            continue;
+        };
+        let p = &graph.packages[e.package.index()];
+        if !extracted(&p.resolution) {
+            continue;
+        }
+        let dest = hidden.join(name);
+        if fsutil::kind(&dest) != Kind::Missing {
+            continue;
+        }
+        let package = store.join(&e.key).join(ROOT_DIR).join(&p.name);
+        if is_dangling(&package) {
+            continue;
+        }
+        #[cfg(unix)]
+        if let Some(parent) = dest.parent() {
+            let _ = std::fs::create_dir_all(parent);
+            let _ = std::os::unix::fs::symlink(fsutil::relative(parent, &package), &dest);
+        }
     }
 }
 
