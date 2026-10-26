@@ -44,12 +44,14 @@ impl PackageJsonEditor {
         self.put_entry(group.field(), name, spec);
     }
 
-    /// Removes `name` from every group, and a group once it is empty; returns whether anything
-    /// changed.
+    /// Removes `name` from every group (each of its keys, when a group repeats it), and a group
+    /// once it is empty; returns whether anything changed.
     pub fn remove_dependency(&mut self, name: &str) -> bool {
         let mut changed = false;
         for group in DependencyGroup::ALL {
-            changed |= self.remove_entry(group.field(), name);
+            while self.remove_entry(group.field(), name) {
+                changed = true;
+            }
         }
         changed
     }

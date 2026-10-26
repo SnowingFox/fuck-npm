@@ -199,7 +199,7 @@ it.concurrent("should update to latest version of dependency", async () => {
       "baz-run": "index.js",
     },
   });
-  await access(join(package_dir, "bun.lockb"));
+  await access(join(package_dir, "fnpm.lock"));
 
   // Perform `fnpm update` with updated registry & lockfile from before
   await rm(join(package_dir, "node_modules"), { force: true, recursive: true });
@@ -234,7 +234,7 @@ it.concurrent("should update to latest version of dependency", async () => {
       baz: "~0.0.5",
     },
   });
-  await access(join(package_dir, "bun.lockb"));
+  await access(join(package_dir, "fnpm.lock"));
 });
 
 it.concurrent("should update to latest versions of dependencies", async () => {
@@ -294,7 +294,7 @@ it.concurrent("should update to latest versions of dependencies", async () => {
       "baz-run": "index.js",
     },
   });
-  await access(join(package_dir, "bun.lockb"));
+  await access(join(package_dir, "fnpm.lock"));
 
   // Perform `fnpm update` with updated registry & lockfile from before
   await rm(join(package_dir, "node_modules"), { force: true, recursive: true });
@@ -339,7 +339,7 @@ it.concurrent("should update to latest versions of dependencies", async () => {
       baz: "~0.0.5",
     },
   });
-  await access(join(package_dir, "bun.lockb"));
+  await access(join(package_dir, "fnpm.lock"));
 });
 
 it.concurrent("lockfile should not be modified when there are no version changes, issue#5888", async () => {
@@ -355,13 +355,13 @@ it.concurrent("lockfile should not be modified when there are no version changes
 
     1 package installed"
   `);
-  const lockb = await readFile(join(ctx.package_dir, "bun.lockb"));
+  const lockb = await readFile(join(ctx.package_dir, "fnpm.lock"));
 
   urls.length = 0;
   for (let i = 0; i < 2; i++) {
     // Nothing moved, so the update must not even save the lockfile again.
     expect((await runUpdate(ctx, [])).err).toBe("");
-    expect(await readFile(join(ctx.package_dir, "bun.lockb"))).toStrictEqual(lockb);
+    expect(await readFile(join(ctx.package_dir, "fnpm.lock"))).toStrictEqual(lockb);
   }
   // Each update did ask the registry, rather than skipping the resolution.
   expect(urls).toEqual([`${ctx.registry_url}baz`, `${ctx.registry_url}baz`]);

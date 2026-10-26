@@ -1238,6 +1238,16 @@ fn package_json_edits(
                 },
             );
             set_edge_literal(graph, &req.workspace, &req.name, None, &literal);
+        } else if opts.group.is_none() {
+            edits.push(
+                &req.workspace,
+                Edit::SetDeclared {
+                    group: req.group,
+                    name: req.name.clone(),
+                    spec: literal.clone(),
+                },
+            );
+            set_edge_literal(graph, &req.workspace, &req.name, None, &literal);
         } else {
             edits.push(
                 &req.workspace,

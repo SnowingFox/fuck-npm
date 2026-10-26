@@ -461,7 +461,7 @@ it("should link dependency without crashing", async () => {
     expect(binContent).toStartWith("#!/usr/bin/env python\nprint");
     expect(binContent).not.toContain("\r\n");
   }
-  await access(join(package_dir, "bun.lockb"));
+  await access(join(package_dir, "fnpm.lock"));
 
   const {
     stdout: stdout3,
