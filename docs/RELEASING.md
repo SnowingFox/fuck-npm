@@ -45,7 +45,9 @@ does not establish permission to publish to its scope.
    ```
 
    This checks authentication and SHA-512 integrity before publishing platforms,
-   then binding, then CLI. npm publication may require browser/2FA authentication.
+   then binding, then CLI. If a run stops, rerun the same command: an existing
+   exact version is skipped only when its registry integrity matches the inspected
+   tarball. A conflicting existing version stops the release. npm publication may require browser/2FA authentication.
    Never put credentials in the release directory or paste them into chat.
 7. Install the actual published CLI name/version from npm in a fresh prefix and
    repeat the smoke. Record the name, version, source commit, Actions run, and
