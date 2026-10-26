@@ -30,6 +30,8 @@ pub(crate) struct LockState {
     pub write_back: Vec<PackageJsonWriteBack>,
     /// Warnings to report.
     pub warnings: Vec<String>,
+    /// bun's report of lockfiles that did not migrate, printed before the warnings.
+    pub failures: Vec<fnpm_types::Event>,
     /// xxh3 of fnpm.lock when the graph came from it.
     pub hash: Option<u64>,
     /// The sidecar ([`sidecar_path`]) was not fresh, so it should be written from
@@ -70,6 +72,104 @@ fn foreign_options<'a>(config: &Config, files: &'a DiskFiles) -> foreign::Migrat
     o.link_workspace_packages = config.link_workspace_packages;
     o.frozen = config.frozen_lockfile;
     o
+}
+
+/// Why a foreign lockfile did not migrate, in bun's terms.
+pub(crate) struct Failure {
+    /// bun's error name (`InvalidNPMLockfile`, `InvalidLockfile`, ...).
+    tag: &'static str,
+    /// The reason bun logs before the name, if it logs one.
+    reason: Option<String>,
+    /// An unsupported `lockfileVersion`: the sentence and the command that upgrades the file.
+    unsupported: Option<(String, &'static str)>,
+}
+
+impl Failure {
+    pub(crate) fn of(name: &str, bytes: &[u8], e: &fnpm_lockfile::Error) -> Self {
+        let message = match e {
+            fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
+            other => other.to_string(),
+        };
+        let text = String::from_utf8_lossy(bytes);
+        let tag = match name {
+            "pnpm-lock.yaml" => "InvalidLockfile",
+            "yarn.lock" if text.contains("__metadata") => "InvalidYarnBerryLockfile",
+            "yarn.lock" if !text.contains("# yarn lockfile v1") => "UnsupportedYarnLockfileVersion",
+            "yarn.lock" => "InvalidYarnLockfile",
+            _ => "InvalidNPMLockfile",
+        };
+        let upgrade = if name == "pnpm-lock.yaml" {
+            "pnpm install --lockfile-only"
+        } else {
+            "npm install --package-lock-only --lockfile-version=3"
+        };
+        let unsupported = message.contains("unsupported lockfileVersion").then(|| {
+            let sentence = message.split(" (run `").next().unwrap_or(&message);
+            (sentence.to_owned(), upgrade)
+        });
+        // bun names the npm and yarn v1 parsers' failures without a reason.
+        let reason = (!message.starts_with(tag) && tag != "UnsupportedYarnLockfileVersion")
+            .then_some(message);
+        Self {
+            tag,
+            reason,
+            unsupported,
+        }
+    }
+
+    /// The error a command that cannot go on without the lockfile reports (`pm migrate`, a
+    /// frozen install); `install` names the file.
+    pub(crate) fn error(&self, name: &str, install: bool) -> Error {
+        if let Some((sentence, upgrade)) = &self.unsupported {
+            return Error::usage(format!("{sentence}\nnote: {upgrade}"));
+        }
+        let failed = if install {
+            format!("{}: failed to migrate lockfile: '{name}'", self.tag)
+        } else {
+            format!("error: failed to migrate lockfile: {}", self.tag)
+        };
+        Error::usage(match &self.reason {
+            Some(reason) => format!("{reason}\n{failed}"),
+            None => failed,
+        })
+    }
+
+    /// What an install that goes on without it prints: `next` is tried, or package.json resolved.
+    fn report(&self, name: &str, next: Option<&str>, out: &mut Vec<fnpm_types::Event>) {
+        use fnpm_types::Event;
+        match (&self.unsupported, next) {
+            (Some((sentence, _)), Some(next)) => {
+                out.push(Event::warn(format!("{sentence}, trying {next}"), None));
+            }
+            (Some((sentence, upgrade)), None) => {
+                out.push(Event::warn(
+                    format!("{sentence}, resolving from package.json"),
+                    None,
+                ));
+                out.push(Event::notice(format!("note: {upgrade}")));
+            }
+            (None, Some(next)) => {
+                if let Some(reason) = &self.reason {
+                    out.push(Event::notice(format!("error: {reason}")));
+                }
+                out.push(Event::warn(
+                    format!("cannot migrate {name} ({}), trying {next}", self.tag),
+                    None,
+                ));
+            }
+            (None, None) => {
+                if let Some(reason) = &self.reason {
+                    out.push(Event::notice(format!("error: {reason}")));
+                }
+                out.push(Event::notice(format!(
+                    "{}: failed to migrate lockfile: '{name}'",
+                    self.tag
+                )));
+                out.push(Event::notice(String::new()));
+                out.push(Event::warn("Ignoring lockfile".to_owned(), None));
+            }
+        }
+    }
 }
 
 /// The foreign lockfiles, in bun's order.
@@ -158,17 +258,10 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
                 state.write_back = write_back;
                 return Ok(state);
             }
-            Err(e) if config.frozen_lockfile && next.is_none() => return Err(e.into()),
-            Err(e) => {
-                let detail = match &e {
-                    fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
-                    other => other.to_string(),
-                };
-                state.warnings.push(match next {
-                    Some(next) => format!("cannot migrate {name} ({detail}), trying {next}"),
-                    None => format!("cannot migrate {name} ({detail})"),
-                });
+            Err(e) if config.frozen_lockfile && next.is_none() => {
+                return Err(Failure::of(name, bytes, &e).error(name, true));
             }
+            Err(e) => Failure::of(name, bytes, &e).report(name, next, &mut state.failures),
         }
     }
     if found.is_empty() {
@@ -232,10 +325,21 @@ pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> R
                 return Ok(state);
             }
             Err(e) => {
-                if let Some(next) = next {
-                    state
+                let bytes = std::fs::read(&path).unwrap_or_default();
+                let failure = match &e {
+                    Error::Lockfile(e) => Some(Failure::of(name, &bytes, e)),
+                    _ => None,
+                };
+                match (failure, next) {
+                    (Some(f), Some(next)) => f.report(name, Some(next), &mut state.failures),
+                    (Some(f), None) => {
+                        last = Some(f.error(name, false));
+                        continue;
+                    }
+                    (None, Some(next)) => state
                         .warnings
-                        .push(format!("cannot migrate {name} ({e}), trying {next}"));
+                        .push(format!("cannot migrate {name} ({e}), trying {next}")),
+                    (None, None) => {}
                 }
                 last = Some(e);
             }

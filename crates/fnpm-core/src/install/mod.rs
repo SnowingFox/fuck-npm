@@ -356,14 +356,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 2. Workspace and 3. lockfile (read by `prepare`).
     let (mut ws, ws_warnings, mut lock) = match loaded {
         Some(l) => l,
-        None => {
-            let (ws, warnings) = Workspace::load_with(&root, &Default::default())?;
-            let lock = lock::load(&config, &ws)?;
-            (ws, warnings, lock)
-        }
+        None => load_workspace(&config, &root)?,
     };
     for w in ws_warnings {
         events.emit(Event::warn(w, None));
+    }
+    for e in &lock.failures {
+        events.emit(e.clone());
     }
     for w in &lock.warnings {
         events.emit(Event::warn(w.clone(), None));
@@ -377,6 +376,20 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             "migrated lockfile from {}",
             name.to_string_lossy()
         )));
+        if config.frozen_lockfile
+            && !opts.pm.lockfile_only
+            && config.log_level == fnpm_config::LogLevel::Verbose
+        {
+            let files = if lock.write_back.is_empty() {
+                "fnpm.lock"
+            } else {
+                "fnpm.lock and package.json"
+            };
+            events.emit(Event::notice(format!(
+                "note: lockfile is frozen, migration from {} not written to {files}; run 'fnpm install' and commit the result",
+                name.to_string_lossy()
+            )));
+        }
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
     if let Some(pending) = &pending_patch {
@@ -1835,7 +1848,7 @@ fn save(
     }
     if config.save_package_json && !lock.write_back.is_empty() {
         for line in lock::write_back(root, ws, &lock.write_back)? {
-            events.emit(Event::warn(line, Some("MIGRATED_PACKAGE_JSON")));
+            events.emit(Event::notice(line));
         }
     }
     // Bun deletes the lockfile when remove leaves only the dependency-free root.

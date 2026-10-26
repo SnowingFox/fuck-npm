@@ -184,14 +184,14 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         let client = project.client()?;
         crate::install::backfill_migrated(&mut state, &client, &project.config).await;
     }
+    for e in &state.failures {
+        cx.events.emit(e.clone());
+    }
     for w in &state.warnings {
         cx.events.emit(Event::warn(w.clone(), None));
     }
     let Some(graph) = state.graph.as_ref() else {
-        return Err(Error::usage(format!(
-            "no lockfile to migrate from in {}",
-            root.display()
-        )));
+        return Err(Error::usage("could not find any other lockfile"));
     };
     let source = state
         .path
@@ -200,6 +200,19 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let count = graph.len().saturating_sub(1);
+    // Like bun, `pm migrate` reports the migration on stderr and keeps stdout empty (a dry run
+    // prints the file it would write); `fnpm-lock migrate` prints the lockfile and a count.
+    let notice = || {
+        cx.events
+            .emit(Event::notice(format!("migrated lockfile from {source}")))
+    };
+    if cx.pm.dry_run && !lock_tool {
+        notice();
+        return Ok(ok(
+            json!({ "from": source, "packages": count }),
+            vec![format!("dry run: would write {}", fnpm_lockfile::FNPM_LOCK)],
+        ));
+    }
     if cx.pm.dry_run {
         let text =
             String::from_utf8(fnpm_lockfile::serialize(Format::Fnpm, graph)?).unwrap_or_default();
@@ -214,7 +227,13 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     }
     let mut lines = crate::install::write_migration(&root, &ws, &state)?;
     fnpm_lockfile::save_with(&root, graph, None)?;
-    let _ = lock_tool;
+    if !lock_tool {
+        notice();
+        for line in lines {
+            cx.events.emit(Event::notice(line));
+        }
+        return Ok(ok(json!({ "from": source, "packages": count }), Vec::new()));
+    }
     lines.push(format!(
         "migrated lockfile from {source} ({count} {})",
         plural(count, "package")
