@@ -280,7 +280,7 @@ it("fnpm add --only-missing should not install existing package", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 
   {
     const { stdout, stderr, exited } = spawn({
@@ -479,7 +479,7 @@ it("fnpm add --analyze should scan dependencies", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 
   {
     const { stdout, stderr, exited } = spawn({
@@ -678,7 +678,7 @@ it("should handle semver-like names", async () => {
   expect(urls.sort()).toEqual([`${root_url}/1.2.3`]);
   expect(requested).toBe(1);
   try {
-    await access(join(package_dir, "fnpm.lock"));
+    await access(join(package_dir, "bun.lockb"));
     expect(() => {}).toThrow();
   } catch (err: any) {
     expect(err.code).toBe("ENOENT");
@@ -719,7 +719,7 @@ it("should handle @scoped names", async () => {
   expect(urls.sort()).toEqual([`${root_url}/@bar%2fbaz`]);
   expect(requested).toBe(1);
   try {
-    await access(join(package_dir, "fnpm.lock"));
+    await access(join(package_dir, "bun.lockb"));
     expect(() => {}).toThrow();
   } catch (err: any) {
     expect(err.code).toBe("ENOENT");
@@ -777,7 +777,7 @@ it("should add dependency with capital letters", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add exact version with --exact", async () => {
@@ -831,7 +831,7 @@ it("should add exact version with --exact", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 it("should add to devDependencies with --dev", async () => {
   const urls: string[] = [];
@@ -884,7 +884,7 @@ it("should add to devDependencies with --dev", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 it("should add to optionalDependencies with --optional", async () => {
   const urls: string[] = [];
@@ -938,7 +938,7 @@ it("should add to optionalDependencies with --optional", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 it("should add to peerDependencies with --peer", async () => {
   const urls: string[] = [];
@@ -991,7 +991,7 @@ it("should add to peerDependencies with --peer", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add exact version with install.exact", async () => {
@@ -1046,7 +1046,7 @@ it("should add exact version with install.exact", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add exact version with -E", async () => {
@@ -1099,7 +1099,7 @@ it("should add exact version with -E", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it.each([
@@ -1215,7 +1215,7 @@ it("should add dependency with package.json in it and http tarball", async () =>
       booop: `${server.url.href}booop-0.0.1.tgz`,
     },
   });
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   // Reset to old value for other tests
   check_npm_auth_type.check = old_check_npm_auth_type;
 });
@@ -1285,7 +1285,7 @@ it("should add dependency with specified semver", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 // https://github.com/oven-sh/bun/issues/19065
@@ -1402,7 +1402,7 @@ it("should add dependency (GitHub)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add dependency alongside workspaces", async () => {
@@ -1486,7 +1486,7 @@ it("should add dependency alongside workspaces", async () => {
       2,
     ).replace(/(\[)\s+|\s+(\])/g, "$1$2"),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add aliased dependency (npm)", async () => {
@@ -1554,7 +1554,7 @@ it("should add aliased dependency (npm)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should print the npm: alias for an added aliased dependency without binaries", async () => {
@@ -1824,7 +1824,7 @@ it("should add aliased dependency (GitHub)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 const gitNameTests = [
@@ -1996,7 +1996,7 @@ it("should let you add the same package twice", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   // re-add as dev
   urls.length = 0;
   const {
@@ -2047,7 +2047,7 @@ it("should let you add the same package twice", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should install version tagged with `latest` by default", async () => {
@@ -2115,7 +2115,7 @@ it("should install version tagged with `latest` by default", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   // re-install with updated `package.json`
   await rm(join(package_dir, "node_modules"), { force: true, recursive: true });
   urls.length = 0;
@@ -2165,7 +2165,7 @@ it("should install version tagged with `latest` by default", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should handle Git URL in dependencies (SCP-style)", async () => {
@@ -2243,7 +2243,7 @@ it("should handle Git URL in dependencies (SCP-style)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   const {
     stdout: stdout2,
     stderr: stderr2,
@@ -2486,7 +2486,7 @@ it("should add dependency without duplication", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   // repeat installation
   urls.length = 0;
   const {
@@ -2536,7 +2536,7 @@ it("should add dependency without duplication", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add dependency without duplication (GitHub)", async () => {
@@ -2605,7 +2605,7 @@ it("should add dependency without duplication (GitHub)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
   // repeat installation
   const {
     stdout: stdout2,
@@ -2666,7 +2666,7 @@ it("should add dependency without duplication (GitHub)", async () => {
       2,
     ),
   );
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add dependencies to workspaces directly", async () => {
@@ -2714,8 +2714,8 @@ it("should add dependencies to workspaces directly", async () => {
   ]);
   expect(await exited).toBe(0);
   expect(await readdirSorted(join(package_dir))).toEqual([
+    "bun.lockb",
     "bunfig.toml",
-    "fnpm.lock",
     "moo",
     "node_modules",
     "package.json",
@@ -2828,7 +2828,7 @@ it("should add dependency alongside peerDependencies", async () => {
       bar: "^0.0.2",
     },
   });
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("should add local tarball dependency", async () => {
@@ -2875,7 +2875,7 @@ it("should add local tarball dependency", async () => {
   expect(package_json.name).toBe("baz");
   expect(package_json.version).toBe("0.0.3");
   (expect(await file(join(package_dir, "package.json")).text()).toInclude('"baz-0.0.3.tgz"'),
-    await access(join(package_dir, "fnpm.lock")));
+    await access(join(package_dir, "bun.lockb")));
 });
 
 describe("a relative local path typed from a directory below package.json", () => {
@@ -3540,7 +3540,7 @@ it("should add multiple dependencies specified on command line", async () => {
       baz: `${server_url}/baz-0.0.3.tgz`,
     },
   });
-  await access(join(package_dir, "fnpm.lock"));
+  await access(join(package_dir, "bun.lockb"));
 });
 
 it("requests the manifests of all the packages on the command line at the same time", async () => {
