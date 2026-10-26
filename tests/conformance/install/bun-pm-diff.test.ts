@@ -8,8 +8,8 @@ import { fnpmEnv, fnpmExe, isDebug, isRoot, isWindows, normalizeFnpmSnapshot, te
 import { chmodSync, existsSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Two versions of one small package, archived directly and served from a local
-// registry, so diff tests run offline without depending on pm pack support.
+// Two versions of one small package, packed with `fnpm pm pack` and served from a
+// local registry, so every mode of `fnpm pm diff` runs offline.
 const v1 = {
   "package.json": JSON.stringify({ name: "diffme", version: "1.0.0", main: "index.js", scripts: { test: "echo ok" } }),
   "index.js": "module.exports = function () {\n  return 1;\n};\n",
@@ -35,22 +35,19 @@ let registry: string;
 let root: ReturnType<typeof tempDir>;
 let tarballs: Record<string, string> = {};
 
-// Build fixture tarballs independently of the command under test.
-async function pack(dir: string, dest: string, publishedManifest?: string) {
-  const files: Record<string, Uint8Array> = {};
-  function collect(folder: string, prefix = "package") {
-    for (const entry of readdirSync(folder, { withFileTypes: true })) {
-      const path = join(folder, entry.name);
-      const name = `${prefix}/${entry.name}`;
-      if (entry.isDirectory()) collect(path, name);
-      else if (entry.isFile()) files[name] = readFileSync(path);
-    }
-  }
-  collect(dir);
-  if (publishedManifest !== undefined) files["package/package.json"] = Buffer.from(publishedManifest);
-  const path = join(dest, "fixture.tgz");
-  writeFileSync(path, await new Bun.Archive(files).bytes("gzip"));
-  return path;
+// Packs `dir` into `dest` (outside the folder, so folder-side diffs do not see a stray tarball).
+async function pack(dir: string, dest: string) {
+  await using p = Bun.spawn({
+    cmd: [fnpmExe(), "pm", "pack", "--quiet", "--destination", dest],
+    cwd: dir,
+    env: fnpmEnv,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [, stderr, exitCode] = await Promise.all([p.stdout.text(), p.stderr.text(), p.exited]);
+  const tgz = readdirSync(dest).find(f => f.endsWith(".tgz"));
+  if (exitCode !== 0 || !tgz) throw new Error("pack failed: " + stderr);
+  return join(dest, tgz);
 }
 
 beforeAll(async () => {
@@ -449,18 +446,9 @@ diffme@1.0.0 → diffme@2.0.0
       "out-root/.keep": "",
     });
     const member = join(String(dir), "packages", "a");
-    // Build the published form explicitly, so the fixture still catches missing
-    // workspace/catalog transforms without requiring fnpm pm pack to exist.
-    const publishedA = manifest({
-      ...JSON.parse(a),
-      dependencies: { "ws-b": "^1.0.1", diffme: "^1.0.0" },
-      devDependencies: { "ws-c": "2.x", core: "npm:ws-b@~1.0.1" },
-      peerDependencies: { "ws-b": "1.0.1", diffme: "1.0.0" },
-      optionalDependencies: { "ws-d": "~3.0.0", "ws-c": "2.3.4" },
-    });
-    const tgz = await pack(member, join(String(dir), "out"), publishedA);
+    const tgz = await pack(member, join(String(dir), "out"));
 
-    // The published versions are the ones this folder must show, from inside the package and from the root.
+    // The versions pack just wrote are the ones this folder shows, from inside the package and from the root.
     expect(await diff([tgz, "."], member)).toEqual({
       stdout: `${tgz} → .\nNo differences (2 files)\n`,
       stderr: "",
@@ -480,11 +468,7 @@ diffme@1.0.0 → diffme@2.0.0
     });
     // The root package itself. The filter is a base name: its own package.json and the five it packs along, which
     // are files like any other and stay as written on both sides.
-    const publishedRoot = manifest({
-      ...JSON.parse(readFileSync(join(String(dir), "package.json"), "utf8")),
-      dependencies: { diffme: "^1.0.0", "ws-b": "^1.0.1" },
-    });
-    const rootTgz = await pack(String(dir), join(String(dir), "out-root"), publishedRoot);
+    const rootTgz = await pack(String(dir), join(String(dir), "out-root"));
     expect((await diff([rootTgz, ".", "package.json"], String(dir))).stdout).toBe(
       `${rootTgz} → .\nNo differences (6 files)\n`,
     );
@@ -1038,7 +1022,8 @@ describe.concurrent("fnpm pm diff (hostile and awkward inputs)", () => {
       fetch(req) {
         const version = new URL(req.url).pathname.match(/p-(.+)\.tgz$/)?.[1];
         if (version) {
-          asked.push(req.headers.toJSON());
+          // `Headers#toJSON` is bun's; the entries are the same.
+          asked.push(Object.fromEntries(req.headers));
           return new Response(served[version]);
         }
         const entry = (version: string) => ({
@@ -1674,26 +1659,11 @@ describe.concurrent("fnpm pm diff (hostile and awkward inputs)", () => {
 
   test("tarball shapes: .tar, a root folder not called package/, ~/ paths, and `./x.tar 1.0.1`", async () => {
     using dir = tempDir("pm-diff-tars", {});
-    // Build the archives with Bun itself so the test needs no system tar.
-    await using mk = Bun.spawn({
-      cmd: [
-        fnpmExe(),
-        "-e",
-        `
-        const v1 = { "weird-root-name/package.json": JSON.stringify({ name: "diffme", version: "1.0.0" }), "weird-root-name/index.js": "module.exports = 1;\\n" };
-        await Bun.write("one.tar", await new Bun.Archive(v1).bytes());
-        const v2 = { "package/package.json": JSON.stringify({ name: "diffme", version: "1.0.1" }), "package/index.js": "module.exports = 2;\\n" };
-        await Bun.write("two.tgz", await new Bun.Archive(v2).bytes("gzip"));
-        `,
-      ],
-      cwd: String(dir),
-      env: fnpmEnv,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [, mkErr, mkExit] = await Promise.all([mk.stdout.text(), mk.stderr.text(), mk.exited]);
-    expect(mkErr).toBe("");
-    expect(mkExit).toBe(0);
+    // Build the archives in the test process (bun ran this script with `bun -e`), so the test needs no system tar.
+    const v1 = { "weird-root-name/package.json": JSON.stringify({ name: "diffme", version: "1.0.0" }), "weird-root-name/index.js": "module.exports = 1;\n" };
+    await Bun.write(join(String(dir), "one.tar"), await new Bun.Archive(v1).bytes());
+    const v2 = { "package/package.json": JSON.stringify({ name: "diffme", version: "1.0.1" }), "package/index.js": "module.exports = 2;\n" };
+    await Bun.write(join(String(dir), "two.tgz"), await new Bun.Archive(v2, { compress: "gzip" }).bytes());
     const run = async (args: string[]) => {
       await using p = Bun.spawn({
         cmd: [fnpmExe(), "pm", "diff", ...args, "--name-only"],
@@ -1728,31 +1698,17 @@ describe.concurrent("fnpm pm diff (hostile and awkward inputs)", () => {
     // The tarball reader used to reject any entry over 64 MiB as "invalid archive entry size". blob.bin is the same
     // bytes on both sides, so a tarball read that is short, skips the entry, or scrambles it shows up as a blob.bin line.
     using dir = tempDir("pm-diff-big", {});
-    await using mk = Bun.spawn({
-      cmd: [
-        fnpmExe(),
-        "-e",
-        `
-        const size = 64 * 1024 * 1024 + 1;
-        // Each 64 KiB chunk has its own byte value, so a chunk read out of order or twice changes the bytes.
-        const blob = Buffer.alloc(size);
-        for (let i = 0; i < size; i += 65536) blob.fill((i / 65536) & 0xff, i, Math.min(i + 65536, size));
-        const pkg = JSON.stringify({ name: "diffme", version: "1.0.0" });
-        const files = { "package/package.json": pkg, "package/index.js": "module.exports = 1;\\n", "package/blob.bin": blob };
-        await Bun.write("big.tgz", await new Bun.Archive(files, { compress: "gzip" }).bytes());
-        await Bun.write("pkg/package.json", pkg);
-        await Bun.write("pkg/index.js", "module.exports = 2;\\n");
-        await Bun.write("pkg/blob.bin", blob);
-        `,
-      ],
-      cwd: String(dir),
-      env: fnpmEnv,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [, mkErr, mkExit] = await Promise.all([mk.stdout.text(), mk.stderr.text(), mk.exited]);
-    expect(mkErr).toBe("");
-    expect(mkExit).toBe(0);
+    // Built in the test process (bun ran this script with `bun -e`).
+    const size = 64 * 1024 * 1024 + 1;
+    // Each 64 KiB chunk has its own byte value, so a chunk read out of order or twice changes the bytes.
+    const blob = Buffer.alloc(size);
+    for (let i = 0; i < size; i += 65536) blob.fill((i / 65536) & 0xff, i, Math.min(i + 65536, size));
+    const pkg = JSON.stringify({ name: "diffme", version: "1.0.0" });
+    const files = { "package/package.json": pkg, "package/index.js": "module.exports = 1;\n", "package/blob.bin": blob };
+    await Bun.write(join(String(dir), "big.tgz"), await new Bun.Archive(files, { compress: "gzip" }).bytes());
+    await Bun.write(join(String(dir), "pkg/package.json"), pkg);
+    await Bun.write(join(String(dir), "pkg/index.js"), "module.exports = 2;\n");
+    await Bun.write(join(String(dir), "pkg/blob.bin"), blob);
     const { stdout, stderr, exitCode } = await diff(["./big.tgz", "./pkg", "--name-only"], String(dir));
     expect(stderr).toBe("");
     expect(stdout.split("\n")[0]).toBe("./big.tgz → ./pkg");

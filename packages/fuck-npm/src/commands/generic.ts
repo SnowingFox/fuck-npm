@@ -9,7 +9,7 @@ import type { CommandContext } from "./context.ts";
 import { startListener } from "./install.ts";
 
 /** Commands whose `lines` are the whole output, also with `--json`. */
-const RAW_OUTPUT = new Set(["pm pkg", "pm licenses", "info", "view", "show", "pm view", "pm info"]);
+const RAW_OUTPUT = new Set(["pm pkg", "pm licenses", "pm diff", "info", "view", "show", "pm view", "pm info"]);
 
 /**
  * Every command without a dedicated handler: validate, then hand the request
@@ -100,7 +100,7 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     return result.exitCode;
   }
   if (ctx.output.mode === "json") {
-    const rawDocument = ctx.path.join(" ") === "pm diff" || ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
+    const rawDocument = ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
     ctx.output.json(rawDocument ? result.data : { ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
     return result.exitCode;
   }

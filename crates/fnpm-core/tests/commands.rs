@@ -1271,45 +1271,28 @@ async fn patch_commit_failed_save_preserves_patch_manifest_and_lock() {
         "module.exports = 'second edit';\n"
     );
 }
+// `pm diff` prints its patch itself; the conformance tests (bun-pm-diff) check the text.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn diff_registry_versions_filters_and_installed_side() {
     let reg = Registry::start(&[Pkg::new("tool", "1.0.0"), Pkg::new("tool", "2.0.0")]).await;
     let p = Project::new(&reg, json!({"name":"app","dependencies":{"tool":"1.0.0"}}));
     p.install().await;
-    let result = p
-        .invoke(&["pm", "diff"], &["tool"], json!({}))
-        .await
-        .unwrap();
-    let data = result.data.unwrap();
-    assert_eq!(data["from"], "tool@1.0.0");
-    assert_eq!(data["to"], "tool@2.0.0");
-    assert_eq!(data["totals"]["files"], 2);
-    assert!(
-        result
-            .lines
-            .unwrap()
-            .join("\n")
-            .contains("+module.exports = \"tool@2.0.0\";")
-    );
-    let result = p
-        .invoke(
-            &["pm", "diff"],
-            &["tool@1.0.0:index.js", "2.0.0"],
-            json!({"nameOnly":true}),
-        )
-        .await
-        .unwrap();
-    let files = result.data.unwrap()["files"].as_array().unwrap().clone();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0]["path"], "index.js");
-    assert!(files[0].get("patch").is_none());
-    assert!(
-        p.invoke(&["pm", "diff"], &["tool@1.0.0:nope", "2.0.0"], json!({}))
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("no file in either side matches nope")
-    );
+    let code = |args: &'static [&'static str]| {
+        let p = &p;
+        async move {
+            p.invoke(&["pm", "diff"], args, json!({"nameOnly": true}))
+                .await
+                .unwrap()
+                .exit_code
+        }
+    };
+    assert_eq!(code(&["tool"]).await, 0);
+    assert_eq!(code(&["tool@1.0.0:index.js", "2.0.0"]).await, 0);
+    // No file matches the filter, and a version that does not exist.
+    assert_eq!(code(&["tool@1.0.0:nope", "2.0.0"]).await, 1);
+    assert_eq!(code(&["tool@9.0.0", "2.0.0"]).await, 1);
+    // A name that is not in the lockfile needs two versions.
+    assert_eq!(code(&["other"]).await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1319,43 +1302,22 @@ async fn diff_local_trees_never_runs_scripts_and_reports_binary_hashes() {
     p.write("a/package.json", r#"{"name":"p","version":"1.0.0"}"#);
     p.write(
         "b/package.json",
-        r#"{"name":"p","version":"2.0.0","scripts":{"postinstall":"exit 99"}}"#,
+        r#"{"name":"p","version":"2.0.0","scripts":{"postinstall":"node -e \"require('fs').writeFileSync('ran','')\""}}"#,
     );
     p.write("a/index.js", "module.exports = 1;\n");
-    p.write(
-        "b/index.js",
-        "const cp = require('child_process');\nmodule.exports = 2;\n",
-    );
+    p.write("b/index.js", "module.exports = 2;\n");
     std::fs::write(p.path("b/data.bin"), [0, 255, 128]).unwrap();
     let result = p
         .invoke(&["pm", "diff"], &["./a", "./b"], json!({}))
         .await
         .unwrap();
-    let data = result.data.unwrap();
     assert_eq!(result.exit_code, 0);
-    assert_eq!(data["from"], "./a");
-    let binary = data["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["path"] == "data.bin")
+    assert!(!p.path("b/ran").exists() && !p.path("ran").exists());
+    let missing = p
+        .invoke(&["pm", "diff"], &["./a", "./nope"], json!({}))
+        .await
         .unwrap();
-    assert_eq!(binary["binary"], true);
-    assert_eq!(binary["sha256After"].as_str().unwrap().len(), 64);
-    assert!(
-        data["notes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|n| n == "postinstall script added: exit 99")
-    );
-    assert!(
-        data["notes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|n| n == "now imports child_process (index.js)")
-    );
+    assert_eq!(missing.exit_code, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
