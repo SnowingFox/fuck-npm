@@ -4,6 +4,7 @@ import { afterAll, describe, expect, test } from "vitest";
 import { fnpmEnv, readLockfile, runFnpm, tempDir, tempDirWithFiles } from "../../harness.ts";
 import { $, Archive, file, Glob, JSONC, serve, spawn, spawnSync, TOML, write } from "../bun.ts";
 import * as bunTest from "../bun-test.ts";
+import { BunReadableStream } from "../direct-stream.ts";
 import { readTarball } from "../internal-for-testing.ts";
 
 const dirs: string[] = [];
@@ -219,4 +220,20 @@ describe("harness", () => {
     }
     expect(await readLockfile(dir)).toEqual({ lockfileVersion: 1, packages: {} });
   });
+});
+
+test("a direct ReadableStream sends each write as it is flushed", async () => {
+  const stream = new BunReadableStream<Uint8Array>({
+    type: "direct",
+    async pull(controller) {
+      controller.write("ab");
+      await controller.flush();
+      controller.write(new Uint8Array([99]));
+      controller.close();
+    },
+  });
+  const chunks: string[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk).toString());
+  expect(chunks).toEqual(["ab", "c"]);
+  expect(await new Response(new BunReadableStream({ type: "direct", pull: c => c.write("x") })).text()).toBe("x");
 });
