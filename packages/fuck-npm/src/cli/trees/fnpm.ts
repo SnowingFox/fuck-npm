@@ -364,7 +364,7 @@ const PM_CACHE: CommandGroup = {
   defaultChild: "path",
   children: [
     pm("path", "Print the cache directory"),
-    pm("rm", "Delete the whole cache", { aliases: ["clean"] }),
+    pm("rm", "Delete the whole cache"),
     pm("prune", "Remove cache entries older than --max-age days", {
       flags: F.PM_CACHE_PRUNE,
     }),

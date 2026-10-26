@@ -12,7 +12,7 @@ describe("completions", () => {
     const add = entries.find((entry) => entry.path.join(" ") === "add");
 
     expect(root?.subcommands).toEqual(expect.arrayContaining(["install", "i", "pm", "whoami"]));
-    expect(cache?.subcommands).toEqual(["path", "rm", "clean", "prune", "pack", "unpack"]);
+    expect(cache?.subcommands).toEqual(["path", "rm", "prune", "pack", "unpack"]);
     expect(add?.flags).toEqual(expect.arrayContaining(["--dev", "-d", "--exact", "--json"]));
   });
 
@@ -24,7 +24,7 @@ describe("completions", () => {
   });
 
   test("fish completes subcommands under their parent", () => {
-    expect(fishScript(FNPM_REGISTRY)).toContain("complete -c fnpm -n '__fish_seen_subcommand_from cache' -a 'path rm clean prune pack unpack'");
+    expect(fishScript(FNPM_REGISTRY)).toContain("complete -c fnpm -n '__fish_seen_subcommand_from cache' -a 'path rm prune pack unpack'");
   });
 
   test("fnpm completions picks the shell from $SHELL", async () => {

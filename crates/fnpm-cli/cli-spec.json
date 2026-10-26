@@ -3634,9 +3634,7 @@
                   {
                     "kind": "leaf",
                     "name": "rm",
-                    "aliases": [
-                      "clean"
-                    ],
+                    "aliases": [],
                     "hidden": false,
                     "description": "Delete the whole cache",
                     "positionals": [],

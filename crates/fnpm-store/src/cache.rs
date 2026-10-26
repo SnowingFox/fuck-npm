@@ -38,8 +38,9 @@ fn expand_home(value: &str, home: Option<&str>) -> PathBuf {
 
 /// The cache directory, in bun's order with fnpm names first: `FNPM_CACHE_DIR`,
 /// `BUN_INSTALL_CACHE_DIR`, then `configured` (`--cache-dir`, the user's `install.cache.dir`),
-/// then `$FNPM_HOME/cache`, then `$XDG_CACHE_HOME/.fnpm/cache` or `$HOME/.fnpm/cache`, then
-/// [`CWD_FALLBACK`]. An empty variable counts as unset. Relative values are taken from `cwd`.
+/// then `<$FNPM_HOME or $BUN_INSTALL>/install/cache`, then `$XDG_CACHE_HOME/.fnpm/install/cache`
+/// or `$HOME/.fnpm/install/cache`, then [`CWD_FALLBACK`]. An empty variable counts as unset.
+/// Relative values are taken from `cwd`.
 pub fn fetch_cache_directory_path(
     env: &dyn Fn(&str) -> Option<String>,
     configured: Option<&Path>,
@@ -53,10 +54,11 @@ pub fn fetch_cache_directory_path(
             (expand_home(&dir, home), false)
         } else if let Some(dir) = configured.filter(|d| !d.as_os_str().is_empty()) {
             (dir.to_path_buf(), false)
-        } else if let Some(dir) = var("FNPM_HOME") {
-            (expand_home(&dir, home).join("cache"), false)
+        } else if let Some(dir) = var("FNPM_HOME").or_else(|| var("BUN_INSTALL")) {
+            (expand_home(&dir, home).join("install").join("cache"), false)
         } else if let Some(dir) = var("XDG_CACHE_HOME").or_else(|| home.map(str::to_owned)) {
-            (expand_home(&dir, home).join(".fnpm").join("cache"), false)
+            let dir = expand_home(&dir, home).join(".fnpm");
+            (dir.join("install").join("cache"), false)
         } else {
             (PathBuf::from(CWD_FALLBACK), true)
         };
@@ -181,7 +183,9 @@ impl ClearReport {
     }
 }
 
-fn delete_children(dir: &Path) -> io::Result<()> {
+/// Deletes what `dir` holds; the directory itself stays (it may be a mount point, a symlink
+/// target, or inside a read-only parent).
+pub fn delete_children(dir: &Path) -> io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         crate::sys::remove_tree(&entry.path())?;
@@ -298,17 +302,17 @@ mod tests {
         );
         assert_eq!(
             fetch_cache_directory_path(&e, None, cwd).path,
-            PathBuf::from("/h/cache")
+            PathBuf::from("/h/install/cache")
         );
         let e = env(&[("XDG_CACHE_HOME", "/x"), ("HOME", "/home/u")]);
         assert_eq!(
             fetch_cache_directory_path(&e, None, cwd).path,
-            PathBuf::from("/x/.fnpm/cache")
+            PathBuf::from("/x/.fnpm/install/cache")
         );
         let e = env(&[("HOME", "/home/u")]);
         assert_eq!(
             fetch_cache_directory_path(&e, None, cwd).path,
-            PathBuf::from("/home/u/.fnpm/cache")
+            PathBuf::from("/home/u/.fnpm/install/cache")
         );
         let e = env(&[("FNPM_CACHE_DIR", "~/c"), ("HOME", "/home/u")]);
         assert_eq!(

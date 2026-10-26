@@ -24,8 +24,8 @@ describe("dispatch", () => {
   test("an unknown subcommand names the full path", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["pm", "cache", "bogus"])).toBe(1);
-    expect(bed.stderr.text()).toContain("Unknown command: fnpm pm cache bogus");
+    expect(await bed.run(["store", "bogus"])).toBe(1);
+    expect(bed.stderr.text()).toContain("Unknown command: fnpm store bogus");
   });
 
   test("a group's default child runs when the group is bare", async () => {
@@ -275,10 +275,17 @@ describe("update --interactive", () => {
 
 describe("generic commands", () => {
   test("lines go to stdout in plain mode", async () => {
-    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["/home/u/.fnpm/cache"] }) } });
+    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["a", "b"] }) } });
+
+    expect(await bed.run(["pm", "hash"])).toBe(0);
+    expect(bed.stdout.text()).toBe("a\nb\n");
+  });
+
+  test("the cache directory is printed without a newline, like bun", async () => {
+    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["/home/u/.fnpm/install/cache"] }) } });
 
     expect(await bed.run(["pm", "cache"])).toBe(0);
-    expect(bed.stdout.text()).toBe("/home/u/.fnpm/cache\n");
+    expect(bed.stdout.text()).toBe("/home/u/.fnpm/install/cache");
   });
 
   test("data becomes the --json payload and the exit code is the core's", async () => {

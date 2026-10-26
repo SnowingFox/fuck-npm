@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 pub use auth::{RegistryKey, RegistrySource};
 pub use env::Env;
 pub use files::{ConfigFile, FileKind, InstallFile, RunFile};
+pub use load::path_fits;
 pub use npmrc::Npmrc;
 pub use redact::redact_url;
 
@@ -408,7 +409,7 @@ pub struct Config {
     pub home_dir: PathBuf,
     /// `~/.fnpm/store/v2` (`FNPM_STORE_DIR` overrides the parent: `$FNPM_STORE_DIR/v2`).
     pub store_dir: PathBuf,
-    /// `~/.fnpm/cache` (`FNPM_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, `install.cache.dir`).
+    /// `~/.fnpm/install/cache` (`FNPM_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, `install.cache.dir`).
     pub cache_dir: PathBuf,
     /// `-g` installs: `~/.fnpm/global` (`FNPM_GLOBAL_DIR`, `BUN_INSTALL_GLOBAL_DIR`).
     pub global_dir: PathBuf,

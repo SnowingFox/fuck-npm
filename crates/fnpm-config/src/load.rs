@@ -49,6 +49,37 @@ fn first_env<'a>(env: &'a Env, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|k| env.get_not_empty(k))
 }
 
+/// bun's install cache when nothing names one: `$FNPM_HOME/install/cache` (bun's
+/// `$BUN_INSTALL`, which is honoured too), else `$XDG_CACHE_HOME/.fnpm/install/cache`, else
+/// `$HOME/.fnpm/install/cache`.
+fn default_cache_dir(
+    env: &Env,
+    home: Option<&Path>,
+    cwd: &Path,
+    fnpm_home: &Path,
+) -> Option<PathBuf> {
+    let install_cache = |dir: PathBuf| dir.join("install").join("cache");
+    if env.get_not_empty(crate::env::names::HOME).is_some() {
+        return Some(install_cache(fnpm_home.to_path_buf()));
+    }
+    if let Some(v) = env.get_not_empty("BUN_INSTALL") {
+        return Some(install_cache(env_path(cwd, v, home)));
+    }
+    if let Some(v) = env.get_not_empty("XDG_CACHE_HOME") {
+        return Some(install_cache(env_path(cwd, v, home).join(".fnpm")));
+    }
+    home.map(|h| install_cache(h.join(".fnpm")))
+}
+
+/// Whether `path` fits bun's path buffer (`MAX_PATH_BYTES`) and every name in it fits
+/// `NAME_MAX`.
+pub fn path_fits(path: &Path) -> bool {
+    const MAX_PATH_BYTES: usize = 4096;
+    const NAME_MAX: usize = 255;
+    path.as_os_str().len() < MAX_PATH_BYTES
+        && path.components().all(|c| c.as_os_str().len() <= NAME_MAX)
+}
+
 /// `FNPM_HOME`, else `$HOME/.fnpm`, else `<cwd>/.fnpm`.
 fn fnpm_home(env: &Env, home: Option<&Path>, cwd: &Path) -> PathBuf {
     match env.get_not_empty(crate::env::names::HOME) {
@@ -1176,12 +1207,20 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         env_path(&project_dir, v, h)
     } else if let Some(dir) = m.cache_dir.clone().filter(|d| !d.as_os_str().is_empty()) {
         dir
-    } else if h.is_some() || env.get_not_empty(crate::env::names::HOME).is_some() {
+    } else if let Some(dir) = default_cache_dir(env, h, &cwd, &fnpm_home) {
         cache_configured = false;
-        fnpm_home.join("cache")
+        dir
     } else {
         cache_configured = false;
         project_dir.join("node_modules").join(".fnpm-cache")
+    };
+    // bun: a cache directory that does not fit a path buffer (or has a name the OS refuses)
+    // cannot be opened, and the install falls back to the project's `node_modules/.cache`.
+    let cache_dir = files::normalize(&cache_dir);
+    let cache_dir = if path_fits(&cache_dir) {
+        cache_dir
+    } else {
+        project_dir.join("node_modules").join(".cache")
     };
     // bun keeps packages in its cache directory: a cache directory set by flag, environment
     // or config holds the store as well (CI that caches it restores the packages too).

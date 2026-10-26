@@ -93,6 +93,13 @@ export async function runParsedCli(
     let path = plan.matched;
     if (node.kind === "group") {
       if (plan.unknownSegment !== undefined) {
+        if (registry.bin === "fnpm" && path.join(" ") === "pm cache") {
+          // bun's wording: `rm`, `prune`, `pack` and `unpack` are the only words it takes.
+          runtime.stderr.write(
+            `error: unexpected argument "${plan.unknownSegment}"\nusage: fnpm pm cache [rm | prune | pack <file> | unpack <file>]\n`,
+          );
+          return 1;
+        }
         if (isPm(registry, path)) {
           await writePmHelp(runtime);
           runtime.stderr.write(`\nerror: "${plan.unknownSegment}" unknown command\n`);

@@ -21,7 +21,7 @@ fn defaults() {
     assert_eq!(cfg.project_dir, fx.path("project"));
     assert_eq!(cfg.home_dir, home.join(".fnpm"));
     assert_eq!(cfg.store_dir, home.join(".fnpm/store/v2"));
-    assert_eq!(cfg.cache_dir, home.join(".fnpm/cache"));
+    assert_eq!(cfg.cache_dir, home.join(".fnpm/install/cache"));
     assert_eq!(cfg.global_dir, home.join(".fnpm/global"));
     assert_eq!(cfg.global_bin_dir, home.join(".fnpm/bin"));
     assert_eq!(cfg.registry.url, fnpm_config::DEFAULT_REGISTRY);
@@ -68,7 +68,7 @@ fn fnpm_home_and_store_env() {
     );
     assert_eq!(cfg.home_dir, fx.path("home/fh"));
     assert_eq!(cfg.store_dir, PathBuf::from("/s/v2"));
-    assert_eq!(cfg.cache_dir, fx.path("home/fh/cache"));
+    assert_eq!(cfg.cache_dir, fx.path("home/fh/install/cache"));
     assert_eq!(cfg.global_dir, fx.path("home/fh/global"));
 }
 

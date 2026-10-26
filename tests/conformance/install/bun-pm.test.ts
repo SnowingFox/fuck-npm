@@ -1681,14 +1681,14 @@ const envCacheEntries = ["0123456789abcdef.npm", "bar@0.0.2@@@1"];
 
 // The bunx count is always 0: `cacheEnv` points the temp directory at an empty one.
 const cleared = {
-  stdout: "Cleared 'fnpm install' cache\nCleared 0 cached 'bunx' packages\n",
+  stdout: "Cleared 'fnpm install' cache\nCleared 0 cached 'fnpmx' packages\n",
   stderr: "",
   exitCode: 0,
 };
 
 function refused(cacheDir: string, what: string, bunx = "Cleared") {
   return {
-    stdout: `${bunx} 0 cached 'bunx' packages\n`,
+    stdout: `${bunx} 0 cached 'fnpmx' packages\n`,
     stderr:
       `error: refusing to clear "${cacheDir}": is or contains ${what}\n` +
       "note: cache directory comes from $FNPM_CACHE_DIR, --cache-dir, ~/.bunfig.toml or $BUN_INSTALL. " +
@@ -1857,7 +1857,7 @@ describe.concurrent("fnpm pm cache rm refuses a cache directory that holds more 
       cacheEnv(String(side), { FNPM_CACHE_DIR: bin }),
       exe,
     );
-    expect(result).toEqual(refused(bin, "the bun executable"));
+    expect(result).toEqual(refused(bin, "the fnpm executable"));
     expect(await exists(exe)).toBeTrue();
   });
 
@@ -1968,7 +1968,7 @@ describe.concurrent("fnpm pm cache rm", () => {
         args.length === 1
           ? cleared
           : {
-              stdout: `dry run: would delete 'fnpm install' cache at ${missing}\nWould clear 0 cached 'bunx' packages\n`,
+              stdout: `dry run: would delete 'fnpm install' cache at ${missing}\nWould clear 0 cached 'fnpmx' packages\n`,
               stderr: "",
               exitCode: 0,
             },
@@ -1994,7 +1994,7 @@ describe.concurrent("fnpm pm cache rm", () => {
     const uid = isWindows ? undefined : process.getuid!();
     using side = tempDir("pm-cache-rm-dry-run", {
       ...sideFiles,
-      ...(uid === undefined ? {} : { [`tmp/bunx-${uid}-cowsay@latest/package.json`]: "{}" }),
+      ...(uid === undefined ? {} : { [`tmp/fnpmx-${uid}-cowsay@latest/package.json`]: "{}" }),
     });
     using root = tempDir("pm-cache-rm-dry-run-project", projectFiles);
     const envCache = join(String(side), "bun-install", "install", "cache");
@@ -2003,15 +2003,15 @@ describe.concurrent("fnpm pm cache rm", () => {
       stdout:
         `dry run: would delete 'fnpm install' cache at ${envCache}\n` +
         (uid === undefined
-          ? "Would clear 0 cached 'bunx' packages\n"
-          : `dry run: would delete ${join(String(side), "tmp", `bunx-${uid}-cowsay@latest`)}\n` +
-            "Would clear 1 cached 'bunx' packages\n"),
+          ? "Would clear 0 cached 'fnpmx' packages\n"
+          : `dry run: would delete ${join(String(side), "tmp", `fnpmx-${uid}-cowsay@latest`)}\n` +
+            "Would clear 1 cached 'fnpmx' packages\n"),
       stderr: "",
       exitCode: 0,
     });
     expect(await readdirSorted(envCache)).toEqual(envCacheEntries);
     if (uid !== undefined)
-      expect(await readdirSorted(join(String(side), "tmp"))).toContain(`bunx-${uid}-cowsay@latest`);
+      expect(await readdirSorted(join(String(side), "tmp"))).toContain(`fnpmx-${uid}-cowsay@latest`);
   });
 
   test.each([

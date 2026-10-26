@@ -285,43 +285,228 @@ pub(crate) fn export(cx: &Ctx) -> Result<CoreResult> {
 }
 
 /// `pm cache [path] | rm | prune [--max-age d] | pack <file> | unpack <file>`.
+/// `pm cache rm` and `pm cache prune` act on the whole cache, so a word after them is an error
+/// (otherwise `rm <package>` would clear everything).
+fn reject_extra_argument(cx: &Ctx) -> Result<()> {
+    if let Some(word) = cx.req.positionals.first() {
+        eprintln!(
+            "error: unexpected argument \"{}\"\nusage: fnpm pm cache [rm | prune | pack <file> | unpack <file>]",
+            fnpm_types::text::escape_control_chars(word)
+        );
+        return Err(Error::Reported);
+    }
+    Ok(())
+}
+
+/// The cache `pm cache rm` deletes (bun `fetch_cache_directory_path` with the process
+/// environment): a project's `.env`, bunfig.toml, fnpm.toml or `.npmrc` does not choose it.
+/// `--cache-dir` and the user's own config files (`~/.bunfig.toml`, `~/.fnpm/fnpm.toml`) do;
+/// `~/.npmrc` does not, its `cache` is npm's.
+fn cache_to_delete(cx: &Ctx) -> PathBuf {
+    let env = &cx.env;
+    let home = env.home();
+    let configured = cx.pm.cache_dir.clone().or_else(|| {
+        let fnpm_home = match env.get_not_empty("FNPM_HOME") {
+            Some(v) => PathBuf::from(v),
+            None => home.clone().unwrap_or_default().join(".fnpm"),
+        };
+        let mut dir = None;
+        for file in fnpm_config::files::global_config_candidates(
+            home.as_deref(),
+            env.xdg_config_home().as_deref(),
+            &fnpm_home,
+        ) {
+            if let Ok(Some(install)) = fnpm_config::files::load_install_table(&file)
+                && let Some(d) = install.cache_dir
+            {
+                dir = Some(d);
+            }
+        }
+        dir
+    });
+    fnpm_store::cache::fetch_cache_directory_path(
+        &|key: &str| env.get(key).map(str::to_owned),
+        configured.as_deref(),
+        &cx.req.cwd,
+    )
+    .path
+}
+
+/// What `pm cache rm` and `pm cache prune` must not delete (bun `protected_in`).
+fn cache_protected(cx: &Ctx, project: &crate::project::Project) -> Vec<(String, PathBuf)> {
+    let env = &cx.env;
+    let exe = env
+        .get_not_empty("FNPM_LAUNCHER")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok());
+    let mut protected = Vec::new();
+    for (what, path) in [
+        (
+            "the home directory",
+            env.get_not_empty("HOME").map(PathBuf::from),
+        ),
+        ("the fnpm executable", exe),
+        (
+            "$FNPM_HOME",
+            env.get_not_empty("FNPM_HOME").map(PathBuf::from),
+        ),
+        (
+            "$BUN_INSTALL",
+            env.get_not_empty("BUN_INSTALL").map(PathBuf::from),
+        ),
+        ("the project directory", Some(project.root_dir.clone())),
+        ("the current directory", Some(cx.req.cwd.clone())),
+    ] {
+        if let Some(path) = path {
+            protected.push((what.to_owned(), path));
+        }
+    }
+    protected
+}
+
+/// `refusing to <verb> "<dir>": is or contains <what>` and bun's note.
+fn refuse_cache(verb: &str, dir: &Path, what: &str) {
+    eprintln!(
+        "error: refusing to {verb} \"{}\": is or contains {what}",
+        dir.display()
+    );
+    eprintln!(
+        "note: cache directory comes from $FNPM_CACHE_DIR, --cache-dir, ~/.bunfig.toml or $BUN_INSTALL. point it at a directory used only for the fnpm install cache"
+    );
+}
+
+/// `fnpm pm cache rm [--dry-run]` (bun `PackageManagerCommand`): empties the install cache,
+/// unless it is or contains something that must not go, then the `fnpm x` trees in the temp
+/// directory.
+fn cache_rm(cx: &Ctx, project: &crate::project::Project) -> Result<CoreResult> {
+    reject_extra_argument(cx)?;
+    let dry_run = cx.pm.dry_run;
+    let dir = cache_to_delete(cx);
+    // No fallback here: the directory that could not be opened is reported.
+    if !fnpm_config::path_fits(&dir) {
+        eprintln!("ENAMETOOLONG getting cache directory");
+        return Err(Error::Reported);
+    }
+    let exists = dir.is_dir();
+    let rm_path = if exists {
+        std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone())
+    } else {
+        dir.clone()
+    };
+    let protected = cache_protected(cx, project);
+    let refused = exists
+        .then(|| fnpm_store::cache::protected_in(&rm_path, &protected))
+        .flatten();
+    let mut lines = Vec::new();
+    let mut had_err = false;
+    // What `fnpm x` installed lives in the install cache too: counted before it goes.
+    let mut deleted = match refused {
+        None => fnpm_store::dlx::count_cached_packages(&rm_path),
+        Some(_) => 0,
+    };
+    if let Some(what) = refused {
+        refuse_cache("clear", &rm_path, what);
+        had_err = true;
+    } else {
+        let has_global_store = exists && rm_path.join("links").is_dir();
+        if dry_run {
+            lines.push(format!(
+                "dry run: would delete 'fnpm install' cache at {}",
+                rm_path.display()
+            ));
+        } else if exists && let Err(e) = fnpm_store::cache::delete_children(&rm_path) {
+            eprintln!("error: Could not delete {}: {e}", rm_path.display());
+            had_err = true;
+        } else {
+            lines.push("Cleared 'fnpm install' cache".to_owned());
+        }
+        if has_global_store {
+            eprintln!(
+                "note: global store {} removed too, run 'fnpm install' in each project that uses it",
+                if dry_run { "would be" } else { "was" }
+            );
+        }
+        // fnpm extra: `-g` / `--all` also empty the package store.
+        if !dry_run && (cx.pm.global || cx.flag("all")) {
+            let store = &project.config.store_dir;
+            if store.is_dir() && fnpm_store::cache::protected_in(store, &protected).is_none() {
+                let _ = fnpm_store::cache::delete_children(store);
+            }
+        }
+    }
+    let tmp = std::env::temp_dir();
+    let root = fnpm_store::dlx::cache_root_name();
+    let prefix = format!("{}-", &root[1..]);
+    let mut names: Vec<String> = std::fs::read_dir(&tmp)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    for name in names {
+        let is_root = name == root;
+        if !is_root && !name.starts_with(&prefix) {
+            continue;
+        }
+        let packages = if is_root {
+            fnpm_store::dlx::count_cached_packages(&tmp)
+        } else {
+            1
+        };
+        let path = tmp.join(&name);
+        if dry_run {
+            lines.push(format!(
+                "dry run: would delete {}",
+                tmp.join(fnpm_types::text::escape_control_chars(&name))
+                    .display()
+            ));
+        } else if let Err(e) =
+            std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path))
+        {
+            eprintln!("error: Could not delete {name}: {e}");
+            had_err = true;
+            continue;
+        }
+        deleted += packages;
+    }
+    lines.push(format!(
+        "{} {deleted} cached 'fnpmx' packages",
+        if dry_run { "Would clear" } else { "Cleared" }
+    ));
+    Ok(exit(
+        i32::from(had_err),
+        json!({ "path": rm_path, "dryRun": dry_run, "fnpmx": deleted }),
+        lines,
+    ))
+}
+
 pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
     let project = cx.project_anywhere()?;
     let config = &project.config;
     let dry = cx.pm.dry_run;
     match rest {
         [] | ["path"] => {
-            let s = config.cache_dir.to_string_lossy().into_owned();
+            // The real path, like bun (`get_fd_path` of the opened directory).
+            let dir = std::fs::canonicalize(&config.cache_dir)
+                .unwrap_or_else(|_| config.cache_dir.clone());
+            let s = dir.to_string_lossy().into_owned();
             Ok(ok(json!({ "path": s }), vec![s]))
         }
-        ["rm" | "clean"] => {
-            let exe = std::env::current_exe().ok();
-            let home = project.env.get("HOME").map(PathBuf::from);
-            let protected = fnpm_store::cache::default_protected(
-                home.as_deref(),
-                exe.as_deref(),
-                Some(&config.home_dir),
-                Some(&project.root_dir),
-                &cx.req.cwd,
-            );
-            let mut dirs = vec![config.cache_dir.clone()];
-            if cx.pm.global || cx.flag("all") {
-                dirs.push(config.store_dir.clone());
-            }
-            let report = fnpm_store::cache::clear_cache(&fnpm_store::cache::ClearOptions {
-                dirs,
-                protected,
-                dry_run: dry,
-                temp_dir: Some(std::env::temp_dir()),
-            })?;
-            let code = i32::from(!report.errors.is_empty());
-            Ok(exit(
-                code,
-                serde_json::to_value(&report).unwrap_or(Value::Null),
-                report.lines(),
-            ))
-        }
+        ["rm"] => cache_rm(cx, &project),
         ["prune"] => {
+            reject_extra_argument(cx)?;
+            let dir = cache_to_delete(cx);
+            if dir.is_dir() {
+                let real = std::fs::canonicalize(&dir).unwrap_or(dir);
+                if let Some(what) =
+                    fnpm_store::cache::protected_in(&real, &cache_protected(cx, &project))
+                {
+                    refuse_cache("prune", &real, what);
+                    return Err(Error::Reported);
+                }
+            }
             let days = cx.number("maxAge").unwrap_or(30) as u32;
             let store = project.store()?;
             let report = store.prune_older_than(days, dry)?;
