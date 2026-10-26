@@ -1212,17 +1212,21 @@ impl Engine<'_> {
                     .dir
                     .clone()
                     .unwrap_or_else(|| self.root_dir().to_path_buf());
-                let rel = relative_to(self.root_dir(), &normalize_join(&dir, p));
+                let abs = normalize_join(&dir, p);
+                let rel = relative_to(self.root_dir(), &abs);
                 if rel == "." {
                     self.set_target(row, PackageId::ROOT);
                     return Ok(Step::Done);
                 }
-                let id = self
-                    .graph
-                    .workspaces
-                    .get(&rel)
-                    .copied()
-                    .ok_or_else(not_found)?;
+                let id = match self.graph.workspaces.get(&rel).copied() {
+                    Some(id) => id,
+                    // A project's `workspace:<path>` makes that folder a member, listed in
+                    // "workspaces" or not (bun resolves the path as a project folder).
+                    None if owner.kind == Kind::Project => {
+                        self.path_member(&abs, &rel)?.ok_or_else(not_found)?
+                    }
+                    None => return Err(not_found()),
+                };
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
@@ -1278,6 +1282,45 @@ impl Engine<'_> {
         }
         self.set_target(row, id);
         Ok(Step::Done)
+    }
+
+    /// The member for the folder at `abs` (`rel` from the root) that a `workspace:<path>`
+    /// names: its package.json is read, and its dependencies are resolved like a listed
+    /// member's. `None` without a package.json.
+    fn path_member(&mut self, abs: &std::path::Path, rel: &str) -> Result<Option<PackageId>> {
+        let Some(pj) = self
+            .fetcher
+            .read_package_json(abs)
+            .map_err(Error::Registry)?
+        else {
+            return Ok(None);
+        };
+        let name = pj.name.clone().unwrap_or_default();
+        let version = pj.version.clone().unwrap_or_default();
+        let resolution = Resolution::Workspace {
+            path: rel.to_owned(),
+        };
+        let mut package = local::package_from_json(&pj, &name, resolution);
+        package.name = name.clone();
+        package.version = version.clone();
+        let (edges, warnings) = local::package_json_edges(&pj, LocalKind::Workspace)?;
+        self.warnings.extend(warnings);
+        package.dependencies = edges;
+        let prev_id = self.prev.and_then(|p| p.workspaces.get(rel).copied());
+        let id = self.graph.add_workspace(package);
+        self.by_key
+            .insert(self.graph.packages[id.index()].key(), id);
+        self.by_name.entry(name).or_default().push(id);
+        self.st.push(PState::project(
+            Version::parse(&version).ok(),
+            prev_id,
+            abs.to_path_buf(),
+        ));
+        if let Some(parents) = &mut self.parents {
+            parents.push(Vec::new());
+        }
+        self.push_rows(id, false);
+        Ok(Some(id))
     }
 
     /// Whether `row` may refer to a path in the project (bun `is_trusted_folder_dependency`).
