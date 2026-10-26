@@ -936,7 +936,7 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
                             Some(url) => format!(
                                 "fetching pnpm registry \"{}\" packages from {}; add it to fnpm.toml or .npmrc if it needs authentication",
                                 shown(registry_name),
-                                url
+                                shown(&fnpm_config::redact::redact_url(url))
                             ),
                             None => format!(
                                 "skipping pnpm registry \"{}\" from pnpm-lock.yaml: not in namedRegistries of pnpm-workspace.yaml (resolving its packages from the configured registry)",
