@@ -106,6 +106,8 @@ export type InstallSummary = {
   failedCount: number;
   blockedScripts: number;
   elapsedMs: number;
+  /** `--lockfile-only`: whether fnpm.lock was written, and how many packages it has. */
+  lockfileOnly?: { saved: boolean; packages: number };
   /** Lockfile and node_modules were already in sync; nothing written. */
   noop: boolean;
 };

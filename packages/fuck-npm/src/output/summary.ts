@@ -108,7 +108,16 @@ export function formatInstallSummary(
     }
   };
   let timed = true;
-  if (summary.installedCount > 0) {
+  if (summary.lockfileOnly) {
+    // bun's line under `--lockfile-only`.
+    const { saved, packages } = summary.lockfileOnly;
+    const noun = packages === 1 ? "package" : "packages";
+    lines.push(
+      saved
+        ? `Saved ${pc.green("fnpm.lock")} (${packages} ${noun}) ${time}`
+        : `${pc.green("Done")}! Checked ${packages} ${noun} ${pc.dim("(no changes)")} ${time}`,
+    );
+  } else if (summary.installedCount > 0) {
     const count =
       command === "add" ? Math.max(summary.installedCount, summary.requested.length) : summary.installedCount;
     lines.push(`${pc.green(String(count))} ${count === 1 ? "package" : "packages"} installed ${time}`);

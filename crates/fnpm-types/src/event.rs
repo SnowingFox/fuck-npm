@@ -216,6 +216,17 @@ pub struct InstallSummary {
     pub blocked_scripts: u32,
     pub elapsed_ms: u64,
     pub noop: bool,
+    /// `--lockfile-only`: whether fnpm.lock was written, and how many packages it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lockfile_only: Option<LockfileOnly>,
+}
+
+/// `InstallSummary.lockfileOnly` in `types.ts`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockfileOnly {
+    pub saved: bool,
+    pub packages: u32,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon

@@ -678,7 +678,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                     pending.manifest.as_bytes(),
                 )?;
             }
-            save(
+            let saved = save(
                 &root,
                 &config,
                 &ws,
@@ -689,6 +689,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 None,
                 &*events,
             )?;
+            // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`.
+            summary.lockfile_only = Some(fnpm_types::LockfileOnly {
+                saved,
+                packages: graph.len() as u32,
+            });
         }
         if let Some(rollback) = &mut patch_rollback {
             rollback.finish();
