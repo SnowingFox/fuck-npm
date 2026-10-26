@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { checkBundle } from './check-bundle.mjs';
 
 export const TARGETS = [
   { target: 'aarch64-apple-darwin', abi: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
@@ -34,6 +35,7 @@ export function stageRelease({ name, artifacts, out, target, root = ROOT }) {
   for (const bin of ['fnpm', 'fnpm-lock', 'fnpmx']) {
     if (!existsSync(join(cliSource, 'dist', `${bin}.js`))) throw new Error('Build the CLI bundle before staging');
   }
+  checkBundle(cliSource);
   const bindingName = name.startsWith('@') ? `${name.split('/')[0]}/fnpm-binding` : `${name}-binding`;
   const prefix = `${bindingName}-`;
   const metadata = {

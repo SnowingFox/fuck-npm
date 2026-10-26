@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { checkBundle } from './check-bundle.mjs';
 
 const directory = process.argv[2] && resolve(process.argv[2]);
 if (!directory) throw new Error('Usage: node scripts/pack-release.mjs <staged-release-dir>');
@@ -24,6 +25,7 @@ for (const pkg of release.packages) {
   for (const file of ['package.json', 'LICENSE', ...required]) {
     if (!files.includes(file)) throw new Error(`${pkg.name} tarball is missing ${file}`);
   }
+  if (pkg.name === release.name) checkBundle(pkg.directory, files);
   packed.push({ ...pkg, tarball: join(tarballs, info.filename), integrity: info.integrity, shasum: info.shasum, size: info.size, files });
   console.log(`${pkg.name}@${pkg.version}: ${info.size} bytes, ${files.length} files`);
 }

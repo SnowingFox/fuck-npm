@@ -24,6 +24,21 @@ if (values.publish) {
 }
 // Staging order is platforms -> binding -> CLI; publish dependents last.
 for (const pkg of release.packages) {
+  if (values.publish) {
+    const existing = spawnSync(npm, ['view', `${pkg.name}@${pkg.version}`, 'dist.integrity', '--json', '--registry', registry], {
+      cwd: directory, encoding: 'utf8', shell: process.platform === 'win32',
+    });
+    if (existing.error) throw existing.error;
+    if (existing.status === 0) {
+      const integrity = JSON.parse(existing.stdout);
+      if (integrity !== pkg.integrity) throw new Error(`Registry ${pkg.name}@${pkg.version} exists with different integrity; refusing to continue`);
+      console.log(`Already published with matching integrity: ${pkg.name}@${pkg.version}`);
+      continue;
+    }
+    let error;
+    try { error = JSON.parse(existing.stdout).error; } catch {}
+    if (error?.code !== 'E404') throw new Error(`Cannot check registry version for ${pkg.name}: ${existing.stderr}`);
+  }
   const args = ['publish', pkg.tarball, '--access', 'public', '--registry', registry, '--ignore-scripts'];
   if (!values.publish) args.push('--dry-run');
   const result = spawnSync(npm, args, { cwd: directory, stdio: 'inherit', shell: process.platform === 'win32' });
