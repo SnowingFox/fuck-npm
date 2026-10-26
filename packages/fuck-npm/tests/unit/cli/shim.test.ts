@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  existsSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -377,6 +378,7 @@ async function registry(tgz: Buffer, integrity: string): Promise<string> {
 function platformTarball(): Buffer {
   return tarball([
     ["package/package.json", JSON.stringify({ name: `@fuck-npm/binding-${ABI}`, version: VERSION })],
+    [`package/fnpm.${ABI}.node`, "native-addon"],
     ["package/fnpm", fakeExecutable("fnpm", VERSION), 0o755],
     ["package/fnpm-lock", fakeExecutable("fnpm-lock", VERSION), 0o755],
   ]);
@@ -391,6 +393,22 @@ describe.runIf(unix)("postinstall without the platform package", () => {
     expect(await postinstall({ root: pkg, env, abi: ABI, npm: "/nonexistent/npm" })).toBe("swapped");
     const result = spawnSync(join(pkg, "bin", "fnpm"), ["ci"], { encoding: "utf8" });
     expect(result.stdout.startsWith("native:fnpm\nci\n")).toBe(true);
+    const addon = join(pkg, "node_modules", "@fuck-npm", `binding-${ABI}`, `fnpm.${ABI}.node`);
+    expect(readFileSync(addon, "utf8")).toBe("native-addon");
+  });
+
+  test("places the fallback beside the binding so both loaders can resolve it", async () => {
+    const { root, pkg } = layout();
+    const binding = join(root, "node_modules", "@fuck-npm", "binding");
+    mkdirSync(binding, { recursive: true });
+    writeFileSync(join(binding, "package.json"), JSON.stringify({ name: "@fuck-npm/binding", version: VERSION }));
+    const tgz = platformTarball();
+    const url = await registry(tgz, sri(tgz));
+    const env = { ...NPM_ENV, npm_config_registry: url };
+    expect(await postinstall({ root: pkg, env, abi: ABI, npm: "/nonexistent/npm" })).toBe("swapped");
+    const requireBinding = createRequire(join(binding, "index.js"));
+    const platform = requireBinding.resolve(`@fuck-npm/binding-${ABI}/package.json`);
+    expect(existsSync(join(dirname(platform), `fnpm.${ABI}.node`))).toBe(true);
   });
 
   test("refuses a tarball that fails the integrity check", async () => {

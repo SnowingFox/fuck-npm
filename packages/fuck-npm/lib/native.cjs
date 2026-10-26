@@ -81,6 +81,12 @@ function platformPackageDir(abi, root = PACKAGE_ROOT) {
   return manifest ? dirname(manifest) : null;
 }
 
+/** Install fallback packages where the binding can also resolve their addon. */
+function platformInstallRoot(root = PACKAGE_ROOT) {
+  const binding = resolveFrom('@fuck-npm/binding/package.json', root);
+  return binding ? dirname(binding) : root;
+}
+
 /**
  * Path of the native executable `bin` inside the installed platform package,
  * or null. Resolved from this package, so it finds the copy the package
@@ -116,4 +122,5 @@ module.exports = {
   packageVersion,
   platformArchAbi,
   platformPackageDir,
+  platformInstallRoot,
 };

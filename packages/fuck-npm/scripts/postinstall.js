@@ -138,7 +138,7 @@ export function installWithNpm(name, version, root, { npm = "npm", env = process
     }
     const installed = join(cwd, "node_modules", name);
     if (!existsSync(installed)) return false;
-    const destination = join(root, "node_modules", name);
+    const destination = join(native.platformInstallRoot(root), "node_modules", name);
     mkdirSync(dirname(destination), { recursive: true });
     rmSync(destination, { recursive: true, force: true });
     renameSync(installed, destination);
@@ -210,13 +210,15 @@ export async function downloadFromRegistry(name, version, root, { env = process.
   if (!response.ok) throw new Error(`GET ${dist.tarball}: ${response.status}`);
   const tgz = Buffer.from(await response.arrayBuffer());
   if (!matchesIntegrity(tgz, dist.integrity)) throw new Error(`${name}@${version}: integrity check failed`);
-  const destination = join(root, "node_modules", name);
-  const wanted = ["package.json", ...native.BINS.map((bin) => native.executableName(bin))];
+  const destination = join(native.platformInstallRoot(root), "node_modules", name);
+  const abi = name.slice(native.PLATFORM_PACKAGE_PREFIX.length);
+  const executables = native.BINS.map((bin) => native.executableName(bin));
+  const wanted = ["package.json", `fnpm.${abi}.node`, ...executables];
   const written = extractFiles(tgz, destination, wanted);
-  for (const file of written) {
-    if (file !== "package.json") chmodSync(join(destination, file), 0o755);
+  for (const file of executables) {
+    if (written.includes(file)) chmodSync(join(destination, file), 0o755);
   }
-  return written.length > 1;
+  return wanted.every((file) => written.includes(file));
 }
 
 /** The version an installed platform package declares, or null. */
