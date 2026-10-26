@@ -962,10 +962,9 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
             continue;
         };
         if breaks_header_line(token) {
-            return Err(Error::InvalidValue {
-                key: key.to_owned(),
-                message: format!("${key} contains a newline or NUL byte"),
-            });
+            return Err(Error::Credential(format!(
+                "${key} contains a newline or NUL byte"
+            )));
         }
         regs.scope.auth = Auth::Token {
             token: token.to_owned(),
@@ -1167,10 +1166,11 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         project_dir.join("node_modules").join(".cache")
     } else if let Some(dir) = cache_dir_flag {
         dir
-    } else if let Some(v) = env.get_not_empty(crate::env::names::CACHE_DIR) {
-        env_path(&cwd, v, h)
-    } else if let Some(v) = env.get_not_empty("BUN_INSTALL_CACHE_DIR") {
-        // CI sets it once for the whole repository.
+    } else if let Some(v) = env
+        .get_not_empty(crate::env::names::CACHE_DIR)
+        .or_else(|| env.get_not_empty("BUN_INSTALL_CACHE_DIR"))
+    {
+        // CI sets it once for the whole repository: a relative path starts at its root.
         env_path(&project_dir, v, h)
     } else if let Some(v) = env.config_var("cache") {
         env_path(&project_dir, v, h)

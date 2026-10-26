@@ -55,6 +55,12 @@ pub enum Error {
         /// What is wrong.
         message: String,
     },
+    /// A config file value bun reports by itself, followed by where it is (`\n    at <file>:<line>:<col>`).
+    #[error("{0}")]
+    Located(String),
+    /// A credential that cannot be sent: a CR, LF or NUL would break the header line.
+    #[error("{0}")]
+    Credential(String),
     /// A config file named with `--config` that cannot be read.
     #[error("{path}: {source}")]
     Io {

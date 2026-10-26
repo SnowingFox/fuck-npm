@@ -503,10 +503,7 @@ fn refuse(site: CredentialSite<'_>, what: &str, npmrc_option: &str) -> Error {
             )
         }
     };
-    Error::InvalidValue {
-        key: what.to_owned(),
-        message,
-    }
+    Error::Credential(message)
 }
 
 /// bun's `Scope::build`: resolves `$URL`, the URL's userinfo, `$VAR` credentials and embedded

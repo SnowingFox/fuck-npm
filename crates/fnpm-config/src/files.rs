@@ -281,6 +281,8 @@ pub fn parse_seconds(s: &str) -> Option<f64> {
 
 struct Parser<'a> {
     path: &'a Path,
+    /// The file's text, for the line a diagnostic points at (empty when there is no file).
+    text: &'a str,
     dir: PathBuf,
     kind: FileKind,
     home: Option<&'a Path>,
@@ -292,6 +294,17 @@ impl Parser<'_> {
         Error::Parse {
             path: self.path.to_path_buf(),
             message: message.into(),
+        }
+    }
+
+    /// bun's diagnostic for the value of `key`: the message, then the line it is on.
+    fn err_at(&self, key: &str, message: &str) -> Error {
+        match toml_key_location(self.text, key) {
+            Some((line, col)) => Error::Located(format!(
+                "{message}\n    at {}:{line}:{col}",
+                self.path.display()
+            )),
+            None => self.err(message),
         }
     }
 
@@ -350,15 +363,9 @@ impl Parser<'_> {
                 )));
             }
         };
-        // A newline in a header is refused when the scope is built; reject it right here too
-        // so the error names the file.
-        let fields = [
-            &source.url,
-            &source.username,
-            &source.password,
-            &source.token,
-        ];
-        if fields.iter().any(|f| f.contains(['\r', '\n', '\0'])) {
+        // A credential with a newline is refused when the scope is built, naming the registry;
+        // a URL with one is refused right here so the error names the file.
+        if source.url.contains(['\r', '\n', '\0']) {
             return Err(self.err(format!("{key} contains a newline or NUL byte")));
         }
         Ok(source)
@@ -469,9 +476,9 @@ impl Parser<'_> {
         install.peer = bool_of("peer");
         install.dev = bool_of("dev");
 
-        for (key, env_var) in [
-            ("globalDir", "FNPM_GLOBAL_DIR"),
-            ("globalBinDir", "FNPM_GLOBAL_BIN_DIR"),
+        for (key, env_var, bun_env_var) in [
+            ("globalDir", "FNPM_GLOBAL_DIR", "BUN_INSTALL_GLOBAL_DIR"),
+            ("globalBinDir", "FNPM_GLOBAL_BIN_DIR", "BUN_INSTALL_BIN"),
         ] {
             let Some(v) = obj.get(key) else { continue };
             if self.kind == FileKind::Project {
@@ -480,9 +487,20 @@ impl Parser<'_> {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                self.warnings.push(format!(
-                    "ignoring \"{key}\" in project {name}, set it in $HOME/.fnpm/fnpm.toml or ${env_var}"
-                ));
+                // A bunfig.toml is pointed at the places bun reads it from.
+                let mut warning = if name == "bunfig.toml" {
+                    format!(
+                        "ignoring \"{key}\" in project {name}, set it in $HOME/.bunfig.toml or ${bun_env_var}"
+                    )
+                } else {
+                    format!(
+                        "ignoring \"{key}\" in project {name}, set it in $HOME/.fnpm/fnpm.toml or ${env_var}"
+                    )
+                };
+                if let Some((line, col)) = toml_key_location(self.text, key) {
+                    warning.push_str(&format!("\n    at {}:{line}:{col}", self.path.display()));
+                }
+                self.warnings.push(warning);
                 continue;
             }
             if let Some(s) = v.as_str() {
@@ -535,19 +553,27 @@ impl Parser<'_> {
         }
 
         if let Some(age) = obj.get("minimumReleaseAge") {
+            const KEY: &str = "minimumReleaseAge";
+            let not_positive = || {
+                self.err_at(
+                    KEY,
+                    "Expected positive number of seconds for minimumReleaseAge",
+                )
+            };
+            let not_seconds =
+                || self.err_at(KEY, "Expected number of seconds for minimumReleaseAge");
             let seconds = match age {
                 Value::Number(n) => {
                     let s = n.as_f64().unwrap_or(f64::NAN);
                     if !(s >= 0.0 && s.is_finite()) {
-                        return Err(
-                            self.err("Expected positive number of seconds for minimumReleaseAge")
-                        );
+                        return Err(not_positive());
                     }
                     s
                 }
-                Value::String(s) => parse_seconds(s)
-                    .ok_or_else(|| self.err("Expected number of seconds for minimumReleaseAge"))?,
-                _ => return Err(self.err("Expected number of seconds for minimumReleaseAge")),
+                // A TOML `nan` or `inf`: JSON has no number for it.
+                Value::Null => return Err(not_positive()),
+                Value::String(s) => parse_seconds(s).ok_or_else(not_seconds)?,
+                _ => return Err(not_seconds()),
             };
             install.minimum_release_age_ms = Some((seconds * 1000.0).round() as u64);
         }
@@ -764,6 +790,19 @@ fn toml_to_json(v: toml::Value) -> Value {
     }
 }
 
+/// The 1-based line and column of the first `key = …` line of a TOML text.
+fn toml_key_location(text: &str, key: &str) -> Option<(usize, usize)> {
+    text.lines().enumerate().find_map(|(i, line)| {
+        let start = line.len() - line.trim_start().len();
+        let rest = line[start..]
+            .strip_prefix(key)
+            .or_else(|| line[start..].strip_prefix(&format!("\"{key}\"")))?;
+        rest.trim_start()
+            .starts_with('=')
+            .then_some((i + 1, start + 1))
+    })
+}
+
 /// Parses a config document: TOML for a `.toml` path, JSONC otherwise.
 fn parse_document(path: &Path, text: &str) -> Result<Value> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -798,6 +837,7 @@ pub fn parse_config_file(
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut parser = Parser {
         path,
+        text,
         dir,
         kind,
         home,
@@ -864,6 +904,7 @@ pub fn load_package_json_config(
     };
     let mut parser = Parser {
         path: &path,
+        text: "",
         dir: project_dir.to_path_buf(),
         kind: FileKind::Project,
         home,

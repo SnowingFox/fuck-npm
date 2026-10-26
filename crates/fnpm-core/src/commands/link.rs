@@ -12,8 +12,14 @@ use super::{Ctx, ok};
 use crate::options::{InstallCommand, InstallOptions};
 use crate::{CoreResult, Error, Result};
 
+/// The link registry. Registering or unregistering the current package reports the
+/// configuration's warnings (an install reports its own).
 fn links_dir(cx: &Ctx) -> Result<PathBuf> {
-    Ok(cx.project_global()?.config.global_dir.join("links"))
+    let project = cx.project_global()?;
+    if cx.req.positionals.is_empty() {
+        project.report_warnings(&*cx.events);
+    }
+    Ok(project.config.global_dir.join("links"))
 }
 
 /// Both registration paths of `name`.
@@ -166,7 +172,10 @@ pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
         checked_name(&name)?;
         let link = fnpm_linker::fsutil::join_name(&links, &name);
         if std::fs::symlink_metadata(&link).is_err() {
-            return Err(Error::usage(format!("package \"{name}\" is not linked")));
+            cx.events.emit(fnpm_types::Event::status(format!(
+                "success: package \"{name}\" is not globally linked, so there's nothing to do."
+            )));
+            return Ok(ok(json!({ "unregistered": null }), Vec::new()));
         }
         if !pj.bin.is_none() {
             let project = cx.project_global()?;
