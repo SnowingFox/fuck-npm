@@ -385,9 +385,16 @@ impl Resolver {
             None => None,
         };
 
+        // Like bun, `--frozen-lockfile` without a lockfile resolves from package.json (and
+        // saves nothing): there is no lockfile to keep.
+        let mode = if mode == Mode::Frozen && previous.is_none() {
+            Mode::Normal
+        } else {
+            mode
+        };
         if mode == Mode::Frozen {
             let Some(prev) = previous else {
-                return Err(Error::frozen(vec!["lockfile is missing".into()]));
+                unreachable!("a frozen resolve without a lockfile resolves normally");
             };
             let pruned = frozen::pruned(workspace, prev);
             let stripped;

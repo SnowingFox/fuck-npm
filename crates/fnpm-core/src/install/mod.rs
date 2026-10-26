@@ -705,6 +705,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         || changed
         || opts.patch.is_some()
         || lock.migrated
+        // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces.
+        || lock.graph.as_ref().is_some_and(|g| g.lockfile_version == 0)
         || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
 
     let mut patch_rollback = if !config.dry_run {
@@ -739,7 +741,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                     pending.manifest.as_bytes(),
                 )?;
             }
-            let saved = save(
+            let mut saved = save(
                 &root,
                 &config,
                 &ws,
@@ -750,6 +752,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 None,
                 &*events,
             )?;
+            // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too (without saying
+            // `Saved lockfile`), so the file is in the writer's form afterwards.
+            if !saved && config.lockfile.save {
+                fnpm_lockfile::save_with(&root, &graph, Some(&lock::sidecar_path(&config, &root)))?;
+                saved = true;
+            }
             // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`.
             summary.lockfile_only = Some(fnpm_types::LockfileOnly {
                 saved,

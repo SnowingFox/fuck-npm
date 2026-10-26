@@ -101,11 +101,12 @@ async fn warm_store_install_downloads_nothing() {
 async fn frozen_lockfile_and_ci() {
     let reg = Registry::start(&basic()).await;
     let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
-    // No lockfile: frozen fails.
+    // No lockfile: like bun, frozen resolves from package.json and writes no lockfile.
     let mut o = p.opts(InstallCommand::Install, &[]);
     o.pm.frozen_lockfile = true;
-    let err = p.run(o.clone()).await.unwrap_err();
-    assert_eq!(err.code(), "FROZEN_LOCKFILE", "{err}");
+    p.run(o.clone()).await.unwrap();
+    assert!(!p.path("fnpm.lock").exists());
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
 
     p.install().await;
     std::fs::remove_dir_all(p.path("node_modules")).unwrap();

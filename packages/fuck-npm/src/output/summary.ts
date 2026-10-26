@@ -43,6 +43,18 @@ export function formatInstallSummary(
   const lines: string[] = [""];
   const time = timeOf(summary.elapsedMs, pc);
 
+  // `--lockfile-only`: bun prints its one line and no package rows.
+  if (summary.lockfileOnly) {
+    const { saved, packages } = summary.lockfileOnly;
+    const noun = packages === 1 ? "package" : "packages";
+    lines.push(
+      saved
+        ? `Saved ${pc.green("fnpm.lock")} (${packages} ${noun}) ${time}`
+        : `${pc.green("Done")}! Checked ${packages} ${noun} ${pc.dim("(no changes)")} ${time}`,
+    );
+    return lines;
+  }
+
   // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
   // (its update requests; `update` lists them): an add shows them once, in the `installed`
   // section below.
@@ -108,16 +120,7 @@ export function formatInstallSummary(
     }
   };
   let timed = true;
-  if (summary.lockfileOnly) {
-    // bun's line under `--lockfile-only`.
-    const { saved, packages } = summary.lockfileOnly;
-    const noun = packages === 1 ? "package" : "packages";
-    lines.push(
-      saved
-        ? `Saved ${pc.green("fnpm.lock")} (${packages} ${noun}) ${time}`
-        : `${pc.green("Done")}! Checked ${packages} ${noun} ${pc.dim("(no changes)")} ${time}`,
-    );
-  } else if (summary.installedCount > 0) {
+  if (summary.installedCount > 0) {
     const count =
       command === "add" ? Math.max(summary.installedCount, summary.requested.length) : summary.installedCount;
     lines.push(`${pc.green(String(count))} ${count === 1 ? "package" : "packages"} installed ${time}`);

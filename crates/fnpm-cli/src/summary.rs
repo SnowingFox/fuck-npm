@@ -64,6 +64,30 @@ pub fn format_install_summary_at(
     let time = time_of(elapsed_ms, pc);
     let available = |version: &Option<String>| available_of(version, pc);
 
+    // `--lockfile-only`: bun prints its one line and no package rows.
+    if let Some(only) = summary.lockfile_only {
+        let noun = if only.packages == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        lines.push(if only.saved {
+            format!(
+                "Saved {} ({} {noun}) {time}",
+                pc.green("fnpm.lock"),
+                only.packages
+            )
+        } else {
+            format!(
+                "{}! Checked {} {noun} {} {time}",
+                pc.green("Done"),
+                only.packages,
+                pc.dim("(no changes)")
+            )
+        });
+        return lines;
+    }
+
     // `+` / `↑` rows. bun's tree printer skips the packages an add or remove was asked for
     // (its update requests; `update` lists them): an add shows them once, in the `installed`
     // section below.
@@ -162,27 +186,7 @@ pub fn format_install_summary_at(
     };
     let noun = |count: u32| if count == 1 { "package" } else { "packages" };
     let mut timed = true;
-    if let Some(only) = summary.lockfile_only {
-        let noun = if only.packages == 1 {
-            "package"
-        } else {
-            "packages"
-        };
-        lines.push(if only.saved {
-            format!(
-                "Saved {} ({} {noun}) {time}",
-                pc.green("fnpm.lock"),
-                only.packages
-            )
-        } else {
-            format!(
-                "{}! Checked {} {noun} {} {time}",
-                pc.green("Done"),
-                only.packages,
-                pc.dim("(no changes)")
-            )
-        });
-    } else if summary.installed_count > 0 {
+    if summary.installed_count > 0 {
         let count = if command == InstallCommand::Add {
             summary.installed_count.max(summary.requested.len() as u32)
         } else {
