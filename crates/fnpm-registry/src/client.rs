@@ -240,6 +240,8 @@ pub(crate) fn classify(e: &reqwest::Error) -> Outcome {
     if text.contains("certificate")
         || text.contains("unknownissuer")
         || text.contains("invalid peer")
+        // The proxy would refuse the retry too.
+        || text.contains("proxy authorization required")
     {
         return Outcome::Final;
     }
@@ -259,6 +261,50 @@ pub(crate) fn put(headers: &mut HeaderMap, name: &'static str, value: &str) {
     if let Ok(v) = HeaderValue::from_str(value) {
         headers.insert(header_name(name), v);
     }
+}
+
+/// reqwest's own limit.
+const MAX_REDIRECTS: usize = 10;
+
+/// `from` -> `to` is an `http` to `https` upgrade on the same host and port.
+fn is_secure_upgrade(from: &reqwest::Url, to: &reqwest::Url) -> bool {
+    from.scheme() == "http"
+        && to.scheme() == "https"
+        && from.host_str() == to.host_str()
+        && from.port_or_known_default() == to.port_or_known_default()
+}
+
+/// reqwest drops `Authorization` on any change of scheme, host or port. bun keeps it for an
+/// `http` to `https` upgrade on the same host and port, so that redirect is not followed here
+/// but by [`Inner::send`]; every other one as reqwest does.
+fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let upgrade = attempt
+            .previous()
+            .last()
+            .is_some_and(|from| is_secure_upgrade(from, attempt.url()));
+        if upgrade {
+            attempt.stop()
+        } else if attempt.previous().len() > MAX_REDIRECTS {
+            attempt.error("too many redirects")
+        } else {
+            attempt.follow()
+        }
+    })
+}
+
+/// The target of a redirect response that [`redirect_policy`] left to fnpm.
+fn secure_upgrade(resp: &reqwest::Response) -> Option<reqwest::Url> {
+    if !resp.status().is_redirection() {
+        return None;
+    }
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)?
+        .to_str()
+        .ok()?;
+    let next = resp.url().join(location).ok()?;
+    is_secure_upgrade(resp.url(), &next).then_some(next)
 }
 
 impl Inner {
@@ -292,6 +338,7 @@ impl Inner {
             .http2_adaptive_window(true)
             .http2_keep_alive_interval(Duration::from_secs(30))
             .http2_keep_alive_while_idle(false)
+            .redirect(redirect_policy())
             .no_proxy();
         builder = match trust {
             Trust::Rustls(cfg) => builder.tls_backend_preconfigured(*cfg),
@@ -460,19 +507,42 @@ impl Inner {
     fn request(
         &self,
         spec: &Spec,
-        extra: Option<(&'static str, String)>,
+        url: &reqwest::Url,
+        extra: Option<&(&'static str, String)>,
     ) -> reqwest::RequestBuilder {
         let mut req = self
             .http
-            .request(spec.method.clone(), spec.url.clone())
+            .request(spec.method.clone(), url.clone())
             .headers(spec.headers.clone());
         if let Some((name, value)) = extra {
-            req = req.header(name, value);
+            req = req.header(*name, value.clone());
         }
         if let Some(body) = &spec.body {
             req = req.body(body.clone());
         }
         req
+    }
+
+    /// Sends `spec`, following the redirects that reqwest leaves to fnpm ([`redirect_policy`]):
+    /// an `http` to `https` upgrade on the same host and port keeps the request's headers,
+    /// `Authorization` included, as bun does.
+    pub(crate) async fn send(
+        &self,
+        spec: &Spec,
+        extra: Option<(&'static str, String)>,
+    ) -> reqwest::Result<reqwest::Response> {
+        let mut url = spec.url.clone();
+        let mut hops = 0;
+        loop {
+            let resp = self.request(spec, &url, extra.as_ref()).send().await?;
+            match secure_upgrade(&resp) {
+                Some(next) if hops < MAX_REDIRECTS => {
+                    url = next;
+                    hops += 1;
+                }
+                _ => return Ok(resp),
+            }
+        }
     }
 
     /// Sends `spec` with retries and reads the whole body. A response with a status that is not
@@ -481,7 +551,7 @@ impl Inner {
         let mut attempt: u16 = 0;
         loop {
             let permit = self.limiter.acquire(spec.priority).await;
-            let result = match self.request(spec, None).send().await {
+            let result = match self.send(spec, None).await {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
                     let headers = resp.headers().clone();
@@ -538,6 +608,13 @@ impl Inner {
                 None => {
                     return match result {
                         Ok(f) => Ok(f),
+                        // bun: `ProxyConnectFailed (407) downloading package manifest bar`.
+                        Err(e) if describe(&e).contains("proxy authorization required") => {
+                            Err(Error::NeedAuth(format!(
+                                "ProxyConnectFailed (407) downloading {}",
+                                spec.what
+                            )))
+                        }
                         Err(e) => Err(Error::Network {
                             url: redact_url(spec.url.as_str()),
                             message: describe(&e),
