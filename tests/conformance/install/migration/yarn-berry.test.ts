@@ -1195,7 +1195,7 @@ describe("yarn berry migration", () => {
         bunfigOpts: { linker: "hoisted" },
         files: {
           "package.json": JSON.stringify({ name: "berry-registries", dependencies: { "a-dep": "^1.0.1" } }),
-          // the same registry bun is configured with; the scope is one the lockfile does not use
+          // the same registry fnpm is configured with; the scope is one the lockfile does not use
           ".yarnrc.yml": `npmRegistryServer: "${testRegistry.registryUrl()}"\nnpmScopes:\n  unused:\n    npmRegistryServer: "\${UNUSED_REGISTRY}"\n`,
           "yarn.lock": yarnLock({
             "a-dep@npm:^1.0.1": [
@@ -1399,7 +1399,7 @@ catalogs:
     await expectFrozenInstall(dir);
   });
 
-  // If yarn.lock pins something that Bun can't keep, the migration fails and nothing is written.
+  // If yarn.lock pins something that fnpm can't keep, the migration fails and nothing is written.
   const rootEntry = (deps: string[]) => [`resolution: "berry-reject@workspace:."`, `dependencies:`, ...deps];
   const noDeps100 = { "no-deps@npm:^1.0.0": [`resolution: "no-deps@npm:1.0.0"`] };
   const rejected: {
@@ -1422,7 +1422,7 @@ catalogs:
       error: () => `error: yarn.lock missing "no-deps@^1.0.0", a dependency of "berry-reject"`,
     },
     {
-      name: "a protocol bun does not have",
+      name: "a protocol fnpm does not have",
       manifest: { dependencies: { generated: "exec:./gen.js" } },
       lock: () =>
         yarnLock({
@@ -1432,7 +1432,7 @@ catalogs:
           ],
         }),
       error: () =>
-        `error: yarn.lock entry "generated@exec:./gen.js#./gen.js::hash=3f4a5b&locator=berry-reject%40workspace%3A." uses a protocol bun does not support`,
+        `error: yarn.lock entry "generated@exec:./gen.js#./gen.js::hash=3f4a5b&locator=berry-reject%40workspace%3A." uses a protocol fnpm does not support`,
     },
     {
       name: "a file: folder a registry package declares (yarn reads it inside that package)",
@@ -1487,7 +1487,7 @@ catalogs:
           ],
         }),
       error: () =>
-        `error: yarn.lock entry "sub@git@example.com:org/mono.git#workspace=sub&commit=0123456789abcdef0123456789abcdef01234567" is a package inside a git repository, which bun does not support`,
+        `error: yarn.lock entry "sub@git@example.com:org/mono.git#workspace=sub&commit=0123456789abcdef0123456789abcdef01234567" is a package inside a git repository, which fnpm does not support`,
     },
     {
       name: "a patch on a folder dependency",
@@ -1507,7 +1507,7 @@ catalogs:
           ],
         }),
       error: () =>
-        `error: yarn.lock patches "local" with "patches/local.patch"; bun does not patch packages installed from a project folder`,
+        `error: yarn.lock patches "local" with "patches/local.patch"; fnpm does not patch packages installed from a project folder`,
     },
     {
       name: "two patch files for one package",
@@ -1641,7 +1641,7 @@ catalogs:
       files: () => ({ ".yarnrc.yml": `npmRegistryServer: "http://127.0.0.1:${testRegistry.port}/"\n` }),
       lock: () => yarnLock({ "berry-reject@workspace:.": rootEntry([`  no-deps: "npm:^1.0.0"`]), ...noDeps100 }),
       error: () =>
-        `error: yarn fetches "no-deps" from http://127.0.0.1:${testRegistry.port}/ and bun is configured to fetch it from ${testRegistry.registryUrl()}; add the registry to bunfig.toml or .npmrc`,
+        `error: yarn fetches "no-deps" from http://127.0.0.1:${testRegistry.port}/ and fnpm is configured to fetch it from ${testRegistry.registryUrl()}; add the registry to bunfig.toml or .npmrc`,
     },
     {
       name: "a scope registry in .yarnrc.yml that is not bun's",
@@ -1663,7 +1663,7 @@ catalogs:
       files: () => ({ ".yarnrc.yml": `npmRegistryServer: "\${REGISTRY}"\n` }),
       lock: () => yarnLock({ "berry-reject@workspace:.": rootEntry([`  no-deps: "npm:^1.0.0"`]), ...noDeps100 }),
       error: () =>
-        `error: yarn's registry for "no-deps" uses an environment variable ("\${REGISTRY}"); bun cannot tell if it is the registry bun is configured with`,
+        `error: yarn's registry for "no-deps" uses an environment variable ("\${REGISTRY}"); fnpm cannot tell if it is the registry fnpm is configured with`,
     },
     {
       name: "the @jsr scope, which yarn fetches from npm.jsr.io by default",
@@ -1674,7 +1674,7 @@ catalogs:
           "berry-reject@workspace:.": rootEntry([`  "@jsr/std__path": "npm:^1.0.0"`]),
         }),
       error: () =>
-        `error: yarn fetches "@jsr/std__path" from https://npm.jsr.io and bun is configured to fetch it from`,
+        `error: yarn fetches "@jsr/std__path" from https://npm.jsr.io and fnpm is configured to fetch it from`,
     },
     {
       name: "an __archiveUrl the registry manifest does not list (no integrity for it)",
@@ -1700,7 +1700,7 @@ catalogs:
             `resolution: "what-bin@npm:1.0.0::__archiveUrl=${encodeURIComponent(`http://127.0.0.1:${testRegistry.port}/what-bin/-/what-bin-1.0.0.tgz`)}"`,
           ],
         }),
-      error: () => `error: yarn fetches "what-bin" from http://127.0.0.1:${testRegistry.port}/ and bun is configured`,
+      error: () => `error: yarn fetches "what-bin" from http://127.0.0.1:${testRegistry.port}/ and fnpm is configured`,
     },
     {
       name: "several packages with two patch files each, all named in one run",
@@ -1727,7 +1727,7 @@ catalogs:
           ],
         }),
       error: () =>
-        `error: yarn.lock applies several patch files to 2 packages ("a-dep@1.0.1" with 3, "no-deps@1.0.0" with 2). bun supports one per package, merge them`,
+        `error: yarn.lock applies several patch files to 2 packages ("a-dep@1.0.1" with 3, "no-deps@1.0.0" with 2). fnpm supports one per package, merge them`,
     },
     {
       name: "a yarn.lock that is not YAML",
@@ -1960,7 +1960,7 @@ catalogs:
 
     const { stderr, exitCode } = await run(dir, "pm", "migrate");
     expect(stderr).toContain(`error: yarn fetches "no-deps" from `);
-    expect(stderr).toContain(`127.0.0.1:${testRegistry.port}/ and bun is configured to fetch it from`);
+    expect(stderr).toContain(`127.0.0.1:${testRegistry.port}/ and fnpm is configured to fetch it from`);
     expect(stderr).not.toContain("hunter2secret");
     expect(exitCode).toBe(1);
   });

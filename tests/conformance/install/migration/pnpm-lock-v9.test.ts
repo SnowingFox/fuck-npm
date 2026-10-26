@@ -4070,7 +4070,7 @@ catalog:
 
       const install = await run(String(tooDeep), "install");
 
-      expect(install.stderr).toContain(`warn: Bun currently only supports one level of nested "overrides"`);
+      expect(install.stderr).toContain(`warn: fnpm currently only supports one level of nested "overrides"`);
       expect(install.stderr).toMatch(/package\.json:\d+:\d+/);
       expect(install.stderr.split("warn:").length - 1).toBe(1);
       expect(install.exitCode).toBe(0);

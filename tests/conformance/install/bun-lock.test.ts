@@ -1576,7 +1576,7 @@ it("prints an actionable error for a lockfile version newer than this build supp
   const [out, err] = await Promise.all([stdout.text(), stderr.text()]);
 
   expect(err).toContain("Unsupported lockfile version 99");
-  expect(err).toContain("newer version of Bun");
+  expect(err).toContain("newer version of fnpm");
   expect(err).toMatch(/This is Bun v\d+\.\d+\.\d+/);
   expect(err).toMatch(/supports lockfile versions up to \d+/);
   expect(err).toContain("Run 'bun upgrade'");
