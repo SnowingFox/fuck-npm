@@ -22,8 +22,10 @@ npm run preview
 ```
 
 Production output is `website/dist/`, including the Pagefind search index. The
-site is committed as source; no hosted deployment is configured. For a future
-GitHub Pages project path, build with:
+site is deployed to <https://fuck-npm.vercel.app/> from `website/` with
+`vercel.json` (the build sets `DOCS_SITE` for canonical URLs, Open Graph tags and
+the sitemap). Every page is prerendered to static HTML. For a GitHub Pages project
+path, build with:
 
 ```sh
 DOCS_SITE=https://snowingfox.github.io DOCS_BASE=/fuck-npm/ npm run build

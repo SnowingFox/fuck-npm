@@ -13,10 +13,68 @@ const titleFor = (slug: string) => entries.find((entry) => entry.id.replace(/\/$
 const linkFor = (slug: string) => `${base}${slug === 'index' ? 'docs' : slug}/`;
 const groups = docs.navigation.tabs.flatMap(tab => tab.groups);
 const section = path.startsWith('benchmarks') ? 'Benchmarks' : path.startsWith('project') ? 'Project' : 'Package manager';
+// Search metadata. URLs are absolute when the build knows its host (DOCS_SITE).
+const notFound = entry.id === '404';
+const title = home ? entry.data.title : `${entry.data.title} | fnpm`;
+const description = entry.data.description ?? 'fnpm: a Rust-backed JavaScript package manager focused on install time and disk usage.';
+const absolute = (p: string) => (Astro.site ? new URL(p, Astro.site).href : p);
+const canonical = Astro.site && !notFound ? absolute(Astro.url.pathname) : undefined;
+const image = absolute(`${base}og.png`);
+const breadcrumb = home ? [] : [
+  { name: 'Fuck NPM', url: absolute(base) },
+  { name: section, url: absolute(section === 'Benchmarks' ? `${base}benchmarks/overview/` : section === 'Project' ? `${base}project/architecture/` : `${base}docs/`) },
+  { name: entry.data.title, url: canonical ?? Astro.url.pathname },
+];
+const structured = home ? {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'fnpm',
+  alternateName: 'Fuck NPM',
+  description,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux, Windows',
+  url: absolute(base),
+  image,
+  license: 'https://github.com/SnowingFox/fuck-npm/blob/main/LICENSE',
+  codeRepository: 'https://github.com/SnowingFox/fuck-npm',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+} : {
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'TechArticle', headline: entry.data.title, description, url: canonical, image, isPartOf: { '@type': 'WebSite', name: 'Fuck NPM', url: absolute(base) } },
+    { '@type': 'BreadcrumbList', itemListElement: breadcrumb.map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: item.name, item: item.url })) },
+  ],
+};
 ---
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>{`${entry.data.title} | fnpm`}</title><meta name="description" content={entry.data.description} /><link rel="icon" href={`${base}logo/favicon.svg`} /><meta property="og:title" content={entry.data.title} /><meta property="og:description" content={entry.data.description} /><meta name="theme-color" content="#ffffff" /><script is:inline>try { const t = localStorage.getItem('fnpm-theme'); if (t) document.documentElement.classList.add(t); } catch {}</script></head>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {notFound && <meta name="robots" content="noindex" />}
+    {canonical && <link rel="canonical" href={canonical} />}
+    <link rel="icon" href={`${base}logo/favicon.svg`} type="image/svg+xml" />
+    <link rel="sitemap" href={`${base}sitemap-index.xml`} />
+    <meta property="og:type" content={home ? 'website' : 'article'} />
+    <meta property="og:site_name" content="Fuck NPM" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={image} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Fuck NPM: less time installing, less disk" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0a0c" />
+    {!notFound && <script type="application/ld+json" set:html={JSON.stringify(structured)} />}
+    <script is:inline>try { const t = localStorage.getItem('fnpm-theme'); if (t) document.documentElement.classList.add(t); } catch {}</script>
+  </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <SiteHeader docs={!home} />
