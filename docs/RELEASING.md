@@ -103,6 +103,15 @@ The release-name and documentation commit `ab814fccf499e563f611f4993efcd8db00968
 has identical CLI and Rust sources. Local CLI verification passed 677 tests in
 normal and no-color modes, type checking, bundle build and four Rust CLI fixture
 tests. Windows archive creation streams tar bytes to avoid drive-letter parsing.
+The candidate's eight native archives are uploaded to the
+[GitHub prerelease](https://github.com/SnowingFox/fuck-npm/releases/tag/v0.0.2).
+Fresh local-tarball installs on macOS arm64 / Node 26.11.1 passed both normal and
+`--ignore-scripts` modes using the actual public GitHub asset URLs, including the
+four bins, internal addon in fresh processes, TS command dispatch, local
+dependency execution and offline/frozen reinstalls. These checks do not verify
+public npm registry installation. [Candidate provenance](releases/0.0.2-candidate.json)
+records the npm tarball and every native archive's integrity.
+
 The public npm identity check currently requires renewed local authentication;
 `fnpm` metadata reports a historical unpublish, which does not establish name
 ownership. Publication and

@@ -106,6 +106,20 @@
     "ciNormalAndIgnoreScripts": true,
     "localTarballPlatform": "darwin-arm64",
     "localNormalAndIgnoreScripts": true,
-    "publicRegistryInstallVerified": false
-  }
+    "publicRegistryInstallVerified": false,
+    "publicGitHubAssetDownload": {
+      "platform": "darwin-arm64",
+      "node": "v26.11.1",
+      "normalInstall": true,
+      "ignoreScriptsInstall": true,
+      "checks": [
+        "four bins",
+        "internal addon in a fresh process",
+        "TS command dispatch",
+        "local dependency execution",
+        "offline and frozen reinstall"
+      ]
+    }
+  },
+  "nativeRelease": "https://github.com/SnowingFox/fuck-npm/releases/tag/v0.0.2"
 }
