@@ -266,6 +266,11 @@ fn identical_files_in_a_package_share_an_inode() {
         "{}",
         status.bytes
     );
+    // Equal bytes in a separate file still consume another file, unlike a hard link.
+    let separate = ea.root.join("lib/big.bin");
+    std::fs::remove_file(&separate).unwrap();
+    std::fs::copy(ea.root.join("dist/big.bin"), &separate).unwrap();
+    assert_eq!(store.status().unwrap().files, 11);
 }
 
 #[test]
@@ -421,15 +426,15 @@ fn scoped_names_and_patched_dir_names() {
 }
 
 /// Every file under `root`, relative, for "nothing escaped" checks.
-fn all_files(root: &Path) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+fn all_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    fn walk(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) {
         for e in std::fs::read_dir(dir).unwrap().flatten() {
             let p = e.path();
             if e.file_type().unwrap().is_dir() {
                 walk(&p, base, out);
             } else {
-                out.push(p.strip_prefix(base).unwrap().to_string_lossy().into_owned());
+                out.push(p.strip_prefix(base).unwrap().to_path_buf());
             }
         }
     }
@@ -487,10 +492,14 @@ fn malicious_paths_never_leave_the_package() {
             .is_dir()
     );
     let everything = all_files(t.path());
+    let allowed = entry.root.join("etc/climb-abs");
+    let allowed = allowed.strip_prefix(t.path()).unwrap();
     assert!(
-        everything
-            .iter()
-            .all(|p| !p.contains("climb") || p.ends_with("etc/climb-abs") || p.contains("files/")),
+        everything.iter().all(|p| {
+            !p.components()
+                .any(|c| c.as_os_str().to_string_lossy().contains("climb"))
+                || p == allowed
+        }),
         "{everything:?}"
     );
 }
@@ -1297,6 +1306,7 @@ fn a_project_without_a_package_list_keeps_every_package() {
     );
 }
 
+#[cfg(unix)]
 fn age(path: &Path, days: u64) {
     let when = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 86_400);
     let times = std::fs::FileTimes::new()

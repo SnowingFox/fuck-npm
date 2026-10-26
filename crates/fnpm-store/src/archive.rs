@@ -193,12 +193,11 @@ pub fn extract_to_dir(archive: &[u8], dest: &Path, opts: ExtractOptions) -> Resu
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::testutil::*;
 
-    #[cfg(unix)]
     #[test]
     fn symlinks_are_checked_and_created_last() {
         let tgz = TarBuilder::new()

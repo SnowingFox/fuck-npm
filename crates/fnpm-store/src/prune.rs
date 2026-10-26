@@ -405,7 +405,7 @@ fn package_usage(dir: &Path) -> (u64, u64) {
             };
             if meta.is_dir() {
                 stack.push(e.path());
-            } else if meta.is_file() && seen.insert(inode(&meta, &e.path())) {
+            } else if meta.is_file() && inode(&meta, &e.path()).is_none_or(|id| seen.insert(id)) {
                 out.0 += 1;
                 out.1 += physical_size(&meta);
             }
@@ -415,17 +415,45 @@ fn package_usage(dir: &Path) -> (u64, u64) {
 }
 
 #[cfg(unix)]
-fn inode(meta: &std::fs::Metadata, _path: &Path) -> (u64, u64) {
+fn inode(meta: &std::fs::Metadata, _path: &Path) -> Option<(u64, u128)> {
     use std::os::unix::fs::MetadataExt;
-    (meta.dev(), meta.ino())
+    Some((meta.dev(), meta.ino().into()))
 }
 
-#[cfg(not(unix))]
-fn inode(_meta: &std::fs::Metadata, path: &Path) -> (u64, u64) {
-    (
-        0,
-        xxhash_rust::xxh3::xxh3_64(path.as_os_str().as_encoded_bytes()),
-    )
+#[cfg(windows)]
+fn inode(_meta: &std::fs::Metadata, path: &Path) -> Option<(u64, u128)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    };
+
+    // Query attributes without requiring read permission or following a final symlink.
+    let file = std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .ok()?;
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: the handle is open and info is writable for the specified size. FileIdInfo
+    // returns the volume plus a 128-bit ID, covering both NTFS and ReFS file identities.
+    let rc = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            std::ptr::from_mut(&mut info).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    (rc != 0).then_some((
+        info.VolumeSerialNumber,
+        u128::from_le_bytes(info.FileId.Identifier),
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn inode(_meta: &std::fs::Metadata, _path: &Path) -> Option<(u64, u128)> {
+    None
 }
 
 /// What `pm cache prune` did (or would do).
