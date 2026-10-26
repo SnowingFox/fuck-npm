@@ -1025,6 +1025,32 @@ fn materialize_with_each_backend() {
     assert_eq!(read_tree(&e.root), want);
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn clonefile_preserves_source_symlinks() {
+    use crate::fsops::{Backend, StickyBackend, clone_dir, place_file};
+    use std::os::unix::fs::symlink;
+
+    let t = tempfile::tempdir().unwrap();
+    std::fs::write(t.path().join("target.js"), "module.exports = 1;").unwrap();
+    let src = t.path().join("source.js");
+    symlink("target.js", &src).unwrap();
+    let dst = t.path().join("cloned.js");
+    let sticky = StickyBackend::new(Backend::Clonefile);
+    assert_eq!(place_file(&src, &dst, &sticky).unwrap(), Backend::Clonefile);
+    assert_eq!(std::fs::read_link(&dst).unwrap(), Path::new("target.js"));
+    // EEXIST takes the same no-follow path after replacing the old destination.
+    assert_eq!(place_file(&src, &dst, &sticky).unwrap(), Backend::Clonefile);
+    assert_eq!(std::fs::read_link(&dst).unwrap(), Path::new("target.js"));
+
+    std::fs::create_dir(t.path().join("target-dir")).unwrap();
+    let src = t.path().join("source-dir");
+    symlink("target-dir", &src).unwrap();
+    let dst = t.path().join("cloned-dir");
+    assert!(clone_dir(&src, &dst).unwrap());
+    assert_eq!(std::fs::read_link(&dst).unwrap(), Path::new("target-dir"));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn cross_device_hardlink_falls_back_to_copy_and_sticks() {

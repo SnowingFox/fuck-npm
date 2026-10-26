@@ -14,6 +14,7 @@
 //! - A copy never truncates an existing destination (it may be a hard link of the source):
 //!   it is unlinked and created again with `O_EXCL`.
 
+#[cfg(unix)]
 use std::fs::File;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -24,7 +25,14 @@ use serde::{Deserialize, Serialize};
 pub use fnpm_config::Backend;
 
 use crate::index::FileIndex;
-use crate::sys::{Dir, errno_is};
+use crate::sys::Dir;
+#[cfg(unix)]
+use crate::sys::errno_is;
+
+// CLONE_NOFOLLOW from <sys/clonefile.h>, absent from libc 0.2.191. Verified against
+// bun 179664ea (src/runtime/node/node_fs.rs) and reflink-copy 0.1.30.
+#[cfg(target_os = "macos")]
+const CLONE_NOFOLLOW: u32 = 0x0001;
 
 /// A failed filesystem operation while placing files.
 #[derive(Debug, thiserror::Error)]
@@ -218,6 +226,7 @@ enum CloneFailure {
     /// The filesystem cannot clone: try hardlinks.
     Unsupported,
     /// Source and destination are on different filesystems: copy.
+    #[cfg(unix)]
     CrossDevice,
     Other(io::Error),
 }
@@ -294,17 +303,13 @@ fn file_perm(meta: &std::fs::Metadata) -> u32 {
 
 /// Creates `dst` with `O_EXCL`; an existing file is unlinked first rather than truncated,
 /// because it may be a hard link of the source.
+#[cfg(unix)]
 fn create_replacing(dst: &Path, perm: u32) -> io::Result<File> {
     let open = || {
         let mut o = std::fs::OpenOptions::new();
         o.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            o.mode(perm).custom_flags(libc::O_NOFOLLOW);
-        }
-        #[cfg(not(unix))]
-        let _ = perm;
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(perm).custom_flags(libc::O_NOFOLLOW);
         o.open(dst)
     };
     match open() {
@@ -326,7 +331,7 @@ fn clone_file(src: &Path, dst: &Path) -> io::Result<()> {
         .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     let clone = || {
         // SAFETY: both arguments are NUL-terminated paths that live for the call.
-        let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), libc::CLONE_NOFOLLOW) };
+        let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), CLONE_NOFOLLOW) };
         if rc == 0 {
             Ok(())
         } else {
@@ -486,12 +491,10 @@ fn copy_data(input: &File, out: &File, state: &mut CopyState) -> io::Result<()> 
     }
 }
 
-#[cfg(not(any(
-    target_os = "macos",
-    target_os = "linux",
-    target_os = "android",
-    windows
-)))]
+#[cfg(all(
+    unix,
+    not(any(target_os = "macos", target_os = "linux", target_os = "android"))
+))]
 fn copy_data(input: &File, out: &File, _state: &mut CopyState) -> io::Result<()> {
     while read_write_chunk(input, out)? > 0 {}
     Ok(())
@@ -581,6 +584,7 @@ pub fn place_file_with_state(
                 Err(e) => match classify_clone(e) {
                     CloneFailure::Unsupported => sticky.degrade(Backend::Hardlink),
                     // A hard link would fail with EXDEV too.
+                    #[cfg(unix)]
                     CloneFailure::CrossDevice => sticky.degrade(Backend::Copyfile),
                     CloneFailure::Other(e) => {
                         return Err(MaterializeError::io("clonefile", src, dst, e));
@@ -716,7 +720,7 @@ pub fn clone_dir(src: &Path, dst: &Path) -> Result<bool, MaterializeError> {
         })?;
         let clone = || {
             // SAFETY: NUL-terminated paths valid for the call.
-            let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), libc::CLONE_NOFOLLOW) };
+            let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), CLONE_NOFOLLOW) };
             if rc == 0 {
                 Ok(())
             } else {

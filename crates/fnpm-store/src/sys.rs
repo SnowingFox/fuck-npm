@@ -162,6 +162,7 @@ impl Dir {
 }
 
 /// `raw_os_error() == Some(code)`.
+#[cfg(unix)]
 pub(crate) fn errno_is(e: &io::Error, code: i32) -> bool {
     e.raw_os_error() == Some(code)
 }
