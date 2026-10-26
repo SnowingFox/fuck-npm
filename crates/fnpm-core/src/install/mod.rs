@@ -741,6 +741,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         || lock.migrated
         // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces.
         || lock.graph.as_ref().is_some_and(|g| g.lockfile_version == 0)
+        || lock.config_version_missing
         || !root.join(lock::target_name(&config, &lock)).exists();
 
     let mut patch_rollback = if !config.dry_run {
@@ -1991,6 +1992,7 @@ fn save(
                 ..Default::default()
             },
         )?;
+        events.emit(Event::status("Saved yarn.lock"));
     }
     Ok(true)
 }

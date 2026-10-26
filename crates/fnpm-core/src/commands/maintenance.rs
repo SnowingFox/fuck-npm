@@ -136,7 +136,7 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if check || cx.pm.dry_run {
         return Ok(exit(i32::from(check), data, lines));
     }
-    fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
+    fnpm_lockfile::save_keeping_format(&project.root_dir, &graph, None)?;
     if !lock_tool {
         reinstall(cx).await?;
     }

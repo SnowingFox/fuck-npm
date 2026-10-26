@@ -34,6 +34,8 @@ pub(crate) struct LockState {
     pub failures: Vec<fnpm_types::Event>,
     /// xxh3 of fnpm.lock when the graph came from it.
     pub hash: Option<u64>,
+    /// fnpm.lock has no `configVersion` (an older writer): it is saved again with one.
+    pub config_version_missing: bool,
     /// The sidecar ([`sidecar_path`]) was not fresh, so it should be written from
     /// [`LockState::graph`] after the install.
     pub sidecar_missing: bool,
@@ -233,6 +235,7 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
         match fnpm_lockfile::load_with(dir, ws, &opts) {
             Ok(Some(loaded)) => {
                 state.warnings.extend(loaded.warnings);
+                state.config_version_missing = loaded.config_version_missing;
                 if loaded.format == Format::Fnpm {
                     state.hash = Some(loaded.hash);
                     state.sidecar_missing = !fnpm_lockfile::sidecar::is_fresh_at(

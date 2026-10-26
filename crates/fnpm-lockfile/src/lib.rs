@@ -214,6 +214,8 @@ pub struct Loaded {
     pub migrated: bool,
     /// xxh3-64 of the file bytes (sidecar and state-file key).
     pub hash: u64,
+    /// fnpm.lock has no `configVersion`: bun saves it again with one (`0`).
+    pub config_version_missing: bool,
     /// Problems that did not stop loading: ignored malformed integrities in old lockfiles,
     /// and higher-priority foreign lockfiles that failed to migrate.
     pub warnings: Vec<String>,
@@ -293,6 +295,8 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
         };
         let hash = content_hash(&bytes);
         let migrated = format != Format::Fnpm;
+        let config_version_missing = format == Format::Fnpm
+            && !bytes.windows(15).any(|w| w == b"\"configVersion\"");
         if format == Format::Fnpm
             && !opts.no_sidecar
             && let Some(graph) = match &opts.sidecar_path {
@@ -306,6 +310,7 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
                 path,
                 migrated,
                 hash,
+                config_version_missing,
                 warnings,
             }));
         }
@@ -329,6 +334,7 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
                     path,
                     migrated,
                     hash,
+                    config_version_missing,
                     warnings,
                 }));
             }
@@ -466,6 +472,17 @@ pub fn save_binary(dir: &Path, graph: &LockGraph) -> Result<bool> {
     }
     write_atomic(&path, &bytes)?;
     Ok(true)
+}
+
+/// Saves `graph` in the project's lockfile: bun.lockb when that is the lockfile the project
+/// keeps (no fnpm.lock beside it), else fnpm.lock. For commands that edit a loaded lockfile.
+pub fn save_keeping_format(dir: &Path, graph: &LockGraph, sidecar_path: Option<&Path>) -> Result<()> {
+    if !dir.join(FNPM_LOCK).exists() && dir.join(BUN_LOCKB).exists() {
+        save_binary(dir, graph)?;
+    } else {
+        save_with(dir, graph, sidecar_path)?;
+    }
+    Ok(())
 }
 
 /// Writes `yarn.lock` v1 next to the lockfile (`--yarn`, `install.lockfile.print = "yarn"`),
