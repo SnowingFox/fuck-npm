@@ -2030,7 +2030,10 @@ stage counts are not presented as an overall percentage.
 
 A 500 ms sample reports registry response bytes and recent response-byte throughput,
 active requests and the adaptive request limit, manifest/tarball request count, manifest
-cache reuse (including 304 responses), and retries. CPU cores means available parallelism;
+cache reuse (including 304 responses), and retries. Local package-store hits have their own
+`Store N packages reused` counter; metadata cache hits are labelled separately. With no
+active registry requests the network row says `Network idle`, preserving cumulative bytes
+and requests after activity or saying `no registry requests` before it. CPU cores means available parallelism;
 I/O workers and link workers are the configured runtime size and the pool size selected for
 the link pass, respectively. These are not measurements of busy cores, total OS threads,
 CPU utilization, or total interface traffic. Native dependency tools have their own network

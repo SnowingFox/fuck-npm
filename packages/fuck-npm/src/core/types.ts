@@ -127,6 +127,7 @@ export type CoreEvent =
       requests: number;
       cacheHits: number;
       retries: number;
+      reusedPackages?: number;
     }
   /** One runner invocation adds this many scripts to the install plan. */
   | { type: "scriptplan"; total: number }

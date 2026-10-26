@@ -65,7 +65,8 @@ ports and the owning crate. Checked rows have crate-level tests; command and end
   bun's default list, lifecycle scripts, `minimumReleaseAge`, security scanners, `--cpu`/`--os`.
 - **Lockfiles:** `fnpm.lock` (bun.lock's text format), migration from every major lockfile on
   first install, and `fnpm-lock migrate | export | verify | diff | why | dedupe | audit | print`.
-- **Output:** structured JSON for supported command results, a single-line progress view on a TTY,
+- **Output:** structured JSON for supported command results, animated installation progress on a TTY
+  with package/script counts, local store reuse, registry traffic and worker settings,
   plain text when piped, bun's install summary format.
 
 Excluded on purpose: bun-runtime features (running files, `bun build`, `bun upgrade`). fnpm reads

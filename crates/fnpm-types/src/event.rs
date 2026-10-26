@@ -60,6 +60,9 @@ pub enum Event {
         requests: u64,
         cache_hits: u64,
         retries: u64,
+        /// Packages read from the local content store, separate from manifest cache hits.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        reused_packages: u64,
     },
     /// Scripts scheduled by one runner invocation; successive plans are additive.
     ScriptPlan {
@@ -99,6 +102,10 @@ pub enum Event {
     Summary {
         summary: InstallSummary,
     },
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 fn is_false(value: &bool) -> bool {
@@ -265,6 +272,7 @@ mod tests {
             requests: 10,
             cache_hits: 6,
             retries: 1,
+            reused_packages: 0,
         };
         let json = serde_json::json!({
             "type": "telemetry", "cpus": 8, "ioThreads": 4, "linkThreads": 3,

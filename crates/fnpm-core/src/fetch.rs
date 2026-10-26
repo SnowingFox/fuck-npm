@@ -144,6 +144,7 @@ struct Inner {
     events: Arc<dyn EventSink>,
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     counters: Counters,
+    reused_packages: Option<Arc<AtomicU64>>,
 }
 
 /// Starts and tracks the imports of one install. Cheap to clone.
@@ -199,8 +200,16 @@ impl Fetcher {
                 events,
                 slots: Mutex::new(HashMap::new()),
                 counters: Counters::default(),
+                reused_packages: None,
             }),
         }
+    }
+
+    pub(crate) fn with_reuse_counter(mut self, counter: Option<Arc<AtomicU64>>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("fetcher not started")
+            .reused_packages = counter;
+        self
     }
 
     /// The store.
@@ -448,6 +457,9 @@ fn cached(
         integrity: integrity?,
     };
     let entry = inner.store.get(&key).ok().flatten()?;
+    if let Some(counter) = &inner.reused_packages {
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
     Some(Fetched { entry, key })
 }
 

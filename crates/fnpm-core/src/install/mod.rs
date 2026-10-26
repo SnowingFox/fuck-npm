@@ -482,7 +482,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         config.cache_dir.clone(),
         config.verify_integrity,
         events.clone(),
-    );
+    )
+    .with_reuse_counter(telemetry.as_ref().map(|guard| guard.reuse_counter()));
     let omits = config.omit.dev || config.omit.optional || config.omit.peer || config.production;
     let stream =
         config.install_packages && !opts.pm.lockfile_only && !omits && planned.selected.is_none();

@@ -154,8 +154,28 @@ describe("createProgress", () => {
     bed.advance(50);
     const output = plain(bed.stderr.text());
     expect(output).toContain("react");
-    expect(output).toContain("Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries");
+    expect(output).toContain("Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 metadata cached · 1 retries");
     expect(output).toContain("8 CPU cores · workers: 4 I/O, 0 link");
+    progress.stop();
+  });
+
+  test("separates package reuse from metadata and shows idle registry activity", () => {
+    const bed = testBed({ stderrIsTTY: true });
+    const progress = createProgress(bed.runtime);
+    const telemetry = { type: "telemetry" as const, cpus: 8, ioThreads: 4, linkThreads: 8,
+      networkActive: 0, networkLimit: 64, bytes: 0, requests: 0, cacheHits: 0, retries: 0 };
+    progress.sink(telemetry);
+    expect(plain(bed.stderr.text())).toContain("Network idle · no registry requests");
+    expect(plain(bed.stderr.text())).not.toContain("0 B/s");
+    bed.advance(500);
+    progress.sink({ ...telemetry, reusedPackages: 1430, cacheHits: 5 });
+    bed.advance(50);
+    const output = plain(bed.stderr.text());
+    expect(output).toContain("Store 1430 packages reused");
+    expect(output).toContain("Network idle · no registry requests · 5 metadata cached");
+    progress.sink({ ...telemetry, bytes: 1024, requests: 2 });
+    bed.advance(50);
+    expect(plain(bed.stderr.text())).toContain("Network idle · 1.0 KiB · 2 requests");
     progress.stop();
   });
 

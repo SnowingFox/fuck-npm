@@ -82,7 +82,14 @@ export function createProgress(runtime: CliRuntime): Progress {
     } else if (current) result.push(`  ${clean(current)}`);
     if (telemetry) {
       const rate = now - sampleAt > 1500 ? 0 : speed;
-      result.push(pc.dim(`  Network ${telemetry.networkActive}/${telemetry.networkLimit} · ${formatBytes(rate)}/s · ${formatBytes(telemetry.bytes)} · ${telemetry.requests} requests · ${telemetry.cacheHits} cached${telemetry.retries ? ` · ${telemetry.retries} retries` : ""}`));
+      if (telemetry.reusedPackages) result.push(pc.dim(`  Store ${telemetry.reusedPackages} packages reused`));
+      const network = telemetry.networkActive
+        ? `Network ${telemetry.networkActive}/${telemetry.networkLimit} · ${formatBytes(rate)}/s`
+        : "Network idle";
+      const traffic = telemetry.requests || telemetry.bytes || telemetry.networkActive
+        ? ` · ${formatBytes(telemetry.bytes)} · ${telemetry.requests} requests`
+        : " · no registry requests";
+      result.push(pc.dim(`  ${network}${traffic}${telemetry.cacheHits ? ` · ${telemetry.cacheHits} metadata cached` : ""}${telemetry.retries ? ` · ${telemetry.retries} retries` : ""}`));
       result.push(pc.dim(`  ${telemetry.cpus} CPU cores · workers: ${telemetry.ioThreads} I/O, ${telemetry.linkThreads} link`));
     }
     return result;

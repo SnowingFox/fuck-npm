@@ -186,6 +186,7 @@ struct Telemetry {
     sink: Arc<dyn EventSink>,
     cpus: u32,
     io_threads: u32,
+    reused_packages: Arc<std::sync::atomic::AtomicU64>,
     /// Serializes timer emissions, link-setting updates and the final snapshot.
     settings: Mutex<TelemetrySettings>,
 }
@@ -211,6 +212,9 @@ impl Telemetry {
                 .saturating_add(stats.tarball_requests),
             cache_hits: stats.manifest_cache_hits.saturating_add(stats.not_modified),
             retries: stats.retries,
+            reused_packages: self
+                .reused_packages
+                .load(std::sync::atomic::Ordering::Relaxed),
         });
     }
 
@@ -236,6 +240,7 @@ impl TelemetryGuard {
             sink: sink.clone(),
             cpus: fnpm_types::available_parallelism().min(u32::MAX as usize) as u32,
             io_threads: crate::io_threads().min(u32::MAX as usize) as u32,
+            reused_packages: Arc::default(),
             settings: Mutex::default(),
         });
         state.sample();
@@ -251,6 +256,10 @@ impl TelemetryGuard {
             }
         });
         Some(Self { state, task })
+    }
+
+    pub(crate) fn reuse_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        self.state.reused_packages.clone()
     }
 
     /// The pool size actually selected for this linking pass, rather than a CPU estimate.
@@ -414,13 +423,15 @@ mod tests {
         assert_eq!(events.lock().len(), 1, "immediate snapshot");
         assert!(matches!(events.lock()[0], Event::Telemetry {
             cpus, io_threads, link_threads: 0, network_active: 0, network_limit,
-            bytes: 0, requests: 0, cache_hits: 0, retries: 0
+            bytes: 0, requests: 0, cache_hits: 0, retries: 0, reused_packages: 0
         } if cpus > 0 && io_threads > 0 && network_limit > 0));
+        guard.reuse_counter().fetch_add(7, Ordering::Relaxed);
         guard.link_threads(3);
         assert!(matches!(
             events.lock().last().unwrap(),
             Event::Telemetry {
                 link_threads: 3,
+                reused_packages: 7,
                 ..
             }
         ));

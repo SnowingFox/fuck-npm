@@ -92,6 +92,7 @@ struct Telemetry {
     requests: u64,
     cache_hits: u64,
     retries: u64,
+    reused_packages: u64,
 }
 
 /// The renderer state. Every method appends what it would write to stderr to `out`.
@@ -286,14 +287,31 @@ impl Renderer {
             } else {
                 self.speed
             };
+            if t.reused_packages > 0 {
+                lines.push(pc.dim(&format!("  Store {} packages reused", t.reused_packages)));
+            }
+            let network = if t.network_active > 0 {
+                format!(
+                    "Network {}/{} · {}/s",
+                    t.network_active,
+                    t.network_limit,
+                    format_bytes(rate)
+                )
+            } else {
+                "Network idle".to_owned()
+            };
+            let traffic = if t.requests > 0 || t.bytes > 0 || t.network_active > 0 {
+                format!(" · {} · {} requests", format_bytes(t.bytes), t.requests)
+            } else {
+                " · no registry requests".to_owned()
+            };
             lines.push(pc.dim(&format!(
-                "  Network {}/{} · {}/s · {} · {} requests · {} cached{}",
-                t.network_active,
-                t.network_limit,
-                format_bytes(rate),
-                format_bytes(t.bytes),
-                t.requests,
-                t.cache_hits,
+                "  {network}{traffic}{}{}",
+                if t.cache_hits > 0 {
+                    format!(" · {} metadata cached", t.cache_hits)
+                } else {
+                    String::new()
+                },
                 if t.retries > 0 {
                     format!(" · {} retries", t.retries)
                 } else {
@@ -445,6 +463,7 @@ impl Renderer {
                 requests,
                 cache_hits,
                 retries,
+                reused_packages,
             } => {
                 if now > self.sample_at {
                     self.speed = (bytes.saturating_sub(self.sample_bytes) as f64 * 1000.0
@@ -463,6 +482,7 @@ impl Renderer {
                     requests: *requests,
                     cache_hits: *cache_hits,
                     retries: *retries,
+                    reused_packages: *reused_packages,
                 });
             }
             Event::Output { active } => {

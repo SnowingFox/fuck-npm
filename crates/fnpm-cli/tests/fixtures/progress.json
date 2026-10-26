@@ -1825,7 +1825,7 @@
       ],
       "columns": 120,
       "colors": false,
-      "expected": "\r\u001b[2K⠋ Resolving 1/?  0.0s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠴ Resolving 1/?  0.5s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠦ Resolving 1/?  0.6s\n  react\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠧ Installing 4/10  0.7s\n  react@19.0.0\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
+      "expected": "\r\u001b[2K⠋ Resolving 1/?  0.0s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠴ Resolving 1/?  0.5s\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠦ Resolving 1/?  0.6s\n  react\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 metadata cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠧ Installing 4/10  0.7s\n  react@19.0.0\n  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 metadata cached · 1 retries\n  8 CPU cores · workers: 4 I/O, 0 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
     },
     {
       "name": "network telemetry and current linking package (colors=True)",
@@ -1875,7 +1875,115 @@
       ],
       "columns": 120,
       "colors": true,
-      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.0s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠴\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.5s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠦\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.6s\u001b[22m\n  react\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠧\u001b[39m \u001b[36mInstalling\u001b[39m 4/10  \u001b[2m0.7s\u001b[22m\n  react@19.0.0\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.0s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠴\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.5s\u001b[22m\n  react\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠦\u001b[39m \u001b[36mResolving\u001b[39m 1/?  \u001b[2m0.6s\u001b[22m\n  react\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 metadata cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠧\u001b[39m \u001b[36mInstalling\u001b[39m 4/10  \u001b[2m0.7s\u001b[22m\n  react@19.0.0\n\u001b[2m  Network 3/64 · 2.0 MiB/s · 1.0 MiB · 7 requests · 5 metadata cached · 1 retries\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 0 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "warm store reuse and idle network (colors=False)",
+      "steps": [
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 8,
+            "networkActive": 0,
+            "networkLimit": 64,
+            "bytes": 0,
+            "requests": 0,
+            "cacheHits": 0,
+            "retries": 0
+          }
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 90,
+            "total": 1430,
+            "name": "socket.io-client@4.8.4"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 8,
+            "networkActive": 0,
+            "networkLimit": 64,
+            "bytes": 0,
+            "requests": 0,
+            "cacheHits": 0,
+            "retries": 0,
+            "reusedPackages": 1430
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": false,
+      "expected": "\r\u001b[2K⠋ Resolving 0/?  0.0s\n  Network idle · no registry requests\n  8 CPU cores · workers: 4 I/O, 8 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠙ Installing 90/1430  0.1s\n  socket.io-client@4.8.4\n  Network idle · no registry requests\n  8 CPU cores · workers: 4 I/O, 8 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K⠹ Installing 90/1430  0.2s\n  socket.io-client@4.8.4\n  Store 1430 packages reused\n  Network idle · no registry requests\n  8 CPU cores · workers: 4 I/O, 8 link\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
+    },
+    {
+      "name": "warm store reuse and idle network (colors=True)",
+      "steps": [
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 8,
+            "networkActive": 0,
+            "networkLimit": 64,
+            "bytes": 0,
+            "requests": 0,
+            "cacheHits": 0,
+            "retries": 0
+          }
+        },
+        {
+          "event": {
+            "type": "link",
+            "done": 90,
+            "total": 1430,
+            "name": "socket.io-client@4.8.4"
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "event": {
+            "type": "telemetry",
+            "cpus": 8,
+            "ioThreads": 4,
+            "linkThreads": 8,
+            "networkActive": 0,
+            "networkLimit": 64,
+            "bytes": 0,
+            "requests": 0,
+            "cacheHits": 0,
+            "retries": 0,
+            "reusedPackages": 1430
+          }
+        },
+        {
+          "advance": 100
+        },
+        {
+          "stop": true
+        }
+      ],
+      "columns": 120,
+      "colors": true,
+      "expected": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 0/?  \u001b[2m0.0s\u001b[22m\n\u001b[2m  Network idle · no registry requests\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 8 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠙\u001b[39m \u001b[36mInstalling\u001b[39m 90/1430  \u001b[2m0.1s\u001b[22m\n  socket.io-client@4.8.4\n\u001b[2m  Network idle · no registry requests\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 8 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\r\u001b[2K\u001b[36m⠹\u001b[39m \u001b[36mInstalling\u001b[39m 90/1430  \u001b[2m0.2s\u001b[22m\n  socket.io-client@4.8.4\n\u001b[2m  Store 1430 packages reused\u001b[22m\n\u001b[2m  Network idle · no registry requests\u001b[22m\n\u001b[2m  8 CPU cores · workers: 4 I/O, 8 link\u001b[22m\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K\u001b[1A\r\u001b[2K"
     }
   ]
 }
