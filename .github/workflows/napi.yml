@@ -1,5 +1,5 @@
-# Builds the napi addon (crates/fnpm-napi -> fnpm.<triple>.node) for every published
-# target and runs the binding's tests on the platforms GitHub can execute natively.
+# Builds the native launchers and napi addon for every published target, then
+# installs the actual npm tarballs on the platforms GitHub can execute natively.
 # Actions are pinned to commit SHAs (tag in the trailing comment); tool versions are pinned
 # in env below.
 name: napi
@@ -12,6 +12,10 @@ on:
       - "crates/**"
       - "packages/fuck-npm-binding/**"
       - "packages/fuck-npm/src/core/**"
+      - "packages/fuck-npm/bin/**"
+      - "packages/fuck-npm/lib/**"
+      - "packages/fuck-npm/scripts/**"
+      - "scripts/**"
       - "packages/fuck-npm/tests/unit/core/native.test.ts"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -46,7 +50,7 @@ jobs:
           - { target: x86_64-apple-darwin, host: macos-latest }
           # Keep glibc 2.17 compatibility. The bundled ARM GCC is too old for libdeflate,
           # so ARM uses Zig with an explicit glibc baseline.
-          - { target: x86_64-unknown-linux-gnu, host: ubuntu-latest, flags: --use-napi-cross }
+          - { target: x86_64-unknown-linux-gnu, build_target: x86_64-unknown-linux-gnu.2.17, host: ubuntu-latest, flags: -x, zig: true }
           - { target: aarch64-unknown-linux-gnu, build_target: aarch64-unknown-linux-gnu.2.17, host: ubuntu-latest, flags: -x, zig: true }
           - { target: x86_64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
           - { target: aarch64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
@@ -84,10 +88,29 @@ jobs:
           npx napi build --platform --profile release-napi --target "${{ matrix.build_target || matrix.target }}"
           ${{ matrix.flags }}
           --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js
+      - name: Build and collect native launchers
+        shell: bash
+        env:
+          CFLAGS_x86_64_unknown_linux_musl: -mevex512
+        run: |
+          if [[ "${{ matrix.zig }}" == "true" ]]; then
+            cargo zigbuild --release --locked -j 4 -p fnpm-cli --bins --target "${{ matrix.build_target || matrix.target }}"
+          else
+            cargo build --release --locked -j 4 -p fnpm-cli --bins --target "${{ matrix.target }}"
+          fi
+          suffix=""
+          if [[ "${{ matrix.target }}" == *windows* ]]; then suffix=".exe"; fi
+          cp "target/${{ matrix.target }}/release/fnpm${suffix}" packages/fuck-npm-binding/
+          cp "target/${{ matrix.target }}/release/fnpm-lock${suffix}" packages/fuck-npm-binding/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: binding-${{ matrix.target }}
-          path: packages/fuck-npm-binding/fnpm.*.node
+          path: |
+            packages/fuck-npm-binding/fnpm.*.node
+            packages/fuck-npm-binding/fnpm
+            packages/fuck-npm-binding/fnpm-lock
+            packages/fuck-npm-binding/fnpm.exe
+            packages/fuck-npm-binding/fnpm-lock.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -150,15 +173,29 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: binding-${{ matrix.target }}
-          path: packages/fuck-npm-binding
+          path: artifacts/binding-${{ matrix.target }}
       - if: ${{ !matrix.alpine }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
       - if: ${{ !matrix.alpine }}
-        working-directory: packages/fuck-npm-binding
-        run: node tests/smoke.cjs
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build -w fuck-npm
+          cp artifacts/binding-${{ matrix.target }}/fnpm.*.node packages/fuck-npm-binding/
+          node packages/fuck-npm-binding/tests/smoke.cjs
+          node scripts/stage-release.mjs --name @fnpm-ci/fuck-npm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke
+          node scripts/pack-release.mjs release-smoke
+          node scripts/smoke-release.mjs release-smoke
       - if: matrix.alpine
         run: >
-          docker run --rm -v "$PWD:/w" -w /w/packages/fuck-npm-binding
-          node:${{ env.NODE_VERSION }}-alpine node tests/smoke.cjs
+          docker run --rm -v "$PWD:/w" -w /w
+          node:${{ env.NODE_VERSION }}-alpine sh -ec '
+          npm ci --ignore-scripts --no-audit --no-fund &&
+          npm run build -w fuck-npm &&
+          cp artifacts/binding-${{ matrix.target }}/fnpm.*.node packages/fuck-npm-binding/ &&
+          node packages/fuck-npm-binding/tests/smoke.cjs &&
+          node scripts/stage-release.mjs --name @fnpm-ci/fuck-npm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke &&
+          node scripts/pack-release.mjs release-smoke &&
+          node scripts/smoke-release.mjs release-smoke'
