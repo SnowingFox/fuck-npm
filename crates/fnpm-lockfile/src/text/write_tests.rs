@@ -287,7 +287,8 @@ fn other_resolutions() {
             url: "git@example.com:org/g.git".into(),
             committish: "".into(),
             resolved_commit: "0123456789abcdef0123456789abcdef01234567".into(),
-            integrity: None,
+            // A checkout's integrity stays out of the text (bun writes none).
+            integrity: Some(i),
         },
     ));
     let tgz = g.push(Package::new(

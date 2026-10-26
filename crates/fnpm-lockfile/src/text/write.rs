@@ -748,7 +748,11 @@ impl W<'_, '_> {
                 self.info(row.behavior, pkg);
                 self.s(", ");
                 self.q(resolved_commit);
-                self.integrity_suffix(integrity.as_ref(), false);
+                // bun records the integrity of a GitHub tarball, not of a git checkout.
+                let integrity = integrity
+                    .as_ref()
+                    .filter(|_| matches!(p.resolution, Resolution::Github { .. }));
+                self.integrity_suffix(integrity, false);
             }
         }
     }
