@@ -19,10 +19,12 @@ Store v2 is preserved. Integration fixes cover explicit omitted-peer adds, local
 audit repairs replacing installed files, running previously blocked scripts after trust changes,
 full scanner scope after node_modules removal, and a single metadata request with a release-age gate.
 
-The earlier main CI run ([40203454709](https://github.com/SnowingFox/fuck-npm/actions/runs/40203454709))
+The integrated main CI run ([40251319935](https://github.com/SnowingFox/fuck-npm/actions/runs/40251319935))
 failed on macOS (`libc::CLONE_NOFOLLOW` is unavailable), Windows Clippy (unused/dead store code),
-and Linux ARM GNU cross-compilation (the bundled GCC is too old for libdeflate). This Linux x64
-validation does not close those platform blockers.
+and Linux ARM GNU cross-compilation (the bundled GCC is too old for libdeflate). Linux x64 and ARM64
+binding test jobs passed, as did Linux GNU x64, both musl, and both Windows release addon builds.
+Release smoke jobs were skipped because the build matrix failed. ARM GNU now uses Zig with an explicit
+glibc 2.17 target; the platform fixes require a fresh CI run before these blockers can be considered closed.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.

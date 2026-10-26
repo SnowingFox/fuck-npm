@@ -44,10 +44,10 @@ jobs:
         include:
           - { target: aarch64-apple-darwin, host: macos-latest }
           - { target: x86_64-apple-darwin, host: macos-latest }
-          # glibc builds use napi-rs's cross toolchain so the .node links against an old
-          # glibc and loads on older distributions.
+          # Keep glibc 2.17 compatibility. The bundled ARM GCC is too old for libdeflate,
+          # so ARM uses Zig with an explicit glibc baseline.
           - { target: x86_64-unknown-linux-gnu, host: ubuntu-latest, flags: --use-napi-cross }
-          - { target: aarch64-unknown-linux-gnu, host: ubuntu-latest, flags: --use-napi-cross }
+          - { target: aarch64-unknown-linux-gnu, build_target: aarch64-unknown-linux-gnu.2.17, host: ubuntu-latest, flags: -x, zig: true }
           - { target: x86_64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
           - { target: aarch64-unknown-linux-musl, host: ubuntu-latest, flags: -x, zig: true }
           - { target: x86_64-pc-windows-msvc, host: windows-latest }
@@ -81,7 +81,7 @@ jobs:
           # libdeflate's AVX-512 functions (target attributes without evex512) fail to compile.
           CFLAGS_x86_64_unknown_linux_musl: -mevex512
         run: >
-          npx napi build --platform --profile release-napi --target "${{ matrix.target }}"
+          npx napi build --platform --profile release-napi --target "${{ matrix.build_target || matrix.target }}"
           ${{ matrix.flags }}
           --manifest-path ../../crates/fnpm-napi/Cargo.toml --output-dir . --no-js
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

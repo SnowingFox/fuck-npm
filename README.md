@@ -1,7 +1,7 @@
 # fuck-npm (`fnpm`)
 
-A Node.js package manager with bun's feature set, built to install faster than bun and to use
-less disk than bun or pnpm.
+A Node.js package manager targeting bun's package-management feature set, built to install faster
+than bun and to use less disk than bun or pnpm.
 
 Two binaries: `fnpm` (the package manager) and `fnpm-lock` (a lockfile toolkit).
 
