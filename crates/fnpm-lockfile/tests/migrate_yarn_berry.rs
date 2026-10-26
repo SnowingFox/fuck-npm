@@ -298,7 +298,7 @@ fn workspaces_and_workspace_ranges_match_bun_snapshot() {
         g.packages[a.index()].bin,
         fnpm_types::Bin::NamedFile {
             name: "pkg-a".into(),
-            path: "bin.js".into()
+            path: "./bin.js".into()
         }
     );
     // (fnpm-types normalises bin targets; bun.lock writes "./bin.js")

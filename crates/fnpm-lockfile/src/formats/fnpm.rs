@@ -4,7 +4,6 @@
 
 use fnpm_types::LockGraph;
 
-use crate::text::Dialect;
 use crate::{Error, ParseOptions, Result};
 
 /// Parses fnpm.lock text. The edges of the result are bound and re-hoisted exactly like
@@ -22,12 +21,12 @@ pub fn parse_with_warnings(bytes: &[u8], opts: &ParseOptions) -> Result<(LockGra
 /// broken at its last nesting (see [`crate::tree::try_hoist`]); [`try_serialize`] and
 /// [`crate::save`] report it instead.
 pub fn serialize(graph: &LockGraph) -> String {
-    crate::text::write::write(graph, Dialect::Fnpm).text
+    crate::text::write::write(graph).text
 }
 
 /// Like [`serialize`] but fails on an endless nesting cycle, as bun does.
 pub fn try_serialize(graph: &LockGraph) -> Result<String> {
-    let w = crate::text::write::write(graph, Dialect::Fnpm);
+    let w = crate::text::write::write(graph);
     match w.cycle {
         Some(cycle) => Err(Error::DependencyCycle(cycle)),
         None => Ok(w.text),

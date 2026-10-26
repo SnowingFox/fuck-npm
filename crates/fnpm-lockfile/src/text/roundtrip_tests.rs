@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::ParseOptions;
-use crate::text::Dialect;
 
 fn fixtures(dir: &str) -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -68,7 +67,7 @@ fn first_diff(a: &str, b: &str) -> String {
 fn roundtrip(src: &str) -> Result<String, String> {
     let (graph, _) = crate::text_parse(src.as_bytes(), "bun.lock", &ParseOptions::default())
         .map_err(|e| e.to_string())?;
-    Ok(super::write::write(&graph, Dialect::Bun).text)
+    Ok(super::write::write(&graph).text)
 }
 
 #[test]
@@ -165,10 +164,10 @@ fn fnpm_dialect_reads_back_to_the_same_bytes() {
             else {
                 continue;
             };
-            let once = super::write::write(&g, Dialect::Fnpm).text;
+            let once = super::write::write(&g).text;
             let (back, _) =
                 crate::text_parse(once.as_bytes(), "fnpm.lock", &ParseOptions::default()).unwrap();
-            let twice = super::write::write(&back, Dialect::Fnpm).text;
+            let twice = super::write::write(&back).text;
             assert!(once == twice, "{name}: {}", first_diff(&once, &twice));
         }
     }
@@ -224,11 +223,11 @@ fn output_does_not_depend_on_arena_order() {
         let (g, _) =
             crate::text_parse(src.as_bytes(), "bun.lock", &ParseOptions::default()).unwrap();
         g.validate().unwrap();
-        let want = super::write::write(&g, Dialect::Bun).text;
+        let want = super::write::write(&g).text;
         for seed in [1, 7, 42] {
             let s = shuffled(&g, seed);
             s.validate().unwrap();
-            let got = super::write::write(&s, Dialect::Bun).text;
+            let got = super::write::write(&s).text;
             assert!(
                 got == want,
                 "{name} seed {seed}: {}",
@@ -277,7 +276,7 @@ fn perf_large() {
             .unwrap()
             .0
     });
-    let (write, _) = best(20, || super::write::write(&graph, Dialect::Fnpm).text.len());
+    let (write, _) = best(20, || super::write::write(&graph).text.len());
     let platform = fnpm_types::Platform::current();
     let (hoist, _) = best(20, || {
         crate::tree::hoist(&graph, &crate::tree::HoistOptions::all(platform))

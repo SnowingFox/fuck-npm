@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use fnpm_types::{Behavior, Bin, CpuSet, LibcSet, LockGraph, OsSet, Package, Resolution};
 
-use super::{Dialect, LockfileVersion, url_is_under_registry};
+use super::{LockfileVersion, url_is_under_registry};
 use crate::bun_hash::{string_hash, written_order};
 use crate::flat::{FDep, Flat, INVALID};
 use crate::json_out::{escaped, quoted};
@@ -27,7 +27,6 @@ struct W<'a, 'g> {
     out: String,
     indent: u32,
     flat: &'a Flat<'g>,
-    dialect: Dialect,
     /// Names of every row in every folder, for `unresolved`.
     placed_names: Vec<bool>,
     any_unresolved: bool,
@@ -646,12 +645,6 @@ impl W<'_, '_> {
             );
             bin_single_line(&mut self.out, &p.bin);
         }
-        if self.dialect == Dialect::Fnpm
-            && let Some(dep) = &p.meta.deprecated
-        {
-            key(self, " \"deprecated\": ");
-            self.q(dep);
-        }
         if any {
             self.s(" }");
         } else {
@@ -768,17 +761,17 @@ fn patch_key(p: &Package) -> String {
 }
 
 /// Serialises `graph` (hoisting it first).
-pub(crate) fn write(graph: &LockGraph, dialect: Dialect) -> Written {
+pub(crate) fn write(graph: &LockGraph) -> Written {
     let mut flat = Flat::new(graph);
     let hoisted = tree::resolve(&mut flat);
-    let text = write_hoisted(&flat, &hoisted, dialect);
+    let text = write_hoisted(&flat, &hoisted);
     Written {
         text,
         cycle: hoisted.cycle,
     }
 }
 
-pub(crate) fn write_hoisted(flat: &Flat<'_>, h: &Hoisted, dialect: Dialect) -> String {
+pub(crate) fn write_hoisted(flat: &Flat<'_>, h: &Hoisted) -> String {
     let graph = flat.graph;
     let folders: Vec<Folder> = tree::folders(flat, h);
     let names_len = flat
@@ -802,7 +795,6 @@ pub(crate) fn write_hoisted(flat: &Flat<'_>, h: &Hoisted, dialect: Dialect) -> S
         out: String::with_capacity(256 + graph.packages.len() * 200),
         indent: 0,
         flat,
-        dialect,
         placed_names,
         any_unresolved,
     };
@@ -872,25 +864,10 @@ pub(crate) fn write_hoisted(flat: &Flat<'_>, h: &Hoisted, dialect: Dialect) -> S
             }
         }
     }
-    let ordered = |keys: &[u64],
-                   reserve: usize,
-                   sorted_by: &dyn Fn(usize, usize) -> std::cmp::Ordering|
-     -> Vec<usize> {
-        match dialect {
-            Dialect::Bun => written_order(keys, reserve),
-            Dialect::Fnpm => {
-                let mut idx = written_order(keys, keys.len());
-                idx.sort_by(|&a, &b| sorted_by(a, b));
-                idx
-            }
-        }
-    };
     if !trusted_found.is_empty() {
         let keys: Vec<u64> = trusted_found.iter().map(|t| t.0).collect();
         let reserve = graph.trusted_dependencies.as_ref().map_or(0, |t| t.len());
-        let order = ordered(&keys, reserve, &|a, b| {
-            trusted_found[a].1.cmp(trusted_found[b].1)
-        });
+        let order = written_order(&keys, reserve);
         w.write_indent();
         w.s("\"trustedDependencies\": [\n");
         w.indent += 1;
@@ -912,9 +889,7 @@ pub(crate) fn write_hoisted(flat: &Flat<'_>, h: &Hoisted, dialect: Dialect) -> S
     }
     if !patched_found.is_empty() {
         let keys: Vec<u64> = patched_found.iter().map(|t| t.0).collect();
-        let order = ordered(&keys, graph.patched_dependencies.len(), &|a, b| {
-            patched_found[a].1.cmp(&patched_found[b].1)
-        });
+        let order = written_order(&keys, graph.patched_dependencies.len());
         w.write_indent();
         w.s("\"patchedDependencies\": {\n");
         w.indent += 1;

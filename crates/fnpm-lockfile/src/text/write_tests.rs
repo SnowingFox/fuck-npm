@@ -5,7 +5,6 @@ use fnpm_types::{
     OverrideSelector, Package, PackageId, PatchedDependency, Resolution,
 };
 
-use super::Dialect;
 use super::write::{cpu_json, os_json, write};
 
 fn os(list: &[&str]) -> String {
@@ -158,7 +157,7 @@ fn sample() -> LockGraph {
 
 #[test]
 fn writes_the_documented_layout() {
-    let text = write(&sample(), Dialect::Fnpm).text;
+    let text = write(&sample()).text;
     let want = r#"{
   "lockfileVersion": 2,
   "configVersion": 1,
@@ -202,31 +201,21 @@ fn writes_the_documented_layout() {
         "    \"@app/lib\": [\"@app/lib@workspace:packages/lib\"],\n",
         "    \"@esbuild/linux-x64\": [\"@esbuild/linux-x64@0.21.5\", \"\", { \"os\": \"linux\", \"cpu\": \"x64\" }, \"sha512-",
         "    \"esbuild\": [\"esbuild@0.21.5\", \"\", { \"optionalDependencies\": { \"@esbuild/linux-x64\": \"0.21.5\" }, \"hasInstallScript\": true, \"bin\": { \"esbuild\": \"bin/esbuild\" } }, \"sha512-",
-        "    \"left-pad\": [\"left-pad@1.3.0\", \"\", { \"deprecated\": \"use String.prototype.padStart()\" }, \"sha512-",
+        "    \"left-pad\": [\"left-pad@1.3.0\", \"\", {}, \"sha512-",
         "    \"@app/lib/loose-envify\": [\"loose-envify@1.0.0\", \"\", { \"dependencies\": { \"js-tokens\": \"^4.0.0\" } }, \"sha512-",
     ] {
         assert!(text.contains(line), "missing {line:?} in\n{text}");
     }
-    // The bun dialect has no `deprecated`, and reads back to the same file.
-    let bun = write(&sample(), Dialect::Bun).text;
-    assert!(!bun.contains("deprecated"));
+    // Like bun.lock, no `deprecated` (that comes from the manifest), and it reads back to the
+    // same file.
+    assert!(!text.contains("deprecated"));
     let (g, _) = crate::text_parse(
         text.as_bytes(),
         "fnpm.lock",
         &crate::ParseOptions::default(),
     )
     .unwrap();
-    assert_eq!(write(&g, Dialect::Fnpm).text, text);
-    assert_eq!(
-        g.packages
-            .iter()
-            .find(|p| p.name == "left-pad")
-            .unwrap()
-            .meta
-            .deprecated
-            .as_deref(),
-        Some("use String.prototype.padStart()")
-    );
+    assert_eq!(write(&g).text, text);
 }
 
 #[test]
@@ -234,16 +223,12 @@ fn explicit_empty_trusted_list_is_kept() {
     let mut g = sample();
     g.trusted_dependencies = Some(Default::default());
     assert!(
-        write(&g, Dialect::Fnpm)
+        write(&g)
             .text
             .contains("\n  \"trustedDependencies\": [],\n")
     );
     g.trusted_dependencies = None;
-    assert!(
-        !write(&g, Dialect::Fnpm)
-            .text
-            .contains("trustedDependencies")
-    );
+    assert!(!write(&g).text.contains("trustedDependencies"));
 }
 
 #[test]
@@ -251,17 +236,9 @@ fn version_choice() {
     let mut g = sample();
     // A loaded v1 lockfile stays v1, v0 becomes v1.
     g.lockfile_version = 1;
-    assert!(
-        write(&g, Dialect::Bun)
-            .text
-            .contains("\"lockfileVersion\": 1,")
-    );
+    assert!(write(&g).text.contains("\"lockfileVersion\": 1,"));
     g.lockfile_version = 0;
-    assert!(
-        write(&g, Dialect::Bun)
-            .text
-            .contains("\"lockfileVersion\": 1,")
-    );
+    assert!(write(&g).text.contains("\"lockfileVersion\": 1,"));
     // Scoped overrides need v3.
     g.lockfile_version = 3;
     g.overrides.push(OverrideRule {
@@ -270,7 +247,7 @@ fn version_choice() {
             .unwrap(),
         value: "3.0.0".into(),
     });
-    let t = write(&g, Dialect::Bun).text;
+    let t = write(&g).text;
     assert!(t.contains("\"lockfileVersion\": 3,"));
     assert!(t.contains("  \"overrides\": {\n    \"js-tokens\": \"4.0.0\",\n    \"left-pad\": {\n      \"js-tokens\": \"3.0.0\",\n    },\n  },\n"), "{t}");
     // An off-registry tarball without integrity keeps a new lockfile at v1.
@@ -285,11 +262,7 @@ fn version_choice() {
         tarball_url: Some("https://mirror.example.com/js-tokens-4.0.0.tgz".into()),
         integrity: None,
     };
-    assert!(
-        write(&g, Dialect::Bun)
-            .text
-            .contains("\"lockfileVersion\": 1,")
-    );
+    assert!(write(&g).text.contains("\"lockfileVersion\": 1,"));
 }
 
 #[test]
@@ -379,7 +352,7 @@ fn other_resolutions() {
         Behavior::PROD,
         Some(ln),
     );
-    let text = write(&g, Dialect::Bun).text;
+    let text = write(&g).text;
     let sri = i.to_sri();
     for line in [
         "    \"\": {\n      \"dependencies\": {\n".to_owned(),
@@ -393,5 +366,5 @@ fn other_resolutions() {
     }
     let (back, _) =
         crate::text_parse(text.as_bytes(), "bun.lock", &crate::ParseOptions::default()).unwrap();
-    assert_eq!(write(&back, Dialect::Bun).text, text);
+    assert_eq!(write(&back).text, text);
 }
