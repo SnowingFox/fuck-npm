@@ -66,13 +66,16 @@ impl From<fnpm_registry::Error> for FetchFailure {
 
 impl From<fnpm_store::Error> for FetchFailure {
     fn from(e: fnpm_store::Error) -> Self {
-        let code = match e {
-            fnpm_store::Error::Integrity { .. } => "INTEGRITY",
-            _ => "CORE_ERROR",
-        };
-        Self {
-            message: e.to_string(),
-            code,
+        match e {
+            // bun's line, `Integrity check failed for tarball: <name>`.
+            fnpm_store::Error::Integrity { package, .. } => Self {
+                message: fnpm_store::integrity::integrity_failure_message(&package),
+                code: "INTEGRITY",
+            },
+            e => Self {
+                message: e.to_string(),
+                code: "CORE_ERROR",
+            },
         }
     }
 }
@@ -415,7 +418,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                 version.to_owned(),
                 *integrity,
             );
-            let skip_verify = !inner.verify;
+            // `--no-verify` skips the check of downloads only: a `file:` tarball is always checked.
             blocking(move || match integrity {
                 Some(integrity) => {
                     let key = PackageKey {
@@ -424,7 +427,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                         integrity,
                     };
                     store
-                        .import_tarball_bytes(&key, &bytes, ImportOptions { skip_verify })
+                        .import_tarball_bytes(&key, &bytes, ImportOptions::default())
                         .map(|entry| Fetched { entry, key })
                         .map_err(FetchFailure::from)
                 }
@@ -492,6 +495,21 @@ async fn remote(
     if let Some(hit) = cached(inner, name, version, known) {
         return Ok(hit);
     }
+    // `--no-verify` bytes that do not match the pin are stored under their own hash, never under
+    // the pin, and only `--no-verify` installs find them again (through the URL and the pin).
+    let unverified = integrity
+        .filter(|_| !inner.verify)
+        .map(|pin| format!("{url}#{}", pin.to_sri()));
+    if let Some(record) = &unverified
+        && let Some(hit) = cached(
+            inner,
+            name,
+            version,
+            inner.store.integrity_for_url(name, version, record),
+        )
+    {
+        return Ok(hit);
+    }
     if inner.client.offline_mode() == fnpm_config::OfflineMode::Offline {
         return Err(FetchFailure {
             code: "OFFLINE",
@@ -514,6 +532,21 @@ async fn remote(
         chunk.map_err(to_io)
     });
     match integrity {
+        Some(pin) if !inner.verify => {
+            let (key, entry) = inner
+                .store
+                .import_tarball_unpinned(name, version, stream)
+                .await
+                .map_err(FetchFailure::from)?;
+            if key.integrity != pin
+                && let Some(record) = &unverified
+            {
+                inner
+                    .store
+                    .remember_url(name, version, record, &key.integrity);
+            }
+            Ok(Fetched { entry, key })
+        }
         Some(integrity) => {
             let key = PackageKey {
                 name: name.to_owned(),
@@ -660,5 +693,21 @@ impl fnpm_linker::PackageSource for GraphSource<'_> {
         // A patch file that cannot be read fails in `wait`; no tag then.
         let (hash, _) = read_patch(&self.fetcher.inner.root_dir, patch).ok()?;
         Some(format!("{hash:016x}"))
+    }
+
+    fn unverified(&self, id: PackageId) -> bool {
+        if self.fetcher.inner.verify {
+            return false;
+        }
+        let Some(pkg) = self.graph.get(id) else {
+            return false;
+        };
+        let Some(pin) = pkg.resolution.integrity() else {
+            return false;
+        };
+        self.fetcher
+            .existing(pkg)
+            .and_then(|slot| slot.result.lock().clone())
+            .is_some_and(|done| done.is_ok_and(|f| f.key.integrity != *pin))
     }
 }
