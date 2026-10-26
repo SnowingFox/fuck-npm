@@ -900,9 +900,14 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // Every download is done (the link waited for them).
     announce_resolved(&client, &*events, announced);
 
-    // Global installs link the direct dependencies' bins into the global bin directory.
+    // Global installs link the direct dependencies' bins into the global bin directory, and
+    // only there: bun's global folder has no `node_modules/.bin`.
     if config.global {
         link_global_bins(&config, &root, &graph)?;
+        let local_bins = root.join("node_modules").join(".bin");
+        if local_bins.exists() {
+            fnpm_linker::fsutil::remove_any(&local_bins).map_err(Error::io(&local_bins))?;
+        }
     }
 
     // 8. Save (before scripts, so a failing script leaves a consistent lockfile).

@@ -208,7 +208,11 @@ pub(crate) fn plan(
             for input in &opts.packages {
                 let positional = Positional::parse(input)?;
                 for target in &targets {
-                    let positional = positional.relative_to(cwd, &ws.root_dir.join(target));
+                    let positional = if opts.pm.global {
+                        positional.absolute_from(cwd)
+                    } else {
+                        positional.relative_to(cwd, &ws.root_dir.join(target))
+                    };
                     let manifest = manifest_of(ws, target);
                     let name = positional.request_name();
                     if opts.only_missing && declared_group(manifest, &name).is_some() {
