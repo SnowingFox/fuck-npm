@@ -168,6 +168,16 @@ impl RegistryClient {
         })
     }
 
+    /// A `--verbose` line (bun's `[name] Extract …`); nothing without `--verbose`.
+    pub fn verbose_notice(&self, message: impl FnOnce() -> String) {
+        if !self.inner.verbose {
+            return;
+        }
+        if let Some(sink) = self.inner.events.read().as_ref() {
+            sink.emit(fnpm_types::Event::notice(message()));
+        }
+    }
+
     /// Where warnings go (retry waits, throttling, unaudited registries, refused credentials).
     pub fn set_event_sink(&self, sink: Arc<dyn EventSink>) {
         *self.inner.events.write() = Some(sink);

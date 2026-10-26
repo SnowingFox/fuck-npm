@@ -215,6 +215,21 @@ impl PackageFetcher for RegistrySource {
             let url = this.client.github_tarball_url(&owner, &repo, &committish);
             let bytes = this.client.tarball_bytes(&url).await?;
             tokio::task::spawn_blocking(move || {
+                // The whole body is read to name the commit after the archive's root directory.
+                this.client.verbose_notice(|| {
+                    let name = crate::tarball::package_json_from_tgz(&bytes)
+                        .ok()
+                        .and_then(|text| parse_package_json(&text, &url).ok()?.name)
+                        .unwrap_or_else(|| repo.clone());
+                    format!(
+                        "[{}] Extract {} ({} tgz file)",
+                        fnpm_types::text::escape_control_chars(&name),
+                        fnpm_types::text::escape_control_chars(
+                            url.rsplit('/').next().unwrap_or(&url)
+                        ),
+                        fnpm_types::text::format_size(bytes.len() as u64)
+                    )
+                });
                 let tag = crate::tarball::github_tag_from_tgz(&bytes, &owner, &repo).map_err(
                     |message| fnpm_registry::Error::InvalidManifest {
                         name: url.clone(),

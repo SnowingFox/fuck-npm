@@ -193,6 +193,15 @@ export function installEnv(dir: string, env: Record<string, string | undefined> 
   };
 }
 
+/**
+ * A cache directory that, as bun's, holds the extracted packages too: deleting it makes the next install download
+ * them again. fnpm keeps packages in the cache directory set by FNPM_CACHE_DIR unless FNPM_STORE_DIR names another
+ * place, which `fnpmEnv` does to share one store across a worker's tests.
+ */
+export function cacheWithPackages(dir: string): Record<string, string | undefined> {
+  return { FNPM_CACHE_DIR: dir, FNPM_STORE_DIR: undefined };
+}
+
 export interface RunOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;

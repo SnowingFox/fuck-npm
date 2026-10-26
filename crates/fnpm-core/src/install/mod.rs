@@ -494,7 +494,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.clone(),
     )
     .with_reuse_counter(telemetry.as_ref().map(|guard| guard.reuse_counter()))
-    .with_unpinned_reuse(!config.cache_disabled);
+    .with_unpinned_reuse(!config.cache_disabled)
+    .with_verbose(config.log_level == fnpm_config::LogLevel::Verbose);
     let omits = config.omit.dev || config.omit.optional || config.omit.peer || config.production;
     let stream =
         config.install_packages && !opts.pm.lockfile_only && !omits && planned.selected.is_none();
