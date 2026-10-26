@@ -752,10 +752,19 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 None,
                 &*events,
             )?;
-            // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too (without saying
-            // `Saved lockfile`), so the file is in the writer's form afterwards.
+            // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too, so the file is in
+            // the writer's form afterwards; `Saved lockfile` only when that changed its bytes.
             if !saved && config.lockfile.save {
-                fnpm_lockfile::save_with(&root, &graph, Some(&lock::sidecar_path(&config, &root)))?;
+                let path = root.join(fnpm_lockfile::FNPM_LOCK);
+                let text = fnpm_lockfile::serialize(Format::Fnpm, &graph)?;
+                if std::fs::read(&path).ok().as_deref() != Some(text.as_slice()) {
+                    fnpm_lockfile::save_with(
+                        &root,
+                        &graph,
+                        Some(&lock::sidecar_path(&config, &root)),
+                    )?;
+                    events.emit(Event::status("Saved lockfile"));
+                }
                 saved = true;
             }
             // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`.
