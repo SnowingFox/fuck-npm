@@ -41,6 +41,13 @@ pub trait ManifestSource: Send + Sync {
     /// tarball at this URL is recorded as the default location (`tarball_url: None`), which keeps
     /// lockfiles portable across mirrors.
     fn default_tarball_url(&self, name: &str, version: &str) -> String;
+
+    /// The manifest URL of `name` (without credentials), for the error of a 404. The default
+    /// knows none.
+    fn manifest_url(&self, name: &str) -> Option<String> {
+        let _ = name;
+        None
+    }
 }
 
 /// A git / tarball package after it was downloaded (or read from disk).
@@ -166,6 +173,10 @@ impl ManifestSource for RegistrySource {
 
     fn default_tarball_url(&self, name: &str, version: &str) -> String {
         self.client.default_tarball_url(name, version)
+    }
+
+    fn manifest_url(&self, name: &str) -> Option<String> {
+        self.client.manifest_url(name)
     }
 }
 

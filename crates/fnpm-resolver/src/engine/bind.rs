@@ -801,7 +801,10 @@ impl Engine<'_> {
                     return Ok(Step::Done);
                 }
                 if matches!(*e, fnpm_registry::Error::NotFound(_)) {
-                    return Err(Error::NotFound(name));
+                    return Err(match self.manifests.manifest_url(&name) {
+                        Some(url) => Error::ManifestNotFound { name, url },
+                        None => Error::NotFound(name),
+                    });
                 }
                 return Err(Error::Registry(clone_registry_error(&e)));
             }

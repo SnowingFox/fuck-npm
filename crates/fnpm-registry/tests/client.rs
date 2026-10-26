@@ -1037,7 +1037,7 @@ async fn tarball_url_validation() {
     let c = client(config(&server.url(), tmp.path()));
     assert!(matches!(
         c.tarball_bytes(&format!("{}gone.tgz", server.url())).await,
-        Err(Error::NotFound(_))
+        Err(Error::Status { status: 404, .. })
     ));
 }
 

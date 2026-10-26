@@ -75,10 +75,11 @@ pub(crate) enum Trust {
     Insecure,
 }
 
+/// bun's HTTP thread reports a CA it cannot load as `HTTPThread: <message>`.
 fn tls_error(message: String) -> Error {
     Error::Network {
         url: String::new(),
-        message,
+        message: format!("HTTPThread: {message}"),
     }
 }
 

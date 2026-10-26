@@ -71,7 +71,7 @@ pub enum Error {
     #[error("unknown command {0:?}")]
     UnknownCommand(Vec<String>),
     /// A package could not be downloaded or put into the store.
-    #[error("{package}: {message}")]
+    #[error("{}", fetch_message(package, message))]
     Fetch {
         /// `name@version`.
         package: String,
@@ -96,6 +96,19 @@ pub enum Error {
     },
 }
 
+/// bun's words for a failed download: a failed request (`GET <url> - 404`) and an integrity
+/// mismatch name what failed themselves; a URL that cannot be fetched names the package after it.
+fn fetch_message(package: &str, message: &str) -> String {
+    if message.starts_with("GET ") || message.starts_with("Integrity check failed") {
+        return message.to_owned();
+    }
+    if message.starts_with("Expected tarball URL") {
+        let name = fnpm_types::name::split_name_and_maybe_version(package).0;
+        return format!("{message} while fetching package \"{name}\"");
+    }
+    format!("{package}: {message}")
+}
+
 pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
     use fnpm_registry::Error as R;
     match e {
@@ -117,7 +130,9 @@ impl Error {
             Self::Resolve(
                 Rv::NoMatchingVersion { .. } | Rv::DistTagNotFound { .. } | Rv::TooRecent { .. },
             ) => "NO_MATCHING_VERSION",
-            Self::Resolve(Rv::NotFound(_) | Rv::WorkspaceNotFound { .. }) => "NOT_FOUND",
+            Self::Resolve(
+                Rv::NotFound(_) | Rv::ManifestNotFound { .. } | Rv::WorkspaceNotFound { .. },
+            ) => "NOT_FOUND",
             Self::Resolve(Rv::Registry(e)) | Self::Registry(e) => registry_code(e),
             Self::Resolve(Rv::InvalidPackageJson { .. }) => "INVALID_PACKAGE_JSON",
             Self::Resolve(Rv::InvalidOption { .. }) => "USAGE",

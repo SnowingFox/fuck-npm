@@ -66,6 +66,14 @@ pub(crate) fn prepare_url(raw: &str) -> Result<(Url, Option<String>, bool)> {
             ),
         });
     }
+    // A WHATWG parser drops a tab or newline inside the URL, which would request (and send
+    // credentials to) another path than the one written; bun's HTTP client refuses it.
+    if trimmed.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err(Error::Network {
+            url: redact_url(raw),
+            message: "InvalidURL".to_owned(),
+        });
+    }
     let (userinfo, without) = split_userinfo(trimmed);
     let stable = !without.bytes().any(|b| b <= 0x20 || b == 0x7f);
     let url = Url::parse(&without).map_err(|e| Error::Network {
@@ -150,12 +158,10 @@ impl Inner {
                     .and_then(|v| v.to_str().ok())
                     .map(str::to_owned);
                 drop(permit);
-                let err = match status {
-                    404 => Error::NotFound(redact_url(spec.url.as_str())),
-                    _ => Error::Status {
-                        url: redact_url(spec.url.as_str()),
-                        status,
-                    },
+                // bun: `GET <url> - <status>`, a 404 too.
+                let err = Error::Status {
+                    url: redact_url(spec.url.as_str()),
+                    status,
                 };
                 Started::Failed(
                     Outcome::Status(status),
