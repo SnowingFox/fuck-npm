@@ -141,7 +141,7 @@ fn registry_lookup<'c>(config: &'c Config) -> impl for<'x> Fn(&'x str) -> &'c st
     move |name| config.registry_for(name).url.as_str()
 }
 
-pub(crate) use lock::workspace_warnings;
+pub(crate) use lock::{LockState, workspace_warnings};
 
 /// The previous graph for `ws` (fnpm.lock, bun.lock(b) or a migrated foreign lockfile).
 pub(crate) fn load_lock(config: &Config, ws: &Workspace) -> Result<lock::LockState> {

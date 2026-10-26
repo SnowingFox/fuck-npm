@@ -163,13 +163,36 @@ impl Ctx {
         let project = self.project()?;
         let ws = project.workspace(&*self.events)?;
         let lock = crate::install::load_lock(&project.config, &ws)?;
+        self.report_lock(&lock);
+        Ok((project, ws, lock.graph))
+    }
+
+    /// What loading the lockfile printed in bun: the failures, `migrated lockfile from <file>`
+    /// for another manager's lockfile (read only; nothing is written), the warnings.
+    fn report_lock(&self, lock: &crate::install::LockState) {
         for e in &lock.failures {
             self.events.emit(e.clone());
+        }
+        if lock.migrated
+            && matches!(
+                lock.format,
+                Some(
+                    fnpm_lockfile::Format::Npm
+                        | fnpm_lockfile::Format::YarnV1
+                        | fnpm_lockfile::Format::YarnBerry
+                        | fnpm_lockfile::Format::Pnpm
+                )
+            )
+            && let Some(name) = lock.path.as_deref().and_then(std::path::Path::file_name)
+        {
+            self.events.emit(fnpm_types::Event::notice(format!(
+                "migrated lockfile from {}",
+                name.to_string_lossy()
+            )));
         }
         for w in &lock.warnings {
             self.events.emit(fnpm_types::Event::warn(w.clone(), None));
         }
-        Ok((project, ws, lock.graph))
     }
 
     /// [`Ctx::load`] that requires a lockfile (bun: `error: Lockfile not found`, with the
@@ -191,12 +214,7 @@ impl Ctx {
         if let Some(failure) = &lock.parse_failure {
             return Err(failure.read_error(framed));
         }
-        for e in &lock.failures {
-            self.events.emit(e.clone());
-        }
-        for w in &lock.warnings {
-            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
-        }
+        self.report_lock(&lock);
         match lock.graph {
             Some(g) => Ok((project, ws, g)),
             None => Err(Error::usage(format!("missing lockfile, {nothing}"))),
