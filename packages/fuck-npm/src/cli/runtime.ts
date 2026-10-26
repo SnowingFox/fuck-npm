@@ -8,7 +8,7 @@ import { createColors } from "picocolors";
 import { colorEnabled, createOutput, resolveMode } from "../output/output.ts";
 import type { CliRuntime } from "../runtime/types.ts";
 import { parseFlags } from "./parse-flags.ts";
-import { planInvocation, rejectUnknownFlags, unknownFlagCommand, type Invocation } from "./plan.ts";
+import { PLAIN_USAGE, planInvocation, rejectPmSubcommandFlags, rejectUnknownFlags, unknownFlagCommand, type Invocation } from "./plan.ts";
 import { setCurrentArgv } from "./raw-flags.ts";
 import { registerGlobalFlags, registerNode } from "./register.ts";
 import { flagSpecsFor } from "./registry.ts";
@@ -119,6 +119,7 @@ export async function runParsedCli(
     }
     const leaf = node as CommandLeaf;
 
+    rejectPmSubcommandFlags(plan, argv, registry);
     rejectUnknownFlags(plan, registry);
     const parsed = parseFlags(plan.own, flagSpecsFor(leaf, registry));
     const positionals =
@@ -207,6 +208,10 @@ function reportError(
     plan?.wantsJson ?? (argv.slice(2, argv.includes("--") ? argv.indexOf("--") : undefined).includes("--json"));
   if (errorCode(error) === "REPORTED") {
     // The core already printed why (on stderr, also with --json).
+    return 1;
+  }
+  if (errorCode(error) === PLAIN_USAGE) {
+    runtime.stderr.write(`error: ${message}\n`);
     return 1;
   }
   if (wantsJson) {

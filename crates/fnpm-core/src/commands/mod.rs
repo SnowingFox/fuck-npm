@@ -16,6 +16,7 @@ mod inspect;
 mod json_text;
 mod licenses;
 mod link;
+mod ls;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
@@ -238,7 +239,7 @@ pub async fn dispatch(
     match path.as_slice() {
         ["outdated"] => outdated::run(&cx).await,
         ["why"] | ["pm", "why"] => why::why(&cx),
-        ["ls"] | ["list"] | ["pm", "ls" | "list"] => inspect::ls(&cx),
+        ["ls"] | ["list"] | ["pm", "ls" | "list"] => ls::ls(&cx),
         ["info" | "view" | "show"] | ["pm", "view" | "info"] => info::view(&cx).await,
         ["whoami"] | ["pm", "whoami"] => info::whoami(&cx).await,
         ["audit"] | ["pm", "audit"] => info::audit(&cx, false).await,

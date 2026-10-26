@@ -272,6 +272,60 @@ export function unknownFlagCommand(registry: Registry, matched: readonly string[
   return top === undefined ? registry.bin : `${registry.bin} ${top}`;
 }
 
+/**
+ * bun's `PM_SUBCOMMAND_FLAGS`: flags that only some `fnpm pm` commands take. Any other pm
+ * command (and `fnpm list`, bun's alias of `pm ls`) refuses them, naming the ones that do.
+ */
+const PM_SUBCOMMAND_FLAGS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["cache", ["--max-age"]],
+  [
+    "diff",
+    ["--diff", "--json", "--raw", "--unformatted", "--unminify", "--minify", "--ignore-space", "--name-only", "--stat", "--unified"],
+  ],
+  ["licenses", ["--json", "--filter", "--dev", "--long"]],
+  ["ls", ["--all", "--trusted", "--depth"]],
+  ["pack", ["--destination", "--filename", "--gzip-level"]],
+  ["pkg", ["--json"]],
+  ["trust", ["--all"]],
+  ["version", ["--git-tag-version", "--no-git-tag-version", "--allow-same-version", "--message", "--preid"]],
+  ["view", ["--json"]],
+  ["why", ["--top", "--depth"]],
+];
+const PM_SHORT_FLAGS: Readonly<Record<string, string>> = { D: "--dev", F: "--filter", m: "--message" };
+
+/** The code of a usage error that is printed as `error: <message>` on stderr in every mode. */
+export const PLAIN_USAGE = "PLAIN_USAGE";
+
+export function rejectPmSubcommandFlags(plan: Invocation, argv: string[], registry: Registry): void {
+  if (registry.bin !== "fnpm") {
+    return;
+  }
+  const dash = argv.indexOf("--");
+  const words = argv.slice(2, dash === -1 ? undefined : dash);
+  let command: string;
+  if (plan.matched[0] === "pm") {
+    command = plan.matched[1] ?? "";
+  } else if (words.find((token) => !isFlagToken(token)) === "list") {
+    command = "ls";
+  } else {
+    return;
+  }
+  for (const token of words) {
+    if (!isFlagToken(token)) {
+      continue;
+    }
+    const name = token.startsWith("--") ? token.split("=")[0]! : token.length === 2 ? PM_SHORT_FLAGS[token[1]!] : undefined;
+    if (name === undefined) {
+      continue;
+    }
+    const owners = PM_SUBCOMMAND_FLAGS.filter(([, flags]) => flags.includes(name)).map(([owner]) => owner);
+    if (owners.length > 0 && !owners.includes(command)) {
+      // bun's wording, on stderr also with --json, with no pointer to --help.
+      throw new CoreError(`${name} is only supported by ${owners.map((owner) => `\`fnpm pm ${owner}\``).join(", ")}`, PLAIN_USAGE);
+    }
+  }
+}
+
 export function rejectUnknownFlags(plan: Invocation, registry: Registry): void {
   if (plan.own.length === 0) {
     return;
@@ -291,10 +345,6 @@ export function rejectUnknownFlags(plan: Invocation, registry: Registry): void {
     for (const candidate of names) {
       if (allowed.has(candidate)) {
         continue;
-      }
-      if (registry.bin === "fnpm" && plan.matched[0] === "pm" && (candidate === "filter" || candidate === "F")) {
-        // bun's wording, with no pointer to --help: the flag belongs to one pm command.
-        throw new CoreError("--filter is only supported by `fnpm pm licenses`", "USAGE");
       }
       throw new SilentError(`${command} has no ${spell(candidate)} flag.`, {
         code: "UNKNOWN_FLAG",

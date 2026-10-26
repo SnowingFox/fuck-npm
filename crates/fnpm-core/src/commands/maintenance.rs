@@ -200,6 +200,28 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let count = graph.len().saturating_sub(1);
+    if !lock_tool {
+        // bun `pm migrate`: the migration is reported on stderr, stdout only says what a dry
+        // run would write.
+        let quiet = cx.pm.log_level == fnpm_config::LogLevel::Silent;
+        if !quiet {
+            eprintln!("migrated lockfile from {source}");
+        }
+        let data = json!({ "from": source, "packages": count });
+        if cx.pm.dry_run {
+            let lines = if quiet {
+                Vec::new()
+            } else {
+                vec![format!("dry run: would write {}", fnpm_lockfile::FNPM_LOCK)]
+            };
+            return Ok(ok(data, lines));
+        }
+        for line in crate::install::write_migration(&root, &ws, &state)? {
+            eprintln!("{line}");
+        }
+        fnpm_lockfile::save_with(&root, graph, None)?;
+        return Ok(ok(data, Vec::new()));
+    }
     if cx.pm.dry_run {
         let text =
             String::from_utf8(fnpm_lockfile::serialize(Format::Fnpm, graph)?).unwrap_or_default();
@@ -214,7 +236,6 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     }
     let mut lines = crate::install::write_migration(&root, &ws, &state)?;
     fnpm_lockfile::save_with(&root, graph, None)?;
-    let _ = lock_tool;
     lines.push(format!(
         "migrated lockfile from {source} ({count} {})",
         plural(count, "package")

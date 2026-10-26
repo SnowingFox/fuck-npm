@@ -82,7 +82,13 @@ fn parse_url(url: &str) -> Result<Url> {
 impl Inner {
     /// `<ua> <os> <arch> workspaces/<bool>[ ci/<name>]`, as npm sends for publish and whoami.
     pub fn npm_user_agent(&self, workspaces: bool) -> String {
-        self.npm_user_agent_with(&self.user_agent, workspaces)
+        // npm's form names the product only (`fnpm/1.2.3`, as bun sends `Bun/1.2.3`); the
+        // platform and CI parts of fnpm's own user agent are added below.
+        let base = match self.user_agent.split_once(' ') {
+            Some((product, _)) if product.starts_with("fnpm/") => product,
+            _ => self.user_agent.as_str(),
+        };
+        self.npm_user_agent_with(base, workspaces)
     }
 
     /// [`Inner::npm_user_agent`] with `base` in place of the client's user agent.

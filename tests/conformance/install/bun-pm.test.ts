@@ -1340,7 +1340,7 @@ describe.concurrent("fnpm pm whoami user-agent", () => {
     return userAgent;
   }
 
-  const baseUserAgent = `Bun/${Bun.version} ${process.platform} ${process.arch} workspaces/false`;
+  const baseUserAgent = `fnpm/${Bun.version} ${process.platform} ${process.arch} workspaces/false`;
 
   test("names the CI vendor", async () => {
     expect(await whoamiUserAgent({ AGOLA_GIT_REF: "refs/heads/main" })).toBe(`${baseUserAgent} ci/agola-ci`);

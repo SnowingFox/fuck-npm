@@ -1,145 +1,14 @@
-//! Read-only views of the lockfile: `ls`, `pm bin`, `pm hash*`, and
+//! Read-only views of the lockfile: `pm bin`, `pm hash*`, and
 //! `fnpm-lock verify | diff | why | print`.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use fnpm_lockfile::Format;
-use fnpm_types::{Behavior, LockGraph, PackageId, Resolution};
-use serde_json::{Value, json};
+use fnpm_types::{LockGraph, Resolution};
+use serde_json::json;
 
 use super::{Ctx, exit, ok};
-use crate::install::name_matches;
 use crate::{CoreResult, Error, Result};
-
-/// The version shown for a package.
-fn shown_version(graph: &LockGraph, id: PackageId) -> String {
-    let Some(p) = graph.get(id) else {
-        return String::new();
-    };
-    match &p.resolution {
-        Resolution::Root => String::new(),
-        Resolution::Npm { version, .. } => version.clone(),
-        Resolution::Workspace { .. } => p.version.clone(),
-        r => r.to_string(),
-    }
-}
-
-fn ls_tree(
-    graph: &LockGraph,
-    id: PackageId,
-    prefix: &str,
-    seen: &mut HashSet<PackageId>,
-    lines: &mut Vec<String>,
-    depth: usize,
-    max_depth: usize,
-) -> Value {
-    let p = &graph.packages[id.index()];
-    let edges: Vec<_> = p
-        .dependencies
-        .iter()
-        .filter(|e| e.target.is_some() && !e.behavior.is_peer())
-        .collect();
-    let mut out = Vec::new();
-    for (i, e) in edges.iter().enumerate() {
-        let t = e.target.expect("filtered");
-        let last = i + 1 == edges.len();
-        let (branch, cont) = if last {
-            ("└── ", "    ")
-        } else {
-            ("├── ", "│   ")
-        };
-        let version = shown_version(graph, t);
-        lines.push(format!("{prefix}{branch}{}@{version}", e.name));
-        let mut node = json!({ "name": e.name, "version": version });
-        if depth + 1 < max_depth && seen.insert(t) {
-            let children = ls_tree(
-                graph,
-                t,
-                &format!("{prefix}{cont}"),
-                seen,
-                lines,
-                depth + 1,
-                max_depth,
-            );
-            if children.as_array().is_some_and(|a| !a.is_empty()) {
-                node["dependencies"] = children;
-            }
-        }
-        out.push(node);
-    }
-    Value::Array(out)
-}
-
-/// `fnpm ls [--all] [--depth n] [names]`.
-pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to list")?;
-    let all = cx.flag("all");
-    let max_depth = cx
-        .number("depth")
-        .map_or(if all { usize::MAX } else { 1 }, |d| {
-            usize::try_from(d).unwrap_or(usize::MAX).saturating_add(1)
-        });
-    let names = &cx.req.positionals;
-    let reachable = graph.reachable(
-        Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER,
-        None,
-    );
-    let installed = graph
-        .ids()
-        .filter(|id| {
-            reachable[id.index()]
-                && !graph.packages[id.index()].resolution.is_local_tree()
-                && !graph.packages[id.index()].is_disabled(&project.config.platform)
-        })
-        .count();
-    let mut lines = vec![format!(
-        "{} node_modules ({installed} installed)",
-        cx.req.cwd.display()
-    )];
-    if !names.is_empty() {
-        // A flat list of the selected packages, wherever they are.
-        let mut found = Vec::new();
-        for id in graph.ids().skip(1) {
-            let p = &graph.packages[id.index()];
-            if names.iter().any(|n| name_matches(n, &p.name)) {
-                found.push((p.name.clone(), shown_version(&graph, id)));
-            }
-        }
-        found.sort();
-        found.dedup();
-        for (i, (n, v)) in found.iter().enumerate() {
-            let branch = if i + 1 == found.len() {
-                "└── "
-            } else {
-                "├── "
-            };
-            lines.push(format!("{branch}{n}@{v}"));
-        }
-        let data: Vec<Value> = found
-            .iter()
-            .map(|(n, v)| json!({ "name": n, "version": v }))
-            .collect();
-        return Ok(ok(
-            json!({ "dependencies": data, "installed": installed }),
-            lines,
-        ));
-    }
-    let mut seen = HashSet::new();
-    let tree = ls_tree(
-        &graph,
-        PackageId::ROOT,
-        "",
-        &mut seen,
-        &mut lines,
-        0,
-        max_depth,
-    );
-    Ok(ok(
-        json!({ "dependencies": tree, "installed": installed }),
-        lines,
-    ))
-}
 
 /// `fnpm pm bin [-g]`.
 pub(crate) fn bin(cx: &Ctx) -> Result<CoreResult> {

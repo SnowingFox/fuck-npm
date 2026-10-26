@@ -74,14 +74,12 @@ describe("passthrough leaves", () => {
 });
 
 describe("unknown flag rejection", () => {
-  test("a sibling's flag is unknown too, like bun", async () => {
+  test("a sibling's flag names the pm commands that take it, like bun", async () => {
     const bed = testBed();
 
     expect(await bed.run(["pm", "ls", "--max-age", "3"])).toBe(1);
 
-    expect(bed.stderr.text()).toBe(
-      "error: fnpm pm has no --max-age flag.\nnote: Run 'fnpm pm --help' for more information\n",
-    );
+    expect(bed.stderr.text()).toBe("error: --max-age is only supported by `fnpm pm cache`\n");
     expect(bed.coreLoads()).toBe(0);
   });
 
@@ -111,7 +109,7 @@ describe("unknown flag rejection", () => {
   test("--json failures are a JSON document on stdout", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["pm", "ls", "--max-age", "3", "--json"])).toBe(1);
+    expect(await bed.run(["outdated", "--max-age", "3", "--json"])).toBe(1);
 
     expect(bed.json()).toEqual({
       ok: false,
@@ -148,7 +146,7 @@ describe("global flags before the command", () => {
   test("--json before the command", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["--json", "pm", "whoami"])).toBe(0);
+    expect(await bed.run(["--json", "outdated"])).toBe(0);
     expect(bed.json().ok).toBe(true);
   });
 });

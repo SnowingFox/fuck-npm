@@ -79,7 +79,8 @@ async fn why_ls_hash_and_licenses() {
         .invoke(&["ls"], &[], json!({ "all": true }))
         .await
         .unwrap();
-    assert_eq!(r.lines.unwrap()[2], "    └── b@1.0.0");
+    // The hoisted tree, as `node_modules` has it.
+    assert_eq!(r.lines.unwrap()[1..], ["├── a@1.0.0", "└── b@1.0.0"]);
 
     let h1 = p
         .invoke(&["pm", "hash"], &[], json!({}))
@@ -240,14 +241,9 @@ async fn migrate_export_verify_diff_print() {
         .unwrap();
     assert!(exists(&p.path("package-lock.json")));
     std::fs::remove_file(p.path("fnpm.lock")).unwrap();
+    // `fnpm migrate` reports on stderr, like `bun pm migrate`.
     let r = p.invoke(&["migrate"], &[], json!({})).await.unwrap();
-    assert!(
-        r.lines
-            .unwrap()
-            .last()
-            .unwrap()
-            .contains("from package-lock.json")
-    );
+    assert_eq!(r.data.unwrap()["from"], "package-lock.json");
     assert!(p.read("fnpm.lock").contains("\"a@1.0.0\""));
     let err = p
         .invoke(&["lock", "migrate"], &[], json!({}))
