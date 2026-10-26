@@ -1,0 +1,38 @@
+Bun documentation attribution
+
+This site adapts the navigation configuration and selected package-manager documentation
+from https://github.com/oven-sh/bun at commit 449877f3e088feb6cc2dd2704ffb803d59be3277.
+Upstream declares Bun MIT-licensed. Its original LICENSE.md is preserved, unmodified,
+in bun-LICENSE.md beside this file. Copyright remains with the original authors.
+
+Adapted source files:
+docs/docs.json; docs/pm/cli/install.mdx; docs/pm/workspaces.mdx;
+docs/pm/lockfile.mdx; docs/pm/scopes-registries.mdx;
+docs/pm/lifecycle.mdx; docs/pm/bunx.mdx.
+
+The fnpm branding and rewritten fnpm-specific material are contributions to
+https://github.com/SnowingFox/fuck-npm under its MIT license.
+Bun's logos, mascot, runtime, native libraries and Mintlify proprietary components
+are not distributed by this site. The original upstream license file also describes
+third-party native libraries; those notices do not imply these libraries ship here.
+
+MIT License (permission notice for the adapted MIT-licensed material)
+Copyright remains with the original Bun authors and contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

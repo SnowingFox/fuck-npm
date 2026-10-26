@@ -1,0 +1,73 @@
+{
+  "theme": "aspen",
+  "name": "Fuck NPM",
+  "colors": {
+    "light": "#3f6212",
+    "primary": "#a3e635",
+    "dark": "#a3e635"
+  },
+  "background": {
+    "decoration": "gradient"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "logo": {
+    "light": "/logo/fnpm-light.svg",
+    "dark": "/logo/fnpm-dark.svg"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Package manager",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "installation",
+              "quickstart",
+              "status"
+            ]
+          },
+          {
+            "group": "Package manager",
+            "pages": [
+              "pm/cli/install",
+              "pm/cli/dependencies",
+              "pm/lockfile",
+              "pm/workspaces",
+              "pm/configuration",
+              "pm/lifecycle",
+              "pm/security",
+              "pm/store",
+              "pm/fnpx"
+            ]
+          },
+          {
+            "group": "Benchmarks",
+            "pages": [
+              "benchmarks/overview",
+              "benchmarks/real-projects",
+              "benchmarks/synthetic",
+              "benchmarks/methodology"
+            ]
+          },
+          {
+            "group": "Project",
+            "pages": [
+              "project/architecture",
+              "project/development",
+              "project/releasing",
+              "project/credits"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "favicon": "/logo/favicon.svg"
+}

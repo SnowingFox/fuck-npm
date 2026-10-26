@@ -1,0 +1,18 @@
+/* fnpm brand: lime accent, neutral surfaces, and readable terminal examples. */
+:root {
+  --sl-color-accent-low: #1d2a11;
+  --sl-color-accent: #a3e635;
+  --sl-color-accent-high: #d9f99d;
+  --sl-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sl-font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --sl-content-width: 52rem;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #ecfccb;
+  --sl-color-accent: #3f6212;
+  --sl-color-accent-high: #274009;
+}
+.site-title img { width: 13rem; max-width: 100%; height: auto; }
+.hero h1 { letter-spacing: -.045em; }
+.sl-markdown-content table { font-variant-numeric: tabular-nums; }
+.sl-markdown-content :is(h2,h3) { letter-spacing: -.025em; }
