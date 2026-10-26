@@ -78,6 +78,11 @@ export async function runParsedCli(
         runtime.stdout.write(PRUNE_HELP);
         return 0;
       }
+      if (registry.bin === "fnpm" && plan.matched.join(" ") === "audit") {
+        const { AUDIT_HELP } = await import("./pm-help.ts");
+        runtime.stdout.write(AUDIT_HELP);
+        return 0;
+      }
       return await writeHelp(registry, runtime, plan.matched.join(" "));
     }
     if (plan.wantsVersion) {

@@ -125,3 +125,39 @@ Examples:
 
 Full documentation is available at https://bun.com/docs/pm/cli/prune.
 `;
+
+/** bun's `bun audit --help`. */
+export const AUDIT_HELP = `Usage: fnpm audit [flags]
+
+  Check installed packages for vulnerabilities.
+  fnpm audit fix upgrades vulnerable packages to the lowest safe version that still satisfies every dependent's range.
+
+Flags:
+      --audit-level=<val>    Only print advisories with severity greater than or equal to <level> (low, moderate, high, critical)
+  -p, --production           Skip packages that are only needed by devDependencies (alias: --prod)
+      --omit=<val>           Skip packages that are only needed by the given dependency types: dev, optional, or peer (repeatable)
+      --ignore=<val>         Ignore advisories by GHSA or numeric advisory ID (repeatable)
+      --json                 Output in JSON format
+      --dry-run              Show what fnpm audit fix would change without changing anything
+  -L, --latest               Also apply fixes your declared ranges exclude, rewriting package.json
+      --cwd=<val>            Set a specific cwd
+  -h, --help                 Print this help menu
+
+Examples:
+  Check the current project's packages for vulnerabilities.
+  fnpm audit
+
+  Output package vulnerabilities in JSON format.
+  fnpm audit --json
+
+  Upgrade vulnerable packages in fnpm.lock and node_modules; package.json is only changed when an exact pin has to be bumped.
+  fnpm audit fix
+
+  Show what fnpm audit fix would change without changing anything.
+  fnpm audit fix --dry-run
+
+  Also apply fixes that your package.json ranges exclude, rewriting those ranges.
+  fnpm audit fix --latest
+
+Full documentation is available at https://bun.com/docs/install/audit.
+`;
