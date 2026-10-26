@@ -324,14 +324,25 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     // Phase B: dependency links and bins. `external`: each link to a `link:` package, and
     // whether this run made it.
     let external: Mutex<Vec<(PackageId, PathBuf, bool)>> = Mutex::new(Vec::new());
+    // Store entries that were in place and got a new dependency link: bun installs them again.
+    let relinked: Mutex<Vec<u32>> = Mutex::new(Vec::new());
     (0..layout.entries.len()).into_par_iter().for_each(|i| {
-        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh, &external) {
+        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh, &external, &relinked) {
             fail(err);
         }
     });
     if let Some(e) = first_error.lock().take() {
         cleanup_staging(&states);
         return Err(e);
+    }
+
+    let mut relinked = relinked.into_inner();
+    relinked.sort();
+    relinked.dedup();
+    for i in relinked {
+        // Counted as installed, not also as checked.
+        states[i as usize].built.store(true, Ordering::Relaxed);
+        count_written(layout.entries[i as usize].package);
     }
 
     // bun runs the scripts of a `link:` package when it links it (and on `--force`), not when
@@ -521,6 +532,7 @@ fn link_entry(
     i: u32,
     fresh: bool,
     external: &Mutex<Vec<(PackageId, PathBuf, bool)>>,
+    relinked: &Mutex<Vec<u32>>,
 ) -> Result<()> {
     let layout = paths.layout;
     let e = &layout.entries[i as usize];
@@ -595,6 +607,9 @@ fn link_entry(
         let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
         let made = fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
+        if made && matches!(st.kind, Kindof::Local) && !st.built.load(Ordering::Relaxed) {
+            relinked.lock().push(i);
+        }
         if matches!(states[*dep as usize].kind, Kindof::External(_)) {
             external.lock().push((
                 layout.entries[*dep as usize].package,
