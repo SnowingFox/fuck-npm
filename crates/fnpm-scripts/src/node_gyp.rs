@@ -28,6 +28,8 @@ impl NodeGypShim {
     /// Creates `<tmp>/fnpm-node-gyp-<random>/node-gyp`. The name is random so that another
     /// user cannot plant a directory there first; creation fails if it exists.
     pub fn create(tmp: &Path) -> std::io::Result<Self> {
+        // A configured temp dir (`BUN_TMPDIR`, `TMPDIR`) may not exist yet.
+        std::fs::create_dir_all(tmp)?;
         let mut last_err = None;
         for attempt in 0..8u32 {
             let dir = tmp.join(format!("fnpm-node-gyp-{:016x}", random_u64(attempt)));
