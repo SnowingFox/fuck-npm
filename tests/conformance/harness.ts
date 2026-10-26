@@ -100,6 +100,16 @@ export async function evictCacheEntries(cache: string, evict: (entry: string) =>
   }
 }
 
+/**
+ * The manifests cached in `cache`: bun writes `<cache>/<hash>.npm`, fnpm `<cache>/metadata/v1/<hash>.rkyv`. A test
+ * that waits for bun's `.npm` files waits for these instead.
+ */
+export async function cachedManifests(cache: string): Promise<string[]> {
+  const dir = join(cache, "metadata", "v1");
+  const names = await fs.promises.readdir(dir).catch((): string[] => []);
+  return names.filter(name => name.endsWith(".rkyv"));
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }
