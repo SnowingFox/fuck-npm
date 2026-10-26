@@ -731,7 +731,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &root,
     );
     if kind == NodeLinker::Isolated && (changed || lock.migrated || !edits.is_empty()) {
-        lock::normalize_bindings(&mut graph, &ws)?;
+        lock::normalize_bindings(&mut graph, &config)?;
     }
 
     // Without a link (`--lockfile-only`, `--dry-run`) the rows are what the lockfile gained.

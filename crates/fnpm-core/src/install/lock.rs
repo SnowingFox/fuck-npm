@@ -614,9 +614,10 @@ pub(crate) fn write_back(
 /// Match the bindings a saved text lockfile will load while retaining ids and metadata used
 /// by in-flight fetches and command results. The isolated linker consumes peer bindings
 /// directly, so using the pre-write graph would make cold and warm layouts differ.
-pub(crate) fn normalize_bindings(graph: &mut LockGraph, ws: &Workspace) -> Result<()> {
+pub(crate) fn normalize_bindings(graph: &mut LockGraph, config: &Config) -> Result<()> {
     let bytes = fnpm_lockfile::serialize(Format::Fnpm, graph)?;
-    let loaded = fnpm_lockfile::parse(Format::Fnpm, &bytes, ws)?;
+    // Read as the next install reads it: with the configured registries.
+    let loaded = fnpm_lockfile::parse_text(&bytes, &parse_options(config))?;
     let ids: std::collections::HashMap<String, fnpm_types::PackageId> = graph
         .packages
         .iter()
@@ -663,7 +664,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let ws = Workspace::load(dir.path()).unwrap();
+        let config = Config::defaults(dir.path());
         let mut graph = LockGraph::new(Package::new("app", "", Resolution::Root));
         let extra = graph.push(Package::new(
             "extra",
@@ -698,7 +699,7 @@ mod tests {
                 .target
                 .is_none()
         );
-        normalize_bindings(&mut graph, &ws).unwrap();
+        normalize_bindings(&mut graph, &config).unwrap();
         assert_eq!(
             graph.packages[plugin.index()]
                 .dependency("extra")
@@ -712,7 +713,7 @@ mod tests {
         );
         assert_eq!(graph.packages[extra.index()].name, "extra");
         let before = graph.clone();
-        normalize_bindings(&mut graph, &ws).unwrap();
+        normalize_bindings(&mut graph, &config).unwrap();
         assert_eq!(graph, before);
     }
 }

@@ -375,6 +375,12 @@ pub fn parse(format: Format, bytes: &[u8], workspace: &Workspace) -> Result<Lock
     }
 }
 
+/// Parses fnpm.lock text with the registries the project is configured with: the
+/// lockfileVersion 2 integrity check accepts tarballs under them.
+pub fn parse_text(bytes: &[u8], opts: &ParseOptions) -> Result<LockGraph> {
+    text_parse(bytes, FNPM_LOCK, opts).map(|(g, _)| g)
+}
+
 /// Serialises to a format (`fnpm-lock export`). Yarn berry is read-only.
 pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
     match format {
