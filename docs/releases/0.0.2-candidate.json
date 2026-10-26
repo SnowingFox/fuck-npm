@@ -1,0 +1,111 @@
+{
+  "name": "fnpm",
+  "version": "0.0.2",
+  "distribution": "single npm package plus GitHub native assets",
+  "sourceCommit": "ab814fccf499e563f611f4993efcd8db00968121",
+  "nativeArtifactSourceCommit": "e64f2878de3a4ddbe80a4169a46736b930c9b343",
+  "cliAndRustSourcesMatchArtifactCommit": true,
+  "actionsRun": "https://github.com/SnowingFox/fuck-npm/actions/runs/40294225393",
+  "cliDistArchiveSha256": "75b9626d830a1fd67a6c2d5039873a65b1a1a95b248584dca51d919ff8f38562",
+  "packages": [
+    {
+      "name": "fnpm",
+      "version": "0.0.2",
+      "integrity": "sha512-844TZOMLanJPB+TSSPd4z/2msA5PE1gT1qGAOg3puCf1sNSALs5PFKgfFMdH0v0xjZnnJPTtnQyLDusf1Nnt+g==",
+      "size": 72390
+    }
+  ],
+  "assets": {
+    "darwin-arm64": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-darwin-arm64.tar.gz",
+      "integrity": "sha512-4LGmD2pRmD7G/PmYjRgQOuQ8dnghAC6Mk4GkyOkBtOdz/VU/xUnhHUL7W+eWmaRGCFWVykYwpv9BCKBB/sXELg==",
+      "files": [
+        "fnpm.darwin-arm64.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 11939840
+    },
+    "darwin-x64": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-darwin-x64.tar.gz",
+      "integrity": "sha512-NgYyQVkKsmlmbyeUf8L2IxEg7o/+lsUo+lB6jnUGDtZ0AsMMS5anahjC2oOkumQpXRUv7k2B3tmyqzQsvPMYJQ==",
+      "files": [
+        "fnpm.darwin-x64.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 13332480
+    },
+    "linux-x64-gnu": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-linux-x64-gnu.tar.gz",
+      "integrity": "sha512-WQjQ+RtY+v/SmkHBaGN187kA+K7KBekBkORKBFjc0PjoO06SttfFSiML9xLAi6Qn61afYaz+HY6D0p+gl0t6Lg==",
+      "files": [
+        "fnpm.linux-x64-gnu.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 13701120
+    },
+    "linux-arm64-gnu": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-linux-arm64-gnu.tar.gz",
+      "integrity": "sha512-cGjfohosWMYJXViEehkItoJYT9Fbz0KdyMYAEZNetM1teY+M58sjgG750HXy8efza3tdKJz8CkwMkxW4dzQQ7w==",
+      "files": [
+        "fnpm.linux-arm64-gnu.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 12441600
+    },
+    "linux-x64-musl": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-linux-x64-musl.tar.gz",
+      "integrity": "sha512-TzU5BjNCUQ6Efco1TmAu04xFSLRcxxRAKvj5HcAL8BP2x2aEM5LVaXDiutOgGAYngAGLfOwCv0I6t/9dXEOJRA==",
+      "files": [
+        "fnpm.linux-x64-musl.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 13762560
+    },
+    "linux-arm64-musl": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-linux-arm64-musl.tar.gz",
+      "integrity": "sha512-zYlJyqMar9WPub2YQSsnFvga/W98p9BYvvZPI+tBlnOEMg6URqf9GGptLY9c2XNt5SRPZfSdMjHRZLj/uaolQQ==",
+      "files": [
+        "fnpm.linux-arm64-musl.node",
+        "fnpm",
+        "fnpm-lock"
+      ],
+      "size": 12513280
+    },
+    "win32-x64-msvc": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-win32-x64-msvc.tar.gz",
+      "integrity": "sha512-IF8DiTfx8P6D3o/jcGmQt/jq+SF4fgSjABSh9H0gVB3D7hsGr1t65N/LUvRE5TZu/QGKJlt9enSv+l6wedgvCw==",
+      "files": [
+        "fnpm.win32-x64-msvc.node",
+        "fnpm.exe",
+        "fnpm-lock.exe"
+      ],
+      "size": 12902400
+    },
+    "win32-arm64-msvc": {
+      "url": "https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/fnpm-v0.0.2-win32-arm64-msvc.tar.gz",
+      "integrity": "sha512-1KGvihdntDZT8YhLg5q04mjFurv0bkKngzjeXKl2VeMHw5vhEoDUFOl40/QrhVaVP9D2Siq34BBB1bmRiyyPRA==",
+      "files": [
+        "fnpm.win32-arm64-msvc.node",
+        "fnpm.exe",
+        "fnpm-lock.exe"
+      ],
+      "size": 12021760
+    }
+  },
+  "status": "candidate: public npm authentication and publication pending",
+  "publishRegistry": "https://registry.npmjs.org/",
+  "publishTool": "npm",
+  "validation": {
+    "ciJobsPassed": 21,
+    "nativePlatformSmokeCount": 8,
+    "ciNormalAndIgnoreScripts": true,
+    "localTarballPlatform": "darwin-arm64",
+    "localNormalAndIgnoreScripts": true,
+    "publicRegistryInstallVerified": false
+  }
+}
