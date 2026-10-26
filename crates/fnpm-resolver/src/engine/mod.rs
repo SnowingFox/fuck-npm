@@ -179,6 +179,8 @@ pub(crate) struct Engine<'a> {
     /// this run; [`Engine::finish`] reports what the project asks for.
     pub deprecated: Vec<(PackageId, String)>,
     pub warnings: Vec<String>,
+    /// An omitted local dependency was left unresolved: the lockfile must not be saved.
+    pub unsaved: bool,
     pub peer_askers: Option<peers::Askers>,
     /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
     /// kept up to date by [`Engine::set_target`] / [`Engine::add_package`] from then on.
@@ -207,6 +209,7 @@ pub(crate) struct EngineOutput {
     pub requests: Vec<(Request, PackageId)>,
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
+    pub unsaved: bool,
 }
 
 /// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A
@@ -331,6 +334,7 @@ impl<'a> Engine<'a> {
             kept_patched: Vec::new(),
             deprecated: Vec::new(),
             warnings: Vec::new(),
+            unsaved: false,
             peer_askers: None,
             parents: None,
             progress: 0,

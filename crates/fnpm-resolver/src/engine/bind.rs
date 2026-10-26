@@ -232,6 +232,19 @@ impl Engine<'_> {
     /// An error on `row`: tolerated (with a warning when it matters) for optional dependencies,
     /// peers and anything only reachable through optional dependencies; fatal otherwise.
     pub(crate) fn fail(&mut self, row: Row, edge: &DepEdge, err: Error) -> Result<Step> {
+        // bun `requires_local_target`: a project's local dependency in a group this install
+        // omits stays unresolved when its target is missing, and then no lockfile is saved.
+        if matches!(
+            err,
+            Error::MissingPackageJson { .. } | Error::WorkspaceNotFound { .. }
+        ) && self.st[row.pkg.index()].kind == Kind::Project
+            && !self.enabled(edge.behavior)
+        {
+            if !edge.behavior.is_optional() && !edge.behavior.is_peer() {
+                self.unsaved = true;
+            }
+            return Ok(Step::Done);
+        }
         let tolerated = edge.behavior.is_optional()
             || edge.behavior.is_peer()
             || self.st[row.pkg.index()].optional_only;
@@ -268,6 +281,15 @@ impl Engine<'_> {
             ));
         }
         Ok(Step::Done)
+    }
+
+    /// Whether a project's edge is in a group this install keeps (bun `Behavior::is_enabled`).
+    fn enabled(&self, b: fnpm_types::Behavior) -> bool {
+        let omit = &self.cfg.omit;
+        b.is_prod()
+            || (b.is_dev() && !omit.dev)
+            || (b.is_optional() && !omit.optional)
+            || (b.is_peer() && !omit.peer)
     }
 
     pub(crate) fn bind(&mut self, row: Row) -> Result<Step> {

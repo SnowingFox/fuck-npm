@@ -572,10 +572,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     phases.mark("resolve");
     let ResolveOutput {
         mut graph,
-        changed,
+        mut changed,
         requests: resolved_requests,
+        unsaved,
         ..
     } = out;
+    let config = if unsaved {
+        let mut c = (*config).clone();
+        c.lockfile.save = false;
+        Arc::new(c)
+    } else {
+        config
+    };
 
     // package.json edits, mirrored into the graph so the saved lockfile matches them.
     let mut edits = package_json_edits(
@@ -602,7 +610,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lock.migrated && lock.format == Some(Format::Npm),
         &root,
     );
-    if kind == NodeLinker::Isolated && (changed || lock.migrated || !edits.is_empty()) {
+    // An unsaved graph (an omitted local dependency left unresolved) would not load.
+    if kind == NodeLinker::Isolated && !unsaved && (changed || lock.migrated || !edits.is_empty()) {
         lock::normalize_bindings(&mut graph, &ws)?;
     }
 

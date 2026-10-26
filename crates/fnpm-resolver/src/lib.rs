@@ -243,6 +243,9 @@ pub struct ResolveOutput {
     pub requests: Vec<(Request, PackageId)>,
     /// Non-fatal problems (peer warnings, deprecations, ignored overrides).
     pub warnings: Vec<String>,
+    /// A local dependency in an omitted group was missing and left unresolved; like bun, the
+    /// lockfile is then not saved.
+    pub unsaved: bool,
 }
 
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
@@ -395,6 +398,7 @@ impl Resolver {
             changed,
             requests: out.requests,
             warnings,
+            unsaved: out.unsaved,
         })
     }
 
@@ -435,6 +439,7 @@ impl Resolver {
             changed: false,
             requests: Vec::new(),
             warnings,
+            unsaved: false,
         })
     }
 }
