@@ -321,15 +321,27 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         return Err(e);
     }
 
-    // Phase B: dependency links and bins.
+    // Phase B: dependency links and bins. `external`: each link to a `link:` package, and
+    // whether this run made it.
+    let external: Mutex<Vec<(PackageId, PathBuf, bool)>> = Mutex::new(Vec::new());
     (0..layout.entries.len()).into_par_iter().for_each(|i| {
-        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh) {
+        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh, &external) {
             fail(err);
         }
     });
     if let Some(e) = first_error.lock().take() {
         cleanup_staging(&states);
         return Err(e);
+    }
+
+    // bun runs the scripts of a `link:` package when it links it (and on `--force`), not when
+    // another dependent gains a link to it: only a package all of whose links are new is
+    // reported.
+    let external = external.into_inner();
+    for (pkg, target, _) in &external {
+        if external.iter().all(|(p, _, made)| p != pkg || *made) {
+            dirs.lock().push((*pkg, target.clone()));
+        }
     }
 
     // Hidden hoist: `.fnpm/node_modules/<alias>`.
@@ -428,6 +440,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
 
     let mut dirs = dirs.into_inner();
     dirs.sort();
+    dirs.dedup();
     let installed = installed.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
@@ -507,6 +520,7 @@ fn link_entry(
     states: &[EntryState],
     i: u32,
     fresh: bool,
+    external: &Mutex<Vec<(PackageId, PathBuf, bool)>>,
 ) -> Result<()> {
     let layout = paths.layout;
     let e = &layout.entries[i as usize];
@@ -579,8 +593,15 @@ fn link_entry(
             continue;
         };
         let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
-        fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
+        let made = fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
+        if matches!(states[*dep as usize].kind, Kindof::External(_)) {
+            external.lock().push((
+                layout.entries[*dep as usize].package,
+                target,
+                made || cx.opts.force,
+            ));
+        }
     }
 
     // Bins of the dependencies, direct ones first (bun `link_dependency_bins`).

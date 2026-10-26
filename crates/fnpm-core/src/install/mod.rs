@@ -2150,6 +2150,18 @@ async fn run_scripts(
             }
             return Ok("deleting");
         };
+        // A `link:` package: the folder is not the install's, only the links to it are.
+        if matches!(
+            graph.get(id).map(|p| &p.resolution),
+            Some(Resolution::Symlink { .. })
+        ) {
+            let real = std::fs::canonicalize(failed)?;
+            remove_optional_links(&root.join("node_modules"), &real)?;
+            for member in &ws.members {
+                remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+            }
+            return Ok("deleting");
+        }
         // Global bin links point through the root alias rather than an isolated store path.
         if config.global {
             for edge in graph

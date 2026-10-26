@@ -484,6 +484,13 @@ fn place_node<'s>(
                 if !out.written[node.package.index()].swap(true, Ordering::Relaxed) {
                     out.installed_packages.fetch_add(1, Ordering::Relaxed);
                 }
+                // bun runs the scripts of a `link:` package when it makes the link to it.
+                if matches!(
+                    cx.graph.packages[node.package.index()].resolution,
+                    Resolution::Symlink { .. }
+                ) {
+                    out.dirs.lock().push((node.package, target.clone()));
+                }
                 Ok(Some(true))
             }
             Place::Copy => {

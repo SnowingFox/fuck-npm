@@ -112,16 +112,20 @@ pub fn choose_linker(
 /// Files fnpm keeps in `node_modules/.fnpm` for every layout.
 const FNPM_META_FILES: [&str; 3] = ["state", "lock.bin", "layout"];
 
-/// True when `node_modules/.fnpm` holds isolated store entries (stops at the first one).
+/// True when `node_modules/.fnpm` holds isolated store entries (stops at the first one), or is
+/// empty: the isolated linker leaves it so for a tree of workspaces and `link:` packages only.
 pub fn is_isolated_tree(project_dir: &Path) -> bool {
     let Ok(rd) = std::fs::read_dir(project_dir.join("node_modules").join(".fnpm")) else {
         return false;
     };
-    rd.flatten().any(|e| {
+    let mut empty = true;
+    let entry = rd.flatten().any(|e| {
+        empty = false;
         let name = e.file_name();
         let name = name.to_string_lossy();
         !name.starts_with('.') && !FNPM_META_FILES.contains(&name.as_ref())
-    })
+    });
+    entry || empty
 }
 
 /// `--linker` / `install.linker` values: `hoisted` or `isolated`; anything else is `None`
