@@ -1,0 +1,2358 @@
+{
+  "generatedAt": "2026-10-25T23:55:07.955Z",
+  "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163",
+  "binarySha256": "cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac",
+  "registry": "http://127.0.0.1:4873/",
+  "machine": {
+    "os": "Linux 5.15.120",
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz",
+    "cores": 8,
+    "memoryGiB": 15.4,
+    "filesystem": "ext4",
+    "node": "v24.22.1",
+    "hyperfine": "hyperfine 1.15.0"
+  },
+  "tools": {
+    "fnpm": "0.0.1",
+    "bun": "1.4.4",
+    "pnpm": "12.15.0",
+    "npm": "11.19.1",
+    "yarn": "1.22.22"
+  },
+  "results": [
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "cold",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.6958642436,
+      "stddev": 0.06573496389947832,
+      "median": 0.7039013310000001,
+      "min": 0.6164582200000001,
+      "max": 0.792224734,
+      "times": [
+        0.792224734,
+        0.7039013310000001,
+        0.7090277490000001,
+        0.657709184,
+        0.6164582200000001
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "cold-lockfile",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.1410010822,
+      "stddev": 0.0043808027371362804,
+      "median": 0.140715547,
+      "min": 0.136370227,
+      "max": 0.14686380100000002,
+      "times": [
+        0.140715547,
+        0.136370227,
+        0.137332598,
+        0.143723238,
+        0.14686380100000002
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "warm",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0210832268,
+      "stddev": 0.0021415342003701927,
+      "median": 0.021548496,
+      "min": 0.018885703,
+      "max": 0.023913699,
+      "times": [
+        0.019003681,
+        0.023913699,
+        0.022064555000000003,
+        0.021548496,
+        0.018885703
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "noop",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0026511182,
+      "stddev": 0.0004381193599496604,
+      "median": 0.002658997,
+      "min": 0.002166119,
+      "max": 0.0032209110000000003,
+      "times": [
+        0.002658997,
+        0.002166119,
+        0.00228576,
+        0.0029238040000000003,
+        0.0032209110000000003
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "add",
+      "command": "fnpm add nanoid@5.1.5 --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0108001702,
+      "stddev": 0.0006395187455600498,
+      "median": 0.010634983,
+      "min": 0.010099987000000001,
+      "max": 0.011844013,
+      "times": [
+        0.010791120000000001,
+        0.010099987000000001,
+        0.010630748,
+        0.011844013,
+        0.010634983
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "scenario": "ci",
+      "command": "fnpm install --frozen-lockfile --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0210893944,
+      "stddev": 0.0021561257646037953,
+      "median": 0.020363484,
+      "min": 0.018759012000000002,
+      "max": 0.024502965,
+      "times": [
+        0.024502965,
+        0.021589577000000002,
+        0.020231934,
+        0.018759012000000002,
+        0.020363484
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "cold",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.5541801686,
+      "stddev": 0.03706474079223681,
+      "median": 0.539865385,
+      "min": 0.528739346,
+      "max": 0.619783702,
+      "times": [
+        0.619783702,
+        0.539865385,
+        0.528739346,
+        0.539651479,
+        0.542860931
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "cold-lockfile",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.12322358240000002,
+      "stddev": 0.014496123466715147,
+      "median": 0.1167943,
+      "min": 0.111671221,
+      "max": 0.14648196200000002,
+      "times": [
+        0.113139294,
+        0.1167943,
+        0.12803113500000002,
+        0.14648196200000002,
+        0.111671221
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "warm",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.035309927000000005,
+      "stddev": 0.022749517331684732,
+      "median": 0.024476986000000003,
+      "min": 0.023212840000000002,
+      "max": 0.07584231300000001,
+      "times": [
+        0.07584231300000001,
+        0.023212840000000002,
+        0.024426176,
+        0.028591320000000003,
+        0.024476986000000003
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "noop",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.007151618000000001,
+      "stddev": 0.0006663573689158846,
+      "median": 0.007065222,
+      "min": 0.006437712000000001,
+      "max": 0.008205651000000001,
+      "times": [
+        0.007065222,
+        0.0067841,
+        0.008205651000000001,
+        0.006437712000000001,
+        0.007265405000000001
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "add",
+      "command": "bun add nanoid@5.1.5 --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.009703145,
+      "stddev": 0.0006152691065460705,
+      "median": 0.009626240000000001,
+      "min": 0.009057544,
+      "max": 0.010572987,
+      "times": [
+        0.009226966000000001,
+        0.009626240000000001,
+        0.010572987,
+        0.010031988,
+        0.009057544
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "scenario": "ci",
+      "command": "bun install --frozen-lockfile --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.025025316000000002,
+      "stddev": 0.0018475689509859974,
+      "median": 0.024764867000000003,
+      "min": 0.022911354000000002,
+      "max": 0.027690543,
+      "times": [
+        0.022911354000000002,
+        0.023887020000000002,
+        0.025872796,
+        0.024764867000000003,
+        0.027690543
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "cold",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.8002628330000002,
+      "stddev": 0.038291181085253666,
+      "median": 0.793901293,
+      "min": 0.7624235730000001,
+      "max": 0.844387686,
+      "times": [
+        0.844387686,
+        0.765332436,
+        0.835269177,
+        0.793901293,
+        0.7624235730000001
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "cold-lockfile",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.8831667392000002,
+      "stddev": 0.030526793402890676,
+      "median": 0.864919253,
+      "min": 0.8577951410000001,
+      "max": 0.919827295,
+      "times": [
+        0.9129390140000001,
+        0.919827295,
+        0.864919253,
+        0.860352993,
+        0.8577951410000001
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "warm",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.2115163464,
+      "stddev": 0.006065839388945591,
+      "median": 0.21200489500000003,
+      "min": 0.202971859,
+      "max": 0.219041913,
+      "times": [
+        0.202971859,
+        0.21200489500000003,
+        0.219041913,
+        0.20885272000000002,
+        0.21471034500000002
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "noop",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.13535687220000003,
+      "stddev": 0.004537037512778539,
+      "median": 0.136351305,
+      "min": 0.12951125900000002,
+      "max": 0.14022781,
+      "times": [
+        0.138771356,
+        0.136351305,
+        0.131922631,
+        0.14022781,
+        0.12951125900000002
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "add",
+      "command": "pnpm add nanoid@5.1.5 --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.22106472760000004,
+      "stddev": 0.005648475069943815,
+      "median": 0.221293244,
+      "min": 0.213193557,
+      "max": 0.227047101,
+      "times": [
+        0.213193557,
+        0.227047101,
+        0.22566623900000002,
+        0.221293244,
+        0.21812349700000003
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "scenario": "ci",
+      "command": "pnpm install --frozen-lockfile --ignore-scripts --store-dir=bench/.tmp/state/pnpm/small/store --config.cache-dir=bench/.tmp/state/pnpm/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.27084386239999997,
+      "stddev": 0.028692074756674808,
+      "median": 0.26514930200000003,
+      "min": 0.23925073300000002,
+      "max": 0.314767817,
+      "times": [
+        0.23925073300000002,
+        0.314767817,
+        0.279996756,
+        0.255054704,
+        0.26514930200000003
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "cold",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 2.948614536,
+      "stddev": 0.09379679339032805,
+      "median": 2.974106203,
+      "min": 2.788465197,
+      "max": 3.018648497,
+      "times": [
+        3.018648497,
+        3.011755357,
+        2.788465197,
+        2.950097426,
+        2.974106203
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "cold-lockfile",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.6140894980000002,
+      "stddev": 0.06009231475430457,
+      "median": 1.6033948630000001,
+      "min": 1.5506634570000002,
+      "max": 1.6893398300000002,
+      "times": [
+        1.6617110620000002,
+        1.6033948630000001,
+        1.6893398300000002,
+        1.5506634570000002,
+        1.565338278
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "warm",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.2388142604,
+      "stddev": 0.033289514876888804,
+      "median": 1.233268733,
+      "min": 1.210325625,
+      "max": 1.29478386,
+      "times": [
+        1.238268495,
+        1.210325625,
+        1.233268733,
+        1.29478386,
+        1.217424589
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "noop",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.5807675896,
+      "stddev": 0.03144478876288232,
+      "median": 0.580922798,
+      "min": 0.550275091,
+      "max": 0.623955814,
+      "times": [
+        0.580922798,
+        0.55113128,
+        0.623955814,
+        0.597552965,
+        0.550275091
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "add",
+      "command": "npm install nanoid@5.1.5 --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.6615701544,
+      "stddev": 0.016192703904644914,
+      "median": 0.654626272,
+      "min": 0.645038561,
+      "max": 0.683653401,
+      "times": [
+        0.654626272,
+        0.673190202,
+        0.645038561,
+        0.651342336,
+        0.683653401
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "scenario": "ci",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.2367174706000001,
+      "stddev": 0.06303688497158755,
+      "median": 1.2356923530000001,
+      "min": 1.161234882,
+      "max": 1.311604175,
+      "times": [
+        1.285416337,
+        1.311604175,
+        1.189639606,
+        1.161234882,
+        1.2356923530000001
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "cold",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 3.2764740134,
+      "stddev": 0.17794012345266316,
+      "median": 3.241445698,
+      "min": 3.05132237,
+      "max": 3.4886647760000002,
+      "times": [
+        3.05132237,
+        3.241445698,
+        3.419955229,
+        3.4886647760000002,
+        3.180981994
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "cold-lockfile",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 2.7644820392,
+      "stddev": 0.14718109259021173,
+      "median": 2.815057775,
+      "min": 2.604797231,
+      "max": 2.951627543,
+      "times": [
+        2.604797231,
+        2.951627543,
+        2.624163105,
+        2.815057775,
+        2.8267645420000003
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "warm",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.9955619486000001,
+      "stddev": 0.05844402002248831,
+      "median": 1.019337976,
+      "min": 0.9286073480000001,
+      "max": 1.054839354,
+      "times": [
+        0.937656746,
+        0.9286073480000001,
+        1.037368319,
+        1.054839354,
+        1.019337976
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "noop",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.398952489,
+      "stddev": 0.0278072948626953,
+      "median": 0.398836501,
+      "min": 0.369616057,
+      "max": 0.442961861,
+      "times": [
+        0.398836501,
+        0.369616057,
+        0.40140966,
+        0.38193836600000003,
+        0.442961861
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "add",
+      "command": "yarn add nanoid@5.1.5 --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.823547978,
+      "stddev": 0.021069033359778222,
+      "median": 0.833245408,
+      "min": 0.8001943490000001,
+      "max": 0.844215193,
+      "times": [
+        0.8001943490000001,
+        0.833245408,
+        0.844215193,
+        0.838542113,
+        0.801542827
+      ]
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "scenario": "ci",
+      "command": "yarn install --frozen-lockfile --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/small/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0665198608,
+      "stddev": 0.04141358468282379,
+      "median": 1.07196028,
+      "min": 0.996812731,
+      "max": 1.101811842,
+      "times": [
+        1.101811842,
+        0.996812731,
+        1.093383947,
+        1.068630504,
+        1.07196028
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "cold",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 12.557287137,
+      "stddev": 0.41010631522067725,
+      "median": 12.543909221,
+      "min": 12.087003269,
+      "max": 13.136372743,
+      "times": [
+        13.136372743,
+        12.273450384,
+        12.087003269,
+        12.745700068,
+        12.543909221
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "cold-lockfile",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0047119126,
+      "stddev": 0.06248063297910102,
+      "median": 0.9753837150000001,
+      "min": 0.95364762,
+      "max": 1.103292472,
+      "times": [
+        1.029263704,
+        1.103292472,
+        0.961972052,
+        0.9753837150000001,
+        0.95364762
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "warm",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.071642405,
+      "stddev": 0.016384143301176123,
+      "median": 0.062960813,
+      "min": 0.06178816300000001,
+      "max": 0.100338038,
+      "times": [
+        0.06294074000000001,
+        0.06178816300000001,
+        0.100338038,
+        0.062960813,
+        0.070184271
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "noop",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0029718272000000003,
+      "stddev": 0.00023656174940530855,
+      "median": 0.002890718,
+      "min": 0.0026877150000000002,
+      "max": 0.00325038,
+      "times": [
+        0.00325038,
+        0.002890718,
+        0.0028490290000000003,
+        0.0026877150000000002,
+        0.0031812940000000003
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "add",
+      "command": "fnpm add nanoid@5.1.5 --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.017257514800000002,
+      "stddev": 0.0007284498871457811,
+      "median": 0.017127262,
+      "min": 0.016615465,
+      "max": 0.018488557000000003,
+      "times": [
+        0.017218772,
+        0.016837518000000003,
+        0.016615465,
+        0.017127262,
+        0.018488557000000003
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "scenario": "ci",
+      "command": "fnpm install --frozen-lockfile --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.059997282000000006,
+      "stddev": 0.0016102578077340601,
+      "median": 0.060238314,
+      "min": 0.057471761,
+      "max": 0.061555136,
+      "times": [
+        0.059571784,
+        0.061149415000000006,
+        0.057471761,
+        0.061555136,
+        0.060238314
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "cold",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 12.7899832488,
+      "stddev": 0.4898655330049666,
+      "median": 12.674614044,
+      "min": 12.285182606,
+      "max": 13.330283802,
+      "times": [
+        12.674614044,
+        13.330283802,
+        13.275240801,
+        12.384594991,
+        12.285182606
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "cold-lockfile",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.1619484048,
+      "stddev": 0.07351789472722531,
+      "median": 1.12400831,
+      "min": 1.095095224,
+      "max": 1.25654203,
+      "times": [
+        1.224973848,
+        1.109122612,
+        1.095095224,
+        1.12400831,
+        1.25654203
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "warm",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.1405582296,
+      "stddev": 0.008157017059697704,
+      "median": 0.13834939200000002,
+      "min": 0.13377050000000001,
+      "max": 0.15413817200000002,
+      "times": [
+        0.14145064100000002,
+        0.135082443,
+        0.15413817200000002,
+        0.13834939200000002,
+        0.13377050000000001
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "noop",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0104606608,
+      "stddev": 0.000991266199067738,
+      "median": 0.01003158,
+      "min": 0.009632821,
+      "max": 0.011875007,
+      "times": [
+        0.01003158,
+        0.011105909,
+        0.011875007,
+        0.009632821,
+        0.009657987
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "add",
+      "command": "bun add nanoid@5.1.5 --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0142675352,
+      "stddev": 0.0005564449692680311,
+      "median": 0.014302388000000001,
+      "min": 0.013480661000000001,
+      "max": 0.015000220000000002,
+      "times": [
+        0.014302388000000001,
+        0.013480661000000001,
+        0.014075803000000001,
+        0.014478604,
+        0.015000220000000002
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "scenario": "ci",
+      "command": "bun install --frozen-lockfile --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.14100174299999998,
+      "stddev": 0.006924428310893866,
+      "median": 0.14231728800000001,
+      "min": 0.132191842,
+      "max": 0.149246661,
+      "times": [
+        0.132191842,
+        0.14231728800000001,
+        0.135926171,
+        0.149246661,
+        0.145326753
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "cold",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 14.372234598599999,
+      "stddev": 0.48359027040695934,
+      "median": 14.379298085,
+      "min": 13.936190861,
+      "max": 15.129993747,
+      "times": [
+        14.379298085,
+        15.129993747,
+        13.936190861,
+        14.449720589,
+        13.965969711
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "cold-lockfile",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 27.425278598,
+      "stddev": 0.8030170590156199,
+      "median": 27.395192996,
+      "min": 26.712319325,
+      "max": 28.712684109,
+      "times": [
+        26.789400384,
+        27.516796176,
+        27.395192996,
+        26.712319325,
+        28.712684109
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "warm",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.445999731,
+      "stddev": 0.0757427317041295,
+      "median": 0.41514499400000004,
+      "min": 0.382937882,
+      "max": 0.5660125810000001,
+      "times": [
+        0.473420367,
+        0.5660125810000001,
+        0.39248283100000003,
+        0.382937882,
+        0.41514499400000004
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "noop",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.1476180752,
+      "stddev": 0.008541052093404462,
+      "median": 0.146794942,
+      "min": 0.138744697,
+      "max": 0.161214658,
+      "times": [
+        0.138744697,
+        0.148823317,
+        0.161214658,
+        0.14251276200000002,
+        0.146794942
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "add",
+      "command": "pnpm add nanoid@5.1.5 --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.3710836148,
+      "stddev": 0.012675686628987694,
+      "median": 0.37346373200000005,
+      "min": 0.356352836,
+      "max": 0.38592180600000003,
+      "times": [
+        0.379758658,
+        0.359921042,
+        0.356352836,
+        0.38592180600000003,
+        0.37346373200000005
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "scenario": "ci",
+      "command": "pnpm install --frozen-lockfile --ignore-scripts --store-dir=bench/.tmp/state/pnpm/medium/store --config.cache-dir=bench/.tmp/state/pnpm/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.4415595582,
+      "stddev": 0.021437620879241916,
+      "median": 0.42886181900000003,
+      "min": 0.42642312400000004,
+      "max": 0.47628602700000006,
+      "times": [
+        0.42766681700000003,
+        0.42642312400000004,
+        0.42886181900000003,
+        0.47628602700000006,
+        0.448560004
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "cold",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 47.8392709102,
+      "stddev": 0.8154768367711444,
+      "median": 48.07650369,
+      "min": 46.791753251,
+      "max": 48.875431881,
+      "times": [
+        48.07650369,
+        47.275058178,
+        48.177607551,
+        48.875431881,
+        46.791753251
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "cold-lockfile",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 11.7411650684,
+      "stddev": 0.5983720560564506,
+      "median": 11.626588435,
+      "min": 11.127279814,
+      "max": 12.684054005,
+      "times": [
+        11.378819683,
+        12.684054005,
+        11.127279814,
+        11.626588435,
+        11.889083405000001
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "warm",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 9.9707329198,
+      "stddev": 0.34956790981753527,
+      "median": 9.94165324,
+      "min": 9.660803753,
+      "max": 10.545312423,
+      "times": [
+        9.983333184,
+        10.545312423,
+        9.94165324,
+        9.722561999,
+        9.660803753
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "noop",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.7014248786,
+      "stddev": 0.06182089459314233,
+      "median": 0.6831589370000001,
+      "min": 0.626659674,
+      "max": 0.7824769020000001,
+      "times": [
+        0.670518428,
+        0.6831589370000001,
+        0.626659674,
+        0.744310452,
+        0.7824769020000001
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "add",
+      "command": "npm install nanoid@5.1.5 --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.8995451996,
+      "stddev": 0.09060674684648988,
+      "median": 0.8967224220000001,
+      "min": 0.811752346,
+      "max": 1.047114746,
+      "times": [
+        1.047114746,
+        0.8967224220000001,
+        0.900429201,
+        0.811752346,
+        0.8417072830000001
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "scenario": "ci",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 9.853679397599999,
+      "stddev": 0.5257989288559546,
+      "median": 10.191147501,
+      "min": 9.252991488,
+      "max": 10.302607933,
+      "times": [
+        10.302607933,
+        9.30675088,
+        9.252991488,
+        10.191147501,
+        10.214899186
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "cold",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 47.5107101918,
+      "stddev": 0.8747480874484826,
+      "median": 47.209123402,
+      "min": 46.408345669,
+      "max": 48.626501884,
+      "times": [
+        48.138559394,
+        48.626501884,
+        47.209123402,
+        47.17102061,
+        46.408345669
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "cold-lockfile",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 33.64294452079999,
+      "stddev": 0.9833827663023159,
+      "median": 33.337428708,
+      "min": 32.397617488,
+      "max": 34.923726753,
+      "times": [
+        32.397617488,
+        33.337428708,
+        34.301003429,
+        33.254946226,
+        34.923726753
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "warm",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 5.40146511,
+      "stddev": 0.8542328227423547,
+      "median": 5.110399936,
+      "min": 4.760071723,
+      "max": 6.885235452,
+      "times": [
+        5.110399936,
+        6.885235452,
+        4.939793519,
+        4.760071723,
+        5.31182492
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "noop",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.42010395460000005,
+      "stddev": 0.01562889117248139,
+      "median": 0.42385716300000004,
+      "min": 0.39338201300000003,
+      "max": 0.434200389,
+      "times": [
+        0.42385716300000004,
+        0.39338201300000003,
+        0.426867325,
+        0.434200389,
+        0.42221288300000004
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "add",
+      "command": "yarn add nanoid@5.1.5 --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 2.019379123,
+      "stddev": 0.04790135786479015,
+      "median": 2.0175648,
+      "min": 1.943794813,
+      "max": 2.069860532,
+      "times": [
+        2.0175648,
+        1.943794813,
+        2.069860532,
+        2.049439535,
+        2.016235935
+      ]
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "scenario": "ci",
+      "command": "yarn install --frozen-lockfile --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/medium/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 5.3172500472,
+      "stddev": 0.48591344448365914,
+      "median": 5.412933928,
+      "min": 4.713180461,
+      "max": 5.998158276,
+      "times": [
+        5.998158276,
+        4.713180461,
+        5.016659593,
+        5.412933928,
+        5.445317978
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "scenario": "cold-lockfile",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.3497590588000001,
+      "stddev": 0.06277581559205307,
+      "median": 1.323975037,
+      "min": 1.297180617,
+      "max": 1.457162158,
+      "times": [
+        1.323975037,
+        1.457162158,
+        1.348964607,
+        1.321512875,
+        1.297180617
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "scenario": "warm",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.18542081880000003,
+      "stddev": 0.012605376619874696,
+      "median": 0.178653476,
+      "min": 0.174547684,
+      "max": 0.205228558,
+      "times": [
+        0.17813779100000002,
+        0.178653476,
+        0.174547684,
+        0.190536585,
+        0.205228558
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "scenario": "noop",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0022375574000000004,
+      "stddev": 0.00015586309436425283,
+      "median": 0.0021430250000000002,
+      "min": 0.0020891530000000003,
+      "max": 0.0024163690000000002,
+      "times": [
+        0.0024163690000000002,
+        0.0021430250000000002,
+        0.002396473,
+        0.0021427670000000003,
+        0.0020891530000000003
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "scenario": "ci",
+      "command": "fnpm install --frozen-lockfile --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.1721887962,
+      "stddev": 0.003343566917735716,
+      "median": 0.17233235900000002,
+      "min": 0.168634438,
+      "max": 0.17694358300000002,
+      "times": [
+        0.17694358300000002,
+        0.17233235900000002,
+        0.16944888700000002,
+        0.168634438,
+        0.173584714
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "scenario": "add",
+      "command": "fnpm add nanoid@5.1.5 --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0768582106,
+      "stddev": 0.004200933523637193,
+      "median": 0.0755567,
+      "min": 0.07306844400000001,
+      "max": 0.083604616,
+      "times": [
+        0.0755567,
+        0.07306844400000001,
+        0.07798658600000001,
+        0.083604616,
+        0.074074707
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "scenario": "cold-lockfile",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0997372294,
+      "stddev": 0.027322039424871793,
+      "median": 1.09794386,
+      "min": 1.059795259,
+      "max": 1.126156689,
+      "times": [
+        1.124308511,
+        1.090481828,
+        1.059795259,
+        1.09794386,
+        1.126156689
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "scenario": "warm",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.2300940142,
+      "stddev": 0.018171135255801114,
+      "median": 0.225879816,
+      "min": 0.209717228,
+      "max": 0.259225747,
+      "times": [
+        0.209717228,
+        0.225879816,
+        0.23161973600000002,
+        0.259225747,
+        0.22402754400000002
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "scenario": "noop",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.062422299,
+      "stddev": 0.005548747046339924,
+      "median": 0.060738237,
+      "min": 0.058868462,
+      "max": 0.07224074800000001,
+      "times": [
+        0.060738237,
+        0.060762854000000005,
+        0.058868462,
+        0.07224074800000001,
+        0.059501194
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "scenario": "ci",
+      "command": "bun install --frozen-lockfile --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.2145751992,
+      "stddev": 0.030875467002488208,
+      "median": 0.19548594400000002,
+      "min": 0.190343431,
+      "max": 0.259717217,
+      "times": [
+        0.23393956100000002,
+        0.259717217,
+        0.193389843,
+        0.190343431,
+        0.19548594400000002
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "scenario": "add",
+      "command": "bun add nanoid@5.1.5 --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.07127743180000001,
+      "stddev": 0.00448432557544211,
+      "median": 0.07100806400000001,
+      "min": 0.06658705000000001,
+      "max": 0.07784595000000001,
+      "times": [
+        0.067834396,
+        0.07784595000000001,
+        0.06658705000000001,
+        0.07100806400000001,
+        0.073111699
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "scenario": "cold-lockfile",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/large/store --config.cache-dir=bench/.tmp/state/pnpm/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 42.2177235998,
+      "stddev": 0.8462414804856062,
+      "median": 42.045504671,
+      "min": 41.443315178,
+      "max": 43.6173485,
+      "times": [
+        43.6173485,
+        41.696625471,
+        42.045504671,
+        42.285824179,
+        41.443315178
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "scenario": "warm",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/large/store --config.cache-dir=bench/.tmp/state/pnpm/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0033895620000002,
+      "stddev": 0.03924504269274148,
+      "median": 1.011846621,
+      "min": 0.9555191030000001,
+      "max": 1.056017466,
+      "times": [
+        1.018468515,
+        0.9750961050000001,
+        0.9555191030000001,
+        1.056017466,
+        1.011846621
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "scenario": "noop",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/large/store --config.cache-dir=bench/.tmp/state/pnpm/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.14788243480000002,
+      "stddev": 0.007627111938745209,
+      "median": 0.14847970000000002,
+      "min": 0.138498573,
+      "max": 0.155898055,
+      "times": [
+        0.141954034,
+        0.138498573,
+        0.155898055,
+        0.14847970000000002,
+        0.154581812
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "scenario": "ci",
+      "command": "pnpm install --frozen-lockfile --ignore-scripts --store-dir=bench/.tmp/state/pnpm/large/store --config.cache-dir=bench/.tmp/state/pnpm/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0138989354,
+      "stddev": 0.047878276458595784,
+      "median": 1.003990578,
+      "min": 0.9749019550000001,
+      "max": 1.096091934,
+      "times": [
+        1.003990578,
+        1.008224476,
+        1.096091934,
+        0.9749019550000001,
+        0.9862857340000001
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "scenario": "add",
+      "command": "pnpm add nanoid@5.1.5 --ignore-scripts --store-dir=bench/.tmp/state/pnpm/large/store --config.cache-dir=bench/.tmp/state/pnpm/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.0733875644000002,
+      "stddev": 0.04021575690924635,
+      "median": 1.064662689,
+      "min": 1.024717118,
+      "max": 1.124678499,
+      "times": [
+        1.024717118,
+        1.124678499,
+        1.102659034,
+        1.064662689,
+        1.050220482
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "scenario": "cold-lockfile",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 20.254107301199998,
+      "stddev": 0.7660901962430634,
+      "median": 20.505068363,
+      "min": 19.434962952,
+      "max": 21.092378989,
+      "times": [
+        20.505068363,
+        20.78028339,
+        21.092378989,
+        19.457842812,
+        19.434962952
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "scenario": "warm",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 15.079598044799999,
+      "stddev": 0.356685314867814,
+      "median": 14.902225126,
+      "min": 14.743596333,
+      "max": 15.607494654,
+      "times": [
+        14.902225126,
+        14.743596333,
+        14.865263302,
+        15.279410809,
+        15.607494654
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "scenario": "noop",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 2.8296573758,
+      "stddev": 0.07851007866860159,
+      "median": 2.804381996,
+      "min": 2.755558456,
+      "max": 2.958949828,
+      "times": [
+        2.958949828,
+        2.755558456,
+        2.788604728,
+        2.804381996,
+        2.840791871
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "scenario": "ci",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 15.221955210600001,
+      "stddev": 0.31125525382007146,
+      "median": 15.271060841,
+      "min": 14.823967185,
+      "max": 15.590283693,
+      "times": [
+        14.823967185,
+        15.271060841,
+        14.999090718,
+        15.425373616,
+        15.590283693
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "scenario": "add",
+      "command": "npm install nanoid@5.1.5 --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 3.2216829282,
+      "stddev": 0.15605957546191557,
+      "median": 3.246844698,
+      "min": 3.002196627,
+      "max": 3.432443146,
+      "times": [
+        3.002196627,
+        3.432443146,
+        3.168431331,
+        3.258498839,
+        3.246844698
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "scenario": "cold-lockfile",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 38.8897748212,
+      "stddev": 0.57781182204463,
+      "median": 39.066561135,
+      "min": 38.134880852,
+      "max": 39.619974271,
+      "times": [
+        39.066561135,
+        39.121617303,
+        38.134880852,
+        38.505840545,
+        39.619974271
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "scenario": "warm",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 15.410317323200001,
+      "stddev": 0.8705279024483825,
+      "median": 15.707986096,
+      "min": 14.405414028,
+      "max": 16.379299974,
+      "times": [
+        15.972138923,
+        15.707986096,
+        14.586747595,
+        14.405414028,
+        16.379299974
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "scenario": "noop",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.7700248614000001,
+      "stddev": 0.020977966276929435,
+      "median": 0.766564389,
+      "min": 0.744198205,
+      "max": 0.802334678,
+      "times": [
+        0.7725642370000001,
+        0.766564389,
+        0.764462798,
+        0.802334678,
+        0.744198205
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "scenario": "ci",
+      "command": "yarn install --frozen-lockfile --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 15.4504571834,
+      "stddev": 1.198172110224746,
+      "median": 15.306862332,
+      "min": 13.970543485,
+      "max": 17.050191915,
+      "times": [
+        17.050191915,
+        16.159577116,
+        15.306862332,
+        14.765111069,
+        13.970543485
+      ]
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "scenario": "add",
+      "command": "yarn add nanoid@5.1.5 --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/large/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 7.137632841,
+      "stddev": 0.33523195911021103,
+      "median": 6.936075517,
+      "min": 6.907744949,
+      "max": 7.690988811,
+      "times": [
+        6.907744949,
+        7.222303908,
+        6.936075517,
+        7.690988811,
+        6.93105102
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "scenario": "cold-lockfile",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.9600767766,
+      "stddev": 0.056736800232288845,
+      "median": 0.942202011,
+      "min": 0.9155583740000001,
+      "max": 1.058339198,
+      "times": [
+        0.9538907130000001,
+        0.942202011,
+        0.9303935870000001,
+        0.9155583740000001,
+        1.058339198
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "scenario": "warm",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.17584453780000003,
+      "stddev": 0.011144184187763076,
+      "median": 0.17216445300000002,
+      "min": 0.165326505,
+      "max": 0.19475729,
+      "times": [
+        0.17211004200000002,
+        0.17216445300000002,
+        0.174864399,
+        0.165326505,
+        0.19475729
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "scenario": "noop",
+      "command": "fnpm install --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.0032134238000000002,
+      "stddev": 0.0004457629069720809,
+      "median": 0.0032581280000000003,
+      "min": 0.002692636,
+      "max": 0.0036711060000000004,
+      "times": [
+        0.003617566,
+        0.0036711060000000004,
+        0.002827683,
+        0.002692636,
+        0.0032581280000000003
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "scenario": "ci",
+      "command": "fnpm install --frozen-lockfile --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.14697606940000002,
+      "stddev": 0.003333310591272031,
+      "median": 0.147474828,
+      "min": 0.14275464100000002,
+      "max": 0.150877633,
+      "times": [
+        0.150877633,
+        0.144526917,
+        0.14275464100000002,
+        0.147474828,
+        0.149246328
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "scenario": "add",
+      "command": "fnpm add nanoid@5.1.5 --ignore-scripts --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.049063044400000005,
+      "stddev": 0.003703276250019204,
+      "median": 0.048719752000000005,
+      "min": 0.044155845000000006,
+      "max": 0.054299400000000005,
+      "times": [
+        0.050342717,
+        0.048719752000000005,
+        0.054299400000000005,
+        0.047797508,
+        0.044155845000000006
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "scenario": "cold-lockfile",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.7593505702,
+      "stddev": 0.07619168638075155,
+      "median": 0.743023054,
+      "min": 0.6767080520000001,
+      "max": 0.8847018820000001,
+      "times": [
+        0.6767080520000001,
+        0.751789382,
+        0.7405304810000001,
+        0.743023054,
+        0.8847018820000001
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "scenario": "warm",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.15736924340000003,
+      "stddev": 0.019296025979011158,
+      "median": 0.150999973,
+      "min": 0.14056053000000002,
+      "max": 0.19069617300000002,
+      "times": [
+        0.14056053000000002,
+        0.153719768,
+        0.150999973,
+        0.150869773,
+        0.19069617300000002
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "scenario": "noop",
+      "command": "bun install --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.027196178800000005,
+      "stddev": 0.002546541075572059,
+      "median": 0.026099108000000003,
+      "min": 0.025220178000000003,
+      "max": 0.031496173,
+      "times": [
+        0.031496173,
+        0.025220178000000003,
+        0.026099108000000003,
+        0.027473987000000002,
+        0.025691448000000002
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "scenario": "ci",
+      "command": "bun install --frozen-lockfile --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.151976886,
+      "stddev": 0.015084164687318732,
+      "median": 0.14669969400000002,
+      "min": 0.13635217900000002,
+      "max": 0.17025346700000002,
+      "times": [
+        0.14102846200000002,
+        0.14669969400000002,
+        0.17025346700000002,
+        0.165550628,
+        0.13635217900000002
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "scenario": "add",
+      "command": "bun add nanoid@5.1.5 --ignore-scripts --no-progress --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.030302627399999997,
+      "stddev": 0.0028733618183268876,
+      "median": 0.028852171000000003,
+      "min": 0.027740141000000003,
+      "max": 0.034155715,
+      "times": [
+        0.028203609,
+        0.028852171000000003,
+        0.032561501,
+        0.034155715,
+        0.027740141000000003
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "scenario": "cold-lockfile",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/monorepo/store --config.cache-dir=bench/.tmp/state/pnpm/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 28.542619269199996,
+      "stddev": 0.39623552848771715,
+      "median": 28.456821819,
+      "min": 28.127317833,
+      "max": 29.029553873,
+      "times": [
+        28.224918199,
+        29.029553873,
+        28.874484622,
+        28.456821819,
+        28.127317833
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "scenario": "warm",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/monorepo/store --config.cache-dir=bench/.tmp/state/pnpm/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.6852485688,
+      "stddev": 0.028710940462975756,
+      "median": 0.68171103,
+      "min": 0.652340165,
+      "max": 0.728260411,
+      "times": [
+        0.652340165,
+        0.694815154,
+        0.669116084,
+        0.728260411,
+        0.68171103
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "scenario": "noop",
+      "command": "pnpm install --ignore-scripts --store-dir=bench/.tmp/state/pnpm/monorepo/store --config.cache-dir=bench/.tmp/state/pnpm/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.1427155862,
+      "stddev": 0.008577675674415518,
+      "median": 0.143552528,
+      "min": 0.13033740900000002,
+      "max": 0.154418186,
+      "times": [
+        0.14394304700000002,
+        0.143552528,
+        0.13033740900000002,
+        0.154418186,
+        0.141326761
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "scenario": "ci",
+      "command": "pnpm install --frozen-lockfile --ignore-scripts --store-dir=bench/.tmp/state/pnpm/monorepo/store --config.cache-dir=bench/.tmp/state/pnpm/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.6504913806000001,
+      "stddev": 0.0258269904179689,
+      "median": 0.6477853330000001,
+      "min": 0.6162244760000001,
+      "max": 0.6794937120000001,
+      "times": [
+        0.6794937120000001,
+        0.6719936780000001,
+        0.636959704,
+        0.6162244760000001,
+        0.6477853330000001
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "scenario": "add",
+      "command": "pnpm add nanoid@5.1.5 -w --ignore-scripts --store-dir=bench/.tmp/state/pnpm/monorepo/store --config.cache-dir=bench/.tmp/state/pnpm/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 4.422942807,
+      "stddev": 0.15104455940084585,
+      "median": 4.328246349,
+      "min": 4.312023461,
+      "max": 4.656872212,
+      "times": [
+        4.656872212,
+        4.494993659,
+        4.328246349,
+        4.312023461,
+        4.322578354
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "scenario": "cold-lockfile",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 12.4947991552,
+      "stddev": 0.38400629749987336,
+      "median": 12.721963879,
+      "min": 11.975569789,
+      "max": 12.841638289,
+      "times": [
+        12.196447989,
+        12.841638289,
+        12.721963879,
+        11.975569789,
+        12.73837583
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "scenario": "warm",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 9.6505188162,
+      "stddev": 0.3464418162402912,
+      "median": 9.73497111,
+      "min": 9.107871535,
+      "max": 10.058818824,
+      "times": [
+        9.74804666,
+        10.058818824,
+        9.73497111,
+        9.107871535,
+        9.602885952
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "scenario": "noop",
+      "command": "npm install --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.4467279386,
+      "stddev": 0.1326049466662558,
+      "median": 1.474059748,
+      "min": 1.302716956,
+      "max": 1.633096082,
+      "times": [
+        1.335434989,
+        1.488331918,
+        1.474059748,
+        1.633096082,
+        1.302716956
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "scenario": "ci",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 9.8339298346,
+      "stddev": 0.31252513618463723,
+      "median": 9.865786201,
+      "min": 9.484612424,
+      "max": 10.233496609,
+      "times": [
+        9.865786201,
+        10.233496609,
+        9.484612424,
+        9.56415653,
+        10.021597409
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "scenario": "add",
+      "command": "npm install nanoid@5.1.5 --ignore-scripts --no-audit --no-fund --loglevel=error --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 1.4855312664000002,
+      "stddev": 0.05456644300279646,
+      "median": 1.477941343,
+      "min": 1.429860022,
+      "max": 1.542493887,
+      "times": [
+        1.477941343,
+        1.5410662080000002,
+        1.429860022,
+        1.436294872,
+        1.542493887
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "scenario": "cold-lockfile",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 30.4505331544,
+      "stddev": 0.41310890091658065,
+      "median": 30.317086753,
+      "min": 30.117386745,
+      "max": 31.167803245,
+      "times": [
+        30.317086753,
+        31.167803245,
+        30.117386745,
+        30.388224078,
+        30.262164951
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "scenario": "warm",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 8.0252115106,
+      "stddev": 0.20423294391547814,
+      "median": 8.026821289,
+      "min": 7.7498450000000005,
+      "max": 8.305858247,
+      "times": [
+        7.943572045,
+        8.026821289,
+        7.7498450000000005,
+        8.305858247,
+        8.099960972
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "scenario": "noop",
+      "command": "yarn install --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 0.6292415004,
+      "stddev": 0.05876101927700833,
+      "median": 0.6047009,
+      "min": 0.570857283,
+      "max": 0.720184621,
+      "times": [
+        0.597867464,
+        0.652597234,
+        0.720184621,
+        0.6047009,
+        0.570857283
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "scenario": "ci",
+      "command": "yarn install --frozen-lockfile --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 7.5619765042,
+      "stddev": 0.4299259721044558,
+      "median": 7.365176273,
+      "min": 7.090062681,
+      "max": 8.054794532,
+      "times": [
+        7.31858401,
+        8.054794532,
+        7.090062681,
+        7.365176273,
+        7.981265025
+      ]
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "scenario": "add",
+      "command": "yarn add nanoid@5.1.5 -W --ignore-scripts --non-interactive --no-progress --silent --cache-folder=bench/.tmp/state/yarn/monorepo/cache --registry=http://127.0.0.1:4873/",
+      "runs": 5,
+      "mean": 3.9798790441999996,
+      "stddev": 0.16736631571267557,
+      "median": 4.002508817,
+      "min": 3.71003578,
+      "max": 4.159913881,
+      "times": [
+        3.71003578,
+        4.002508817,
+        4.058465107,
+        4.159913881,
+        3.9684716360000003
+      ]
+    }
+  ],
+  "disk": [
+    {
+      "fixture": "small",
+      "tool": "fnpm",
+      "nodeModulesBytes": 15638528,
+      "storeBytes": 1822720,
+      "totalBytes": 17461248,
+      "nodeModulesEntries": 2782,
+      "storeEntries": 2936,
+      "inodes": 3045,
+      "coldDfDeltaBytes": 17461248,
+      "coldSeconds": 0.137
+    },
+    {
+      "fixture": "small",
+      "tool": "bun",
+      "nodeModulesBytes": 16207872,
+      "storeBytes": 1679360,
+      "totalBytes": 17887232,
+      "nodeModulesEntries": 2782,
+      "storeEntries": 2924,
+      "inodes": 3166,
+      "coldDfDeltaBytes": 17887232,
+      "coldSeconds": 0.122
+    },
+    {
+      "fixture": "small",
+      "tool": "pnpm",
+      "nodeModulesBytes": 16281600,
+      "storeBytes": 6516736,
+      "totalBytes": 22798336,
+      "nodeModulesEntries": 3172,
+      "storeEntries": 2703,
+      "inodes": 3350,
+      "coldDfDeltaBytes": 22802432,
+      "coldSeconds": 0.925
+    },
+    {
+      "fixture": "small",
+      "tool": "npm",
+      "nodeModulesBytes": 16326656,
+      "storeBytes": 3870720,
+      "totalBytes": 20197376,
+      "nodeModulesEntries": 2781,
+      "storeEntries": 498,
+      "inodes": 3279,
+      "coldDfDeltaBytes": 20180992,
+      "coldSeconds": 1.614
+    },
+    {
+      "fixture": "small",
+      "tool": "yarn",
+      "nodeModulesBytes": 16265216,
+      "storeBytes": 20094976,
+      "totalBytes": 36360192,
+      "nodeModulesEntries": 2774,
+      "storeEntries": 3101,
+      "inodes": 5875,
+      "coldDfDeltaBytes": 36356096,
+      "coldSeconds": 2.786
+    },
+    {
+      "fixture": "medium",
+      "tool": "fnpm",
+      "nodeModulesBytes": 519077888,
+      "storeBytes": 8056832,
+      "totalBytes": 527134720,
+      "nodeModulesEntries": 19472,
+      "storeEntries": 19629,
+      "inodes": 20050,
+      "coldDfDeltaBytes": 527142912,
+      "coldSeconds": 0.879
+    },
+    {
+      "fixture": "medium",
+      "tool": "bun",
+      "nodeModulesBytes": 524574720,
+      "storeBytes": 6615040,
+      "totalBytes": 531189760,
+      "nodeModulesEntries": 19472,
+      "storeEntries": 19630,
+      "inodes": 21036,
+      "coldDfDeltaBytes": 531189760,
+      "coldSeconds": 1.13
+    },
+    {
+      "fixture": "medium",
+      "tool": "pnpm",
+      "nodeModulesBytes": 517259264,
+      "storeBytes": 298196992,
+      "totalBytes": 815456256,
+      "nodeModulesEntries": 20013,
+      "storeEntries": 16823,
+      "inodes": 18807,
+      "coldDfDeltaBytes": 815468544,
+      "coldSeconds": 28.13
+    },
+    {
+      "fixture": "medium",
+      "tool": "npm",
+      "nodeModulesBytes": 524517376,
+      "storeBytes": 133124096,
+      "totalBytes": 657641472,
+      "nodeModulesEntries": 19471,
+      "storeEntries": 544,
+      "inodes": 20015,
+      "coldDfDeltaBytes": 657850368,
+      "coldSeconds": 11.912
+    },
+    {
+      "fixture": "medium",
+      "tool": "yarn",
+      "nodeModulesBytes": 683749376,
+      "storeBytes": 3284426752,
+      "totalBytes": 3968176128,
+      "nodeModulesEntries": 19552,
+      "storeEntries": 21490,
+      "inodes": 41042,
+      "coldDfDeltaBytes": 3968200704,
+      "coldSeconds": 33.257
+    },
+    {
+      "fixture": "large",
+      "tool": "fnpm",
+      "nodeModulesBytes": 405790720,
+      "storeBytes": 37732352,
+      "totalBytes": 443523072,
+      "nodeModulesEntries": 58929,
+      "storeEntries": 57884,
+      "inodes": 58528,
+      "coldDfDeltaBytes": 443514880,
+      "coldSeconds": 1.213
+    },
+    {
+      "fixture": "large",
+      "tool": "bun",
+      "nodeModulesBytes": 434012160,
+      "storeBytes": 34103296,
+      "totalBytes": 468115456,
+      "nodeModulesEntries": 58916,
+      "storeEntries": 57774,
+      "inodes": 64326,
+      "coldDfDeltaBytes": 468115456,
+      "coldSeconds": 1.197
+    },
+    {
+      "fixture": "large",
+      "tool": "pnpm",
+      "nodeModulesBytes": 419053568,
+      "storeBytes": 458260480,
+      "totalBytes": 877314048,
+      "nodeModulesEntries": 63461,
+      "storeEntries": 42938,
+      "inodes": 60515,
+      "coldDfDeltaBytes": 877228032,
+      "coldSeconds": 42.622
+    },
+    {
+      "fixture": "large",
+      "tool": "npm",
+      "nodeModulesBytes": 460611584,
+      "storeBytes": 74170368,
+      "totalBytes": 534781952,
+      "nodeModulesEntries": 58860,
+      "storeEntries": 5595,
+      "inodes": 64455,
+      "coldDfDeltaBytes": 534536192,
+      "coldSeconds": 20.933
+    },
+    {
+      "fixture": "large",
+      "tool": "yarn",
+      "nodeModulesBytes": 552923136,
+      "storeBytes": 523358208,
+      "totalBytes": 1076281344,
+      "nodeModulesEntries": 63671,
+      "storeEntries": 60974,
+      "inodes": 124645,
+      "coldDfDeltaBytes": 1076289536,
+      "coldSeconds": 38.111
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "fnpm",
+      "nodeModulesBytes": 410259456,
+      "storeBytes": 17166336,
+      "totalBytes": 427425792,
+      "nodeModulesEntries": 35493,
+      "storeEntries": 33291,
+      "inodes": 35440,
+      "coldDfDeltaBytes": 427417600,
+      "coldSeconds": 0.922
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "bun",
+      "nodeModulesBytes": 431157248,
+      "storeBytes": 15093760,
+      "totalBytes": 446251008,
+      "nodeModulesEntries": 35489,
+      "storeEntries": 33286,
+      "inodes": 39048,
+      "coldDfDeltaBytes": 446263296,
+      "coldSeconds": 0.776
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "pnpm",
+      "nodeModulesBytes": 409477120,
+      "storeBytes": 171352064,
+      "totalBytes": 580829184,
+      "nodeModulesEntries": 35598,
+      "storeEntries": 26509,
+      "inodes": 32421,
+      "coldDfDeltaBytes": 580820992,
+      "coldSeconds": 29.054
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "npm",
+      "nodeModulesBytes": 434839552,
+      "storeBytes": 82538496,
+      "totalBytes": 517378048,
+      "nodeModulesEntries": 33638,
+      "storeEntries": 2743,
+      "inodes": 36381,
+      "coldDfDeltaBytes": 517464064,
+      "coldSeconds": 12.838
+    },
+    {
+      "fixture": "monorepo",
+      "tool": "yarn",
+      "nodeModulesBytes": 483082240,
+      "storeBytes": 2224963584,
+      "totalBytes": 2708045824,
+      "nodeModulesEntries": 33087,
+      "storeEntries": 36385,
+      "inodes": 69472,
+      "coldDfDeltaBytes": 2708066304,
+      "coldSeconds": 31.279
+    }
+  ]
+}

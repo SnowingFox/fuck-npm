@@ -12,6 +12,34 @@ conformance files for the phase, and the benchmark gate.
 Status as of 2026-10-26. Legend: **done**, **merged** (implemented, reviewed and on `main`; crate tests green, the
 command is not wired end to end yet), **in progress**, **not started**.
 
+## Integrated validation (2026-10-26)
+
+The perf, conformance, publishing, execution and corpus tracks are integrated at `23cc221`.
+Store v2 is preserved. Integration fixes cover explicit omitted-peer adds, local-tarball patch identities,
+audit repairs replacing installed files, running previously blocked scripts after trust changes,
+full scanner scope after node_modules removal, and a single metadata request with a release-age gate.
+
+The earlier main CI run ([40203454709](https://github.com/SnowingFox/fuck-npm/actions/runs/40203454709))
+failed on macOS (`libc::CLONE_NOFOLLOW` is unavailable), Windows Clippy (unused/dead store code),
+and Linux ARM GNU cross-compilation (the bundled GCC is too old for libdeflate). This Linux x64
+validation does not close those platform blockers.
+
+- Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
+- TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
+- Registry/adapter harness: 52 passed, 1 expected failure, 2 skipped, 1 todo.
+- [Conformance](../tests/conformance/STATUS.md): 3,667 passed, 2,973 failed, 58 skipped (55.2%)
+  across 42 completed files out of 45 selected; timeout and stopped-file rows are explicit. The other ported files remain unmeasured.
+- [Corpus](../tests/e2e/results/2026-10-26-land.md): 13 PASS, 5 KNOWN, 0 unexpected failures across 18 pinned projects.
+- [Benchmarks](../bench/results/2026-10-26-linux-x64-land.md): all 110 timing and 20 disk rows measured;
+  strict speed gate fails 9/22 comparisons, combined disk below Bun on 4/4 and pnpm on 4/4 fixtures.
+- PARITY remains 231 checked / 183 open; no row was completed merely by merging these tracks.
+
+Full Bun conformance, speed in every scenario, extra cache size and non-Linux platform validation remain open.
+Scanner matrix TTY callbacks and subprocess resource-usage APIs are still missing in the Node test adapter.
+A measured adapter deadlock on reading subprocess output after exit was fixed with eager pipe draining.
+Trust transitions currently force a conservative relink of the selected layout so newly enabled scripts
+receive rebuilt directories; narrowing that rebuild is a remaining optimization.
+
 ## Gates used below
 
 - **Conformance:** `npm run test:conformance -w tests`, against the native binary once it
@@ -45,7 +73,7 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-semver: npm versions and ranges, bun's satisfies/pick-best | `feat/semver` | merged |
 | fnpm-config: `.npmrc`, bunfig/fnpm.toml, env, CLI precedence, proxies | `feat/config` | merged |
 | fnpm-registry: HTTP/2 client, manifest cache, auth, throttling | `feat/registry` | merged |
-| fnpm-store: CAS, streaming extraction, file index, fs ops, prune | `feat/store` | merged |
+| fnpm-store: package store v2, streaming extraction, file index, fs ops, prune | `feat/store` | merged |
 | fnpm-workspace: discovery, `--filter`, topo order, package.json editor | `feat/workspace` | merged |
 | fnpm-resolver: dependency resolver ported from bun | `feat/resolver` | merged |
 | fnpm-lockfile: fnpm.lock / bun.lock reader and writer, hoisting, sidecar | `feat/lockfile` | merged |
@@ -54,8 +82,8 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-linker: hoisted and isolated layouts, global virtual store, bins | `feat/linker` | merged |
 | fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | merged |
 | Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
-| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (some P4 commands still return `NOT_IMPLEMENTED`) |
-| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done (the 8-target `napi.yml` matrix has not run on GitHub yet) |
+| fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (command groups integrated; conformance gaps remain) |
+| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done on Linux x64; the existing `napi.yml` run failed on macOS, Windows Clippy and Linux ARM GNU tooling |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
 | Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
 | Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | done (`bench/results/2026-10-25-linux-x64.md`: small, all scenarios; medium warm/noop/ci/cold-lockfile) |
@@ -68,7 +96,7 @@ Known gaps in the merged crates (PARITY rows left open for these):
 - registry: `_DNS_TIME_TO_LIVE_SECONDS` ignored; one TLS handshake per origin not enforced;
   manifest cache load ~0.75 ms (owned `PackageManifest` strings); local version parsing in
   `semver_ext.rs`.
-- store: bun's cache-folder name printers; Windows junctions; macOS/Windows paths never built.
+- store: bun's cache-folder name printers and Windows junctions; macOS compilation and Windows strict Clippy remain blocked in the recorded CI run.
 - resolver: "reuse cached versions" only covers locked/pinned versions; production sources
   (`RegistrySource`, git, store import) first exercised by fnpm-core.
 - lockfile: two bun.lock readers (`text`, used by `load`/`parse`/`serialize`, and
@@ -135,13 +163,13 @@ Exit criteria:
 `outdated`, `why`, `ls`, `info`, `dedupe`, `prune`, `link` / `unlink`, `patch` / `patch-commit`,
 `audit` (+ `fix`), `pack`, `publish`, `run`, `exec`, `x` / `dlx` / `fnpmx`, `create`, `init`,
 `store`, the `pm` subcommands (`cache`, `pkg`, `trust`, `version`, ...), `doctor`, `whoami`,
-`completions`. All run through the TS CLI
-and `fnpm_core::invoke`.
+`completions`. Execution through `x` / `create` has a native launcher path; the other
+commands use the TS CLI and `fnpm_core::invoke`.
 
-Publishing commands are implemented on `feat/cmds-publish`: `pack` / `pm pack`, `publish`,
+Publishing commands from `feat/cmds-publish` are integrated: `pack` / `pm pack`, `publish`,
 `patch`, `patch --commit` and `patch-commit`, including workspace/catalog rewriting and patch
-application during install. They have not met the phase exit criteria. Latest Linux debug
-conformance results for this track:
+application during install. They have not met the phase exit criteria. Historical Linux debug
+conformance results recorded by that track:
 
 | suite | passed | failed | skipped |
 |---|---:|---:|---:|
@@ -150,9 +178,10 @@ conformance results for this track:
 | `bun-patch` | 80 | 152 | 5 |
 | `bun-install-patch` | 0 | 53 | 0 |
 
-The 17 publish failures stop at a subsequent install assertion for `Saved lockfile`; these
-whole tests remain failing. All install-patch cases also fail at output or diagnostic
-assertions, so later patch behavior in those cases remains unverified. Pack has workspace-install
+The historical track's 17 publish failures stopped at a subsequent install assertion for `Saved lockfile`.
+The integrated release run passes all 279 measured Linux publish cases (the Windows drive-root case is skipped);
+full phase parity remains open. In that track run, all install-patch cases also failed at output or diagnostic
+assertions, leaving later patch behavior in those cases unverified. Pack has workspace-install
 and `pm diff` blockers, and the Node subprocess adapter lacks `resourceUsage()` for the memory
 test. Patch has further command gaps in target selection and scanner checks. Patch-file,
 manifest and lockfile writes are restored on ordinary link/save failures; this is not a crash
@@ -206,8 +235,8 @@ Exit criteria:
 |---|---|
 | Help text, usage errors and hints matching bun for every command | in progress (unknown long flags and help hints share native/TS golden fixtures; other diagnostics still differ) |
 | Progress and summary output identical between the native and TS renderers (shared golden fixtures) | in progress (shared fixtures pass; plain output and rendered color styles match the small cold/no-op/add/remove fixture; cached availability hints and warning/status ordering still differ) |
-| `update -i`, `--json` payloads for every command, redacted config logs, control-character escaping | not started |
-| Every PARITY.md "Output/UX" row | not started |
+| `update -i`, structured command results, redacted config logs, control-character escaping | in progress (`update -i` and supported structured results are implemented; full output parity remains) |
+| Every PARITY.md "Output/UX" row | in progress; unverified rows remain open |
 
 Exit criteria: `escape-control-characters`, `redacted-config-logs`, every rewritten snapshot
 reviewed, and all PARITY.md rows outside "Excluded" ticked.

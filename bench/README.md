@@ -143,13 +143,15 @@ Markdown has one table per fixture with mean ± σ and the ratio to the fastest 
 a min/max/runs breakdown, and the disk table. Absolute paths are stripped so the files can be
 committed.
 
-The review rerun in `results/2026-10-25-linux-x64.json` replaces only the small/medium
-fnpm and Bun rows (six scenarios, five measured runs and one warmup, plus disk). Other rows
-are from earlier invocations. Its fnpm binary SHA-256 was
-`c31a62a0fbba38adf6e18b8701c48a46db4dff9453c640499b40638895b0b3c9`.
-These hoisted fixtures were measured before the later isolated-binding normalization and
-no-op state-version bump; the corpus records its own binary hash. The strict gate fails
-7 of 12 small/medium comparisons. No-op wins do not establish a general speed or disk win.
+The integration run in [results/2026-10-26-linux-x64-land.md](results/2026-10-26-linux-x64-land.md)
+measures `23cc2210361a8f4b5b53221aa48b76a4dff55163` with native SHA-256 `cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac`.
+It contains all 110 requested tool/scenario results (five runs and one warmup each) and 20 disk measurements.
+Small and medium include all six scenarios; large and monorepo include cold-lockfile, warm, noop, ci and add.
+Fixture lockfiles were generated for all tools after prewarming the mirror; matching tool/fixture stamps
+reuse those lockfiles after a runtime-only rebuild. fnpm/Bun package-version sets match on all four fixtures.
+The strict gate fails 9/22 Bun comparisons; combined physical usage is below Bun on 4/4
+fixtures and pnpm on 4/4. Testing, corpus checks and builds completed before the serial timings.
+Historical results retain their original provenance and are not merged into this integration artifact.
 
 ## Gate
 

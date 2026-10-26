@@ -38,7 +38,7 @@ where fnpm uses the same layout.
 
 ```sh
 cargo build --release -p fnpm-cli                  # the runner uses target/release/fnpm (or $FNPM_BIN)
-FNPM_E2E_DIR=/somewhere/outside/repo node tests/e2e/fnpm.ts [--only a,b] [--skip a,b] [--skip-verify] [--no-bun]
+FNPM_E2E_DIR=/somewhere/outside/repo node tests/e2e/fnpm.ts [--only a,b] [--skip a,b] [--skip-verify] [--no-bun] [--out results-stem]
 ```
 
 The runner copies the native executable into a private temporary directory for the run and records
@@ -67,3 +67,16 @@ other documented differences. `fnpm.known` describes a genuine incompatibility; 
 requires every failure to match a `fnpm.knownFailures` regex. An unexpected failure remains FAIL.
 The runner exits 1 if any project is FAIL. Results redact local checkout paths.
 Results: `tests/e2e/results/<date>.md` (and `.json`); logs in `$FNPM_E2E_DIR/_logs/<name>.fnpm.*`.
+
+## Integration result (2026-10-25)
+
+[13 PASS, 5 KNOWN, 0 unexpected failures](results/2026-10-26-land.md),
+from `23cc221` with native SHA-256 `cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac`.
+All 18 projects were rerun with install, verification, no-op, warm reinstall and frozen checks where install succeeds.
+The result filename identifies the integration checkpoint; the JSON date preserves the runner host UTC date.
+Known failures remain: webpack peer hoisting, Babel Yarn catalog migration, Vue's pnpm-only preinstall guard,
+date-fns @jsr registry routing, and Vitest duplicate workspace names. Matching a documented failure
+keeps the runner successful but does not mean that project is compatible.
+PASS accepts the documented baseline differences. Passing projects can still differ from Bun in
+optional native packages, additional locked peer versions and foreign-lockfile fallback; per-project
+`vsBun`, hoisting and bin comparison notes remain in the result artifact.

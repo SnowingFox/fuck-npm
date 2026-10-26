@@ -1,0 +1,1732 @@
+{
+ "fnpm": "0.0.1",
+ "commit": "23cc221",
+ "binarySha256": "cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac",
+ "date": "2026-10-25",
+ "results": [
+  {
+   "name": "marked",
+   "pm": "npm",
+   "lockfileFormat": "npm-v3",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 23/387 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 23669,
+    "packages": 597,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 596,
+    "instances": 629,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 1959,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 1323,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 12,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 97,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 96,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "typescript@5.9.3"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 387,
+     "differ": 23,
+     "sample": [
+      "@typescript-eslint/eslint-plugin: - vs 8.57.2",
+      "@typescript-eslint/parser: - vs 8.57.2",
+      "@typescript-eslint/project-service: - vs 8.57.2",
+      "@typescript-eslint/tsconfig-utils: - vs 8.57.2",
+      "@typescript-eslint/type-utils: - vs 8.57.2",
+      "@typescript-eslint/typescript-estree: - vs 8.57.2",
+      "@typescript-eslint/utils: - vs 8.57.2",
+      "argparse: 2.0.1 vs 3.0.3",
+      "eslint-visitor-keys: 4.2.1 vs 5.0.1",
+      "espree: 10.4.0 vs 11.2.0",
+      "get-stream: 9.0.1 vs 6.0.1",
+      "hosted-git-info: 7.0.2 vs 9.0.2",
+      "js-yaml: 4.3.2 vs 3.15.2",
+      "marked: 15.0.12 vs 9.1.6",
+      "mimic-fn: - vs 4.0.0"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": [
+      ".:marked-repo"
+     ]
+    },
+    "scripts": {
+     "baselineOnly": [
+      "esbuild@0.28.2 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "not installed: typescript@5.9.3"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 596,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "uptime-kuma",
+   "pm": "npm",
+   "lockfileFormat": "npm-v3",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 25/981 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 65731,
+    "packages": 1107,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 1106,
+    "instances": 1195,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 6459,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 17148,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 2357,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 3870,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 3810,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "cpu-features@0.0.10"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 981,
+     "differ": 25,
+     "sample": [
+      "balanced-match: 1.0.2 vs 2.0.0",
+      "brace-expansion: 2.1.4 vs 1.1.18",
+      "camelcase: 6.3.0 vs 5.3.1",
+      "color-convert: 2.0.1 vs 0.5.3",
+      "commander: 10.0.1 vs 15.0.0",
+      "content-type: 3.1.0 vs 1.0.5",
+      "cpu-features: 0.0.10 vs -",
+      "decamelize: 5.0.1 vs 1.2.0",
+      "find-up: 5.0.0 vs 4.1.0",
+      "foreground-child: 3.3.1 vs 4.0.3",
+      "glob: 7.2.3 vs 13.0.6",
+      "htmlparser2: 9.1.0 vs 8.0.2",
+      "isarray: 0.0.1 vs 2.0.5",
+      "locate-path: 6.0.0 vs 5.0.0",
+      "minimatch: 9.0.3 vs 3.1.5"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [
+      "@fortawesome/fontawesome-common-types@0.2.36 postinstall",
+      "@fortawesome/fontawesome-svg-core@1.2.36 postinstall",
+      "@fortawesome/free-regular-svg-icons@5.15.4 postinstall",
+      "@fortawesome/free-solid-svg-icons@5.15.4 postinstall",
+      "@parcel/watcher@2.6.0 install",
+      "core-js@2.6.12 postinstall",
+      "esbuild@0.28.2 postinstall",
+      "protobufjs@7.6.6 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": false,
+     "packages": 1107,
+     "missing": [
+      "cpu-features@0.0.10"
+     ],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "socket-io",
+   "pm": "npm",
+   "lockfileFormat": "npm-v3",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 77/979 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 76208,
+    "packages": 1174,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 1173,
+    "instances": 1384,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 6684,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 10168,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 11,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 474,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 447,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "yocto-queue@1.2.2"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 979,
+     "differ": 77,
+     "sample": [
+      "@puppeteer/browsers: 1.9.1 vs 2.13.2",
+      "@sindresorhus/is: - vs 5.6.0",
+      "@szmarczak/http-timer: - vs 5.0.1",
+      "@wdio/config: 8.46.0 vs 9.31.9",
+      "@wdio/globals: - vs 9.31.3",
+      "@wdio/logger: 8.38.0 vs 9.29.1",
+      "@wdio/protocols: 8.44.0 vs 9.31.5",
+      "@wdio/repl: 8.40.3 vs 9.16.2",
+      "@wdio/runner: - vs 9.31.9",
+      "@wdio/types: - vs 9.31.2",
+      "@wdio/utils: 8.46.0 vs 9.31.9",
+      "acorn-walk: - vs 8.3.3",
+      "ajv: - vs 8.16.0",
+      "ajv-keywords: - vs 5.1.0",
+      "brace-expansion: 1.1.12 vs 2.0.2"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": [
+      ".:escodegen",
+      ".:esgenerate",
+      ".:esparse",
+      ".:esvalidate",
+      ".:glob"
+     ]
+    },
+    "scripts": {
+     "baselineOnly": [
+      "@fails-components/webtransport-transport-http3-quiche@1.5.1 install",
+      "edgedriver@5.6.0 install",
+      "edgedriver@6.3.1 install",
+      "eiows@7.1.0 install",
+      "esbuild@0.25.11 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "not installed: yocto-queue@1.2.2"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 1173,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "mocha",
+   "pm": "npm",
+   "lockfileFormat": "npm-v3",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 25/572 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 19323,
+    "packages": 625,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 626,
+    "instances": 673,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 927,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 32406,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 32,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 85,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 77,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [
+     "@test/esm-only-loader@"
+    ],
+    "declared": [],
+    "hoisting": {
+     "compared": 572,
+     "differ": 25,
+     "sample": [
+      "@test/esm-only-loader: link:test/compiler-fixtures/esm-only-loader vs ",
+      "ansi-styles: 4.3.0 vs 6.2.3",
+      "balanced-match: 1.0.2 vs 4.0.4",
+      "brace-expansion: 2.0.2 vs 5.0.8",
+      "cliui: - vs 6.0.0",
+      "commander: 2.20.3 vs 14.0.3",
+      "core-js: - vs 2.6.12",
+      "eslint-visitor-keys: 3.4.3 vs 5.0.1",
+      "foreground-child: 2.0.0 vs 3.3.1",
+      "get-stdin: - vs 4.0.1",
+      "is-stream: - vs 2.0.1",
+      "is-wsl: - vs 2.2.0",
+      "isexe: 2.0.0 vs 3.1.5",
+      "lru-cache: 5.1.1 vs 11.3.5",
+      "npm-normalize-package-bin: 3.0.1 vs 4.0.0"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [
+      "core-js@2.6.12 postinstall",
+      "esbuild@0.28.2 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "installed, not in baseline: @test/esm-only-loader@",
+     ".: @test/esm-only-loader baseline=link:test/compiler-fixtures/esm-only-loader fnpm="
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 626,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "excalidraw",
+   "pm": "yarn-classic",
+   "lockfileFormat": "yarn-v1",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 40/1193 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 151458,
+    "packages": 1337,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 1334,
+    "instances": 1453,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 40697,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 32703,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 12,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 351,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 353,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "@next/swc-linux-x64-musl@14.1.4",
+     "@parcel/watcher-linux-x64-musl@2.5.1",
+     "@rollup/rollup-linux-x64-musl@4.34.9"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 1193,
+     "differ": 40,
+     "sample": [
+      "@excalidraw/random-username: 1.0.0 vs 1.1.0",
+      "@next/swc-linux-x64-musl: 14.1.4 vs -",
+      "@parcel/watcher-linux-x64-musl: 2.5.1 vs -",
+      "@rollup/pluginutils: 3.1.0 vs 5.1.4",
+      "@rollup/rollup-linux-x64-musl: 4.34.9 vs -",
+      "@types/node: 22.13.10 vs 20.17.22",
+      "@vitest/pretty-format: 3.0.6 vs 3.0.7",
+      "@vitest/utils: 3.0.6 vs 2.0.5",
+      "ajv: 8.17.1 vs 6.12.6",
+      "ansi-styles: 4.3.0 vs 5.2.0",
+      "aria-query: 5.3.2 vs 5.3.0",
+      "brace-expansion: 2.0.1 vs 1.1.11",
+      "caniuse-lite: 1.0.30001701 vs 1.0.30001703",
+      "diff-sequences: 27.5.1 vs 29.6.3",
+      "emoji-regex: 8.0.0 vs 9.2.2"
+     ]
+    },
+    "bins": {
+     "missing": [
+      "examples/with-nextjs:next",
+      "examples/with-script-in-browser:vite",
+      "packages/excalidraw:autoprefixer",
+      "packages/excalidraw:cross-env",
+      "packages/excalidraw:cross-env-shell",
+      "packages/excalidraw:esbuild",
+      "packages/excalidraw:nanoid",
+      "packages/excalidraw:sass",
+      "packages/excalidraw:tsc",
+      "packages/excalidraw:tsserver",
+      "packages/fractional-indexing:tsc",
+      "packages/fractional-indexing:tsserver",
+      "packages/utils:cross-env",
+      "packages/utils:cross-env-shell",
+      "packages/utils:node-which",
+      "packages/utils:tsc",
+      "packages/utils:tsserver",
+      "packages/utils:woff2_compress.js",
+      "packages/utils:woff2_decompress.js"
+     ],
+     "extra": [
+      ".:glob"
+     ]
+    },
+    "scripts": {
+     "baselineOnly": [
+      "@parcel/watcher@2.5.1 install",
+      "core-js@3.41.0 postinstall",
+      "esbuild@0.19.10 postinstall",
+      "esbuild@0.19.12 postinstall",
+      "esbuild@0.25.0 postinstall",
+      "protobufjs@7.4.0 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "not installed: @next/swc-linux-x64-musl@14.1.4",
+     "not installed: @parcel/watcher-linux-x64-musl@2.5.1",
+     "not installed: @rollup/rollup-linux-x64-musl@4.34.9",
+     ".bin missing: examples/with-nextjs:next",
+     ".bin missing: examples/with-script-in-browser:vite",
+     ".bin missing: packages/excalidraw:autoprefixer",
+     ".bin missing: packages/excalidraw:cross-env",
+     ".bin missing: packages/excalidraw:cross-env-shell",
+     ".bin missing: packages/excalidraw:esbuild",
+     ".bin missing: packages/excalidraw:nanoid",
+     ".bin missing: packages/excalidraw:sass",
+     ".bin missing: packages/excalidraw:tsc",
+     ".bin missing: packages/excalidraw:tsserver",
+     ".bin missing: packages/fractional-indexing:tsc",
+     ".bin missing: packages/fractional-indexing:tsserver",
+     ".bin missing: packages/utils:cross-env",
+     ".bin missing: packages/utils:cross-env-shell",
+     ".bin missing: packages/utils:node-which",
+     ".bin missing: packages/utils:tsc",
+     ".bin missing: packages/utils:tsserver",
+     ".bin missing: packages/utils:woff2_compress.js",
+     ".bin missing: packages/utils:woff2_decompress.js"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 1334,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "webpack",
+   "pm": "yarn-classic",
+   "lockfileFormat": "yarn-v1",
+   "status": "KNOWN",
+   "failures": [
+    "verify exited 1: +   \"_originalMessage\": \"Cannot find module 'ajv/dist/compile/codegen' from 'node_modules/ajv-keywords/dist/definitions/typeof.js'\", | Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished? | error Command failed with exit code 1. | info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command."
+   ],
+   "warnings": [
+    "top-level node_modules: 69/1152 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 99396,
+    "packages": 1306,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 1302,
+    "instances": 1641,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 19388,
+     "problems": []
+    },
+    "verify": {
+     "ok": false,
+     "exitCode": 1,
+     "ms": 78977,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 157,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 430,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 349,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "@oxc-minify/binding-linux-x64-musl@0.154.0",
+     "@oxc-parser/binding-linux-x64-musl@0.154.0",
+     "@parcel/watcher-linux-x64-musl@2.6.0",
+     "@unrs/resolver-binding-linux-x64-musl@1.12.2"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 1152,
+     "differ": 69,
+     "sample": [
+      "@babel/code-frame: 7.29.7 vs 8.0.6",
+      "@babel/generator: 7.29.8 vs 8.0.6",
+      "@babel/helper-globals: 7.29.7 vs 8.0.6",
+      "@babel/helper-module-transforms: - vs 7.29.7",
+      "@babel/helper-plugin-utils: 7.29.7 vs 8.0.1",
+      "@babel/helper-string-parser: 7.29.7 vs 8.0.6",
+      "@babel/helper-validator-identifier: 7.29.7 vs 8.0.6",
+      "@babel/parser: 7.29.8 vs 8.0.7",
+      "@babel/plugin-syntax-async-generators: - vs 7.8.4",
+      "@babel/plugin-syntax-bigint: - vs 7.8.3",
+      "@babel/plugin-syntax-class-properties: - vs 7.12.13",
+      "@babel/plugin-syntax-class-static-block: - vs 7.14.5",
+      "@babel/plugin-syntax-import-attributes: - vs 7.29.7",
+      "@babel/plugin-syntax-import-meta: - vs 7.10.4",
+      "@babel/plugin-syntax-json-strings: - vs 7.8.3"
+     ]
+    },
+    "bins": {
+     "missing": [
+      ".:resolve"
+     ],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [
+      "@parcel/watcher@2.6.0 install",
+      "core-js@3.50.0 postinstall",
+      "es5-ext@0.10.64 postinstall",
+      "unrs-resolver@1.12.2 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "not installed: @oxc-minify/binding-linux-x64-musl@0.154.0",
+     "not installed: @oxc-parser/binding-linux-x64-musl@0.154.0",
+     "not installed: @parcel/watcher-linux-x64-musl@2.6.0",
+     "not installed: @unrs/resolver-binding-linux-x64-musl@1.12.2",
+     ".bin missing: .:resolve"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 1302,
+     "missing": [],
+     "extra": []
+    }
+   },
+   "known": "bun parity: the hoisted tree puts ajv-keywords@5 at the top level next to ajv@6 (its ajv@8 peer stays nested under schema-utils), so 15 unitCases suites fail with \"Cannot find module ajv/dist/compile/codegen\". bun 1.4.4 builds the same tree from this yarn.lock."
+  },
+  {
+   "name": "prettier",
+   "pm": "yarn-berry",
+   "lockfileFormat": "yarn-berry-v8",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 28/812 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 32542,
+    "packages": 914,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 914,
+    "instances": 1100,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 15050,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 5587,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 11,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 369,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 391,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 812,
+     "differ": 28,
+     "sample": [
+      "@babel/helper-validator-identifier: 7.29.7 vs 8.0.6",
+      "@jridgewell/gen-mapping: 0.3.13 vs 0.4.0-beta.0",
+      "@oxc-parser/binding-linux-x64-gnu: 0.153.0 vs 0.155.0",
+      "@oxc-project/types: 0.153.0 vs 0.155.0",
+      "ansi-escapes: 4.3.2 vs 7.3.0",
+      "ansi-styles: 6.2.3 vs 7.0.0",
+      "ccount: 2.0.1 vs 1.1.0",
+      "chalk: 4.1.2 vs 6.0.1",
+      "eslint-visitor-keys: 5.0.1 vs 4.2.1",
+      "execa: 5.1.1 vs 9.6.1",
+      "get-stream: 6.0.1 vs 9.0.1",
+      "human-signals: 2.1.0 vs 8.0.1",
+      "is-plain-obj: 4.1.0 vs 2.1.0",
+      "is-stream: 4.0.1 vs 3.0.0",
+      "isexe: 2.0.0 vs 4.0.0"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": [
+      ".:editorconfig"
+     ]
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": [
+      "puppeteer@25.13.0 postinstall"
+     ]
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 914,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "jest",
+   "pm": "yarn-berry",
+   "lockfileFormat": "yarn-berry-v8",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 63/1858 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 52446,
+    "packages": 2079,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 2079,
+    "instances": 2415,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 31973,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 11282,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 14,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 347,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 343,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 1858,
+     "differ": 63,
+     "sample": [
+      "@apideck/better-ajv-errors: 0.3.7 vs -",
+      "@jsonjoy.com/base64: 17.67.0 vs 1.1.2",
+      "@jsonjoy.com/json-pack: 17.67.0 vs 1.21.0",
+      "@jsonjoy.com/json-pointer: 17.67.0 vs 1.0.2",
+      "@jsonjoy.com/util: 17.67.0 vs 1.9.0",
+      "@react-native/codegen: 0.86.3 vs 0.86.2",
+      "@types/express-serve-static-core: 5.1.3 vs 4.19.9",
+      "@typescript-eslint/project-service: 8.71.0 vs 8.70.0",
+      "@typescript-eslint/scope-manager: 8.70.0 vs 8.71.0",
+      "@typescript-eslint/tsconfig-utils: 8.71.0 vs 8.70.0",
+      "@typescript-eslint/utils: 8.70.0 vs 8.71.0",
+      "accepts: 1.3.8 vs 2.0.0",
+      "ajv: 8.20.0 vs 6.15.0",
+      "ajv-keywords: 5.1.0 vs 3.5.2",
+      "argparse: 1.0.10 vs 2.0.1"
+     ]
+    },
+    "bins": {
+     "missing": [
+      "packages/create-jest:create-jest",
+      "packages/jest:jest",
+      "packages/jest-cli:jest"
+     ],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [
+      "@parcel/watcher@2.6.0 install",
+      "esbuild@0.28.2 postinstall",
+      "unrs-resolver@1.12.2 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     ".bin missing: packages/create-jest:create-jest",
+     ".bin missing: packages/jest:jest",
+     ".bin missing: packages/jest-cli:jest"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 2079,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "babel",
+   "pm": "yarn-berry",
+   "lockfileFormat": "yarn-berry-v8",
+   "status": "KNOWN",
+   "failures": [
+    "install exited 1: fnpm install v0.0.1 | warn: cannot migrate yarn.lock (\"@babel/cli\" is a workspace, and yarn.lock pins the root package's \"@babel/cli@^8.0.1\" to a package that is not that workspace; fnpm installs the workspace in its place) | error: catalog: has no entry for \"@cspotcode/source-map-support\""
+   ],
+   "warnings": [
+    "bun 1.4.4 could not install this lockfile (exit 1: error: \"@babel/cli\" is a workspace, and yarn.lock pins the root package's \"@babel/cli@^8.0.1\" to a package that is not that workspace; bun installs the workspace in its place | error: commander@catalog: not in catalog | bun add --catalog commander)"
+   ],
+   "baseline": {
+    "installMs": 45170,
+    "packages": 1447,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 0,
+    "instances": 0,
+    "layout": ""
+   },
+   "steps": {
+    "install": {
+     "ok": false,
+     "exitCode": 1,
+     "ms": 484,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 0,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": null
+   },
+   "known": "bun parity: the yarn.lock migration is refused (the root pins the @babel/cli workspace to a registry package), and the fallback resolve fails on yarn catalogs in .yarnrc.yml (catalog: entries such as @cspotcode/source-map-support). bun 1.4.4 fails the same way."
+  },
+  {
+   "name": "vue-core",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9-multidoc",
+   "status": "KNOWN",
+   "failures": [
+    "install exited 1: ║   \u001b[0mUse \"pnpm install\" for installation in this project.   \u001b[31m   ║ | ║   \u001b[0m                                                       \u001b[31m   ║ | ╚═════════════════════════════════════════════════════════════╝\u001b[0m | error: preinstall script from \"\" exited with 1"
+   ],
+   "warnings": [],
+   "baseline": {
+    "installMs": 26678,
+    "packages": 515,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 0,
+    "instances": 0,
+    "layout": ""
+   },
+   "steps": {
+    "install": {
+     "ok": false,
+     "exitCode": 1,
+     "ms": 15575,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 0,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": null
+   },
+   "known": "The root preinstall runs `npx only-allow pnpm`. fnpm executes it through `fnpm x`; the package-manager guard requires pnpm and rejects fnpm, as it rejects Bun."
+  },
+  {
+   "name": "trpc",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9-multidoc",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 2/108 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 716227,
+    "packages": 3418,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 3418,
+    "instances": 6921,
+    "layout": "isolated"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 103430,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 3404,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 16,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 17703,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 17515,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 108,
+     "differ": 2,
+     "sample": [
+      "@trpc/client: - vs link:packages/client",
+      "@trpc/server: - vs link:packages/server"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": [
+      "@prisma/client@6.8.1 postinstall",
+      "@prisma/client@6.8.1 postinstall (.)",
+      "@prisma/engines@6.8.1 postinstall",
+      "examples-diagnostics-big-router-declaration@ postinstall (examples/.test/diagnostics-big-router)",
+      "examples-next-big-router@ postinstall (examples/next-big-router)",
+      "examples-next-prisma-websockets-starter@ postinstall (examples/next-prisma-websockets-starter)",
+      "examples-nuxt@ postinstall (examples/nuxt)",
+      "examples-trpc-next-prisma-starter@ postinstall (examples/next-prisma-starter)",
+      "examples-trpc-next-prisma-todomvc@ postinstall (examples/next-prisma-todomvc)",
+      "prisma@6.8.1 preinstall",
+      "tree-sitter-json@0.24.8 install",
+      "tree-sitter@0.21.1 install",
+      "tree-sitter@0.22.4 install",
+      "workerd@1.20260911.1 postinstall",
+      "www@ postinstall (www)"
+     ]
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": false,
+     "packages": 3401,
+     "missing": [],
+     "extra": [
+      "@asamuzakjp/css-color@5.0.1",
+      "@asamuzakjp/dom-selector@7.0.3",
+      "@asamuzakjp/nwsapi@2.3.9",
+      "@babel/core@7.23.2",
+      "@babel/core@7.26.9",
+      "@module-federation/runtime-tools@0.5.1",
+      "@module-federation/runtime@0.5.1",
+      "@module-federation/sdk@0.5.1",
+      "@module-federation/webpack-bundler-runtime@0.5.1",
+      "@rspack/binding-linux-x64-gnu@1.1.8",
+      "@rspack/binding@1.1.8",
+      "@rspack/core@1.1.8",
+      "@rspack/lite-tapable@1.0.1",
+      "jsdom@29.0.0",
+      "lightningcss-linux-x64-gnu@1.28.2",
+      "lightningcss@1.28.2",
+      "magicast@0.5.2"
+     ]
+    }
+   }
+  },
+  {
+   "name": "create-t3-turbo",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "top-level node_modules: 2/8 entries differ from the baseline"
+   ],
+   "baseline": {
+    "installMs": 108970,
+    "packages": 1425,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 1410,
+    "instances": 1417,
+    "layout": "isolated"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 54426,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 4669,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 14,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 1841,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 1783,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "@react-native/assets-registry@0.82.0",
+     "@react-native/codegen@0.82.0",
+     "@react-native/community-cli-plugin@0.82.0",
+     "@react-native/debugger-frontend@0.82.0",
+     "@react-native/debugger-shell@0.82.0",
+     "@react-native/dev-middleware@0.82.0",
+     "@react-native/gradle-plugin@0.82.0",
+     "@react-native/js-polyfills@0.82.0",
+     "@react-native/normalize-colors@0.82.0",
+     "@react-native/virtualized-lists@0.82.0",
+     "babel-plugin-syntax-hermes-parser@0.32.0",
+     "fb-dotslash@0.5.8",
+     "hermes-compiler@0.0.0",
+     "react-native-worklets@0.6.1",
+     "react-native@0.82.0"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 8,
+     "differ": 2,
+     "sample": [
+      "@ianvs/prettier-plugin-sort-imports: 4.7.0 vs -",
+      "prettier-plugin-tailwindcss: 0.7.1 vs -"
+     ]
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [
+      "esbuild@0.18.20 postinstall",
+      "esbuild@0.25.11 postinstall"
+     ],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [
+     "not installed: @react-native/assets-registry@0.82.0",
+     "not installed: @react-native/codegen@0.82.0",
+     "not installed: @react-native/community-cli-plugin@0.82.0",
+     "not installed: @react-native/debugger-frontend@0.82.0",
+     "not installed: @react-native/debugger-shell@0.82.0",
+     "not installed: @react-native/dev-middleware@0.82.0",
+     "not installed: @react-native/gradle-plugin@0.82.0",
+     "not installed: @react-native/js-polyfills@0.82.0",
+     "not installed: @react-native/normalize-colors@0.82.0",
+     "not installed: @react-native/virtualized-lists@0.82.0",
+     "not installed: babel-plugin-syntax-hermes-parser@0.32.0",
+     "not installed: fb-dotslash@0.5.8",
+     "not installed: hermes-compiler@0.0.0",
+     "not installed: react-native-worklets@0.6.1",
+     "not installed: react-native@0.82.0"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": false,
+     "packages": 1407,
+     "missing": [],
+     "extra": [
+      "lightningcss-linux-x64-gnu@1.30.2",
+      "lightningcss-linux-x64-musl@1.30.2",
+      "lightningcss@1.30.2"
+     ]
+    }
+   }
+  },
+  {
+   "name": "date-fns",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9",
+   "status": "KNOWN",
+   "failures": [
+    "install exited 1: fnpm install v0.0.1 | Resolving dependencies | error: @jsr/deno__doc@0.181.0: package \"http://127.0.0.1:4873/@jsr/deno__doc/-/deno__doc-0.181.0.tgz\" not found"
+   ],
+   "warnings": [
+    "bun 1.4.4 could not install this lockfile (exit 1: error: failed to download @jsr/deno__doc@0.181.0: 404 Not Found | Blocked 3 postinstalls. Run `bun pm untrusted` for details. | Failed to install 10 packages)"
+   ],
+   "baseline": {
+    "installMs": 8754,
+    "packages": 744,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 0,
+    "instances": 0,
+    "layout": ""
+   },
+   "steps": {
+    "install": {
+     "ok": false,
+     "exitCode": 1,
+     "ms": 19291,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 0,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": null
+   },
+   "known": "bun parity: pnpm-lock.yaml resolves @jsr/* packages from npm.jsr.io, which pnpm uses by default for the @jsr scope. fnpm and bun 1.4.4 fetch them from the configured registry (404). Workaround: @jsr:registry=https://npm.jsr.io/ in .npmrc."
+  },
+  {
+   "name": "vitest",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9",
+   "status": "KNOWN",
+   "failures": [
+    "install exited 1: fnpm install v0.0.1 | error: Workspace name \"@vitest/test-integration-dts-exact-optional-property\" already exists"
+   ],
+   "warnings": [
+    "bun 1.4.4 could not install this lockfile (exit 1: error: Workspace name \"@vitest/test-integration-dts-exact-optional-property\" already exists | note: Package name is also declared here | at <e2e>/vitest/test/e2e/dts/no-dispose/package.json:2:11)"
+   ],
+   "baseline": {
+    "installMs": 57968,
+    "packages": 1570,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 0,
+    "instances": 0,
+    "layout": ""
+   },
+   "steps": {
+    "install": {
+     "ok": false,
+     "exitCode": 1,
+     "ms": 18,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 0,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": null
+   },
+   "known": "bun parity: two workspaces share the name @vitest/test-integration-dts-exact-optional-property; fnpm and bun 1.4.4 both refuse duplicate workspace names (pnpm allows them)."
+  },
+  {
+   "name": "hono",
+   "pm": "pnpm",
+   "lockfileFormat": "pnpm-v9-multidoc",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [],
+   "baseline": {
+    "installMs": 7509,
+    "packages": 719,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 718,
+    "instances": 728,
+    "layout": "isolated"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 15433,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 2216,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 44,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 320,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 346,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [
+     "hono@4.13.9"
+    ],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 22,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": [
+      "msw@2.15.0 postinstall",
+      "workerd@1.20260701.1 postinstall"
+     ]
+    },
+    "sameAsBun": [
+     "not installed: hono@4.13.9"
+    ],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": false,
+     "packages": 723,
+     "missing": [
+      "@babel/helper-string-parser@7.29.11",
+      "@babel/parser@7.29.11",
+      "@babel/runtime@7.29.10",
+      "@babel/types@7.29.11",
+      "@bytecodealliance/componentize-js@0.23.0",
+      "@bytecodealliance/jco-std@0.9.0",
+      "@bytecodealliance/jco-transpile@0.20.0",
+      "@bytecodealliance/jco@1.39.0",
+      "@bytecodealliance/preview2-shim@0.29.0",
+      "@bytecodealliance/preview2-shim@0.30.0",
+      "@bytecodealliance/preview3-shim@0.10.0",
+      "@bytecodealliance/weval@0.5.1",
+      "@hono/node-server@2.1.5",
+      "@inquirer/ansi@2.0.9",
+      "@inquirer/checkbox@5.2.7",
+      "@inquirer/confirm@6.3.4",
+      "@inquirer/core@12.0.5",
+      "@inquirer/editor@5.3.5",
+      "@inquirer/expand@5.1.7",
+      "@inquirer/external-editor@3.0.6",
+      "@inquirer/input@5.1.8",
+      "@inquirer/number@4.2.5",
+      "@inquirer/password@5.2.4",
+      "@inquirer/prompts@8.7.4",
+      "@inquirer/rawlist@5.3.7",
+      "@inquirer/search@4.3.5",
+      "@inquirer/select@5.2.7",
+      "@inquirer/type@4.2.0",
+      "@isaacs/fs-minipass@4.0.1",
+      "@noble/hashes@1.8.0",
+      "@oxc-minify/binding-linux-x64-gnu@0.151.0",
+      "@oxc-project/types@0.155.0",
+      "@rolldown/binding-linux-x64-gnu@1.2.15",
+      "@rollup/rollup-linux-x64-gnu@4.65.0",
+      "@testing-library/user-event@14.6.8",
+      "@types/node@24.19.2",
+      "@types/ws@8.18.2",
+      "@vitest/istanbul-lib-coverage@1.0.2",
+      "@vitest/istanbul-lib-report@1.0.2",
+      "ansi-regex@6.4.0",
+      "... +39 more"
+     ],
+     "extra": [
+      "@babel/helper-string-parser@7.29.7",
+      "@babel/parser@7.29.9",
+      "@babel/runtime@7.29.7",
+      "@babel/types@7.29.8",
+      "@bytecodealliance/componentize-js@0.22.0",
+      "@bytecodealliance/jco-std@0.4.0",
+      "@bytecodealliance/jco-transpile@0.14.0",
+      "@bytecodealliance/jco@1.34.0",
+      "@bytecodealliance/preview2-shim@0.25.0",
+      "@bytecodealliance/preview3-shim@0.6.1",
+      "@bytecodealliance/weval@0.4.1",
+      "@esbuild/linux-x64@0.28.2",
+      "@hono/node-server@2.1.1",
+      "@inquirer/ansi@2.0.8",
+      "@inquirer/checkbox@5.2.5",
+      "@inquirer/confirm@6.3.2",
+      "@inquirer/core@12.0.3",
+      "@inquirer/editor@5.3.3",
+      "@inquirer/expand@5.1.5",
+      "@inquirer/external-editor@3.0.5",
+      "@inquirer/input@5.1.6",
+      "@inquirer/number@4.2.3",
+      "@inquirer/password@5.2.2",
+      "@inquirer/prompts@8.7.2",
+      "@inquirer/rawlist@5.3.5",
+      "@inquirer/search@4.3.3",
+      "@inquirer/select@5.2.5",
+      "@inquirer/type@4.1.1",
+      "@oxc-minify/binding-linux-x64-gnu@0.136.0",
+      "@rolldown/binding-linux-x64-gnu@1.2.10",
+      "@rollup/rollup-linux-x64-gnu@4.63.4",
+      "@testing-library/user-event@14.6.7",
+      "@types/node@24.13.6",
+      "@types/ws@8.18.1",
+      "@vitest/istanbul-lib-coverage@1.0.1",
+      "@vitest/istanbul-lib-report@1.0.1",
+      "acorn@8.18.0",
+      "ansi-regex@6.3.0",
+      "binaryen@130.0.0",
+      "bun-types@1.4.2",
+      "... +34 more"
+     ]
+    }
+   }
+  },
+  {
+   "name": "elysia",
+   "pm": "bun",
+   "lockfileFormat": "bun-text-v1",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [],
+   "baseline": {
+    "installMs": 9175,
+    "packages": 219,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 219,
+    "instances": 223,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 349,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 1501,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 12,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 59,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 50,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 208,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 219,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "t3-env",
+   "pm": "bun",
+   "lockfileFormat": "bun-text-v1",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [],
+   "baseline": {
+    "installMs": 24443,
+    "packages": 788,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 788,
+    "instances": 857,
+    "layout": "hoisted"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 3552,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 4539,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 42,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 155,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 145,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 701,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 788,
+     "missing": [],
+     "extra": []
+    }
+   }
+  },
+  {
+   "name": "opencode",
+   "pm": "bun",
+   "lockfileFormat": "bun-text-v1",
+   "status": "PASS",
+   "failures": [],
+   "warnings": [
+    "layouts differ (baseline hoisted, fnpm isolated); hoisting and .bin not compared"
+   ],
+   "baseline": {
+    "installMs": 83397,
+    "packages": 2150,
+    "verifyOk": true
+   },
+   "fnpm": {
+    "packages": 2150,
+    "instances": 2178,
+    "layout": "isolated"
+   },
+   "steps": {
+    "install": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 16587,
+     "problems": []
+    },
+    "verify": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 4648,
+     "problems": []
+    },
+    "noop": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 13,
+     "problems": []
+    },
+    "warm": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 851,
+     "problems": []
+    },
+    "frozen": {
+     "ok": true,
+     "exitCode": 0,
+     "ms": 729,
+     "problems": []
+    }
+   },
+   "diff": {
+    "missing": [],
+    "extra": [],
+    "declared": [],
+    "hoisting": {
+     "compared": 0,
+     "differ": 0,
+     "sample": []
+    },
+    "bins": {
+     "missing": [],
+     "extra": []
+    },
+    "scripts": {
+     "baselineOnly": [],
+     "fnpmOnly": []
+    },
+    "sameAsBun": [],
+    "vsBun": {
+     "bun": "1.4.4",
+     "ok": true,
+     "packages": 2150,
+     "missing": [],
+     "extra": []
+    }
+   }
+  }
+ ]
+}

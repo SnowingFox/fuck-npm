@@ -27,7 +27,8 @@ costs. A decision that is replaced stays here, marked as superseded. Details liv
   on medium: no-op 12.5 ms, `add` 15.4 ms. Under Node, fnpm loses all of these before doing any
   work, and the project's goal is to be faster than bun in every scenario.
 - **Decision:** `fnpm` and `fnpm-lock` are Rust executables (`crates/fnpm-cli`). `install`, `i`,
-  `ci`, `add`, `remove` and `update` run natively, in process, with no Node. Everything else,
+  `ci`, `add`, `remove` and `update` run natively, in process, with no Node. The integrated
+  execution track also routes `x` and `create` natively. Other commands,
   `--help` and interactive commands exec `node dist/fnpm.js` with the same argv. The command and
   flag registry stays single-sourced in TypeScript; a build step emits `cli-spec.json`, which the
   Rust parser compiles in. Platform packages ship the native binary and `fnpm.node`; postinstall

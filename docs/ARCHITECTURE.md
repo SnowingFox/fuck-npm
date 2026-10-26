@@ -1,9 +1,9 @@
 # fnpm architecture
 
-fnpm (`fuck-npm`) is a package manager with every user-visible feature of bun's, built to be
-faster than bun and to use less disk. `fnpm` and `fnpm-lock` are native Rust executables
-([fnpm-cli](#fnpm-cli)). They run `install`, `i`, `ci`, `add`, `remove` and `update` end to end in
-process. Every other command, `--help`, and interactive flows are handed to a TypeScript CLI
+fnpm (`fuck-npm`) targets every user-visible feature of bun's package manager, with the goals of
+faster installs and lower disk usage. Current coverage and measured gaps are in [ROADMAP.md](ROADMAP.md). `fnpm` and `fnpm-lock` are native Rust executables
+([fnpm-cli](#fnpm-cli)). They run `install`, `i`, `ci`, `add`, `remove`, `update`, `x` and `create` end to end in
+process. Other commands, `--help`, and interactive flows are handed to a TypeScript CLI
 (`packages/fuck-npm`) that parses arguments and renders output, with the work done by the same
 Rust core loaded as a napi-rs addon (`crates/fnpm-napi`). Why: see
 [startup budget](#startup-budget) and `docs/DECISIONS.md`.
@@ -136,12 +136,12 @@ both lockfile serialisation and the hoisted linker need it.
       package/...                 the package's files (identical files of one package share an inode)
       index.bin                   rkyv FileIndex format 2 (dirs, files, sizes, modes, package.json)
     links/<store key>-<16 hex>/node_modules/<name>   global virtual store entries
-    tmp/                          staging (same filesystem as files/ and pkgs/)
+    tmp/                          staging (same filesystem as pkgs/)
     projects.json                 projects that use this store, for prune
   cache/                     FNPM_CACHE_DIR (also BUN_INSTALL_CACHE_DIR, install.cache.dir)
     metadata/v1/<16 hex>.rkyv     manifest cache, key = xxh3-64(registry URL + "\0" + name)
     git/<16 hex>/                 bare clones for git dependencies
-    dlx/<16 hex>/                 `fnpm x` installs
+    .fnpmx-<uid>/<name>@<version>[+options]/   private `fnpm x` installs on POSIX
     prefetch/<16 hex>.txt         look-ahead hints per project
   global/                    `-g` installs (FNPM_GLOBAL_DIR, BUN_INSTALL_GLOBAL_DIR)
   bin/                       `-g` bins (FNPM_GLOBAL_BIN_DIR, BUN_INSTALL_BIN)
@@ -1633,8 +1633,7 @@ type EventsFn = ThreadsafeFunction<Value, Unknown<'static>, Value, Status, /* ca
 5. Settle on the JS thread: resolve with the result as JSON, or reject with an `Error`
    created there with `code` and `message` set (the rejection is that exact object).
 
-**Errors and panics.** Codes are `fnpm_core::Error::code()` (`NOT_IMPLEMENTED` for commands of
-a later parity phase). A panic in the core (in
+**Errors and panics.** Codes are `fnpm_core::Error::code()`. A panic in the core (in
 `runtime()` or the spawned work) is caught and rejects with `CORE_ERROR` and
 `internal error in the fnpm core: <panic message>`; the runtime keeps running. This needs
 unwinding, so the addon is built with the `release-napi` profile (`release` with
@@ -1710,7 +1709,8 @@ byte-identical. Shared golden fixtures and the conformance suite catch any diver
 | `--version` / `-v` with no command, or on a native command | native (`VERSION` is the npm package version from the spec) |
 | a native command with `-h` / `--help` or `-t` / `--tree` | node |
 | `update -i` / `--interactive` | node, after the native side has validated the flags |
-| every other command (`outdated`, `why`, `pm …`, `run`, `x`, `publish`, …), `help`, `completions`, top-level aliases (`whoami`, `migrate`), unknown commands, no arguments | node |
+| `x` / `dlx` / `fnpmx`, `create` | native execution planner; selected JavaScript tools/templates may run Node |
+| other commands (`outdated`, `why`, `pm …`, `run`, `publish`, …), `help`, `completions`, top-level aliases (`whoami`, `migrate`), unknown commands, no arguments | node |
 | every `fnpm-lock` invocation except `--version` | node |
 | argv that is not valid UTF-8 | node |
 | a native command with an invalid flag or value | native: the error the TS CLI prints, with its message and code |
@@ -1728,8 +1728,8 @@ launcher spawns node with inherited stdio, ignores console Ctrl-C itself
 - **Finding node:** `FNPM_NODE` if set, else `node` on `PATH`. If it cannot be started the
   launcher prints `fnpm: '<cmd>' needs Node.js 20.19 or newer, and no 'node' was found on PATH`
   (`… and FNPM_NODE (<path>) was not found` when the override is set; `<cmd>` is found by
-  walking the root like dispatch, stepping over flag values) and exits 1. The native commands
-  never need Node.
+  walking the root like dispatch, stepping over flag values) and exits 1. Native install commands
+  avoid Node startup; execution commands use the selected tool or template's runtime.
 - **Finding the JS entry:** `FNPM_JS_ENTRY` if set (for `fnpm-lock`: `FNPM_LOCK_JS_ENTRY`, else
   `fnpm-lock.js` next to `FNPM_JS_ENTRY`), else `<dir of realpath(current_exe)>/../dist/<bin>.js`
   (the postinstall layout, see [packaging](#packaging-and-distribution)), else

@@ -15,9 +15,8 @@ bun showed that a package manager can be an order of magnitude faster than npm. 
 design (read from its source in `submodule/bun`) as its compatibility target. The goals are:
 
 - **Faster than bun in every benchmark scenario:** cold, cold with a lockfile, warm cache,
-  no-op re-install, `add`, and frozen CI install, on every fixture. On the small fixture that
-  means a no-op under 7.2 ms and a warm install under 23 ms. A gate (`bench/gate.ts`) fails when
-  fnpm is slower than bun anywhere.
+  no-op re-install, `add`, and frozen CI install, on every fixture. A gate (`bench/gate.ts`)
+  compares the measured means from the same run and fails when fnpm is slower than bun anywhere.
 - **Less disk than bun and pnpm:** the v2 store shares identical files within each package.
   Projects use copy-on-write clones or hardlinks where supported. Cross-version file
   deduplication was removed to reduce import overhead.
@@ -53,49 +52,59 @@ the binary `bun.lockb` for migration but never writes it.
 
 ## Benchmarks
 
-Baseline from [bench/results/2026-10-25-linux-x64.md](bench/results/2026-10-25-linux-x64.md):
-8-core Xeon, ext4, Node 24.22.1; bun 1.4.4, pnpm 12.15.0, npm 11.19.1, yarn 1.22.22; every tool
-against the same pre-warmed local verdaccio mirror. Mean wall-clock time. fnpm has no numbers yet.
+Measured 2026-10-25 from `23cc221`: [raw results and variation](bench/results/2026-10-26-linux-x64-land.md).
+8-core Xeon, ext4, Node 24.22.1; fnpm 0.0.1, bun 1.4.4, pnpm 12.15.0, npm 11.19.1, yarn 1.22.22.
+All tools use the same pre-warmed local Verdaccio mirror. Means below use five measured runs and one warmup.
 
 | fixture | scenario | fnpm | bun | pnpm | npm | yarn |
 |---|---|---:|---:|---:|---:|---:|
-| small | cold | pending | **796 ms** | 872 ms | 2.80 s | 3.29 s |
-| small | cold-lockfile | pending | **138 ms** | 826 ms | 1.67 s | 2.71 s |
-| small | warm | pending | **23.3 ms** | 218 ms | 1.37 s | 1.07 s |
-| small | noop | pending | **7.2 ms** | 138 ms | 579 ms | 439 ms |
-| small | add | pending | **9.5 ms** | 217 ms | 693 ms | 833 ms |
-| small | ci | pending | **23.5 ms** | 212 ms | 1.18 s | 1.06 s |
-| medium | cold | pending | **13.3 s** | 14.7 s | 55.6 s | 50.3 s |
-| medium | cold-lockfile | pending | **1.21 s** | 30.1 s | 10.8 s | 33.7 s |
-| medium | warm | pending | **143 ms** | 475 ms | 9.53 s | 5.60 s |
-| medium | noop | pending | **12.5 ms** | 168 ms | 659 ms | 482 ms |
-| medium | add | pending | **15.4 ms** | 417 ms | 859 ms | 2.26 s |
-| medium | ci | pending | **129 ms** | 517 ms | 9.06 s | 5.81 s |
-| large | cold-lockfile | pending | **1.54 s** | 44.7 s | 21.9 s | 41.3 s |
-| large | warm | pending | **290 ms** | 1.08 s | 15.6 s | 16.3 s |
-| large | noop | pending | **67.7 ms** | 144 ms | 3.37 s | 936 ms |
+| small | cold | 696 ms | **554 ms** | 800 ms | 2.95 s | 3.28 s |
+| small | cold-lockfile | 141 ms | **123 ms** | 883 ms | 1.61 s | 2.76 s |
+| small | warm | **21.1 ms** | 35.3 ms | 212 ms | 1.24 s | 996 ms |
+| small | noop | **2.7 ms** | 7.2 ms | 135 ms | 581 ms | 399 ms |
+| small | add | 10.8 ms | **9.7 ms** | 221 ms | 662 ms | 824 ms |
+| small | ci | **21.1 ms** | 25.0 ms | 271 ms | 1.24 s | 1.07 s |
+| medium | cold | **12.6 s** | 12.8 s | 14.4 s | 47.8 s | 47.5 s |
+| medium | cold-lockfile | **1.00 s** | 1.16 s | 27.4 s | 11.7 s | 33.6 s |
+| medium | warm | **71.6 ms** | 141 ms | 446 ms | 9.97 s | 5.40 s |
+| medium | noop | **3.0 ms** | 10.5 ms | 148 ms | 701 ms | 420 ms |
+| medium | add | 17.3 ms | **14.3 ms** | 371 ms | 900 ms | 2.02 s |
+| medium | ci | **60.0 ms** | 141 ms | 442 ms | 9.85 s | 5.32 s |
+| large | cold-lockfile | 1.35 s | **1.10 s** | 42.2 s | 20.3 s | 38.9 s |
+| large | warm | **185 ms** | 230 ms | 1.00 s | 15.1 s | 15.4 s |
+| large | noop | **2.2 ms** | 62.4 ms | 148 ms | 2.83 s | 770 ms |
+| large | add | 76.9 ms | **71.3 ms** | 1.07 s | 3.22 s | 7.14 s |
+| large | ci | **172 ms** | 215 ms | 1.01 s | 15.2 s | 15.5 s |
+| monorepo | cold-lockfile | 960 ms | **759 ms** | 28.5 s | 12.5 s | 30.5 s |
+| monorepo | warm | 176 ms | **157 ms** | 685 ms | 9.65 s | 8.03 s |
+| monorepo | noop | **3.2 ms** | 27.2 ms | 143 ms | 1.45 s | 629 ms |
+| monorepo | add | 49.1 ms | **30.3 ms** | 4.42 s | 1.49 s | 3.98 s |
+| monorepo | ci | **147 ms** | 152 ms | 650 ms | 9.83 s | 7.56 s |
 
-Total physical disk (node_modules plus the tool's store/cache, hardlinks counted once):
+Total physical disk (node_modules plus the tool's store/cache, shared inodes counted once):
 
 | fixture | fnpm | bun | pnpm | npm | yarn |
 |---|---:|---:|---:|---:|---:|
-| small | pending | 17.1 MiB | 21.8 MiB | 19.3 MiB | 34.7 MiB |
-| medium | pending | 506.5 MiB | 801.6 MiB | 627.2 MiB | 3.7 GiB |
-| large | pending | 446.4 MiB | 843.0 MiB | 509.9 MiB | 1.0 GiB |
+| small | 16.7 MiB | 17.1 MiB | 21.7 MiB | 19.3 MiB | 34.7 MiB |
+| medium | 502.7 MiB | 506.6 MiB | 777.7 MiB | 627.2 MiB | 3.7 GiB |
+| large | 423.0 MiB | 446.4 MiB | 836.7 MiB | 510.0 MiB | 1.0 GiB |
+| monorepo | 407.6 MiB | 425.6 MiB | 553.9 MiB | 493.4 MiB | 2.5 GiB |
 
-`cold` (no lockfile) times are dominated by verdaccio, which spends 0.2 to 2 s re-serialising
-each large packument, so they compress the gaps between tools. pnpm's `cold-lockfile` is slow
-for the same reason (it re-fetches full metadata for every lockfile entry). The `monorepo`
-fixture and the remaining `large` scenarios haven't been run yet. Methodology, isolation and
-disk measurement are in [bench/README.md](bench/README.md).
+The strict speed gate fails 9 of 22 comparisons with Bun. fnpm uses less combined physical disk
+than Bun on 4/4 fixtures and pnpm on 4/4. The raw report also separates node_modules,
+extra store/cache, inode counts and cold filesystem deltas. The cold filesystem delta is lower than
+Bun on 4/4 fixtures and pnpm on 4/4; other writes on the shared filesystem affect it.
+Fnpm's extra store/cache usage is larger than Bun's on all four fixtures.
+`cold` and pnpm cold-lockfile timings include Verdaccio metadata serialization. These Linux measurements
+do not establish macOS or Windows performance. See [bench/README.md](bench/README.md) for isolation and caveats.
 
 ## How it works
 
 ```text
               fnpm / fnpm-lock   (Rust executable, crates/fnpm-cli)
                       |
-      install i ci add remove update         everything else, --help,
-      (argv parsed natively, cli-spec.json)  interactive commands
+      install i ci add remove update x create  everything else, --help,
+      (argv parsed natively, cli-spec.json)    interactive commands
                       |                                |
                       |                  exec node dist/fnpm.js <same argv>
                       |                                |
@@ -129,6 +138,12 @@ The full design, including every crate's API, is in [docs/ARCHITECTURE.md](docs/
 
 ## Compatibility
 
+Latest integration checks: **3,667 passed / 2,973 failed / 58 skipped**
+(55.2%) across 42 completed conformance files out of 45 selected; timeouts and the stopped matrix are listed separately.
+The 18-project corpus has **13 PASS / 5 KNOWN / 0 unexpected failures**.
+See [conformance status](tests/conformance/STATUS.md) and
+[corpus results](tests/e2e/results/2026-10-26-land.md). Full parity remains open.
+
 - **Lockfiles.** With no `fnpm.lock`, the first install migrates `package-lock.json` /
   `npm-shrinkwrap.json` (lockfileVersion 2 to 4; v1 isn't read), `yarn.lock` (v1 and berry), `pnpm-lock.yaml`
   (lockfileVersion 7 to 11), `bun.lock` or `bun.lockb`, keeping the resolved versions, and
@@ -158,7 +173,7 @@ crates/
   fnpm-scripts      lifecycle scripts, trust policy
   fnpm-core         install pipeline and every other command
   fnpm-napi         Node-API addon (fnpm.node) used by the TS CLI
-  fnpm-cli          native fnpm / fnpm-lock executables (planned)
+  fnpm-cli          native fnpm / fnpm-lock executables
 packages/
   fuck-npm          TS CLI: command registry, help, prompts, output
   fuck-npm-binding  loader for the platform-specific fnpm.node

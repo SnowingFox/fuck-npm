@@ -1,0 +1,687 @@
+{
+  "measuredAt": "2026-10-26T00:49:18.072390+00:00",
+  "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163",
+  "binarySha256": "cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac",
+  "addonSha256": "c63d237756ec86f8a2f140b06b68175ccc646efd67cf80f453ec8afc401ef7a8",
+  "addonProfile": "debug",
+  "nativeProfile": "release",
+  "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+  "previousAdapterSha256": "c5938ffb27b765d59e63890c5676e026710a2c1aa07660192286b0bec667ee57",
+  "adapterNote": "Completed suites were rerun with eager pipe draining and execution sandboxes using their home npmrc. Per-suite hashes identify the adapter; incomplete suite notes preserve the previous attempt.",
+  "scope": "45 selected files out of 101 ported files",
+  "selectedFiles": 45,
+  "completedFiles": 42,
+  "portedFiles": 101,
+  "timeouts": [
+    "bun-install-registry.test.ts",
+    "bun-security-scanner-matrix-with-node-modules.test.ts"
+  ],
+  "incompleteSuites": [
+    {
+      "file": "bun-install-registry.test.ts",
+      "note": "timed out after 600s"
+    },
+    {
+      "file": "bun-security-scanner-matrix-with-node-modules.test.ts",
+      "note": "timed out after 600s"
+    },
+    {
+      "file": "bun-security-scanner-matrix-without-node-modules.test.ts",
+      "note": "stopped: Node adapter lacks terminal callbacks; TTY cases cannot finish"
+    }
+  ],
+  "retries": [
+    "The first create run had one spawn exit 127; isolated smoke checks passed and the complete file was rerun before acceptance.",
+    "The first frozen workspace-names run had 76 passes and 55 failures, losing one reviewed passing assertion at a frozen reinstall. A complete-file retry had 77 passes and 54 failures with every reviewed passing assertion restored; no source change was made between attempts."
+  ],
+  "retryAttempts": [
+    {
+      "file": "bun-create.test.ts",
+      "initial": {
+        "passed": 137,
+        "failed": 4,
+        "skipped": 1
+      },
+      "final": {
+        "passed": 138,
+        "failed": 3,
+        "skipped": 1
+      },
+      "reason": "One create -- smoke subprocess exited 127; complete-file rerun passed the reviewed assertion."
+    },
+    {
+      "file": "frozen-lockfile-workspace-names.test.ts",
+      "initial": {
+        "passed": 76,
+        "failed": 55,
+        "skipped": 0
+      },
+      "final": {
+        "passed": 77,
+        "failed": 54,
+        "skipped": 0
+      },
+      "reason": "One reviewed passing frozen-reinstall assertion failed on the first attempt; complete-file rerun restored it without a source change."
+    }
+  ],
+  "sampling": "Scanner matrix files randomly select about 10% of cases under CI; skipped cases are not measured.",
+  "retryNote": "The first create run had one spawn exit 127; isolated smoke checks passed and the complete file was rerun before acceptance. The first frozen workspace-names run had 76 passes and 55 failures, losing one reviewed passing assertion at a frozen reinstall. A complete-file retry had 77 passes and 54 failures with every reviewed passing assertion restored; no source change was made between attempts.",
+  "profilesNote": "Native install/execution paths use the release executable; TypeScript-routed commands use a debug NAPI addon from the same source. Conformance totals cover this mixed dispatch, while benchmark install paths are native release.",
+  "platformValidation": {
+    "measuredPlatform": "Linux x64 / ext4",
+    "priorCiRun": "https://github.com/SnowingFox/fuck-npm/actions/runs/40203454709",
+    "priorCiSourceCommit": "2166da34c182e8c3a01e13c1b2b78491d2f88fc2",
+    "unresolved": [
+      "macOS libc::CLONE_NOFOLLOW is unavailable",
+      "Windows store unused/dead-code Clippy failures",
+      "Linux ARM GNU cross-toolchain GCC is too old for libdeflate"
+    ]
+  },
+  "harnessLimitations": [
+    "Bun.spawn terminal callbacks are not implemented; scanner matrix TTY cases wait indefinitely.",
+    "Subprocess.resourceUsage is not implemented; related memory cases fail."
+  ],
+  "assertionDurationLimitations": "The lockfile suite contains failed request-order/gate assertions reaching their per-test deadlines; file-level timeouts do not enumerate every timed-out assertion.",
+  "totals": {
+    "passed": 3667,
+    "failed": 2973,
+    "skipped": 58,
+    "passRate": 0.5522590361445783
+  },
+  "suites": [
+    {
+      "file": "architecture-match.test.ts",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bad-workspace.test.ts",
+      "passed": 15,
+      "failed": 32,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-add-catalog.test.ts",
+      "passed": 71,
+      "failed": 82,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-add-filter.test.ts",
+      "passed": 105,
+      "failed": 40,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-add.test.ts",
+      "passed": 126,
+      "failed": 94,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-audit.test.ts",
+      "passed": 133,
+      "failed": 127,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-create.test.ts",
+      "passed": 138,
+      "failed": 3,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-cpu-os.test.ts",
+      "passed": 26,
+      "failed": 17,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-lifecycle-scripts.test.ts",
+      "passed": 251,
+      "failed": 183,
+      "skipped": 2,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-native-binlink.test.ts",
+      "passed": 25,
+      "failed": 2,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-offline-misses.test.ts",
+      "passed": 5,
+      "failed": 30,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-offline.test.ts",
+      "passed": 1,
+      "failed": 11,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-patch.test.ts",
+      "passed": 14,
+      "failed": 39,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-registry.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "note": "timed out after 600s",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install-security-provider.test.ts",
+      "passed": 96,
+      "failed": 2,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-install.test.ts",
+      "passed": 346,
+      "failed": 426,
+      "skipped": 6,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-lock.test.ts",
+      "passed": 207,
+      "failed": 110,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-pack.test.ts",
+      "passed": 370,
+      "failed": 11,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-patch.test.ts",
+      "passed": 98,
+      "failed": 134,
+      "skipped": 5,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-pm-diff.test.ts",
+      "passed": 26,
+      "failed": 50,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-pm-scan.test.ts",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-publish.test.ts",
+      "passed": 279,
+      "failed": 0,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-remove.test.ts",
+      "passed": 24,
+      "failed": 13,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-security-scanner-matrix-with-node-modules.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "note": "timed out after 600s",
+      "adapterSha256": "c5938ffb27b765d59e63890c5676e026710a2c1aa07660192286b0bec667ee57",
+      "sourceCommit": "cab4086b8e6ef694e622931d000a7783d44a8532"
+    },
+    {
+      "file": "bun-security-scanner-matrix-without-node-modules.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "note": "stopped: Node adapter lacks terminal callbacks; TTY cases cannot finish",
+      "adapterSha256": "c5938ffb27b765d59e63890c5676e026710a2c1aa07660192286b0bec667ee57",
+      "sourceCommit": "cab4086b8e6ef694e622931d000a7783d44a8532"
+    },
+    {
+      "file": "bun-security-scanner-workspaces.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-update-security-scan-all.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-update.test.ts",
+      "passed": 100,
+      "failed": 75,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-workspaces-self-contained.test.ts",
+      "passed": 4,
+      "failed": 21,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bun-workspaces.test.ts",
+      "passed": 155,
+      "failed": 185,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bunx-concurrent.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bunx-directories-bin.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "bunx.test.ts",
+      "passed": 222,
+      "failed": 8,
+      "skipped": 2,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "catalogs.test.ts",
+      "passed": 84,
+      "failed": 71,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "frozen-lockfile-member-pins.test.ts",
+      "passed": 10,
+      "failed": 17,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "frozen-lockfile-outdated.test.ts",
+      "passed": 28,
+      "failed": 79,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "frozen-lockfile-pruned.test.ts",
+      "passed": 11,
+      "failed": 173,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "frozen-lockfile-workspace-names.test.ts",
+      "passed": 77,
+      "failed": 54,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "isolated-install.test.ts",
+      "passed": 156,
+      "failed": 127,
+      "skipped": 7,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "isolated-relink.test.ts",
+      "passed": 1,
+      "failed": 5,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "lockfile-only.test.ts",
+      "passed": 7,
+      "failed": 27,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "migration/migrate.test.ts",
+      "passed": 35,
+      "failed": 73,
+      "skipped": 1,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "nested-overrides.test.ts",
+      "passed": 36,
+      "failed": 282,
+      "skipped": 0,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "npmrc.test.ts",
+      "passed": 226,
+      "failed": 357,
+      "skipped": 5,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    },
+    {
+      "file": "overrides.test.ts",
+      "passed": 88,
+      "failed": 13,
+      "skipped": 23,
+      "note": "",
+      "adapterSha256": "b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c",
+      "sourceCommit": "23cc2210361a8f4b5b53221aa48b76a4dff55163"
+    }
+  ],
+  "publication": {
+    "passed": 279,
+    "failed": 0,
+    "skipped": 1,
+    "skipReason": "Windows drive-root case on Linux"
+  },
+  "reviewedComparisons": [
+    {
+      "file": "architecture-match.json",
+      "reviewedPassed": 30,
+      "finalPassed": 30,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bad-workspace.json",
+      "reviewedPassed": 15,
+      "finalPassed": 15,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-add-catalog.json",
+      "reviewedPassed": 69,
+      "finalPassed": 71,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-add-filter.json",
+      "reviewedPassed": 105,
+      "finalPassed": 105,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-add.json",
+      "reviewedPassed": 116,
+      "finalPassed": 126,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-audit.json",
+      "reviewedPassed": 132,
+      "finalPassed": 133,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install-cpu-os.json",
+      "reviewedPassed": 24,
+      "finalPassed": 26,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install-lifecycle-scripts.json",
+      "reviewedPassed": 215,
+      "finalPassed": 251,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install-native-binlink.json",
+      "reviewedPassed": 21,
+      "finalPassed": 25,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install-offline-misses.json",
+      "reviewedPassed": 5,
+      "finalPassed": 5,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install-offline.json",
+      "reviewedPassed": 1,
+      "finalPassed": 1,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-install.json",
+      "reviewedPassed": 339,
+      "finalPassed": 346,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-lock.json",
+      "reviewedPassed": 200,
+      "finalPassed": 207,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-remove.json",
+      "reviewedPassed": 24,
+      "finalPassed": 24,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-update.json",
+      "reviewedPassed": 98,
+      "finalPassed": 100,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-workspaces-self-contained.json",
+      "reviewedPassed": 4,
+      "finalPassed": 4,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "bun-workspaces.json",
+      "reviewedPassed": 135,
+      "finalPassed": 155,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "catalogs.json",
+      "reviewedPassed": 71,
+      "finalPassed": 84,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "frozen-lockfile-member-pins.json",
+      "reviewedPassed": 10,
+      "finalPassed": 10,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "frozen-lockfile-outdated.json",
+      "reviewedPassed": 9,
+      "finalPassed": 28,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "frozen-lockfile-pruned.json",
+      "reviewedPassed": 11,
+      "finalPassed": 11,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "frozen-lockfile-workspace-names.json",
+      "reviewedPassed": 75,
+      "finalPassed": 77,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "isolated-install.json",
+      "reviewedPassed": 131,
+      "finalPassed": 156,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "isolated-relink.json",
+      "reviewedPassed": 0,
+      "finalPassed": 1,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "lockfile-only.json",
+      "reviewedPassed": 7,
+      "finalPassed": 7,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "nested-overrides.json",
+      "reviewedPassed": 36,
+      "finalPassed": 36,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "npmrc.json",
+      "reviewedPassed": 208,
+      "finalPassed": 226,
+      "lostPassingAssertions": 0
+    },
+    {
+      "file": "overrides.json",
+      "reviewedPassed": 88,
+      "finalPassed": 88,
+      "lostPassingAssertions": 0
+    }
+  ],
+  "broadComparison": {
+    "files": 28,
+    "passed": 2250,
+    "failed": 2599,
+    "reviewedPassed": 2081,
+    "reviewedFailed": 2768
+  },
+  "executionScanner": {
+    "passed": 488,
+    "failed": 13,
+    "reviewedPassed": 486,
+    "reviewedFailed": 15
+  }
+}
