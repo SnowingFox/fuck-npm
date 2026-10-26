@@ -197,7 +197,10 @@ export class NodeServer {
       const headers = new Headers();
       for (let i = 0; i < req.rawHeaders.length; i += 2) headers.append(req.rawHeaders[i], req.rawHeaders[i + 1]);
       const hasBody = method !== "GET" && method !== "HEAD";
-      const request = new Request(`${protocol}://${host}${path}`, {
+      // A request sent through an HTTP proxy names the absolute URL (`GET http://host/path`); bun's
+      // `req.url` is that URL then.
+      const url = /^https?:\/\//i.test(path) ? path : `${protocol}://${host}${path}`;
+      const request = new Request(url, {
         method,
         headers,
         body: hasBody ? (Readable.toWeb(req) as ReadableStream) : undefined,
