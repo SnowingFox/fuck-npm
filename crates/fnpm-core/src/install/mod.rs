@@ -6,6 +6,7 @@
 mod backfill;
 mod edits;
 mod lock;
+mod peers;
 mod plan;
 mod summary;
 
@@ -814,6 +815,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         Some(prev) if in_place => prev.packages.iter().map(|p| p.key()).collect(),
         _ => HashSet::new(),
     };
+    // bun checks the peers against the layout on a verbose install that resolved something.
+    let warn_peers = config.log_level == fnpm_config::LogLevel::Verbose
+        && !config.omit.peer
+        && (changed
+            || opts.patch.is_some()
+            || opts.command == InstallCommand::Update
+            || !opts.packages.is_empty()
+            || lock.graph.is_none()
+            || lock.migrated);
     let linked = link(
         &project,
         &ws,
@@ -827,6 +837,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &events,
         opts.dlx,
         telemetry.as_ref(),
+        warn_peers,
+        // `fnpm audit fix` replaces packages in a working tree: like bun, nothing is linked
+        // before every new package is in the store.
+        opts.patch.is_some(),
     )
     .await?;
     phases.mark("link");
@@ -1494,6 +1508,8 @@ async fn link(
     events: &Arc<dyn EventSink>,
     dlx: Option<crate::options::DlxMode>,
     telemetry: Option<&crate::events::TelemetryGuard>,
+    mut warn_peers: bool,
+    fetch_first: bool,
 ) -> Result<Linked> {
     let config = &project.config;
     let root = project.root_dir.clone();
@@ -1531,6 +1547,11 @@ async fn link(
             }
         }
         let layout = plan_layout(&linker, &view, kind, selected.clone());
+        if std::mem::take(&mut warn_peers) {
+            for line in peers::incorrect_peers(&view, &layout) {
+                events.emit(Event::warn(line, None));
+            }
+        }
         // The previous install's tree, for packages that keep their place (hoisted only,
         // without patches, whose files may have changed under the same key).
         let previous = match (intact, &layout) {
@@ -1657,9 +1678,9 @@ async fn link(
         } else {
             Vec::new()
         };
-        if dlx.is_some() {
-            // `fnpm x`: nothing is linked until every package is in the store, so a refresh
-            // that cannot download a package leaves the tree that runs as it was.
+        if dlx.is_some() || fetch_first {
+            // `fnpm x` and `fnpm audit fix`: nothing is linked until every package is in the
+            // store, so a refresh that cannot download a package leaves the tree as it was.
             for (i, p) in graph.packages.iter().enumerate() {
                 if !reachable[i] || !fetches(p) {
                     continue;
@@ -1674,6 +1695,8 @@ async fn link(
                     });
                 }
             }
+        }
+        if dlx.is_some() {
             let package_json = root.join("package.json");
             std::fs::write(&package_json, crate::options::DlxMode::UNFINISHED)
                 .map_err(Error::io(&package_json))?;
