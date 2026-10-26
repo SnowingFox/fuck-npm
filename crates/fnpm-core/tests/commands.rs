@@ -1383,10 +1383,8 @@ async fn audit_fix_rejects_manifest_changes_before_auditing_or_writing() {
             .invoke(&["audit"], &["fix"], json!({ "dryRun": dry_run }))
             .await
             .unwrap_err();
-        assert!(
-            error.to_string().contains("does not match package.json"),
-            "{error}"
-        );
+        // `error: fnpm.lock does not match package.json` went to stderr, like bun.
+        assert_eq!(error.code(), "REPORTED", "{error}");
         assert_eq!(
             reg.seen().len(),
             requests,

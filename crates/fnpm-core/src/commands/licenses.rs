@@ -44,18 +44,22 @@ struct Entry {
 
 /// Which edges a walk follows (bun `reachable::Options`).
 #[derive(Clone, Copy)]
-struct Walk<'a> {
-    graph: &'a LockGraph,
-    dev: bool,
-    optional: bool,
-    peer: bool,
-    platform: &'a Platform,
-    follow_workspace_edges: bool,
+pub(super) struct Walk<'a> {
+    pub(super) graph: &'a LockGraph,
+    pub(super) dev: bool,
+    pub(super) optional: bool,
+    pub(super) peer: bool,
+    pub(super) optional_peer: bool,
+    /// Skip packages disabled for this platform (`None`: every package counts).
+    pub(super) platform: Option<&'a Platform>,
+    pub(super) follow_workspace_edges: bool,
 }
 
 impl Walk<'_> {
     fn group_enabled(&self, b: Behavior) -> bool {
-        if b.is_peer() {
+        if b.is_optional_peer() {
+            self.optional_peer
+        } else if b.is_peer() {
             self.peer
         } else if b.is_optional() {
             self.optional
@@ -95,7 +99,9 @@ impl Walk<'_> {
             return;
         }
         let p = &self.graph.packages[target.index()];
-        if !p.platform.matches_for_edge(self.platform, b.is_optional()) {
+        if let Some(platform) = self.platform
+            && !p.platform.matches_for_edge(platform, b.is_optional())
+        {
             return;
         }
         *slot = true;
@@ -120,7 +126,7 @@ impl Walk<'_> {
     }
 
     /// Packages reachable from `roots`.
-    fn packages_from(&self, roots: &[PackageId]) -> Vec<bool> {
+    pub(super) fn packages_from(&self, roots: &[PackageId]) -> Vec<bool> {
         let mut seen = vec![false; self.graph.packages.len()];
         let mut work = Vec::new();
         for &r in roots {
@@ -511,7 +517,8 @@ pub(crate) fn run(cx: &Ctx) -> Result<CoreResult> {
         dev,
         optional: !config.omit.optional,
         peer: !config.omit.peer,
-        platform: &config.platform,
+        optional_peer: !config.omit.peer,
+        platform: Some(&config.platform),
         follow_workspace_edges,
     };
     let wanted = if dev_only {

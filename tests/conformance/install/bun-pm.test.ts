@@ -3190,7 +3190,7 @@ describe.concurrent("without a package.json", () => {
       const dir = cmd.includes("-g") ? project.globalDir : join(project.root, "cwd");
       expect(await project.run(...cmd.split(" "))).toEqual({
         stdout: "",
-        stderr: `error: No package.json was found for directory "${dir}"\nnote: Run "bun init" to initialize a project\n`,
+        stderr: `error: No package.json was found for directory "${dir}"\nnote: Run "fnpm init" to initialize a project\n`,
         exitCode: 1,
       });
     },

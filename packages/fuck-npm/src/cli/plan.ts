@@ -305,6 +305,8 @@ export function rejectPmSubcommandFlags(plan: Invocation, argv: string[], regist
   let command: string;
   if (plan.matched[0] === "pm") {
     command = plan.matched[1] ?? "";
+    // `pm scan` parses its own flags (bun's ScanCommand), `--json` included.
+    if (command === "scan") return;
   } else if (words.find((token) => !isFlagToken(token)) === "list") {
     command = "ls";
   } else {

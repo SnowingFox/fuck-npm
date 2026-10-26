@@ -734,57 +734,53 @@ fn package_for(
 /// `fnpm audit fix`.
 pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     let start = Instant::now();
+    let loud = cx.pm.log_level != fnpm_config::LogLevel::Silent;
+    let fail = |message: &str, note: &str| {
+        if loud {
+            eprintln!("error: {message}");
+            eprintln!("note: {note}");
+        }
+        Error::Reported
+    };
     if cx.req.positionals.len() > 1 {
-        return Err(Error::usage(format!(
-            "unexpected argument \"{}\" for `fnpm audit fix`",
-            cx.req.positionals[1]
-        )));
+        return Err(fail(
+            "fnpm audit fix does not take arguments, it always fixes the whole lockfile",
+            "run 'fnpm audit --help' for more information",
+        ));
     }
+    // bun `exit_unless_lockfile_writable`.
+    let frozen = |frozen: bool| {
+        if frozen {
+            fail(
+                "fnpm audit fix needs to write fnpm.lock, but the lockfile is frozen",
+                "run 'fnpm audit fix' without --frozen-lockfile / --production",
+            )
+        } else {
+            fail(
+                "fnpm audit fix needs to write fnpm.lock, but saving the lockfile is disabled",
+                "run 'fnpm audit fix' without --no-save",
+            )
+        }
+    };
     let dry_run = cx.flag("dryRun");
     let latest = cx.flag("latest");
     let json_out = cx.req.json;
     if !dry_run {
-        let refuse = if cx.flag("frozenLockfile") {
-            Some("--frozen-lockfile")
-        } else if cx.flag("production") {
-            Some("--production")
-        } else if cx.req.options.get("save") == Some(&Value::Bool(false)) {
-            Some("--no-save")
-        } else {
-            None
-        };
-        if let Some(flag) = refuse {
-            if cx.pm.log_level != fnpm_config::LogLevel::Silent {
-                eprintln!(
-                    "error: `fnpm audit fix` writes the lockfile, so it cannot run with {flag}"
-                );
-                eprintln!("note: pass --dry-run to see the fixes without applying them");
-            }
-            return Err(Error::Reported);
+        if cx.flag("frozenLockfile") || cx.flag("production") {
+            return Err(frozen(true));
+        }
+        if cx.req.options.get("save") == Some(&Value::Bool(false)) {
+            return Err(frozen(false));
         }
     }
     let (project, ws, graph) = cx.load_locked("nothing to fix")?;
     if !dry_run {
         let config = &project.config;
-        let reason = if config.frozen_lockfile {
-            Some("--frozen-lockfile")
-        } else if config.production {
-            Some("--production")
-        } else if !config.save_package_json {
-            Some("--no-save")
-        } else if !config.lockfile.save {
-            Some("lockfile saving disabled")
-        } else {
-            None
-        };
-        if let Some(reason) = reason {
-            if project.config.log_level != fnpm_config::LogLevel::Silent {
-                eprintln!(
-                    "error: `fnpm audit fix` writes the lockfile, so it cannot run with {reason}"
-                );
-                eprintln!("note: pass --dry-run to see the fixes without applying them");
-            }
-            return Err(Error::Reported);
+        if config.frozen_lockfile || config.production {
+            return Err(frozen(true));
+        }
+        if !config.save_package_json || !config.lockfile.save {
+            return Err(frozen(false));
         }
     }
 
@@ -808,13 +804,19 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     {
         Ok(_) => {}
         Err(fnpm_resolver::Error::FrozenLockfile { .. }) => {
-            return Err(Error::usage(
-                "fnpm.lock does not match package.json. Run 'fnpm install' before 'fnpm audit fix'",
+            return Err(fail(
+                "fnpm.lock does not match package.json, nothing to fix",
+                "run 'fnpm install' first",
             ));
         }
         Err(error) => return Err(error.into()),
     }
     let resp = client.audit(&packages).await?;
+    super::info::print_unaudited(&resp.unaudited, loud);
+    if let Some(failure) = &resp.default_failure {
+        super::info::report_audit_failure(failure, loud);
+        return Err(Error::Reported);
+    }
     let ignore = cx.strings("ignore");
     let advisories = advisories_of(&resp.advisories, &ignore);
     let mut plan = plan(
@@ -935,6 +937,10 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     // Audit what is installed now.
     let (_, _, after_graph) = cx.load_locked("nothing to fix")?;
     let after_resp = client.audit(&audit_packages(&after_graph)).await?;
+    if let Some(failure) = &after_resp.default_failure {
+        super::info::report_audit_failure(failure, loud);
+        return Err(Error::Reported);
+    }
     let after = advisories_of(&after_resp.advisories, &ignore);
     let mut still: Vec<(String, String, Vec<String>)> = Vec::new();
     let staying: Vec<(&str, &str)> = plan

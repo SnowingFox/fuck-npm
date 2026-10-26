@@ -284,8 +284,8 @@ describe("generic commands", () => {
   test("data becomes the --json payload and the exit code is the core's", async () => {
     const bed = testBed({ core: { invoke: () => ({ exitCode: 1, data: { vulnerabilities: 2 } }) } });
 
-    expect(await bed.run(["audit", "--json"])).toBe(1);
-    expect(bed.json()).toEqual({ ok: false, command: "audit", vulnerabilities: 2 });
+    expect(await bed.run(["outdated", "--json"])).toBe(1);
+    expect(bed.json()).toEqual({ ok: false, command: "outdated", vulnerabilities: 2 });
   });
 
   test("link and unlink never run globally and only save when asked", async () => {

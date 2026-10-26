@@ -86,7 +86,9 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     listener.progress?.stop();
   }
 
-  if (RAW_OUTPUT.has(ctx.path.join(" "))) {
+  const auditReport =
+    ctx.registry.bin === "fnpm" && (head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] !== "fix";
+  if (RAW_OUTPUT.has(ctx.path.join(" ")) || auditReport) {
     // The core prints these as bun does in every mode (`pm pkg set --json` parses values; the
     // `pm licenses --json` document is the listing itself); `--silent` only quiets stderr.
     for (const line of result.lines ?? []) ctx.runtime.stdout.write(`${line}\n`);
