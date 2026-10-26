@@ -287,8 +287,8 @@ pub(crate) fn classified(
     if catalogs != prev.catalogs && !(frozen && skipped_catalogs(ws, prev, &catalogs).is_some()) {
         out.push("catalogs changed".into());
     }
-    let (_, extensions, _) = crate::extensions::parse_package_extensions(root);
-    if extensions != prev.package_extensions {
+    let (rules, extensions, _) = crate::extensions::parse_package_extensions(root);
+    if extensions != prev.package_extensions && !crate::extensions::applied_alike(&rules, prev) {
         out.push("packageExtensions changed".into());
     }
     if frozen {

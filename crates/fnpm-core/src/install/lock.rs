@@ -281,6 +281,7 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
             Ok((mut graph, format, write_back, warnings)) => {
                 state.warnings.extend(warnings);
                 fnpm_lockfile::migration::finish_migration(&mut graph, ws);
+                record_copied_extensions(&mut graph, &write_back);
                 state.graph = Some(graph);
                 state.format = Some(format);
                 state.path = Some(dir.join(name));
@@ -303,6 +304,23 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
         state.write_back.extend(edit);
     }
     Ok(state)
+}
+
+/// The `packageExtensions` a migration copies into the root package.json, recorded in the graph
+/// as the next resolve records them, so fnpm.lock has them and a frozen install accepts it.
+fn record_copied_extensions(graph: &mut LockGraph, write_back: &[PackageJsonWriteBack]) {
+    if !graph.package_extensions.is_empty() {
+        return;
+    }
+    let copied = write_back
+        .iter()
+        .filter(|w| w.path.is_empty())
+        .flat_map(|w| &w.fields)
+        .find(|(key, _)| key == "packageExtensions");
+    if let Some((_, value)) = copied {
+        let root = serde_json::json!({ "packageExtensions": value });
+        graph.package_extensions = fnpm_resolver::extensions::parse_package_extensions(&root).1;
+    }
 }
 
 /// Migrates one of `names` (in order; bun.lock, bun.lockb and the foreign lockfiles) for
@@ -346,6 +364,7 @@ pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> R
                 state.warnings.extend(warnings);
                 if !matches!(format, Format::BunText | Format::BunBinary) {
                     fnpm_lockfile::migration::finish_migration(&mut graph, ws);
+                    record_copied_extensions(&mut graph, &write_back);
                 }
                 state.graph = Some(graph);
                 state.format = Some(format);

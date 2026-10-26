@@ -757,14 +757,23 @@ struct Extended<'a> {
     builtin_optional_peers: Vec<&'a str>,
 }
 
-/// Does an extension key (`name@range`) apply to `name` at `version`? Prereleases match, like
-/// in yarn; an empty range matches every version.
+/// Does an extension key (`name@range`) apply to `name` at `version`? Prereleases match as in
+/// yarn (node-semver `includePrerelease`: `1.x` is `>=1.0.0-0 <2.0.0-0`, `^1.0.0` still starts at
+/// `1.0.0`), the same way the install matches the rule; an empty range matches every version.
 fn key_matches(key: &str, name: &str, version: &semver::Version) -> bool {
     parse_package_segment(key).is_ok_and(|selector| {
         selector.name == name
             && (selector.range.is_empty()
-                || semver::Range::parse(&selector.range)
-                    .is_some_and(|r| r.satisfies(version, true)))
+                || matches!(
+                    (
+                        fnpm_semver::Range::parse_including_prerelease(&selector.range),
+                        fnpm_semver::Version::parse(&version.to_string()),
+                    ),
+                    (Ok(r), Ok(v)) if r.satisfies_with(
+                        &v,
+                        fnpm_semver::SatisfyOptions { include_prerelease: true },
+                    )
+                ))
     })
 }
 

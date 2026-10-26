@@ -703,3 +703,25 @@ async fn an_edited_file_folder_warns_when_frozen_and_resolves_again() {
     assert!(again.changed);
     assert!(again.graph.packages.iter().any(|p| p.name == "b"));
 }
+
+/// fnpm.lock keeps what `packageExtensions` added per installed version
+/// (`"a@1.1.0": { "dependencies": ["c"] }`); the range key in package.json still matches it, and a
+/// changed specifier does not.
+#[tokio::test]
+async fn frozen_compares_package_extensions_by_what_they_add() {
+    let h = Harness::new();
+    registry(&h);
+    h.registry.add("x", &[("1.0.0", no_deps())]);
+    let rules = |x: &str| json!({"dependencies": {"a": "1.1.0"}, "packageExtensions": {"a@1.x": {"dependencies": {"x": x}}}});
+    let ws = workspace(rules("1.0.0"), &[]);
+    let mut first = h.install(&ws).await.graph;
+    let mut record = fnpm_types::PackageExtension::default();
+    record.dependencies.insert("x".into(), "1.0.0".into());
+    first.package_extensions = [("a@1.1.0".to_owned(), record)].into();
+    assert!(h.run(&ws, Some(&first), Mode::Frozen).await.is_ok());
+    let edited = workspace(rules("^1.0.0"), &[]);
+    assert!(matches!(
+        h.run(&edited, Some(&first), Mode::Frozen).await,
+        Err(Error::FrozenLockfile { .. })
+    ));
+}
