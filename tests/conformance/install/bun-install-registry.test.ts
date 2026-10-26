@@ -26,6 +26,7 @@ import { cp, exists, lstat, mkdir, readlink, rename, rm, symlink, writeFile } fr
 import {
   assertManifestsPopulated,
   fnpmEnv,
+  cachedManifestFiles,
   fnpmExe,
   nodeExe,
   isDebug,
@@ -2528,17 +2529,16 @@ describe.concurrent("tarballs of a fresh resolve", () => {
       if (phase === "fresh resolve, manifests in the cache") {
         // fnpm install does not wait for the manifest cache writes before it exits.
         const deadline = Date.now() + 5_000;
-        let entries = await readdirSorted(cache);
-        while (
-          entries.filter(entry => entry.endsWith(".npm")).length < requests.manifests.size &&
-          Date.now() < deadline
-        ) {
+        while (cachedManifestFiles(cache).length < requests.manifests.size && Date.now() < deadline) {
           await Bun.sleep(10);
-          entries = await readdirSorted(cache);
         }
+        // Everything but the manifests (fnpm keeps them under `metadata`).
+        const entries = await readdirSorted(cache);
         await Promise.all([
           rm(join(cwd, "fnpm.lock"), { force: true }),
-          ...entries.filter(entry => !entry.endsWith(".npm")).map(entry => rm(join(cache, entry), { recursive: true })),
+          ...entries
+            .filter(entry => !entry.endsWith(".npm") && entry !== "metadata")
+            .map(entry => rm(join(cache, entry), { recursive: true })),
         ]);
       } else {
         await rm(cache, { recursive: true, force: true });
@@ -14812,8 +14812,8 @@ describe("manifest conditional requests", () => {
     const cacheDir = join(packageDir, ".bun-cache");
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
-      for (const name of existsSync(cacheDir) ? readdirSync(cacheDir) : []) {
-        if (name.endsWith(".npm") && readFileSync(join(cacheDir, name)).includes(validator)) return;
+      for (const path of cachedManifestFiles(cacheDir)) {
+        if (readFileSync(path).includes(validator)) return;
       }
       await new Promise(resolve => setImmediate(resolve));
     }
@@ -15180,9 +15180,9 @@ describe("manifest conditional requests", () => {
     await install("1.0.0");
 
     const cacheDir = join(packageDir, ".bun-cache");
-    const manifestFiles = (await readdirSorted(cacheDir)).filter(name => name.endsWith(".npm"));
+    const manifestFiles = cachedManifestFiles(cacheDir);
     expect(manifestFiles).toHaveLength(1);
-    const manifestPath = join(cacheDir, manifestFiles[0]);
+    const manifestPath = manifestFiles[0];
 
     const forcedInstalls = 10;
     for (let i = 0; i < forcedInstalls; i++) {

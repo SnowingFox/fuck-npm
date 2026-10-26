@@ -101,6 +101,17 @@ export async function evictCacheEntries(cache: string, evict: (entry: string) =>
   }
 }
 
+/**
+ * The manifest cache entries under `cache`, as absolute paths: bun's `<cache>/<hash>.npm` files and fnpm's
+ * `<cache>/metadata/v1/<hash>.rkyv` ones. A test that checks what a cached manifest holds (its ETag, its
+ * Last-Modified) or that one was written reads fnpm's entry through this instead of bun's file name.
+ */
+export function cachedManifestFiles(cache: string): string[] {
+  const list = (dir: string, suffix: string) =>
+    fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith(suffix)).map(name => join(dir, name)) : [];
+  return [...list(cache, ".npm"), ...list(join(cache, "metadata", "v1"), ".rkyv")].sort();
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }
