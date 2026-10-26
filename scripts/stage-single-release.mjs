@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { TARGETS } from './stage-release.mjs';
 import { checkBundle } from './check-bundle.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const { values } = parseArgs({ options: { artifacts: { type: 'string' }, out: { type: 'string' }, name: { type: 'string', default: '@tiktok-fe/fnpm' }, registry: { type: 'string' }, 'asset-base': { type: 'string' }, target: { type: 'string' } } });
+const { values } = parseArgs({ options: { artifacts: { type: 'string' }, out: { type: 'string' }, name: { type: 'string', default: 'fnpm' }, registry: { type: 'string' }, 'asset-base': { type: 'string' }, target: { type: 'string' } } });
 if (!values.artifacts || !values.out || !values.registry || !values['asset-base']) throw new Error('Usage: node scripts/stage-single-release.mjs --artifacts <dir> --out <new-dir> --registry <url> --asset-base <https-url> [--name <name>] [--target <smoke-target>]');
 const output = resolve(values.out), artifacts = resolve(values.artifacts);
 if (existsSync(output)) throw new Error('Use a new output directory');

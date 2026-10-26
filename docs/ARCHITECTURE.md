@@ -1929,15 +1929,15 @@ done when the conformance tests for its PARITY rows pass.
 
 ## Packaging and distribution
 
-The `0.0.2` distribution publishes one npm package, `@tiktok-fe/fnpm`, through
-bnpm. `scripts/stage-single-release.mjs` builds a separate staging directory;
+The `0.0.2` distribution publishes one public npm package, `fnpm`, through
+npm. `scripts/stage-single-release.mjs` builds a separate staging directory;
 source workspace names remain `fuck-npm` and `@fuck-npm/binding`. The unscoped
 npm name `fuck-npm` belongs to another maintainer. The previous `0.0.1` release
 published separate binding and platform packages; those versions remain unchanged.
 
 | artifact | contents |
 |---|---|
-| `@tiktok-fe/fnpm` npm tarball | TS `dist/`, four bin shims, native downloader and archive helper, internal addon loader, `lib/native-release.json`; no npm dependencies or optional dependencies |
+| `fnpm` npm tarball | TS `dist/`, four bin shims, native downloader and archive helper, internal addon loader, `lib/native-release.json`; no npm dependencies or optional dependencies |
 | `fnpm-v<version>-<abi>.tar.gz` GitHub asset | Native `fnpm`, `fnpm-lock` (`.exe` on Windows), and `fnpm.<abi>.node` |
 
 Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`,
@@ -1973,7 +1973,7 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gn
   smoke covers normal and disabled-script installs on all eight targets,
   including Alpine for musl. Release staging creates eight native archives and
   one npm tarball. Upload the exact archives to GitHub first, then publish only
-  the npm tarball with bnpm from the Mac. The release helper verifies registry
+  the npm tarball with npm from the Mac. The release helper verifies registry
   and tarball integrity and resumes an existing version only if its integrity
   matches. See [RELEASING.md](RELEASING.md) for commands and release status.
 - **Size.** Both the executable and addon link `fnpm-core`, so the current ABI

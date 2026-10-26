@@ -12,16 +12,16 @@ run package executables.
 
 ## Install
 
-Install the scoped package from the registry configured for bnpm:
+Install the package from the public npm registry:
 
 ```sh
-bnpm install -g @tiktok-fe/fnpm@0.0.2
+npm install -g fnpm@0.0.2
 fnpm --version
 fnpm install
 fnpx --help
 ```
 
-The distribution is one npm package, `@tiktok-fe/fnpm`. Its postinstall downloads
+The distribution is one npm package, `fnpm`. Its postinstall downloads
 only this machine's native archive from [GitHub Releases](https://github.com/SnowingFox/fuck-npm/releases),
 checks the embedded SHA-512 digest and executable versions, and installs the
 launchers and Rust addon. There are no separate platform npm dependencies.
@@ -33,10 +33,11 @@ that starts the native launcher. If lifecycle scripts are disabled or the downlo
 fails during installation, the first `fnpm`, `fnpm-lock`, `fnpx` or `fnpmx` invocation
 retries the download. That first invocation needs network access; subsequent runs
 use the installed files. With npm versions that require lifecycle approval, use
-`--allow-scripts=@tiktok-fe/fnpm` to allow the automatic native-bin swap.
+`--allow-scripts=fnpm` to allow the automatic native-bin swap.
 
 The existing unscoped `fuck-npm` package on npm belongs to another maintainer.
-This project's `0.0.1` used separate platform packages; `0.0.2` replaces that layout.
+This project's scoped `@tiktok-fe/fnpm@0.0.1` used separate platform packages;
+`fnpm@0.0.2` replaces that layout and targets public npm.
 See [release preparation](docs/RELEASING.md) for verification and publication.
 
 ## Development build

@@ -1,14 +1,13 @@
-# npm and bnpm releases
+# npm releases
 
-The published CLI name is `@tiktok-fe/fnpm`; executable names are `fnpm`,
+The public npm CLI name is `fnpm`; executable names are `fnpm`,
 `fnpm-lock`, `fnpx` and `fnpmx`. The unscoped npm name `fuck-npm` belongs to an
 unrelated maintainer. The source monorepo stays private in npm and retains its
 workspace package names.
 
 ## Single-package distribution
 
-Starting with `0.0.2`, publish **only `@tiktok-fe/fnpm`** to the configured bnpm
-registry. Its manifest has no npm dependencies or optional dependencies. Eight
+Starting with `0.0.2`, publish **only `fnpm`** to `https://registry.npmjs.org/`. Its manifest has no npm dependencies or optional dependencies. Eight
 native archives are hosted on the matching GitHub Release, covering macOS arm64
 and x64, Linux arm64 and x64 with glibc or musl, and Windows arm64 and x64.
 Each archive contains `fnpm`, `fnpm-lock` (`.exe` on Windows), and `fnpm.<abi>.node`.
@@ -45,20 +44,20 @@ change the registry used to install project dependencies.
    contain the addon and both launchers. CI stages and installs the single-package
    tarball on all eight targets, including Alpine for musl.
 3. Bring the matching source, built CLI `dist` and artifacts to the release Mac.
-   Confirm `bnpm whoami` against the intended registry without exposing auth files.
+   Confirm `npm whoami --registry=https://registry.npmjs.org/` without exposing auth files.
    Stage into a new directory, specifying that registry and the final asset URL:
 
    ```sh
-   node scripts/stage-single-release.mjs --name @tiktok-fe/fnpm \
-     --registry https://registry.example.com/ \
+   node scripts/stage-single-release.mjs --name fnpm \
+     --registry https://registry.npmjs.org/ \
      --asset-base https://github.com/SnowingFox/fuck-npm/releases/download/v0.0.2/ \
      --artifacts /path/to/artifacts --out /path/to/new-release
    node scripts/pack-release.mjs /path/to/new-release
    node scripts/smoke-release.mjs /path/to/new-release
-   node scripts/publish-release.mjs --dir /path/to/new-release --cli bnpm
+   node scripts/publish-release.mjs --dir /path/to/new-release --cli npm
    ```
 
-   Replace the example registry with the configured bnpm registry. Packing uses
+   The registry is public npm. Packing uses
    `npm pack --ignore-scripts`. Inspect `packed.json`: exactly one npm tarball,
    eight native assets, no platform dependencies. `--target` creates an incomplete
    one-platform CI fixture; publication refuses it. The localhost smoke exercises
@@ -71,20 +70,20 @@ change the registry used to install project dependencies.
 5. From the Mac, publish the inspected single tarball:
 
    ```sh
-   node scripts/publish-release.mjs --dir /path/to/new-release --cli bnpm --publish
+   node scripts/publish-release.mjs --dir /path/to/new-release --cli npm --publish
    ```
 
    The helper checks authentication, target registry and SHA-512. It resumes an
    already published version only when registry integrity matches the local
    tarball, and refuses conflicting content. Never overwrite an existing version.
    Never put credentials in release artifacts or paste them into chat.
-6. Install the exact name and version through the actual bnpm registry into fresh
+6. Install the exact name and version through the actual npm registry into fresh
    prefixes, with scripts enabled and disabled. Use the real GitHub URLs, invoke
    all four bins, load the addon, and install a local dependency. Record the source
    commit, Actions run, npm integrity and native asset integrity in release notes.
 
 With npm versions that enforce lifecycle approval, approve the package with
-`--allow-scripts=@tiktok-fe/fnpm` or a project `allowScripts` entry. Disabled scripts
+`--allow-scripts=fnpm` or a project `allowScripts` entry. Disabled scripts
 still work through first-use installation, but retain the Node startup overhead.
 
 ## Release history
@@ -96,7 +95,8 @@ bnpm on 2026-10-26. Its native artifacts came from source
 The earlier `@snowingfox` candidate returned a scope-permission error; the later
 `@tiktok-fe` publication succeeded. Existing `0.0.1` packages remain unchanged.
 
-`0.0.2` changes delivery to the single-package layout above. Publication and
+`fnpm@0.0.2` targets public npm with the single-package layout above. The four
+commands, including `fnpx`, belong to that one package. Publication and
 fresh-registry verification must complete before treating a candidate as released.
 Full Bun conformance and the strict speed gate remain separate open requirements;
 see [ROADMAP.md](ROADMAP.md).
