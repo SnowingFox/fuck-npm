@@ -969,9 +969,10 @@ export class Archive {
     return createTar(input as Record<string, string | ArrayBufferView | Blob>);
   }
 
-  async bytes(): Promise<Bytes> {
+  /** `compress` overrides the constructor's option, as in `archive.bytes("gzip")`. */
+  async bytes(compress: "gzip" | undefined = this.#options.compress): Promise<Bytes> {
     let data = await this.#raw();
-    if (this.#options.compress === "gzip") data = zlib.gzipSync(data, { level: this.#options.level ?? 6 });
+    if (compress === "gzip") data = zlib.gzipSync(data, { level: this.#options.level ?? 6 });
     return new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength) as Bytes;
   }
 
