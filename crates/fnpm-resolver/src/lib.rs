@@ -316,12 +316,11 @@ impl Resolver {
             None => None,
         };
 
-        if mode == Mode::Frozen {
-            let Some(prev) = previous else {
-                return Err(Error::FrozenLockfile {
-                    changes: vec!["lockfile is missing".into()],
-                });
-            };
+        // bun only checks a lockfile that exists; without one a frozen install resolves (and
+        // saves nothing).
+        if mode == Mode::Frozen
+            && let Some(prev) = previous
+        {
             let mut changes = frozen::changes(workspace, prev)?;
             for r in &requests {
                 changes.push(format!("{} was added", r.name));
