@@ -249,6 +249,7 @@ enum Status {
     Pending,
     Running,
     Exited(i32),
+    #[cfg(unix)]
     Signaled(i32),
     Error,
     Skipped,
@@ -429,6 +430,7 @@ pub async fn run(scripts: Vec<MultiScript>, opts: &RunOptions, mo: MultiOptions)
                         }
                     }
                     Status::Exited(code) => format!("Exited with code {code}"),
+                    #[cfg(unix)]
                     Status::Signaled(sig) => format!("Signaled: {}", crate::signal_name(sig)),
                     _ => "Error".to_owned(),
                 };
@@ -481,6 +483,7 @@ pub async fn run(scripts: Vec<MultiScript>, opts: &RunOptions, mo: MultiOptions)
         match *st {
             Status::Exited(0) | Status::Pending | Status::Skipped | Status::Running => {}
             Status::Exited(code) => return Ok(code),
+            #[cfg(unix)]
             Status::Signaled(sig) => return Ok(128 + sig),
             Status::Error => return Ok(1),
         }

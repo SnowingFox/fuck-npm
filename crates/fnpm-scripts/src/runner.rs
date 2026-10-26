@@ -81,8 +81,22 @@ struct Ctx {
 /// Why a job stopped.
 enum Failure {
     Exited(i32),
+    #[cfg(unix)]
     Signaled(i32),
     Spawn(std::io::Error),
+}
+
+impl Failure {
+    fn is_signal(&self) -> bool {
+        #[cfg(unix)]
+        {
+            matches!(self, Self::Signaled(_))
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
 }
 
 struct JobFailure {
@@ -236,7 +250,7 @@ pub(crate) async fn execute(
                 match done_job.result {
                     Ok(()) => complete(i, &mut ready, &mut done, &mut finished),
                     Err(failure) => {
-                        let tolerated = done_job.optional && !matches!(failure.failure, Failure::Signaled(_));
+                        let tolerated = done_job.optional && !failure.failure.is_signal();
                         if tolerated {
                             if let Some(cleanup) = cleanup
                                 && let Err(source) = cleanup(&done_job.dir)
@@ -269,6 +283,7 @@ pub(crate) async fn execute(
                         }
                         return Err(match failure.failure {
                             Failure::Exited(code) => Error::Failed { package: done_job.name, script: failure.script, code },
+                            #[cfg(unix)]
                             Failure::Signaled(signal) => Error::Signaled { package: done_job.name, script: failure.script, signal },
                             Failure::Spawn(source) => Error::Spawn { shell: ctx.shell.program.display().to_string(), source },
                         });
@@ -370,6 +385,7 @@ async fn run_job(
         };
         let exit_code = match &failure {
             Failure::Exited(code) => Some(*code),
+            #[cfg(unix)]
             Failure::Signaled(signal) => Some(128 + *signal),
             Failure::Spawn(_) => None,
         };

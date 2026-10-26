@@ -9,7 +9,9 @@
 //! that resolves outside) are skipped like npm's `bin-links` and bun do.
 
 use std::collections::HashSet;
-use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::io::Write;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -174,6 +176,7 @@ pub struct BinLinker {
     seen: HashSet<String>,
     /// Global bin dir: only links that lead into this directory may be replaced.
     owner: Option<PathBuf>,
+    #[cfg(not(windows))]
     created_dir: bool,
 }
 
@@ -191,6 +194,7 @@ impl BinLinker {
             bin_dir: bin_dir.into(),
             seen: HashSet::new(),
             owner: None,
+            #[cfg(not(windows))]
             created_dir: false,
         }
     }
@@ -589,6 +593,7 @@ fn make_executable(abs_target: &Path, meta: &std::fs::Metadata) {
 }
 
 /// Replaces `p` by a copy of itself (tmp file + rename) so it no longer shares an inode.
+#[cfg(unix)]
 fn break_hardlink(p: &Path) -> io::Result<()> {
     let tmp = tmp_sibling(p);
     std::fs::copy(p, &tmp)?;
@@ -601,6 +606,7 @@ fn break_hardlink(p: &Path) -> io::Result<()> {
     }
 }
 
+#[cfg(unix)]
 fn tmp_sibling(p: &Path) -> PathBuf {
     let name = p
         .file_name()
@@ -614,6 +620,7 @@ fn tmp_sibling(p: &Path) -> PathBuf {
 }
 
 /// Rewrites `#!...\r\n` to `#!...\n` atomically (tmp + rename), keeping the mode.
+#[cfg(unix)]
 fn normalize_shebang(abs_target: &Path, size: u64) {
     let mut head = [0u8; 2048];
     let n = {
@@ -1074,6 +1081,7 @@ mod tests {
         assert_eq!(names, ["c", "z", "b", "a"]);
     }
 
+    #[cfg(unix)]
     fn pkg(root: &Path, name: &str, files: &[(&str, &str)]) -> PathBuf {
         let dir = fsutil::join_name(&root.join("node_modules"), name);
         std::fs::create_dir_all(&dir).unwrap();

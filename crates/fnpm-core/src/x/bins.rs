@@ -131,6 +131,7 @@ pub enum InProject {
     },
 }
 
+#[cfg(not(windows))]
 fn is_inside(real: &Path, dir: &Path) -> bool {
     real.strip_prefix(dir)
         .is_ok_and(|rest| !rest.as_os_str().is_empty())
@@ -206,6 +207,7 @@ pub fn find_in_project(
 }
 
 /// `real_dir` is `<parent>/<package>`: whether `<parent>` (minus a scope) is a `node_modules`.
+#[cfg(not(windows))]
 fn package_parent_is_node_modules(parent: &Path, package: &str) -> bool {
     let parent = if package.starts_with('@') {
         parent.parent()
@@ -217,6 +219,7 @@ fn package_parent_is_node_modules(parent: &Path, package: &str) -> bool {
 
 /// Whether `real` is in one of the `optionalDependencies` of the package at `package_json`
 /// that has an `os` and a `cpu`.
+#[cfg(not(windows))]
 fn is_in_platform_package(package_json: &Path, real: &Path) -> bool {
     let Some(json) = read_json(package_json) else {
         return false;
