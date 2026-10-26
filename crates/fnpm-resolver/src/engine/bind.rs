@@ -993,6 +993,13 @@ impl Engine<'_> {
         let tarball = (!vm.dist.tarball.is_empty() && vm.dist.tarball != default_url)
             .then(|| vm.dist.tarball.clone());
         let mut package = local::package_from_manifest(name, vm, tarball);
+        if self.cfg.log_level == fnpm_config::LogLevel::Verbose {
+            for (literal, field) in local::nameless_manifest_rows(vm) {
+                self.warnings.push(format!(
+                    "skipping unnamed dependency of {name}@{version} (\"{literal}\" in \"{field}\")"
+                ));
+            }
+        }
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
                 &self.extension_rules,
@@ -1174,7 +1181,8 @@ impl Engine<'_> {
                         edge.name
                     ),
                 })?;
-            let mut package = local::package_from_json(&pj, &edge.name, resolution);
+            let fallback = local::unnamed_package_name(&resolution);
+            let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);
                 return Ok(Step::Done);
@@ -1584,10 +1592,7 @@ impl Engine<'_> {
                 if let Some(integrity) = fetched.integrity {
                     resolution.set_integrity(integrity);
                 }
-                let fallback = waiters
-                    .first()
-                    .map(|w| self.edge(*w).name.clone())
-                    .unwrap_or_default();
+                let fallback = local::unnamed_package_name(&resolution);
                 let mut package =
                     local::package_from_json(&fetched.manifest, &fallback, resolution);
                 let id = match self.by_key.get(&package.key()) {
