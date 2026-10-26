@@ -485,6 +485,8 @@ pub(crate) fn write_tarball_in_place(
     bytes: &[u8],
     typed_filename: bool,
 ) -> FResult<()> {
+    #[cfg(not(unix))]
+    let _ = typed_filename;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]

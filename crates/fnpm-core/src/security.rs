@@ -10,7 +10,9 @@
 //! otherwise. `fnpm pm scan` runs it over the whole lockfile.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{IsTerminal, Read, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 #[cfg(not(unix))]
 use std::path::PathBuf;

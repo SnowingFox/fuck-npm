@@ -253,19 +253,40 @@ fn materialize(root: &Path, folder: &Path, global_links: &Path) -> std::io::Resu
         }
         let staging = temp_sibling(&cur);
         std::fs::create_dir_all(&staging)?;
-        for e in std::fs::read_dir(&target)? {
-            let e = e?;
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(e.path(), staging.join(e.file_name()))?;
+        let staged = (|| -> std::io::Result<()> {
+            for e in std::fs::read_dir(&target)? {
+                let e = e?;
+                let dest = staging.join(e.file_name());
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(e.path(), dest)?;
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::FileTypeExt;
+                    let kind = e.file_type()?;
+                    if kind.is_dir() || kind.is_symlink_dir() {
+                        std::os::windows::fs::symlink_dir(e.path(), dest)?;
+                    } else {
+                        std::os::windows::fs::symlink_file(e.path(), dest)?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = staged {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
         }
         let old = temp_sibling(&cur);
-        std::fs::rename(&cur, &old)?;
+        if let Err(e) = std::fs::rename(&cur, &old) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
         if let Err(e) = std::fs::rename(&staging, &cur) {
             let _ = std::fs::rename(&old, &cur);
             let _ = std::fs::remove_dir_all(&staging);
             return Err(e);
         }
-        std::fs::remove_file(&old)?;
+        fnpm_linker::fsutil::remove_link(&old)?;
     }
     Ok(())
 }
@@ -1731,6 +1752,108 @@ mod tests {
             "x@https://host/a.tgz"
         );
         assert_eq!(from_cwd(Path::new("/a/b"), Path::new("/a/c/d")), "./../c/d");
+    }
+
+    fn directory_link(from: &Path, to: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(from, to).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(from, to).unwrap();
+    }
+
+    #[test]
+    fn ancestor_materialization_keeps_entries_and_store_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let links = tmp.path().join("links");
+        let entry = links.join("entry");
+        let scope = entry.join("node_modules/@scope");
+        let package = scope.join("a");
+        let outside = tmp.path().join("outside");
+        let pristine = tmp.path().join("pristine");
+        let ancestor = root.join("node_modules/.fnpm/entry");
+        let folder = ancestor.join("node_modules/@scope/a");
+        for dir in [
+            root.join("node_modules/.fnpm"),
+            package.clone(),
+            scope.join("b"),
+            outside.clone(),
+            pristine.clone(),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(package.join("index.js"), "store a").unwrap();
+        std::fs::write(scope.join("b/index.js"), "store b").unwrap();
+        std::fs::write(entry.join("metadata"), "store metadata").unwrap();
+        std::fs::write(pristine.join("index.js"), "pristine a").unwrap();
+        directory_link(&outside, &entry.join("linked-dir"));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(entry.join("metadata"), entry.join("linked-file")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(entry.join("metadata"), entry.join("linked-file"))
+            .unwrap();
+        directory_link(&entry, &ancestor);
+
+        materialize(&root, &folder, &links).unwrap();
+
+        assert!(!is_link(&ancestor));
+        for name in ["metadata", "linked-dir", "linked-file"] {
+            assert_eq!(
+                std::fs::canonicalize(ancestor.join(name)).unwrap(),
+                std::fs::canonicalize(entry.join(name)).unwrap()
+            );
+        }
+        for name in ["a", "b"] {
+            assert_eq!(
+                std::fs::canonicalize(ancestor.join("node_modules/@scope").join(name)).unwrap(),
+                std::fs::canonicalize(scope.join(name)).unwrap()
+            );
+        }
+        replace_with_copy(&pristine, &folder, &links).unwrap();
+        std::fs::write(folder.join("index.js"), "edited a").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(package.join("index.js")).unwrap(),
+            "store a"
+        );
+        assert_eq!(
+            std::fs::read_to_string(ancestor.join("node_modules/@scope/b/index.js")).unwrap(),
+            "store b"
+        );
+        assert_eq!(
+            std::fs::read_to_string(ancestor.join("linked-file")).unwrap(),
+            "store metadata"
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        assert_eq!(std::fs::read_dir(&entry).unwrap().count(), 4);
+    }
+
+    #[test]
+    fn ancestor_materialization_refuses_unmanaged_links() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let links = tmp.path().join("links");
+        let outside = tmp.path().join("outside");
+        let ancestor = root.join("node_modules/@scope");
+        std::fs::create_dir_all(root.join("node_modules")).unwrap();
+        std::fs::create_dir_all(outside.join("a")).unwrap();
+        std::fs::create_dir(&links).unwrap();
+        std::fs::write(outside.join("a/index.js"), "external a").unwrap();
+        directory_link(&outside, &ancestor);
+
+        let error = materialize(&root, &ancestor.join("a"), &links).unwrap_err();
+
+        assert!(error.to_string().contains("unmanaged symlink"));
+        assert!(is_link(&ancestor));
+        assert_eq!(
+            std::fs::read_to_string(outside.join("a/index.js")).unwrap(),
+            "external a"
+        );
+        assert_eq!(
+            std::fs::read_dir(root.join("node_modules"))
+                .unwrap()
+                .count(),
+            1
+        );
     }
 
     #[cfg(unix)]
