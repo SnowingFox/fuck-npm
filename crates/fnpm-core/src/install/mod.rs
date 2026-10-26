@@ -919,7 +919,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // Global installs link the direct dependencies' bins into the global bin directory, and
     // only there: bun's global folder has no `node_modules/.bin`.
     if config.global {
-        link_global_bins(&config, &root, &graph)?;
+        let requested: Vec<PackageId> = resolved_requests.iter().map(|(_, id)| *id).collect();
+        link_global_bins(&config, &root, &graph, &requested)?;
         let local_bins = root.join("node_modules").join(".bin");
         if local_bins.exists() {
             fnpm_linker::fsutil::remove_any(&local_bins).map_err(Error::io(&local_bins))?;
@@ -1840,23 +1841,40 @@ async fn link(
 }
 
 /// `-g`: the bins of the global package.json's direct dependencies go to the global bin dir.
-fn link_global_bins(config: &Config, root: &Path, graph: &LockGraph) -> Result<()> {
+/// The packages this command asked for take their names (bun: the one added last keeps a name
+/// two packages share); every other package only fills names that have no working entry, so
+/// a name another package lost comes back to it.
+fn link_global_bins(
+    config: &Config,
+    root: &Path,
+    graph: &LockGraph,
+    requested: &[PackageId],
+) -> Result<()> {
     use fnpm_linker::bins::{BinLinker, BinOptions};
     let nm = root.join("node_modules");
     std::fs::create_dir_all(&config.global_bin_dir).map_err(Error::io(&config.global_bin_dir))?;
     let mut bins = BinLinker::global(&config.global_bin_dir, &nm);
-    for edge in &graph.root().dependencies {
-        let Some(p) = edge.target.and_then(|t| graph.get(t)) else {
-            continue;
-        };
-        if p.bin.is_none() {
-            continue;
+    let mut edges: Vec<_> = graph
+        .root()
+        .dependencies
+        .iter()
+        .filter_map(|e| Some((e, e.target?)))
+        .filter(|(_, t)| graph.get(*t).is_some_and(|p| !p.bin.is_none()))
+        .collect();
+    edges.sort_by_key(|(_, t)| !requested.contains(t));
+    for (edge, t) in edges {
+        let p = &graph.packages[t.index()];
+        if !requested.contains(&t) {
+            for (name, _) in p.bin.entries(&p.name) {
+                if config.global_bin_dir.join(name).exists() {
+                    bins.claim(name);
+                }
+            }
         }
-        let dir = nm.join(&edge.name);
         bins.link(
             &edge.name,
             &p.bin,
-            &dir,
+            &nm.join(&edge.name),
             BinOptions {
                 refresh: true,
                 ..BinOptions::default()
