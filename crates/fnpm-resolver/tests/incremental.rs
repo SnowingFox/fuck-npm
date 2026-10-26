@@ -649,7 +649,10 @@ async fn a_root_tag_of_a_workspace_name_links_the_workspace() {
     let member = [("packages/a", json!({"name": "a", "version": "1.5.0"}))];
     let linked = |graph: &fnpm_types::LockGraph| {
         let target = graph.root().dependencies[0].target.unwrap();
-        matches!(graph.packages[target.index()].resolution, Resolution::Workspace { .. })
+        matches!(
+            graph.packages[target.index()].resolution,
+            Resolution::Workspace { .. }
+        )
     };
     let ws = workspace(json!({"dependencies": {"a": "latest"}}), &member);
     let fresh = h.install(&ws).await.graph;
@@ -662,4 +665,41 @@ async fn a_root_tag_of_a_workspace_name_links_the_workspace() {
     let again = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
     assert!(again.changed);
     assert!(linked(&again.graph));
+}
+
+/// An edited `file:` folder: a frozen install keeps fnpm.lock's version of it and warns, a
+/// plain one reads it again.
+#[tokio::test]
+async fn an_edited_file_folder_warns_when_frozen_and_resolves_again() {
+    let h = Harness::new();
+    registry(&h);
+    let dir = tempfile::tempdir().unwrap();
+    let vendor = dir.path().join("vendor/lib");
+    std::fs::create_dir_all(&vendor).unwrap();
+    let write = |deps: serde_json::Value| {
+        let json = json!({"name": "lib", "version": "1.0.0", "dependencies": deps});
+        std::fs::write(vendor.join("package.json"), json.to_string()).unwrap();
+        h.fetcher.folder(&vendor, json);
+    };
+    write(json!({"c": "^1"}));
+    let ws = workspace_at(
+        dir.path().into(),
+        json!({"dependencies": {"lib": "file:./vendor/lib"}}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    assert!(
+        !h.run(&ws, Some(&first), Mode::Normal)
+            .await
+            .unwrap()
+            .changed
+    );
+
+    write(json!({"c": "^1", "b": "1.0.0"}));
+    let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+    assert_eq!(frozen.graph, first);
+    assert!(frozen.behind);
+    let again = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
+    assert!(again.changed);
+    assert!(again.graph.packages.iter().any(|p| p.name == "b"));
 }

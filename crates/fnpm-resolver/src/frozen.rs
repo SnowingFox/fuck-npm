@@ -294,6 +294,10 @@ pub(crate) fn classified(
     if frozen {
         return Ok((out, edges));
     }
+    // A frozen install warns about an edited `file:` folder; a plain one reads it again.
+    for path in folder_edits(ws, prev) {
+        out.push(format!("folder {path} changed"));
+    }
     // A frozen install links a workspace's bin from its package.json; a plain one records it.
     for member in &ws.members {
         if let Some(id) = prev.workspaces.get(&member.path)
@@ -361,6 +365,32 @@ pub(crate) fn classified(
         out.push("trustedDependencies changed".into());
     }
     Ok((out, edges))
+}
+
+/// The `file:` folders (paths relative to the root, as fnpm.lock has them) whose package.json
+/// now declares other dependencies or bins than `prev` records for them.
+pub(crate) fn folder_edits(ws: &Workspace, prev: &LockGraph) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for p in &prev.packages {
+        let fnpm_types::Resolution::Folder { path } = &p.resolution else {
+            continue;
+        };
+        if out.contains(path) {
+            continue;
+        }
+        let Ok(pj) = PackageJson::read(&ws.root_dir.join(path).join("package.json")) else {
+            continue;
+        };
+        let Ok(edges) = declared_edges(&pj, LocalKind::Folder) else {
+            continue;
+        };
+        let mut changes = Vec::new();
+        edge_changes("", &edges, &p.dependencies, &mut changes);
+        if !changes.is_empty() || pj.bin != p.bin {
+            out.push(path.clone());
+        }
+    }
+    out
 }
 
 /// The workspaces `prev` lists whose package.json is not on disk (a pruned checkout: `turbo

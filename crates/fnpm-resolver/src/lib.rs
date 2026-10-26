@@ -418,6 +418,15 @@ impl Resolver {
                 stripped = frozen::without_pruned(prev, &pruned);
                 &stripped
             };
+            // bun installs an edited `file:` folder as the lockfile has it, and says so.
+            for path in frozen::folder_edits(workspace, prev) {
+                events.emit(Event::warn(
+                    format!(
+                        "dependencies in {path}/package.json changed since lockfile was saved (run 'fnpm install')"
+                    ),
+                    None,
+                ));
+            }
             let (mut changes, edits) = frozen::classified(workspace, prev, true)?;
             // The note comes before most changes, but a changed section fails first.
             let section = changes.iter().any(|c| frozen::is_section_change(c));

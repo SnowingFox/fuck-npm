@@ -118,6 +118,15 @@ fn watched_files(ws: &Workspace, graph: &LockGraph) -> (Vec<String>, Vec<String>
             v.push(rel);
         }
     }
+    // An edited `file:` folder is read again by the next install.
+    for p in &graph.packages {
+        if let fnpm_types::Resolution::Folder { path } = &p.resolution {
+            let rel = format!("{path}/package.json");
+            if !v.contains(&rel) {
+                v.push(rel);
+            }
+        }
+    }
     for patch in graph.patched_dependencies.values() {
         let rel = patch.path.replace('\\', "/");
         if !rel.is_empty() && !v.contains(&rel) {
