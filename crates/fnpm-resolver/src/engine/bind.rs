@@ -233,9 +233,15 @@ impl Engine<'_> {
     /// An error on `row`: tolerated (with a warning when it matters) for optional dependencies,
     /// peers and anything only reachable through optional dependencies; fatal otherwise.
     pub(crate) fn fail(&mut self, row: Row, edge: &DepEdge, err: Error) -> Result<Step> {
-        let tolerated = edge.behavior.is_optional()
-            || edge.behavior.is_peer()
-            || self.st[row.pkg.index()].optional_only;
+        // bun logs a `link:` it cannot find as an error even for a peer, which fails the install.
+        let missing_link = edge.behavior.is_peer()
+            && !edge.behavior.is_optional()
+            && matches!(err, Error::MissingPackageJson { .. })
+            && fnpm_types::spec::trim_literal(&edge.literal).starts_with("link:");
+        let tolerated = !missing_link
+            && (edge.behavior.is_optional()
+                || edge.behavior.is_peer()
+                || self.st[row.pkg.index()].optional_only);
         if !tolerated {
             return Err(err);
         }
