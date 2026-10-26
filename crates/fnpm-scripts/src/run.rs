@@ -148,6 +148,19 @@ pub async fn run_script(req: &RunRequest<'_>, opts: &RunOptions) -> Result<RunOu
         }
         return Ok(RunOutcome::Binary { path: bin, code });
     }
+    // `bun run <file>` runs a JavaScript or TypeScript file; fnpm hands it to node.
+    let file = req.cwd.join(req.name);
+    let runnable = file.is_file()
+        && file
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| matches!(e, "js" | "mjs" | "cjs" | "ts" | "mts" | "cts"));
+    if runnable && let Some(node) = crate::shell::which("node", &search, req.cwd) {
+        let mut args = vec![file.to_string_lossy().into_owned()];
+        args.extend(req.args.iter().cloned());
+        let code = exec_binary(&node, &args, req.cwd, &env, opts.silent).await?;
+        return Ok(RunOutcome::Binary { path: node, code });
+    }
     Ok(RunOutcome::NotFound)
 }
 
