@@ -252,6 +252,11 @@ impl Engine<'_> {
             || edge.behavior.is_peer()
             || self.st[row.pkg.index()].optional_only;
         if !tolerated {
+            // bun logs the row and goes on, then reports every row that failed.
+            if row_error(&err) {
+                self.failed.push((row, err));
+                return Ok(Step::Done);
+            }
             return Err(err);
         }
         if edge.behavior.is_peer() {
@@ -682,6 +687,112 @@ impl Engine<'_> {
     fn member_id_by_name(&self, name: &str) -> Option<PackageId> {
         let member = self.ws.member(name)?;
         self.graph.workspaces.get(&member.path).copied()
+    }
+}
+
+/// An error of one dependency, which bun reports and then resolves the others.
+fn row_error(err: &Error) -> bool {
+    !matches!(
+        err,
+        Error::FrozenLockfile { .. }
+            | Error::InvalidPackageJson { .. }
+            | Error::PatchFile { .. }
+            | Error::InvalidOption { .. }
+            | Error::Unresolved { .. }
+    )
+}
+
+impl Engine<'_> {
+    /// bun `verify_resolutions`: the error of each failed row as it happened, then a line for
+    /// each row (`<name>@<spec> failed to resolve`, or the catalog advice), then the notes.
+    pub(crate) fn unresolved(&mut self) -> Error {
+        let failed = std::mem::take(&mut self.failed);
+        let mut lines: Vec<String> = Vec::new();
+        for (_, err) in &failed {
+            match err {
+                // bun logs nothing for a missing entry; the advice below says it.
+                Error::CatalogEntryMissing { .. } => {}
+                Error::InvalidName { bad, .. } => {
+                    lines.push(format!("invalid dependency name \"{bad}\""))
+                }
+                other => lines.push(other.to_string()),
+            }
+        }
+        let mut order: Vec<usize> = (0..failed.len()).collect();
+        order.sort_by_key(|&i| (failed[i].0.pkg.index(), failed[i].0.edge));
+        let root_has_workspaces = self.ws.root.raw.get("workspaces").is_some();
+        let mut note = false;
+        for &i in &order {
+            let (row, err) = &failed[i];
+            let edge = &self.graph.packages[row.pkg.index()].dependencies[row.edge as usize];
+            let (raw_name, literal) = (edge.name.as_str(), edge.literal.as_str());
+            let name = fnpm_types::text::escape_control_chars(raw_name);
+            let literal = fnpm_types::text::escape_control_chars(literal);
+            let (name, literal) = (name.as_str(), literal.as_str());
+            if let Error::CatalogEntryMissing { catalog, .. } = err
+                && root_has_workspaces
+            {
+                let can_add =
+                    raw_name != self.graph.root().name && self.ws.member(raw_name).is_none();
+                let is_default = catalog.is_empty() || catalog == "default";
+                // A catalog declared empty exists too.
+                let raw = &self.ws.root.raw;
+                let declared = |v: Option<&serde_json::Value>| {
+                    v.and_then(|v| v.get("catalogs"))
+                        .and_then(|c| c.get(catalog.as_str()))
+                        .is_some()
+                };
+                let exists = self.graph.catalogs.named.contains_key(catalog)
+                    || declared(Some(raw))
+                    || declared(raw.get("workspaces"));
+                if !is_default && !exists {
+                    lines.push(format!(
+                        "{name}@{literal}: there is no catalog named \"{catalog}\" in the root package.json"
+                    ));
+                } else if is_default {
+                    lines.push(format!("{name}@{literal} not in catalog"));
+                    if can_add {
+                        lines.push(format!("  fnpm add --catalog {name}"));
+                    }
+                } else {
+                    lines.push(format!("{name}@{literal} not in catalog \"{catalog}\""));
+                    if can_add {
+                        lines.push(format!("  fnpm add --catalog={catalog} {name}"));
+                    }
+                }
+                continue;
+            }
+            note |= matches!(err, Error::CatalogEntryMissing { .. });
+            if name.is_empty() || name == literal {
+                lines.push(format!("{literal} failed to resolve"));
+            } else {
+                lines.push(format!("{name}@{literal} failed to resolve"));
+            }
+        }
+        // Each line is an error of its own, except an advice (`  fnpm add ...`).
+        let mut out: Vec<String> = Vec::with_capacity(lines.len() + 1);
+        for (i, line) in lines.into_iter().enumerate() {
+            if i == 0 || line.starts_with("  ") {
+                out.push(line);
+            } else {
+                out.push(format!("error: {line}"));
+            }
+        }
+        if note {
+            out.push(format!(
+                "note: catalogs require a \"workspaces\" field in the root package.json. \"{}\" was used as root and has none",
+                self.ws.root_dir.join("package.json").display()
+            ));
+        }
+        let first = failed
+            .into_iter()
+            .next()
+            .map(|(_, e)| e)
+            .unwrap_or(Error::NotFound(String::new()));
+        Error::Unresolved {
+            first: Box::new(first),
+            lines: out,
+        }
     }
 }
 

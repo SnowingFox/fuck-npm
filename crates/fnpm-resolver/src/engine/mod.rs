@@ -183,6 +183,9 @@ pub(crate) struct Engine<'a> {
     pub warnings: Vec<String>,
     /// An omitted local dependency was left unresolved: the lockfile must not be saved.
     pub unsaved: bool,
+    /// Rows that failed to resolve, `(row, error)` in the order they failed (bun logs each and
+    /// fails the install after the resolve).
+    pub failed: Vec<(Row, Error)>,
     pub peer_askers: Option<peers::Askers>,
     /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
     /// kept up to date by [`Engine::set_target`] / [`Engine::add_package`] from then on.
@@ -337,6 +340,7 @@ impl<'a> Engine<'a> {
             deprecated: Vec::new(),
             warnings: Vec::new(),
             unsaved: false,
+            failed: Vec::new(),
             peer_askers: None,
             parents: None,
             progress: 0,
@@ -845,6 +849,9 @@ impl<'a> Engine<'a> {
 
     pub(crate) async fn run(mut self) -> Result<EngineOutput> {
         self.drive().await?;
+        if !self.failed.is_empty() {
+            return Err(self.unresolved());
+        }
         // Peer warnings, collapsing and pruning are CPU work over the whole graph: keep them off
         // the async workers when the runtime allows it.
         let multi_thread = tokio::runtime::Handle::try_current()
