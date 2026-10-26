@@ -104,6 +104,9 @@ pub(crate) async fn reinstall(cx: &Ctx) -> Result<fnpm_types::InstallSummary> {
 
 /// `fnpm dedupe [--check]` / `fnpm-lock dedupe [--check] [--dry-run]`.
 pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
+    if !lock_tool {
+        return dedupe_command(cx).await;
+    }
     let (project, _, mut graph) = cx.load_locked("nothing to dedupe")?;
     let report = fnpm_resolver::dedupe(&mut graph);
     let mut lines = Vec::new();
@@ -117,12 +120,7 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         lines.push(format!("{} {} -> {to}{down}", row.name, row.from));
     }
     lines.extend(report.kept.iter().cloned());
-    let rows: Vec<Value> = report
-        .rows
-        .iter()
-        .map(|r| json!({ "name": r.name, "from": r.from, "to": r.to, "downgrade": r.downgrade }))
-        .collect();
-    let data = json!({ "removed": rows, "checked": report.checked });
+    let data = dedupe_data(&report);
     let check = cx.flag("check");
     if report.rows.is_empty() {
         lines.push("No duplicate versions to remove".into());
@@ -137,10 +135,313 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         return Ok(exit(i32::from(check), data, lines));
     }
     fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
-    if !lock_tool {
-        reinstall(cx).await?;
-    }
     Ok(ok(data, lines))
+}
+
+fn dedupe_data(report: &fnpm_resolver::DedupeReport) -> Value {
+    let rows: Vec<Value> = report
+        .rows
+        .iter()
+        .map(|r| json!({ "name": r.name, "from": r.from, "to": r.to, "downgrade": r.downgrade }))
+        .collect();
+    json!({ "removed": rows, "checked": report.checked })
+}
+
+/// `fnpm dedupe`, printed like bun's (`install/dedupe.rs`): the header, then the rows after the
+/// install, or the plan under `--check` / `--dry-run`, each summary with its duration.
+async fn dedupe_command(cx: &Ctx) -> Result<CoreResult> {
+    use super::pack::out::Out;
+    let start = std::time::Instant::now();
+    let out = Out::new();
+    let json = cx.pm.json;
+    let quiet = json || cx.pm.log_level == fnpm_config::LogLevel::Silent;
+    let summary = cx.pm.summary;
+    let reported = |code: i32, data: Value| {
+        Ok(CoreResult {
+            exit_code: code,
+            data: Some(data),
+            lines: None,
+        })
+    };
+    let fail = |message: &str, note: Option<&str>| {
+        if !quiet {
+            out.eprintln(&out.error(message).0);
+            if let Some(note) = note {
+                out.eprintln(&format!(
+                    "{}{} {note}",
+                    out.paint_err("34", "note"),
+                    out.paint_err("2", ":")
+                ));
+            }
+        }
+        reported(1, json!({ "error": message }))
+    };
+    if !cx.req.positionals.is_empty() {
+        return fail(
+            "fnpm dedupe does not take arguments, it always deduplicates the whole lockfile",
+            Some("run 'fnpm dedupe --help' for more information"),
+        );
+    }
+    let project = match cx.project() {
+        Err(Error::Workspace(fnpm_workspace::Error::NoProject(_))) => {
+            return fail("missing package.json, nothing to dedupe", None);
+        }
+        other => other?,
+    };
+    if !quiet && summary {
+        super::pack::header(cx, &out, "dedupe");
+    }
+    let ws = project.workspace(&*cx.events)?;
+    let mut lock = crate::install::load_lock(&project.config, &ws)?;
+    if lock.graph.is_none() {
+        // bun reports a lockfile it cannot use instead of deduplicating nothing.
+        for w in &lock.warnings {
+            if let Some(detail) = w.strip_prefix("Ignoring lockfile: ") {
+                let unreadable = ["fnpm.lock", "bun.lock", "bun.lockb"]
+                    .iter()
+                    .any(|n| ws.root_dir.join(n).is_dir());
+                let verb = if unreadable { "read" } else { "parse" };
+                return fail(&format!("failed to {verb} lockfile: {detail}"), None);
+            }
+            if w.starts_with("cannot migrate ") {
+                return fail(&format!("failed to migrate lockfile: {w}"), None);
+            }
+        }
+        return fail(
+            "missing lockfile, nothing to dedupe",
+            Some("run 'fnpm install' first"),
+        );
+    }
+    for w in &lock.warnings {
+        cx.events.emit(Event::warn(w.clone(), None));
+    }
+    let client = project.client()?;
+    if lock.migrated {
+        crate::install::backfill_migrated(&mut lock, &client, &project.config).await;
+        if let Some(name) = lock.path.as_deref().and_then(Path::file_name) {
+            cx.events.emit(Event::notice(format!(
+                "migrated lockfile from {}",
+                name.to_string_lossy()
+            )));
+        }
+    }
+    let mut graph = lock.graph.take().expect("checked above");
+    let fresh = fnpm_resolver::Resolver::new(project.config.clone(), client)
+        .resolve(
+            fnpm_resolver::ResolveInput {
+                workspace: &ws,
+                previous: Some(&graph),
+                mode: fnpm_resolver::Mode::Frozen,
+                requests: Vec::new(),
+                removals: Vec::new(),
+            },
+            None,
+            &fnpm_types::NoopSink,
+        )
+        .await;
+    match fresh {
+        Ok(_) => {}
+        // bun refuses when the dependencies changed; trustedDependencies and
+        // patchedDependencies are not dependencies (the install that follows applies them).
+        Err(fnpm_resolver::Error::FrozenLockfile { changes })
+            if changes.iter().any(|c| {
+                !matches!(
+                    c.as_str(),
+                    "trustedDependencies changed" | "patchedDependencies changed"
+                )
+            }) =>
+        {
+            return fail(
+                "fnpm.lock does not match package.json, nothing to dedupe",
+                Some("run 'fnpm install' first"),
+            );
+        }
+        Err(fnpm_resolver::Error::FrozenLockfile { .. }) => {}
+        Err(e) => return Err(e.into()),
+    }
+
+    let report = fnpm_resolver::dedupe(&mut graph);
+    let data = dedupe_data(&report);
+    let time = |out: &Out| {
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        out.paint(
+            "2",
+            &if ms <= 1500.0 {
+                format!("[{ms:.2}ms]")
+            } else {
+                format!("[{:.2}s]", ms / 1000.0)
+            },
+        )
+    };
+    let packages = |n: usize| format!("{n} {}", plural(n, "package"));
+    let versions = |n: usize| plural(n, "version");
+    let kept = |out: &Out| {
+        for line in &report.kept {
+            out.println(&format!("  {} {line}", out.paint("2", "kept")));
+        }
+    };
+    let rows = |out: &Out| {
+        let (glyph, arrow) = if out.color_out {
+            ("\u{21b3}", "\u{2192}")
+        } else {
+            ("~", "->")
+        };
+        for row in &report.rows {
+            let line = if row.to.is_empty() {
+                format!(
+                    "{} {} {}",
+                    out.paint("36", glyph),
+                    out.paint("1", &row.name),
+                    out.paint("2", &format!("{} {arrow} (removed)", row.from))
+                )
+            } else {
+                let down = if row.downgrade {
+                    format!(" {}", out.paint("33", "(downgrade)"))
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{} {} {} {}{down}",
+                    out.paint("36", glyph),
+                    out.paint("1", &row.name),
+                    out.paint("2", &format!("{} {arrow}", row.from)),
+                    out.paint("1", &row.to.join(", "))
+                )
+            };
+            out.println(&line);
+        }
+        kept(out);
+    };
+    let would_remove = |out: &Out| {
+        rows(out);
+        if summary {
+            let n = report.rows.len();
+            out.println(&format!(
+                "\n{} duplicate {} can be removed {} {}",
+                out.paint("1", &n.to_string()),
+                versions(n),
+                out.paint(
+                    "2",
+                    &format!("(checked {} in fnpm.lock)", packages(report.checked))
+                ),
+                time(out)
+            ));
+        }
+    };
+
+    if report.rows.is_empty() {
+        if !quiet {
+            kept(&out);
+            if summary {
+                if !report.kept.is_empty() {
+                    out.println("");
+                }
+                out.println(&format!(
+                    "\u{1f389} {} {} {}",
+                    out.paint("32", "No duplicates"),
+                    out.paint(
+                        "2",
+                        &format!(
+                            "\u{2014} checked {} in fnpm.lock, every one already resolves to a single version",
+                            packages(report.checked)
+                        )
+                    ),
+                    time(&out)
+                ));
+            }
+        }
+        return reported(0, data);
+    }
+
+    let check = cx.flag("check");
+    if check || cx.pm.dry_run {
+        if !quiet {
+            would_remove(&out);
+            out.println(&format!("  {}", out.paint("36", "fnpm dedupe")));
+        }
+        return reported(i32::from(check), data);
+    }
+
+    let config = &project.config;
+    if config.frozen_lockfile || config.production || !config.lockfile.save {
+        if !quiet {
+            let why = if config.production {
+                "--production implies --frozen-lockfile"
+            } else if config.frozen_lockfile {
+                "--frozen-lockfile was passed"
+            } else {
+                "--no-save was passed"
+            };
+            would_remove(&out);
+            let n = report.rows.len();
+            out.eprintln(
+                &out.error(&format!(
+                    "{n} duplicate {} can be removed, but {why}",
+                    versions(n)
+                ))
+                .0,
+            );
+            out.eprintln(&format!(
+                "{}{} run 'fnpm dedupe' to remove {}, or 'fnpm dedupe --check' in CI",
+                out.paint_err("34", "note"),
+                out.paint_err("2", ":"),
+                if n == 1 { "it" } else { "them" }
+            ));
+        }
+        return reported(1, data);
+    }
+
+    // A failed install leaves the lockfile as it was, so the run can be repeated.
+    let lock_path = project.root_dir.join(fnpm_lockfile::FNPM_LOCK);
+    let before = std::fs::read(&lock_path).ok();
+    fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
+    cx.events.emit(Event::status("Saved lockfile"));
+    let installed = if cx.pm.lockfile_only {
+        0
+    } else {
+        match reinstall(cx).await {
+            Ok(s) => s.installed_count,
+            Err(e) => {
+                match &before {
+                    Some(text) => {
+                        let _ = std::fs::write(&lock_path, text);
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(&lock_path);
+                    }
+                }
+                return Err(e);
+            }
+        }
+    };
+    if !quiet {
+        rows(&out);
+        if summary {
+            let n = report.rows.len();
+            let mut line = format!(
+                "\n{} duplicate {} removed",
+                out.paint("1", &n.to_string()),
+                versions(n)
+            );
+            if installed > 0 {
+                line.push_str(&format!(
+                    ", {} {} installed",
+                    out.paint("1", &installed.to_string()),
+                    plural(installed as usize, "package")
+                ));
+            }
+            line.push_str(&format!(
+                " {} {}",
+                out.paint(
+                    "2",
+                    &format!("(checked {} in fnpm.lock)", packages(report.checked))
+                ),
+                time(&out)
+            ));
+            out.println(&line);
+        }
+    }
+    reported(0, data)
 }
 
 /// The files `--from <format>` selects, in bun's order.
