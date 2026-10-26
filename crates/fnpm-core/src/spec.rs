@@ -24,7 +24,7 @@ pub struct Positional {
 impl Positional {
     /// Parses `input` like bun's `UpdateRequest::parse`.
     pub fn parse(input: &str) -> Result<Self> {
-        let input = input.trim().replace("\\\\", "/");
+        let input = input.trim().replace('\\', "/");
         let unrecognised = || Error::usage(format!("unrecognised dependency format: {input}"));
         if input.is_empty() {
             return Err(unrecognised());
@@ -331,6 +331,44 @@ mod tests {
         assert_eq!(x.name, None);
         assert_eq!(x.request_name(), "lib");
         assert!(Positional::parse("").is_err());
+    }
+
+    #[test]
+    fn windows_local_positionals_normalize_path_separators() {
+        for input in [
+            r"C:\Users\runner\local-package-1.0.0.tgz",
+            r"C:\Users\runner\local-package-1.0.0.tar.gz",
+            r".\fixtures\local-package-1.0.0.tgz",
+            r"file:C:\Users\runner\local-package-1.0.0.tgz",
+        ] {
+            let positional = p(input);
+            assert_eq!(positional.name, None);
+            assert_eq!(positional.request_name(), "local-package");
+            assert!(!positional.input.contains('\\'));
+            assert_eq!(positional.literal, input.replace('\\', "/"));
+            assert!(matches!(
+                positional.spec,
+                DependencySpec::Tarball {
+                    uri: TarballUri::Local(_)
+                }
+            ));
+        }
+        let positional = p(r".\fixtures\local-package\");
+        assert_eq!(positional.request_name(), "local-package");
+        assert!(matches!(positional.spec, DependencySpec::Folder { .. }));
+        #[cfg(windows)]
+        {
+            let positional = p(r"C:\Users\runner\local-package\");
+            assert_eq!(positional.request_name(), "local-package");
+            assert!(matches!(positional.spec, DependencySpec::Folder { .. }));
+        }
+        let positional = p(r"alias@file:C:\Users\runner\local-package-1.0.0.tgz");
+        assert_eq!(positional.name.as_deref(), Some("alias"));
+        assert_eq!(positional.request_name(), "alias");
+        assert_eq!(
+            positional.literal,
+            "file:C:/Users/runner/local-package-1.0.0.tgz"
+        );
     }
 
     #[test]
