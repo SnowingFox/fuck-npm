@@ -31,8 +31,15 @@ APFS leaving access times unchanged after index reads. The store now refreshes t
 most once a day while preserving index contents and mtime. Linux follow-up checks passed 249 combined
 store/linker/binding tests (3 ignored); the separate Windows track passed 375 Linux tests and strict
 Clippy. Windows scripts and focused filesystem/command probes also passed cross-target checks.
-The [combined native CI run](https://github.com/SnowingFox/fuck-npm/actions/runs/40256027231) checks
-all follow-ups; native Windows runtime and complete platform test validation remain pending.
+The [main CI run for `ff9c309`](https://github.com/SnowingFox/fuck-npm/actions/runs/40256325760)
+passed all 21 jobs: eight release addon builds, eight native artifact smoke tests, and five test jobs.
+Release artifacts load and execute the smoke install on macOS Intel/Apple Silicon, Linux x64/ARM64
+with GNU/musl, and Windows x64/ARM64. Test jobs passed on Linux x64 with Node 20/24, Linux ARM64,
+macOS and Windows with Node 24. They cover store/binding tests, patch ancestor regressions, strict
+Clippy, binding JavaScript tests and CLI native-adapter tests; the macOS job also runs the linker clone
+regression. The combined Linux follow-up passed 526 tests (3 ignored), strict Clippy and formatting;
+Windows scripts passed all-target strict cross-Clippy. This validates the addon matrix and selected
+platform regressions, not the full workspace/conformance suite or native launcher distribution.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.
@@ -44,7 +51,7 @@ all follow-ups; native Windows runtime and complete platform test validation rem
   strict speed gate fails 9/22 comparisons, combined disk below Bun on 4/4 and pnpm on 4/4 fixtures.
 - PARITY remains 231 checked / 183 open; no row was completed merely by merging these tracks.
 
-Full Bun conformance, speed in every scenario, extra cache size and non-Linux platform validation remain open.
+Full Bun conformance, speed in every scenario, extra cache size, complete platform suites and native launcher distribution remain open.
 Scanner matrix TTY callbacks and subprocess resource-usage APIs are still missing in the Node test adapter.
 A measured adapter deadlock on reading subprocess output after exit was fixed with eager pipe draining.
 Trust transitions currently force a conservative relink of the selected layout so newly enabled scripts
@@ -93,7 +100,7 @@ projects with the hoisted linker, from an empty or warm store, with or without `
 | fnpm-scripts: lifecycle runner, trust policy, run machinery | `feat/scripts` | merged |
 | Merge the 11 branches into `main`, resolve contract drift, build/test/clippy/fmt green | `feat/core` | done |
 | fnpm-core: install pipeline (fast path, resolve/fetch/link overlap, save), summary, error codes | `feat/core` | done (command groups integrated; conformance gaps remain) |
-| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done on Linux x64; the existing `napi.yml` run failed on macOS, Windows Clippy and Linux ARM GNU tooling |
+| fnpm-napi: `install` / `invoke` wired to the core, events through the TSFN | `feat/napi` | done; all eight release addon builds and native smoke tests pass in the recorded main CI run |
 | fnpm-cli: native `fnpm` / `fnpm-lock`, `cli-spec.json` generation and build.rs, native progress and summary, exec to Node | `feat/cli` | done (JS shim and postinstall swap included; the platform packages ship the executables in P6) |
 | Merge `feat/napi` and `feat/cli` into `feat/core`, then `main`; native end-to-end smoke test against the mirror | `feat/core` | done |
 | Bench harness runs the native binary; first fnpm numbers committed | `feat/cli` | done (`bench/results/2026-10-25-linux-x64.md`: small, all scenarios; medium warm/noop/ci/cold-lockfile) |
@@ -106,7 +113,7 @@ Known gaps in the merged crates (PARITY rows left open for these):
 - registry: `_DNS_TIME_TO_LIVE_SECONDS` ignored; one TLS handshake per origin not enforced;
   manifest cache load ~0.75 ms (owned `PackageManifest` strings); local version parsing in
   `semver_ext.rs`.
-- store: bun's cache-folder name printers and Windows junctions; macOS compilation and Windows strict Clippy remain blocked in the recorded CI run.
+- store: bun's cache-folder name printers and Windows junctions remain; macOS compilation, Windows status accounting and strict Clippy pass in the recorded main CI run.
 - resolver: "reuse cached versions" only covers locked/pinned versions; production sources
   (`RegistrySource`, git, store import) first exercised by fnpm-core.
 - lockfile: two bun.lock readers (`text`, used by `load`/`parse`/`serialize`, and
@@ -251,14 +258,14 @@ Exit criteria:
 Exit criteria: `escape-control-characters`, `redacted-config-logs`, every rewritten snapshot
 reviewed, and all PARITY.md rows outside "Excluded" ticked.
 
-## P6: Distribution (not started)
+## P6: Distribution (in progress)
 
 | deliverable | status |
 |---|---|
-| CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | not started |
-| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | not started |
+| CI: Rust and TS tests, conformance, clippy on macOS, Linux (ext4, btrfs) and Windows | partial; selected store/binding/patch tests, strict Clippy and binding/adapter JS tests pass on native Linux/macOS/Windows; full suites and btrfs remain |
+| Build matrix for 8 targets: native `fnpm` / `fnpm-lock` and `fnpm.node` | addon builds and native smoke installs pass for all eight targets; native executable packaging remains |
 | npm packages: `fuck-npm`, `@fuck-npm/binding`, `@fuck-npm/binding-<triple>`; postinstall swap and JS shim fallback | not started |
-| Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | not started |
+| Windows: hardlink backend, `.cmd` shims, the `.bin` placeholder question (see ARCHITECTURE "Packaging") | selected store/patch/binding tests and both release addon smoke jobs pass; native executable distribution and full bin conformance remain |
 | Install tests of the published packages with npm, pnpm, yarn and bun, with and without scripts | not started |
 | Publish dry run, then the first release (manual, behind `NPM_TOKEN`) | not started |
 
