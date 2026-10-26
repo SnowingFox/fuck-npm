@@ -240,7 +240,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedSelfSigned {
                         .iter()
                         .any(|c| c.as_ref() == end_entity.as_ref())
                 {
-                    return Err(e);
+                    return Err(named_error(e, end_entity, intermediates));
                 }
                 // WebPKI checks EKU after basic constraints, so the rejected CA leaf has
                 // not yet been checked for server authentication. Parse that extension
@@ -287,6 +287,74 @@ impl rustls::client::danger::ServerCertVerifier for PinnedSelfSigned {
     }
 }
 
+/// OpenSSL's name for a certificate error (bun reports `DEPTH_ZERO_SELF_SIGNED_CERT`, ...).
+#[derive(Debug)]
+pub(crate) struct TlsErrorName(pub &'static str);
+
+impl std::fmt::Display for TlsErrorName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for TlsErrorName {}
+
+fn self_issued(der: &[u8]) -> bool {
+    x509_parser::parse_x509_certificate(der)
+        .is_ok_and(|(_, cert)| cert.issuer().as_raw() == cert.subject().as_raw())
+}
+
+/// An unknown issuer named the way OpenSSL tells the cases apart: a self-signed server
+/// certificate, a self-signed root in the chain, or an issuer that is not in the store.
+fn named_error(
+    e: rustls::Error,
+    end_entity: &CertificateDer<'_>,
+    intermediates: &[CertificateDer<'_>],
+) -> rustls::Error {
+    // webpki rejects an untrusted self-signed CA certificate as a CA used as a server.
+    let untrusted = match &e {
+        rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer) => true,
+        rustls::Error::InvalidCertificate(rustls::CertificateError::Other(other)) => {
+            other.0.downcast_ref::<webpki::Error>() == Some(&webpki::Error::CaUsedAsEndEntity)
+        }
+        _ => false,
+    };
+    if !untrusted {
+        return e;
+    }
+    let name = match intermediates.last() {
+        None if self_issued(end_entity.as_ref()) => "DEPTH_ZERO_SELF_SIGNED_CERT",
+        Some(top) if self_issued(top.as_ref()) => "SELF_SIGNED_CERT_IN_CHAIN",
+        _ => "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+    };
+    rustls::Error::InvalidCertificate(rustls::CertificateError::Other(rustls::OtherError(
+        Arc::new(TlsErrorName(name)),
+    )))
+}
+
+/// The OpenSSL name of the certificate error in `text` (an error chain), if it has one.
+pub(crate) fn tls_error_name(text: &str) -> Option<&'static str> {
+    const NAMED: [&str; 3] = [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+    ];
+    if let Some(name) = NAMED.iter().find(|n| text.contains(**n)) {
+        return Some(name);
+    }
+    [
+        ("UnknownIssuer", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY"),
+        ("NotValidYet", "CERT_NOT_YET_VALID"),
+        ("Expired", "CERT_HAS_EXPIRED"),
+        ("NotValidForName", "ERR_TLS_CERT_ALTNAME_INVALID"),
+        ("Revoked", "CERT_REVOKED"),
+        ("BadSignature", "CERT_SIGNATURE_FAILURE"),
+    ]
+    .into_iter()
+    .find(|(rustls_name, _)| text.contains(rustls_name))
+    .map(|(_, name)| name)
+}
+
 fn rustls_config(
     roots: RootCertStore,
     identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
@@ -302,7 +370,7 @@ fn rustls_config_pinned(
     let versions = rustls::ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
         .map_err(|e| tls_error(format!("TLS setup failed: {e}")))?;
-    let builder = if pinned.is_empty() {
+    let builder = if roots.is_empty() && pinned.is_empty() {
         versions.with_root_certificates(roots)
     } else {
         let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(

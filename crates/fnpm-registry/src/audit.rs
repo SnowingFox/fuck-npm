@@ -97,6 +97,8 @@ fn error_name(message: &str) -> &'static str {
         "Timeout"
     } else if m.contains("dns") || m.contains("failed to lookup") {
         "DNSError"
+    } else if let Some(name) = crate::tls::tls_error_name(message) {
+        name
     } else if m.contains("certificate") {
         "TLSCertificateError"
     } else if m.contains("connection reset") {

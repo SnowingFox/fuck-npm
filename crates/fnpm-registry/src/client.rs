@@ -608,6 +608,9 @@ pub(crate) fn status_name(status: u16) -> String {
 }
 
 pub(crate) fn error_name(e: &reqwest::Error) -> String {
+    if let Some(name) = crate::tls::tls_error_name(&describe(e)) {
+        return name.to_owned();
+    }
     if e.is_timeout() {
         "Timeout".to_owned()
     } else if e.is_connect() {
