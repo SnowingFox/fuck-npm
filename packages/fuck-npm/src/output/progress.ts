@@ -167,11 +167,10 @@ export function createProgress(runtime: CliRuntime): Progress {
     }
     schedule();
   };
+  const stop = (): void => { stopped = true; pending?.cancel(); pending = undefined; clear(); };
+  const exit = runtime.onExit?.(stop);
   pending = runtime.setTimer(draw, HEARTBEAT_MS);
-  return {
-    sink,
-    stop() { stopped = true; pending?.cancel(); pending = undefined; clear(); },
-  };
+  return { sink, stop() { exit?.cancel(); stop(); } };
 }
 
 export function diagnosticsSink(runtime: CliRuntime, silent: boolean): EventSink {

@@ -48,6 +48,8 @@ export type CliRuntime = {
   now: () => number;
   /** One-shot timer (unref'd in production so it never holds the process open). */
   setTimer: (callback: () => void, ms: number) => Timer;
+  /** Cleanup terminal state before exit or termination; returns an unsubscribe handle. */
+  onExit?: (callback: () => void) => Timer;
   /** Load the native core. Called only by commands that need it. */
   loadCore: () => Promise<Core>;
   /** Load the prompt implementation. Called only on interactive paths. */

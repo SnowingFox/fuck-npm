@@ -22,6 +22,24 @@ export function processRuntime(overrides: CliRuntimeOverrides = {}): CliRuntime 
       handle.unref();
       return { cancel: () => clearTimeout(handle) };
     },
+    onExit: (callback) => {
+      const cancel = () => {
+        process.off("exit", exit);
+        process.off("SIGINT", interrupt);
+        process.off("SIGTERM", terminate);
+      };
+      const exit = () => { cancel(); callback(); };
+      const signal = (name: "SIGINT" | "SIGTERM") => {
+        exit();
+        process.kill(process.pid, name);
+      };
+      const interrupt = () => signal("SIGINT");
+      const terminate = () => signal("SIGTERM");
+      process.once("exit", exit);
+      process.once("SIGINT", interrupt);
+      process.once("SIGTERM", terminate);
+      return { cancel };
+    },
     loadCore: async () => {
       const { loadCore } = await import("../core/load.ts");
       return loadCore();
