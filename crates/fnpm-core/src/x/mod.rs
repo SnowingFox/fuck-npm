@@ -498,36 +498,50 @@ fn unanswered(error: &crate::Error) -> bool {
         crate::Error::Registry(e) | crate::Error::Resolve(fnpm_resolver::Error::Registry(e)) => {
             registry(e)
         }
+        crate::Error::Resolve(fnpm_resolver::Error::Unresolved { error, .. }) => {
+            matches!(&**error, fnpm_resolver::Error::Registry(e) if registry(e))
+        }
         _ => false,
     }
 }
 
 /// bun's wording for an install failure (`GET <url> - <status>`).
 fn install_error(error: &crate::Error, registry: &str) -> String {
-    use fnpm_registry::Error as R;
     match error {
-        crate::Error::Resolve(fnpm_resolver::Error::NotFound(name))
-        | crate::Error::Registry(R::NotFound(name))
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::NotFound(name))) => {
-            let base = if registry.ends_with('/') {
-                registry.to_owned()
-            } else {
-                format!("{registry}/")
-            };
-            format!("GET {base}{} - 404", name.replace('/', "%2f"))
-        }
-        crate::Error::Registry(R::Status { url, status })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Status { url, status })) => {
-            format!("GET {url} - {status}")
-        }
-        crate::Error::Registry(R::Network { url, message })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Network { url, message }))
-            if url.is_empty() =>
-        {
-            message.clone()
-        }
+        crate::Error::Resolve(e) => resolve_error(e, registry),
+        crate::Error::Registry(e) => registry_error(e, registry),
         other => other.to_string(),
     }
+}
+
+/// [`install_error`] of a resolve failure. fnpm x prints the request's failure only, without
+/// the install's `failed to resolve`.
+fn resolve_error(error: &fnpm_resolver::Error, registry: &str) -> String {
+    match error {
+        fnpm_resolver::Error::Unresolved { error, .. } => resolve_error(error, registry),
+        fnpm_resolver::Error::NotFound(name) => not_found(name, registry),
+        fnpm_resolver::Error::Registry(e) => registry_error(e, registry),
+        other => other.to_string(),
+    }
+}
+
+fn registry_error(error: &fnpm_registry::Error, registry: &str) -> String {
+    use fnpm_registry::Error as R;
+    match error {
+        R::NotFound(name) => not_found(name, registry),
+        R::Status { url, status } => format!("GET {url} - {status}"),
+        R::Network { url, message } if url.is_empty() => message.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn not_found(name: &str, registry: &str) -> String {
+    let base = if registry.ends_with('/') {
+        registry.to_owned()
+    } else {
+        format!("{registry}/")
+    };
+    format!("GET {base}{} - 404", name.replace('/', "%2f"))
 }
 
 /// An exclusive `flock` on `<tree>.lock`, released when dropped (and closed on exec).

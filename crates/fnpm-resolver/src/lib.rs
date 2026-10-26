@@ -50,6 +50,17 @@ pub enum Error {
     /// The registry has no such package.
     #[error("package \"{0}\" not found")]
     NotFound(String),
+    /// A required dependency whose manifest could not be read: the request's error, then bun's
+    /// `error: <name>@<spec> failed to resolve`.
+    #[error("{error}\nerror: {name}@{spec} failed to resolve")]
+    Unresolved {
+        /// Why the manifest could not be read.
+        error: Box<Error>,
+        /// The dependency name.
+        name: String,
+        /// What it asked for.
+        spec: String,
+    },
     /// The registry answered 404 for the manifest of `name` (bun: `GET <url> - 404`).
     #[error("GET {url} - 404")]
     ManifestNotFound {

@@ -407,10 +407,18 @@ async fn network_errors_of_required_dependencies_are_fatal() {
     let h = Harness::new();
     h.registry.broken.lock().push("flaky".into());
     let ws = workspace(json!({"dependencies": {"flaky": "^1"}}), &[]);
-    assert!(matches!(
-        h.run(&ws, None, Mode::Normal).await,
-        Err(Error::Registry(fnpm_registry::Error::Network { .. }))
-    ));
+    // bun follows the request's error with `error: flaky@^1 failed to resolve`.
+    let err = h.run(&ws, None, Mode::Normal).await.unwrap_err();
+    assert!(
+        matches!(&err, Error::Unresolved { error, .. }
+            if matches!(**error, Error::Registry(fnpm_registry::Error::Network { .. }))),
+        "{err}"
+    );
+    assert!(
+        err.to_string()
+            .ends_with("\nerror: flaky@^1 failed to resolve"),
+        "{err}"
+    );
     let ws = workspace(json!({"optionalDependencies": {"flaky": "^1"}}), &[]);
     let out = h.install(&ws).await;
     assert!(

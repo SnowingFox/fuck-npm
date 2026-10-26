@@ -237,7 +237,14 @@ impl Engine<'_> {
             || edge.behavior.is_peer()
             || self.st[row.pkg.index()].optional_only;
         if !tolerated {
-            return Err(err);
+            return Err(match err {
+                Error::ManifestNotFound { .. } | Error::Registry(_) => Error::Unresolved {
+                    error: Box::new(err),
+                    name: edge.name.clone(),
+                    spec: edge.literal.clone(),
+                },
+                err => err,
+            });
         }
         if edge.behavior.is_peer() {
             let literal = &edge.literal;

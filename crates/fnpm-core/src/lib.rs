@@ -113,6 +113,10 @@ impl Error {
     pub fn code(&self) -> &'static str {
         use fnpm_resolver::Error as Rv;
         match self {
+            Self::Resolve(Rv::Unresolved { error, .. }) => match &**error {
+                Rv::Registry(e) => registry_code(e),
+                _ => "NOT_FOUND",
+            },
             Self::Resolve(Rv::FrozenLockfile { .. }) => "FROZEN_LOCKFILE",
             Self::Resolve(
                 Rv::NoMatchingVersion { .. } | Rv::DistTagNotFound { .. } | Rv::TooRecent { .. },
