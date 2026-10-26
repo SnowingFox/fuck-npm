@@ -363,6 +363,10 @@ pub fn read_package_json_at(dir: &Path) -> fnpm_registry::Result<Option<PackageJ
         {
             Ok(None)
         }
+        // bun names the errno: `error: ENAMETOOLONG`.
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidFilename => Err(fnpm_registry::Error::Io(
+            std::io::Error::new(e.kind(), "ENAMETOOLONG"),
+        )),
         Err(e) => Err(fnpm_registry::Error::Io(e)),
     }
 }
