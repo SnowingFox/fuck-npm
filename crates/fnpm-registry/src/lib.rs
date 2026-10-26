@@ -47,7 +47,7 @@ pub use tls::CaStore;
 /// Errors of registry operations. URLs in messages never carry credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("GET {url}: {status}")]
+    #[error("GET {url} - {status}")]
     Status { url: String, status: u16 },
     #[error("package \"{0}\" not found")]
     NotFound(String),
@@ -212,6 +212,13 @@ impl RegistryClient {
     /// `<registry>/<name>/-/<unscoped>-<version>.tgz` for the package's registry.
     pub fn default_tarball_url(&self, name: &str, version: &str) -> String {
         npm::default_tarball_url(self.inner.scopes.for_package(name).href(), name, version)
+    }
+
+    /// The manifest URL of `name` (credential-free), as bun prints it in `GET <url> - 404`.
+    pub fn manifest_url(&self, name: &str) -> Option<String> {
+        npm::manifest_url(self.inner.scopes.for_package(name), name)
+            .ok()
+            .map(|url| redact_url(url.as_str()))
     }
 
     /// The registry URL (credential-free, ending with `/`) that serves `name`.

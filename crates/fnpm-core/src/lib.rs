@@ -117,7 +117,9 @@ impl Error {
             Self::Resolve(
                 Rv::NoMatchingVersion { .. } | Rv::DistTagNotFound { .. } | Rv::TooRecent { .. },
             ) => "NO_MATCHING_VERSION",
-            Self::Resolve(Rv::NotFound(_) | Rv::WorkspaceNotFound { .. }) => "NOT_FOUND",
+            Self::Resolve(
+                Rv::NotFound(_) | Rv::ManifestNotFound { .. } | Rv::WorkspaceNotFound { .. },
+            ) => "NOT_FOUND",
             Self::Resolve(Rv::Registry(e)) | Self::Registry(e) => registry_code(e),
             Self::Resolve(Rv::InvalidPackageJson { .. }) => "INVALID_PACKAGE_JSON",
             Self::Resolve(Rv::InvalidOption { .. }) => "USAGE",

@@ -50,6 +50,14 @@ pub enum Error {
     /// The registry has no such package.
     #[error("package \"{0}\" not found")]
     NotFound(String),
+    /// The registry answered 404 for the manifest of `name` (bun: `GET <url> - 404`).
+    #[error("GET {url} - 404")]
+    ManifestNotFound {
+        /// The package name.
+        name: String,
+        /// The manifest URL, without credentials.
+        url: String,
+    },
     /// A `workspace:` dependency names no workspace member.
     #[error("Workspace dependency \"{name}\" not found")]
     WorkspaceNotFound {
