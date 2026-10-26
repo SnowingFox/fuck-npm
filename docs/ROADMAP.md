@@ -33,6 +33,10 @@ now uses the same verified clone flag; store status queries the Windows volume a
 and traversal regressions compare native paths. Linux follow-up checks passed 249 combined store,
 linker and binding tests (3 ignored), plus strict Clippy. Native Windows execution and the remaining
 Windows-only lint/patch fixes still require another CI run before the blockers can be considered closed.
+The next [branch run](https://github.com/SnowingFox/fuck-npm/actions/runs/40254449613) built both
+macOS release addons and passed their native smoke tests, including Intel and Apple Silicon. The
+macOS store suite exposed APFS not updating access times after index reads; the store now explicitly
+refreshes those access times at most once a day without modifying the index contents or mtime.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.

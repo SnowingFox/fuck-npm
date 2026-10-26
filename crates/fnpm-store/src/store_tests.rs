@@ -1331,8 +1331,19 @@ fn cache_prune_by_age() {
         dry.lines().last().unwrap(),
         "Run without --dry-run to remove them."
     );
-    // Reading the index (a link) counts as a use.
+    // Reading the index counts as a use, including on filesystems without read atime updates.
+    let index_modified = std::fs::metadata(dir.join("index.bin"))
+        .unwrap()
+        .modified()
+        .unwrap();
     assert!(store.get(&old).unwrap().is_some());
+    assert_eq!(
+        std::fs::metadata(dir.join("index.bin"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        index_modified
+    );
     assert_eq!(store.prune_older_than(30, true).unwrap().removed, 0);
     age(&dir.join("index.bin"), 40);
     let r = store.prune_older_than(30, false).unwrap();

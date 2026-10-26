@@ -353,7 +353,30 @@ impl Store {
     }
 
     fn read_index(dir: &Path) -> io::Result<Option<(FileIndex, IndexMeta)>> {
-        match std::fs::read(dir.join("index.bin")) {
+        let path = dir.join("index.bin");
+        #[cfg(not(target_os = "macos"))]
+        let bytes = std::fs::read(&path);
+        #[cfg(target_os = "macos")]
+        let bytes = (|| {
+            use std::io::Read;
+            let mut file = std::fs::File::open(&path)?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            // APFS can leave atime unchanged after reads. Refresh it at most
+            // once a day, like relatime, so an actively used package is not age-pruned.
+            let now = std::time::SystemTime::now();
+            if file
+                .metadata()
+                .and_then(|meta| meta.accessed())
+                .ok()
+                .and_then(|used| now.duration_since(used).ok())
+                .is_none_or(|age| age >= std::time::Duration::from_secs(86_400))
+            {
+                let _ = file.set_times(std::fs::FileTimes::new().set_accessed(now));
+            }
+            Ok::<_, io::Error>(bytes)
+        })();
+        match bytes {
             Ok(bytes) => Ok(FileIndex::from_bytes(&bytes)),
             Err(e)
                 if e.kind() == io::ErrorKind::NotFound

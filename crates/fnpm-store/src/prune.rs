@@ -550,7 +550,8 @@ impl CachePruneReport {
 
 fn last_used(dir: &Path, meta: &std::fs::Metadata) -> SystemTime {
     let mut t = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-    // Linking reads index.bin, which refreshes its atime (relatime: at least once a day).
+    // Linking reads index.bin: relatime refreshes atime on Linux, and the store
+    // explicitly refreshes it on macOS where reads may leave it unchanged.
     if let Ok(index) = std::fs::metadata(dir.join("index.bin")) {
         for candidate in [index.accessed(), index.modified()].into_iter().flatten() {
             t = t.max(candidate);
