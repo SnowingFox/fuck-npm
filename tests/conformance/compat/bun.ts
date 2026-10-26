@@ -702,7 +702,9 @@ export class Server {
   readonly development = false;
 
   constructor(options: ServeOptions) {
-    const tlsOptions = Array.isArray(options.tls) ? options.tls[0] : options.tls;
+    // bun also takes `cert` and `key` next to `fetch` (`Bun.serve({ ...tls, fetch })`).
+    const topLevel = typeof options.cert === "string" ? { cert: options.cert, key: options.key as string } : undefined;
+    const tlsOptions = Array.isArray(options.tls) ? options.tls[0] : (options.tls ?? topLevel);
     const bindHost = options.hostname === undefined || options.hostname === "0.0.0.0" ? "127.0.0.1" : options.hostname;
     this.hostname = options.hostname === undefined || options.hostname === "0.0.0.0" ? "localhost" : options.hostname;
     this.protocol = tlsOptions?.cert ? "https" : "http";

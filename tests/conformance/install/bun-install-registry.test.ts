@@ -86,6 +86,9 @@ async function setupTest() {
   const env: NodeJS.Dict<string> = {
     ...fnpmEnv,
     FNPM_CACHE_DIR: join(packageDir, ".bun-cache"),
+    // bun keeps the packages in its cache; fnpm keeps them in its store, which goes with the cache here
+    // (shared, a test would find the packages of another one and skip the downloads it waits for).
+    FNPM_STORE_DIR: join(packageDir, ".bun-cache", "store"),
     BUN_TMPDIR: tmpDir,
     TMPDIR: tmpDir,
     TEMP: tmpDir,
@@ -2480,7 +2483,9 @@ describe.concurrent("tarballs of a fresh resolve", () => {
 
   function envFor(cwd: string) {
     const tmp = join(cwd, ".bun-tmp");
-    return { ...fnpmEnv, FNPM_CACHE_DIR: join(cwd, ".bun-cache"), BUN_TMPDIR: tmp, TMPDIR: tmp, TEMP: tmp };
+    // The store goes with the cache, as in setupTest.
+    const cache = join(cwd, ".bun-cache");
+    return { ...fnpmEnv, FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: join(cache, "store"), BUN_TMPDIR: tmp, TMPDIR: tmp, TEMP: tmp };
   }
 
   type Project = {
