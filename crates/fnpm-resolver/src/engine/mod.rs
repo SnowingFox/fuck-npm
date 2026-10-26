@@ -153,6 +153,9 @@ pub(crate) struct Engine<'a> {
     pub in_peer_pass: bool,
     pub remote_turns: VecDeque<String>,
     pub remote: HashMap<String, RState>,
+    /// Remote fetches a queued row started ahead of its turn (see `request_remote_ahead`); the
+    /// turn is taken when the row is bound.
+    pub remote_ahead: HashSet<String>,
     pub remote_waiters: HashMap<String, Vec<Row>>,
     pub manifest_state: HashMap<String, MState>,
     pub done_tx: mpsc::UnboundedSender<Completion>,
@@ -310,6 +313,7 @@ impl<'a> Engine<'a> {
             in_peer_pass: false,
             remote_turns: VecDeque::new(),
             remote: HashMap::new(),
+            remote_ahead: HashSet::new(),
             remote_waiters: HashMap::new(),
             manifest_state: HashMap::new(),
             done_tx,

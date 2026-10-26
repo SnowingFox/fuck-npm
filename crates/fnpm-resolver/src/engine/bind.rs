@@ -1470,28 +1470,68 @@ impl Engine<'_> {
             self.set_target(row, target);
             return Ok(Step::Done);
         }
+        // A fetch started ahead takes its turn now, where the row is.
+        let ahead = self.remote_ahead.remove(&key);
+        if ahead {
+            self.remote_turns.push_back(key.clone());
+        }
         match self.remote.get(&key) {
             Some(RState::Done(id)) => {
                 let id = *id;
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
-            Some(RState::Failed(e)) => return Err(Error::Registry(clone_registry_error(e))),
+            Some(RState::Failed(e)) if !ahead => {
+                return Err(Error::Registry(clone_registry_error(e)));
+            }
             Some(_) => {
                 self.remote_waiters.entry(key).or_default().push(row);
                 return Ok(Step::Done);
             }
             None => {}
         }
-        self.remote.insert(key.clone(), RState::Pending);
         self.remote_turns.push_back(key.clone());
         self.remote_waiters
             .entry(key.clone())
             .or_default()
             .push(row);
+        self.start_remote(kind, key, edge.name.clone());
+        Ok(Step::Done)
+    }
+
+    /// Starts the fetch of a queued git, GitHub or tarball URL row before the queue reaches it,
+    /// as bun downloads them when it enqueues them: a row ahead of it that waits for a manifest
+    /// does not hold the download back. Only rows that will not be bound from the lockfile.
+    pub(crate) fn request_remote_ahead(&mut self, row: Row, edge: &DepEdge, asked: &Asked) {
+        let network = matches!(
+            asked.spec,
+            DependencySpec::Tarball {
+                uri: TarballUri::Remote(_)
+            } | DependencySpec::Git(_)
+                | DependencySpec::Github(_)
+        );
+        if !network
+            || edge.behavior.is_peer()
+            || (self.prev.is_some() && !self.should_update(row, edge, asked))
+        {
+            return;
+        }
+        let Ok(kind) = self.remote_kind(row, edge, asked) else {
+            return;
+        };
+        let key = Self::remote_key(&kind);
+        if self.remote.contains_key(&key) {
+            return;
+        }
+        self.remote_ahead.insert(key.clone());
+        self.start_remote(kind, key, edge.name.clone());
+    }
+
+    /// Fetches `kind` in the background; its completion lands in `remote` under `key`.
+    fn start_remote(&mut self, kind: RemoteKind, key: String, name: String) {
+        self.remote.insert(key.clone(), RState::Pending);
         let fetcher = self.fetcher.clone();
         let tx = self.done_tx.clone();
-        let name = edge.name.clone();
         self.in_flight += 1;
         tokio::spawn(async move {
             let result = async {
@@ -1580,7 +1620,6 @@ impl Engine<'_> {
             .await;
             let _ = tx.send(Completion::Remote(key, result));
         });
-        Ok(Step::Done)
     }
 
     /// The turn of a git / tarball package: create it and bind every dependency waiting for it.

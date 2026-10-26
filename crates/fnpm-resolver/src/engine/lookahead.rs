@@ -25,7 +25,11 @@ impl Engine<'_> {
         let Ok(Some(asked)) = self.asked(row, &edge) else {
             return;
         };
-        if !asked.spec.tag().is_npm() || !is_npm_package_name(&asked.name) {
+        if !asked.spec.tag().is_npm() {
+            self.request_remote_ahead(row, &edge, &asked);
+            return;
+        }
+        if !is_npm_package_name(&asked.name) {
             return;
         }
         if self.manifest_state.contains_key(&asked.name) {
