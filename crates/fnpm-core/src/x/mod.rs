@@ -759,6 +759,13 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 Err(1)
             }
             Err(BinError::Unreadable) => Ok(None),
+            Err(BinError::PathTooLong) => {
+                out.error(&format!(
+                    "PathTooLong: the bin of {} does not fit in a path",
+                    target.package
+                ));
+                Err(1)
+            }
             Ok(found) => Ok(found),
         }
     };
@@ -800,7 +807,7 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 no_bin(Err(BinError::NoBin))?;
                 InProject::Absent
             }
-            Err(BinError::Unreadable) => InProject::Absent,
+            Err(BinError::Unreadable | BinError::PathTooLong) => InProject::Absent,
             Ok(found) => found,
         };
         match found {
