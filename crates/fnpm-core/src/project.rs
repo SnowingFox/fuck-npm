@@ -64,6 +64,7 @@ impl Project {
     ) -> Result<Self> {
         let cwd = absolute_cwd(cwd);
         let global = cli.global;
+        let mut ignored = Vec::new();
         let root = if global {
             None
         } else if cwd_is_root {
@@ -72,8 +73,11 @@ impl Project {
             }
             Some(cwd.clone())
         } else {
-            match Workspace::find_root(&cwd) {
-                Ok(root) => Some(root),
+            match Workspace::find_root_reporting(&cwd) {
+                Ok((root, warnings)) => {
+                    ignored = warnings;
+                    Some(root)
+                }
                 Err(fnpm_workspace::Error::NoProject(_)) if create_package_json => {
                     write_new_package_json(&cwd)?;
                     Some(cwd.clone())
@@ -81,13 +85,14 @@ impl Project {
                 Err(e) => return Err(e.into()),
             }
         };
-        let config = Config::load(&LoadOptions {
+        let mut config = Config::load(&LoadOptions {
             cwd: cwd.clone(),
             cli,
             env: env.clone(),
             project_dir: root,
             node_version: None,
         })?;
+        config.warnings.splice(0..0, ignored);
         let root_dir = config.project_dir.clone();
         if global {
             std::fs::create_dir_all(&root_dir).map_err(Error::io(&root_dir))?;

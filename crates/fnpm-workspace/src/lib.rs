@@ -193,6 +193,13 @@ impl Workspace {
         discover::find_root(cwd)
     }
 
+    /// [`Workspace::find_root`], with bun's warning for each package.json it ignores.
+    pub fn find_root_reporting(cwd: &Path) -> Result<(PathBuf, Vec<String>)> {
+        let mut warnings = Vec::new();
+        let root = discover::find_root_reporting(cwd, &mut warnings)?;
+        Ok((root, warnings))
+    }
+
     /// Reads the root package.json and expands workspace globs over a parallel walk that skips
     /// `node_modules`, `.git`, `CMakeFiles` and dot-directories; `!pattern` excludes. Member
     /// package.json files are read in parallel (rayon). Missing literal members are an error

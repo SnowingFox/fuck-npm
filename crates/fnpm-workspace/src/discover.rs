@@ -760,6 +760,12 @@ pub(crate) fn shared_directory_warning(dir: &Path) -> String {
 
 /// [`crate::Workspace::find_root`].
 pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
+    find_root_reporting(cwd, &mut Vec::new())
+}
+
+/// [`find_root`]; `warnings` gets bun's warning for each package.json it ignores in a shared
+/// directory.
+pub(crate) fn find_root_reporting(cwd: &Path, warnings: &mut Vec<String>) -> Result<PathBuf> {
     let cwd = paths::absolute(cwd);
     let mut child: Option<PathBuf> = None;
     let mut dir = Some(cwd.as_path());
@@ -769,6 +775,7 @@ pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
             continue;
         }
         if d != cwd && is_shared_directory(d) {
+            warnings.push(shared_directory_warning(d));
             continue;
         }
         child = Some(d.to_path_buf());
@@ -791,6 +798,9 @@ pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
     while let Some(p) = parent {
         parent = p.parent();
         if is_shared_directory(p) {
+            if p.join("package.json").is_file() {
+                warnings.push(shared_directory_warning(p));
+            }
             continue;
         }
         let pj = p.join("package.json");
