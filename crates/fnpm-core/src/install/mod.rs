@@ -297,9 +297,7 @@ fn prepare_with_patch(
                     let _ = crate::runtime();
                 });
         }
-        let (ws, warnings) = Workspace::load_with(&project.root_dir, &Default::default())?;
-        phases.mark("workspace");
-        let lock = lock::load(config, &ws)?;
+        let (ws, warnings, lock) = load_workspace(config, &project.root_dir)?;
         phases.mark("lockfile");
         Some((ws, warnings, lock))
     } else {
@@ -336,6 +334,50 @@ pub(crate) async fn run_with_patch(
     prepare_with_patch(opts, env, false, Some(pending))?
         .run(events)
         .await
+}
+
+/// The workspace and its lockfile. Like bun, `--frozen-lockfile` tolerates a listed workspace
+/// whose package.json is missing when the lockfile lists it (a pruned checkout); any other
+/// missing one is still `Workspace not found`.
+fn load_workspace(
+    config: &Config,
+    root: &Path,
+) -> Result<(Workspace, Vec<String>, lock::LockState)> {
+    let (ws, warnings) = match Workspace::load_with(root, &Default::default()) {
+        Err(fnpm_workspace::Error::WorkspaceNotFound(entry)) if config.frozen_lockfile => {
+            let skip = fnpm_workspace::LoadOptions {
+                missing: fnpm_workspace::MissingWorkspace::Skip,
+            };
+            let (ws, warnings) = Workspace::load_with(root, &skip)?;
+            let lock = lock::load(config, &ws)?;
+            let listed = |path: &str| {
+                lock.graph
+                    .as_ref()
+                    .is_some_and(|g| g.workspaces.contains_key(path))
+            };
+            let entries = match ws.root.raw.get("workspaces") {
+                Some(serde_json::Value::Array(a)) => Some(a),
+                Some(serde_json::Value::Object(o)) => o.get("packages").and_then(|p| p.as_array()),
+                _ => None,
+            };
+            let missing = entries
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|e| !e.contains(['*', '?', '{', '[', '!']))
+                .find(|e| {
+                    let path = e.trim_start_matches("./").trim_end_matches('/');
+                    !root.join(path).join("package.json").exists() && !listed(path)
+                });
+            if let Some(entry) = missing.or((lock.graph.is_none()).then_some(entry.as_str())) {
+                return Err(fnpm_workspace::Error::WorkspaceNotFound(entry.to_owned()).into());
+            }
+            return Ok((ws, warnings, lock));
+        }
+        other => other?,
+    };
+    let lock = lock::load(config, &ws)?;
+    Ok((ws, warnings, lock))
 }
 
 /// Steps 2-8.
@@ -537,6 +579,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         HashSet::new()
     });
+    let lockfile_name = lock.path.as_deref().and_then(Path::file_name).map_or_else(
+        || fnpm_lockfile::FNPM_LOCK.to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
     let mut out = resolve(
         &resolver,
         &ws,
@@ -544,6 +590,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &planned,
         stream.then(|| (&fetcher, skip.clone())),
         &events,
+        &lockfile_name,
     )
     .await?;
     // Positionals without a name (git, tarball, folder) were requested under a guessed name;
@@ -573,6 +620,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             &planned,
             stream.then(|| (&fetcher, skip.clone())),
             &events,
+            &lockfile_name,
         )
         .await?;
     }
@@ -1099,6 +1147,7 @@ async fn resolve(
     planned: &Planned,
     fetcher: Option<(&Fetcher, Arc<HashSet<String>>)>,
     events: &Arc<dyn EventSink>,
+    lockfile: &str,
 ) -> Result<ResolveOutput> {
     let (tx, consumer) = match fetcher {
         Some((f, skip)) => {
@@ -1134,7 +1183,7 @@ async fn resolve(
     if let Some(task) = consumer {
         let _ = task.await;
     }
-    Ok(out?)
+    Ok(out.map_err(|e| e.with_lockfile(lockfile))?)
 }
 
 /// Points the edge `name` of workspace `ws_path` at the literal written to package.json.

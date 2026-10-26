@@ -70,6 +70,37 @@ fn edge_changes(workspace: &str, now: &[DepEdge], before: &[DepEdge], out: &mut 
     }
 }
 
+/// The root fields whose change bun names in its frozen note, in its order (`catalogs` is
+/// worded `the catalog`).
+pub(crate) const SECTIONS: [&str; 4] =
+    ["overrides", "resolutions", "catalogs", "packageExtensions"];
+
+/// `overrides changed`, `catalogs changed`, ...
+pub(crate) fn is_section_change(change: &str) -> bool {
+    change
+        .strip_suffix(" changed")
+        .is_some_and(|s| SECTIONS.contains(&s))
+}
+
+/// A change [`edge_changes`] words (`a was added`, `a changed from ^1 to ^2 in packages/x`).
+pub(crate) fn is_dependency_change(change: &str) -> bool {
+    let Some((_, rest)) = change.split_once(' ') else {
+        return false;
+    };
+    !change.starts_with("workspace ")
+        && !change.starts_with("version of workspace ")
+        && !change.starts_with("lockfile is ")
+        && [
+            "was added",
+            "was removed",
+            "is in different dependency groups",
+            "changed in peerDependenciesMeta",
+            "changed from ",
+        ]
+        .iter()
+        .any(|m| rest.starts_with(m))
+}
+
 fn declared_edges(pj: &PackageJson, kind: LocalKind) -> Result<Vec<DepEdge>> {
     Ok(local::package_json_edges(pj, kind)?.0)
 }
@@ -109,9 +140,37 @@ pub(crate) fn trusted(ws: &Workspace) -> Result<Option<std::collections::BTreeSe
 /// Everything that differs between the workspace and the previous graph, in bun's words. Empty
 /// means a resolve would reproduce `prev` without any manifest.
 pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
+    Ok(classified(ws, prev, false)?.0)
+}
+
+/// [`changes`], and how many of them (at the front) are dependency edits: an edited range, an
+/// added, removed or moved dependency. A resolve may still reproduce `prev` after those (a
+/// loosened range that the locked version satisfies); the later ones (workspaces, overrides,
+/// catalogs, patches, trust) change the lockfile itself. A frozen install, like bun's, does not
+/// compare `patchedDependencies` and `trustedDependencies`: it applies what package.json says.
+pub(crate) fn classified(
+    ws: &Workspace,
+    prev: &LockGraph,
+    frozen: bool,
+) -> Result<(Vec<String>, usize)> {
     let mut out = Vec::new();
     let root_edges = declared_edges(&ws.root, LocalKind::Root)?;
     edge_changes("", &root_edges, &prev.root().dependencies, &mut out);
+    for member in &ws.members {
+        if let Some(prev_id) = prev.workspaces.get(&member.path) {
+            let edges = declared_edges(&member.manifest, LocalKind::Workspace)?;
+            let p = &prev.packages[prev_id.index()];
+            edge_changes(&member.path, &edges, &p.dependencies, &mut out);
+            // Release tooling bumps versions without an install; the ranges on it decide.
+            if p.name == member.name && p.version != member.version {
+                out.push(format!(
+                    "version of workspace {} changed from {} to {}",
+                    member.path, p.version, member.version
+                ));
+            }
+        }
+    }
+    let edges = out.len();
     let mut paths: Vec<&str> = ws.members.iter().map(|m| m.path.as_str()).collect();
     for path in prev.workspaces.keys() {
         if !path.is_empty() && !paths.contains(&path.as_str()) {
@@ -131,14 +190,6 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
                 member.path, p.name, member.name
             ));
         }
-        if p.version != member.version {
-            out.push(format!(
-                "version of workspace {} changed from {} to {}",
-                member.path, p.version, member.version
-            ));
-        }
-        let edges = declared_edges(&member.manifest, LocalKind::Workspace)?;
-        edge_changes(&member.path, &edges, &p.dependencies, &mut out);
     }
     let root = &ws.root.raw;
     let members: Vec<&PackageJson> = ws.members.iter().map(|m| &m.manifest).collect();
@@ -162,12 +213,24 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
             }
         ));
     }
-    if crate::catalogs::parse_catalogs(root, &ws.settings.catalogs)? != prev.catalogs {
+    let catalogs = crate::catalogs::parse_catalogs(root, &ws.settings.catalogs)?;
+    if catalogs != prev.catalogs && !(frozen && skipped_catalogs(ws, prev, &catalogs).is_some()) {
         out.push("catalogs changed".into());
     }
     let (_, extensions, _) = crate::extensions::parse_package_extensions(root);
     if extensions != prev.package_extensions {
         out.push("packageExtensions changed".into());
+    }
+    if frozen {
+        return Ok((out, edges));
+    }
+    // A frozen install links a workspace's bin from its package.json; a plain one records it.
+    for member in &ws.members {
+        if let Some(id) = prev.workspaces.get(&member.path)
+            && prev.packages[id.index()].bin != member.manifest.bin
+        {
+            out.push(format!("bin of workspace {} changed", member.path));
+        }
     }
     let mut patched: BTreeMap<String, String> = root
         .get("patchedDependencies")
@@ -227,7 +290,247 @@ pub(crate) fn changes(ws: &Workspace, prev: &LockGraph) -> Result<Vec<String>> {
     if trusted != prev.trusted_dependencies {
         out.push("trustedDependencies changed".into());
     }
+    Ok((out, edges))
+}
+
+/// The workspaces `prev` lists whose package.json is not on disk (a pruned checkout: `turbo
+/// prune`, a Docker layer with some workspaces), as `(path, id)`. A frozen install keeps the
+/// lockfile as it is and installs the others.
+pub(crate) fn pruned(ws: &Workspace, prev: &LockGraph) -> Vec<(String, PackageId)> {
+    prev.workspaces
+        .iter()
+        .filter(|(path, _)| {
+            !path.is_empty()
+                && !ws.members.iter().any(|m| &m.path == *path)
+                && !ws
+                    .root_dir
+                    .join(path.as_str())
+                    .join("package.json")
+                    .exists()
+        })
+        .map(|(path, id)| (path.clone(), *id))
+        .collect()
+}
+
+/// `prev` without the `pruned` workspaces: they are not projects of this install, and the root no
+/// longer lists them. A peer or optional dependency of a package bound to one is left out
+/// (bun `skips_link_to_pruned_workspace`). Their packages stay in the arena, unreachable, so
+/// nothing installs them.
+pub(crate) fn without_pruned(prev: &LockGraph, pruned: &[(String, PackageId)]) -> LockGraph {
+    let mut graph = prev.clone();
+    for (path, id) in pruned {
+        graph.workspaces.remove(path);
+        graph.packages[0]
+            .dependencies
+            .retain(|e| !(e.behavior.contains(Behavior::WORKSPACE) && e.target == Some(*id)));
+    }
+    for p in &mut graph.packages {
+        if p.resolution.is_local_tree() {
+            continue;
+        }
+        for e in &mut p.dependencies {
+            if (e.behavior.is_peer() || e.behavior.is_optional())
+                && e.target
+                    .is_some_and(|t| pruned.iter().any(|(_, id)| *id == t))
+            {
+                e.target = None;
+            }
+        }
+    }
+    graph
+}
+
+/// bun's errors for a remaining project that needs a pruned workspace: a `workspace:`
+/// dependency on its name, or (`recorded`, a frozen install, which never asks the registry for
+/// a workspace's name) a dependency that `prev` bound to it.
+pub(crate) fn pruned_dependents(
+    ws: &Workspace,
+    prev: &LockGraph,
+    pruned: &[(String, PackageId)],
+    recorded_bindings: bool,
+) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    let projects = std::iter::once((None, &ws.root, PackageId::ROOT, LocalKind::Root)).chain(
+        ws.members.iter().filter_map(|m| {
+            prev.workspaces.get(&m.path).map(|id| {
+                (
+                    Some(m.name.as_str()),
+                    &m.manifest,
+                    *id,
+                    LocalKind::Workspace,
+                )
+            })
+        }),
+    );
+    for (name, manifest, id, kind) in projects {
+        let recorded = &prev.packages[id.index()].dependencies;
+        let mut reported: Vec<PackageId> = Vec::new();
+        for edge in declared_edges(manifest, kind)? {
+            if edge.behavior.contains(Behavior::WORKSPACE) {
+                continue;
+            }
+            let by_protocol = edge
+                .literal
+                .trim_start()
+                .starts_with("workspace:")
+                .then(|| {
+                    pruned
+                        .iter()
+                        .find(|(_, t)| prev.packages[t.index()].name == edge.name)
+                })
+                .flatten();
+            let bound = || {
+                if !recorded_bindings {
+                    return None;
+                }
+                recorded
+                    .iter()
+                    .find(|r| r.name == edge.name && r.behavior.group() == edge.behavior.group())
+                    .and_then(|r| r.target)
+                    .and_then(|t| pruned.iter().find(|(_, p)| *p == t))
+            };
+            let Some((path, target)) = by_protocol.or_else(bound) else {
+                continue;
+            };
+            if reported.contains(target) {
+                continue;
+            }
+            reported.push(*target);
+            let target_name = &prev.packages[target.index()].name;
+            out.push(match name {
+                None => format!(
+                    "the root package depends on workspace \"{target_name}\" ({path}), which is listed in fnpm.lock but not on disk"
+                ),
+                Some(name) => format!(
+                    "workspace \"{name}\" depends on workspace \"{target_name}\" ({path}), which is listed in fnpm.lock but not on disk"
+                ),
+            });
+        }
+    }
     Ok(out)
+}
+
+/// A project's registry dependency that `prev` pins to a version outside its range (no
+/// override, peer or unresolved optional explains it).
+pub(crate) fn stale_pin(prev: &LockGraph) -> bool {
+    use fnpm_semver::{Range, Version};
+    prev.workspaces.values().any(|id| {
+        prev.packages[id.index()].dependencies.iter().any(|e| {
+            let Some(t) = e.target else { return false };
+            let target = &prev.packages[t.index()];
+            if e.behavior.is_peer()
+                || !matches!(target.resolution, fnpm_types::Resolution::Npm { .. })
+                || prev.overrides.iter().any(|r| {
+                    r.selector.target.name == e.name || r.selector.target.name == target.name
+                })
+            {
+                return false;
+            }
+            let Ok(fnpm_types::DependencySpec::Npm { range, .. }) =
+                fnpm_types::DependencySpec::parse(&e.name, &e.literal)
+            else {
+                return false;
+            };
+            if range.trim().is_empty() || range.trim() == "*" {
+                return false;
+            }
+            matches!(
+                (Range::parse(&range), Version::parse(&target.version)),
+                (Ok(r), Ok(v)) if !r.satisfies(&v)
+            )
+        })
+    })
+}
+
+/// Catalog entries as `(catalog, name) -> range`; `catalogs.default` is the default catalog.
+fn catalog_entries(c: &fnpm_types::Catalogs) -> BTreeMap<(&str, &str), &str> {
+    let mut out = BTreeMap::new();
+    for (name, range) in &c.default {
+        out.insert(("", name.as_str()), range.as_str());
+    }
+    for (group, entries) in &c.named {
+        let group = if group == "default" {
+            ""
+        } else {
+            group.as_str()
+        };
+        for (name, range) in entries {
+            out.entry((group, name.as_str())).or_insert(range.as_str());
+        }
+    }
+    out
+}
+
+/// bun's pruned-checkout rule for catalogs: the lockfile may lack catalog entries that no
+/// project on disk (and no override) uses, as long as every entry it has is unchanged. The
+/// names it lacks, sorted (empty when the catalogs agree), or `None` when that is not the case.
+pub(crate) fn skipped_catalogs(
+    ws: &Workspace,
+    prev: &LockGraph,
+    declared: &fnpm_types::Catalogs,
+) -> Option<Vec<String>> {
+    let (declared, locked) = (catalog_entries(declared), catalog_entries(&prev.catalogs));
+    if locked.iter().any(|(k, v)| declared.get(k) != Some(v)) {
+        return None;
+    }
+    fn group_of(literal: &str) -> Option<&str> {
+        literal.trim().strip_prefix("catalog:").map(|g| {
+            let g = g.trim();
+            if g == "default" { "" } else { g }
+        })
+    }
+    let projects = std::iter::once(&ws.root).chain(ws.members.iter().map(|m| &m.manifest));
+    let mut used: Vec<(String, String)> = Vec::new();
+    for pj in projects {
+        for group in fnpm_types::DependencyGroup::ALL {
+            for (name, literal) in pj.group(group) {
+                if let Some(g) = group_of(literal) {
+                    used.push((g.to_owned(), name.clone()));
+                }
+            }
+        }
+    }
+    for r in &prev.overrides {
+        if let Some(g) = group_of(&r.value) {
+            used.push((g.to_owned(), r.selector.target.name.clone()));
+        }
+    }
+    let mut skipped = Vec::new();
+    for (group, name) in declared.keys() {
+        if locked.contains_key(&(*group, *name)) {
+            continue;
+        }
+        if used.iter().any(|(g, n)| g == group && n == name) {
+            return None;
+        }
+        skipped.push((*name).to_owned());
+    }
+    skipped.sort();
+    Some(skipped)
+}
+
+/// The `patchedDependencies` of the root package.json, for an install that keeps the lockfile.
+pub(crate) fn declared_patches(ws: &Workspace) -> BTreeMap<String, fnpm_types::PatchedDependency> {
+    ws.root
+        .raw
+        .get("patchedDependencies")
+        .and_then(Value::as_object)
+        .map(|o| {
+            o.iter()
+                .filter_map(|(k, v)| {
+                    v.as_str().map(|path| {
+                        (
+                            k.clone(),
+                            fnpm_types::PatchedDependency {
+                                path: path.to_owned(),
+                                hash: None,
+                            },
+                        )
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Every required, non-peer edge of `prev` that a resolve would bind is bound.
@@ -341,6 +644,56 @@ fn canonical(graph: &LockGraph) -> Value {
         "extensions": serde_json::to_value(&graph.package_extensions).unwrap_or(Value::Null),
         "linker": serde_json::to_value(graph.node_linker).unwrap_or(Value::Null),
     })
+}
+
+/// `after`, the resolve of edited package.json files against `before`, installs the same
+/// packages (bun's `Lockfile.eql` on a frozen install): the same set of packages, the same
+/// edges below the projects, and every dependency a project kept still bound to the same
+/// package. Ranges, groups and dependencies a project dropped or gained without moving a
+/// package do not count.
+pub(crate) fn same_packages(before: &LockGraph, after: &LockGraph) -> bool {
+    if before.len() != after.len() {
+        return false;
+    }
+    let keys = |g: &LockGraph| -> Vec<String> { g.packages.iter().map(|p| p.key()).collect() };
+    let (before_keys, after_keys) = (keys(before), keys(after));
+    let index: BTreeMap<&str, usize> = before_keys
+        .iter()
+        .enumerate()
+        .map(|(i, k)| (k.as_str(), i))
+        .collect();
+    let targets = |keys: &[String], p: &fnpm_types::Package| {
+        let mut v: Vec<(String, Option<String>)> = p
+            .dependencies
+            .iter()
+            .map(|e| (e.name.clone(), e.target.map(|t| keys[t.index()].clone())))
+            .collect();
+        v.sort();
+        v
+    };
+    for (i, p) in after.packages.iter().enumerate() {
+        let Some(&j) = index.get(after_keys[i].as_str()) else {
+            return false;
+        };
+        let q = &before.packages[j];
+        let (now, then) = (targets(&after_keys, p), targets(&before_keys, q));
+        if !p.resolution.is_local_tree() {
+            if now != then {
+                return false;
+            }
+            continue;
+        }
+        let then: BTreeMap<&String, &Option<String>> = then.iter().map(|(n, t)| (n, t)).collect();
+        if now.iter().any(|(n, t)| {
+            t.is_some()
+                && then
+                    .get(n)
+                    .is_some_and(|before| before.is_some() && *before != t)
+        }) {
+            return false;
+        }
+    }
+    true
 }
 
 /// The two graphs describe the same install (package order aside).

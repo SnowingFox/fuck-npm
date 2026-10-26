@@ -64,11 +64,24 @@ pub enum Error {
         /// The dependency name.
         name: String,
     },
-    /// `--frozen-lockfile`: the declared dependencies differ from the lockfile.
-    #[error("lockfile had changes, but lockfile is frozen")]
+    /// A remaining project of a pruned checkout needs a workspace that is not on disk. Each
+    /// message is one of bun's `error:` lines.
+    #[error("{}\nnote: a pruned checkout must keep every workspace that its remaining workspaces depend on", messages.join("\nerror: "))]
+    PrunedWorkspace {
+        /// What needs which workspace.
+        messages: Vec<String>,
+    },
+    /// `--frozen-lockfile`: the declared dependencies differ from the lockfile. Prints bun's
+    /// notes below the error: what changed, then how to fix it.
+    #[error(
+        "lockfile had changes, but lockfile is frozen{}",
+        frozen_notes(changes, lockfile)
+    )]
     FrozenLockfile {
         /// Each difference, in bun's words (`a changed from ^1 to ^2`, `b was added`, …).
         changes: Vec<String>,
+        /// The lockfile the notes name (`fnpm.lock`, `bun.lockb`, `yarn.lock`, …).
+        lockfile: String,
     },
     /// A specifier that cannot be used (unparsable, unsafe name, forbidden path).
     #[error("{name}@{spec}: {message}")]
@@ -151,6 +164,53 @@ pub enum Error {
 
 /// `Result` with this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl Error {
+    /// A [`Error::FrozenLockfile`] about fnpm.lock ([`Error::with_lockfile`] names another).
+    pub fn frozen(changes: Vec<String>) -> Self {
+        Self::FrozenLockfile {
+            changes,
+            lockfile: "fnpm.lock".into(),
+        }
+    }
+
+    /// Names the lockfile a [`Error::FrozenLockfile`] was checked against.
+    #[must_use]
+    pub fn with_lockfile(self, name: &str) -> Self {
+        match self {
+            Self::FrozenLockfile { changes, .. } => Self::FrozenLockfile {
+                changes,
+                lockfile: name.to_owned(),
+            },
+            other => other,
+        }
+    }
+}
+
+/// bun's notes under `lockfile had changes, but lockfile is frozen`: the section that changed
+/// (overrides, then the catalog, then packageExtensions, else the first dependency change),
+/// then the way out.
+fn frozen_notes(changes: &[String], lockfile: &str) -> String {
+    let since = format!("in package.json changed since {lockfile} was saved");
+    let section = frozen::SECTIONS
+        .iter()
+        .find(|s| changes.iter().any(|c| *c == format!("{s} changed")));
+    let mut out = String::new();
+    if let Some(section) = section {
+        let section = if *section == "catalogs" {
+            "the catalog"
+        } else {
+            section
+        };
+        out.push_str(&format!("\nnote: {section} {since}"));
+    } else if let Some(change) = changes.iter().find(|c| frozen::is_dependency_change(c)) {
+        out.push_str(&format!("\nnote: dependencies {since}: {change}"));
+    }
+    out.push_str(
+        "\nnote: try re-running without --frozen-lockfile and commit the updated lockfile",
+    );
+    out
+}
 
 /// What a resolve may change.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +305,15 @@ pub struct ResolveOutput {
     pub warnings: Vec<String>,
 }
 
+/// The lockfile records exactly what the package.json files declare, with every required
+/// dependency bound: a resolve would reproduce it without asking any registry. Stricter than
+/// `--frozen-lockfile`, which also accepts edits that keep every package where it is.
+pub fn lockfile_matches(workspace: &Workspace, previous: &LockGraph) -> Result<bool> {
+    Ok(frozen::complete(previous)
+        && frozen::changes(workspace, previous)?.is_empty()
+        && !frozen::stale_pin(previous))
+}
+
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
 pub struct Resolver {
     config: Arc<Config>,
@@ -318,11 +387,54 @@ impl Resolver {
 
         if mode == Mode::Frozen {
             let Some(prev) = previous else {
-                return Err(Error::FrozenLockfile {
-                    changes: vec!["lockfile is missing".into()],
-                });
+                return Err(Error::frozen(vec!["lockfile is missing".into()]));
             };
-            let mut changes = frozen::changes(workspace, prev)?;
+            let pruned = frozen::pruned(workspace, prev);
+            let stripped;
+            let prev = if pruned.is_empty() {
+                prev
+            } else {
+                let dependents = frozen::pruned_dependents(workspace, prev, &pruned, true)?;
+                if !dependents.is_empty() {
+                    return Err(Error::PrunedWorkspace {
+                        messages: dependents,
+                    });
+                }
+                stripped = frozen::without_pruned(prev, &pruned);
+                &stripped
+            };
+            let (mut changes, edits) = frozen::classified(workspace, prev, true)?;
+            // The note comes before most changes, but a changed section fails first.
+            let section = changes.iter().any(|c| frozen::is_section_change(c));
+            if !pruned.is_empty() && !section {
+                let mut names: Vec<&str> = pruned
+                    .iter()
+                    .map(|(_, id)| prev.packages[id.index()].name.as_str())
+                    .collect();
+                names.sort_unstable();
+                let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+                events.emit(Event::notice(format!(
+                    "note: skipped {} workspace{} listed in fnpm.lock but not on disk: {}",
+                    names.len(),
+                    if names.len() == 1 { "" } else { "s" },
+                    quoted.join(", ")
+                )));
+            }
+            if !section {
+                let declared =
+                    catalogs::parse_catalogs(&workspace.root.raw, &workspace.settings.catalogs)?;
+                if let Some(skipped) = frozen::skipped_catalogs(workspace, prev, &declared)
+                    && !skipped.is_empty()
+                {
+                    let quoted: Vec<String> = skipped.iter().map(|n| format!("\"{n}\"")).collect();
+                    events.emit(Event::notice(format!(
+                        "note: skipped {} catalog {} not in fnpm.lock (unused by the workspaces on disk): {}",
+                        skipped.len(),
+                        if skipped.len() == 1 { "entry" } else { "entries" },
+                        quoted.join(", ")
+                    )));
+                }
+            }
             for r in &requests {
                 changes.push(format!("{} was added", r.name));
             }
@@ -337,10 +449,63 @@ impl Resolver {
             if !frozen::complete(prev) {
                 changes.push("lockfile is missing resolutions".into());
             }
-            if !changes.is_empty() {
-                return Err(Error::FrozenLockfile { changes });
+            // A pin outside the range that package.json and the lockfile both record (one side of
+            // a merge conflict taken) resolves again, and fails if that moves a package.
+            let stale = changes.is_empty() && frozen::stale_pin(prev);
+            if changes.is_empty() && !stale {
+                let mut graph = prev.clone();
+                graph.patched_dependencies = frozen::declared_patches(workspace);
+                return self.unchanged(workspace, &graph, tx, events, warnings);
             }
-            return self.unchanged(workspace, prev, tx, events, warnings);
+            // Like bun, edited dependency lists pass as long as resolving them against the
+            // lockfile installs the same packages (a loosened range the locked version still
+            // satisfies, a dependency moved to another group). Nothing is fetched until the
+            // result is known to match.
+            if changes.len() != edits {
+                return Err(Error::frozen(changes));
+            }
+            let engine = engine::Engine::new(engine::EngineInput {
+                cfg,
+                patch_hashes: &self.patch_hashes,
+                ws: workspace,
+                prev: Some(prev),
+                mode: Mode::Normal,
+                requests,
+                removals,
+                manifests: self.manifests.clone(),
+                fetcher: self.fetcher.clone(),
+                events,
+                tx: None,
+                hints: Vec::new(),
+            })?;
+            let out = engine.run().await?;
+            if !frozen::same_packages(prev, &out.graph) {
+                return Err(Error::frozen(changes));
+            }
+            frozen::emit_all(&out.graph, cfg, tx.as_ref());
+            warnings.extend(out.warnings);
+            // Changed: the lockfile is behind package.json, so the next plain install must
+            // not take the no-op fast path (a frozen install never saves it).
+            return Ok(ResolveOutput {
+                graph: out.graph,
+                changed: true,
+                requests: out.requests,
+                warnings,
+            });
+        }
+
+        // A plain install drops a workspace that is gone from disk, but not one that a remaining
+        // project still names with `workspace:`.
+        if let Some(prev) = previous {
+            let pruned = frozen::pruned(workspace, prev);
+            if !pruned.is_empty() {
+                let dependents = frozen::pruned_dependents(workspace, prev, &pruned, false)?;
+                if !dependents.is_empty() {
+                    return Err(Error::PrunedWorkspace {
+                        messages: dependents,
+                    });
+                }
+            }
         }
 
         if mode == Mode::Normal
@@ -349,6 +514,7 @@ impl Resolver {
             && let Some(prev) = previous
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
+            && !frozen::stale_pin(prev)
         {
             return self.unchanged(workspace, prev, tx, events, warnings);
         }

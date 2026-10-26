@@ -62,7 +62,7 @@ async fn frozen_installs_report_every_change() {
         &[("packages/w", json!({"name": "w", "version": "1.0.1"}))],
     );
     match h.run(&ws2, Some(&first), Mode::Frozen).await {
-        Err(Error::FrozenLockfile { changes }) => assert_eq!(
+        Err(Error::FrozenLockfile { changes, .. }) => assert_eq!(
             changes,
             [
                 "a changed from ^1 to ^1.1",

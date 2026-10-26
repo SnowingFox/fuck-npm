@@ -1600,19 +1600,20 @@ async fn frozen_reinstall_accepts_unused_trust_and_patch_entries_omitted_by_the_
     assert_eq!(p.read("fnpm.lock"), lock_before);
     assert_eq!(reg.manifest_requests(), 0);
 
+    // Like bun, trust and patches are not part of the frozen comparison: the install applies
+    // what package.json says and leaves fnpm.lock to the next plain install.
     let mut manifest: serde_json::Value = serde_json::from_str(&p.read("package.json")).unwrap();
     manifest["trustedDependencies"] = json!(["not-installed"]);
     p.write("package.json", &manifest.to_string());
     let mut opts = p.opts(InstallCommand::Install, &[]);
     opts.pm.frozen_lockfile = true;
-    assert_eq!(
-        p.run(opts.clone()).await.unwrap_err().code(),
-        "FROZEN_LOCKFILE"
-    );
+    p.run(opts.clone()).await.unwrap();
+    assert_eq!(p.read("fnpm.lock"), lock_before);
     manifest["trustedDependencies"] = json!(["a", "not-installed"]);
     manifest["patchedDependencies"]["a@1.0.0"] = json!("unused.patch");
     p.write("package.json", &manifest.to_string());
-    assert_eq!(p.run(opts).await.unwrap_err().code(), "FROZEN_LOCKFILE");
+    p.run(opts).await.unwrap();
+    assert_eq!(p.read("fnpm.lock"), lock_before);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
