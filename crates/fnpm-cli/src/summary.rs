@@ -41,6 +41,20 @@ fn plural(count: u32, word: &str) -> String {
 
 /// The summary lines (each printed with a trailing newline). `color` selects the Unicode
 /// arrows; `pc` is the stdout palette.
+/// The command the blocked-scripts line names.
+const UNTRUSTED_HINT: &str = "fnpm pm untrusted";
+
+/// The summary of a global install names the global commands (`fnpm pm -g untrusted`), or the
+/// hint would act on the project in the current directory.
+pub fn for_global_install(lines: &mut [String]) {
+    let hint = format!("`{UNTRUSTED_HINT}`");
+    for line in lines {
+        if line.contains(&hint) {
+            *line = line.replace(&hint, "`fnpm pm -g untrusted`");
+        }
+    }
+}
+
 pub fn format_install_summary(
     summary: &InstallSummary,
     command: InstallCommand,
@@ -155,8 +169,9 @@ pub fn format_install_summary_at(
         if summary.blocked_scripts > 0 {
             lines.push(String::new());
             lines.push(pc.dim(&format!(
-                "Blocked {}. Run `fnpm pm untrusted` for details.",
-                plural(summary.blocked_scripts, "postinstall")
+                "Blocked {}. Run `{}` for details.",
+                plural(summary.blocked_scripts, "postinstall"),
+                UNTRUSTED_HINT
             )));
         }
     };

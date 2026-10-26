@@ -15,6 +15,7 @@ import {
   fnpmEnv as env,
   isLinux,
   isWindows,
+  nodeExe,
   normalizeFnpmSnapshot,
   readdirSorted,
   tempDir,
@@ -2652,7 +2653,8 @@ test.concurrent.each([
     "scripted/package.json": JSON.stringify({
       name: "scripted",
       version: "1.0.0",
-      scripts: { postinstall: `"${fnpmExe()}" -e "require('fs').writeFileSync('postinstall.txt', '')"` },
+      // bun runs the script with itself (`bun -e`); fnpm is no JavaScript runtime, so node runs it.
+      scripts: { postinstall: `"${nodeExe()}" -e "require('fs').writeFileSync('postinstall.txt', '')"` },
     }),
   });
   const root = String(dir);
