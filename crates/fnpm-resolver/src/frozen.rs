@@ -109,8 +109,8 @@ fn shadowed_by_optional(e: &DepEdge) -> bool {
 /// Bun 1.4 and older left a workspace out of the lockfile when a root dependency on a registry
 /// version of its name took its entry: a tag, or a range that the workspace's version does not
 /// satisfy, under its own name or by an `npm:` alias of it. Such a lockfile is not missing the
-/// workspace for a frozen install. A plain one keeps it too while the dependency is under the
-/// workspace's own name (`own_name_only`): that one has the workspace's folder in node_modules.
+/// workspace for a frozen install. A plain one keeps it too while a range under the workspace's
+/// own name (`own_name_only`) has the workspace's folder in node_modules.
 fn dropped_by_bun_1_4(
     root: &[DepEdge],
     member: &fnpm_workspace::Member,
@@ -125,7 +125,10 @@ fn dropped_by_bun_1_4(
             return false;
         }
         match fnpm_types::DependencySpec::parse(&e.name, &e.literal) {
-            Ok(fnpm_types::DependencySpec::DistTag { name, .. }) => name == member.name,
+            // A plain install links the workspace for a tag of its name.
+            Ok(fnpm_types::DependencySpec::DistTag { name, .. }) => {
+                !own_name_only && name == member.name
+            }
             Ok(fnpm_types::DependencySpec::Npm { name, range, .. }) => {
                 name == member.name
                     && matches!(Range::parse(&range), Ok(r) if !r.satisfies(&version))

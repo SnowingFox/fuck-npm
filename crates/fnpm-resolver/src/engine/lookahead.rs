@@ -44,7 +44,7 @@ impl Engine<'_> {
 
     /// The row will be bound from the previous graph, a workspace or an installed version.
     fn settles_without_manifest(&self, row: Row, edge: &DepEdge, asked: &Asked) -> bool {
-        if self.linked_workspace(asked).is_some() {
+        if self.linked_workspace(asked).is_some() || self.root_tag_workspace(row, asked).is_some() {
             return true;
         }
         if row.install_peer && edge.behavior.is_peer() {

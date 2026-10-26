@@ -304,6 +304,10 @@ impl Engine<'_> {
                 return Ok(Step::Done);
             }
         }
+        if let Some(target) = self.root_tag_workspace(row, &asked) {
+            self.set_target(row, target);
+            return Ok(Step::Done);
+        }
         if !edge.behavior.is_peer()
             && let Some(target) = self.reuse_previous(row, &edge, &asked)
         {
@@ -651,6 +655,21 @@ impl Engine<'_> {
         }
         let version = self.st[id.index()].version.as_ref()?;
         Range::parse(range).ok()?.satisfies(version).then_some(id)
+    }
+
+    /// bun: the workspace wins over the root's dependency on a dist-tag of its own name
+    /// (`"foo": "latest"`), because only the registry knows which version a tag names.
+    pub(crate) fn root_tag_workspace(&self, row: Row, asked: &Asked) -> Option<PackageId> {
+        if row.pkg != PackageId::ROOT || asked.replaced {
+            return None;
+        }
+        let DependencySpec::DistTag {
+            is_alias: false, ..
+        } = &asked.spec
+        else {
+            return None;
+        };
+        self.member_id_by_name(&asked.name)
     }
 
     fn member_id_by_name(&self, name: &str) -> Option<PackageId> {
