@@ -115,8 +115,8 @@ jobs:
         with:
           key: napi-test
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: cargo test -p fnpm-napi
-      - run: cargo clippy -p fnpm-napi --all-targets --features testing -- -D warnings
+      - run: cargo test -p fnpm-store -p fnpm-napi
+      - run: cargo clippy -p fnpm-store -p fnpm-napi --all-targets --features fnpm-napi/testing -- -D warnings
       # Debug build with the `testing` exports the vitest suite drives.
       - run: npm run build:native:test -w @fuck-npm/binding
       - run: npm test -w @fuck-npm/binding
