@@ -271,9 +271,9 @@ fn remove_legacy_metadata(project_dir: &Path) {
         let _ = std::fs::remove_file(state_dir.join("state"));
         let _ = std::fs::remove_dir(&state_dir);
     }
-    let legacy = [virtual_store.join("state"), virtual_store.join("lock.bin")]
-        .iter()
-        .fold(false, |any, file| std::fs::remove_file(file).is_ok() || any);
+    let removed = [virtual_store.join("state"), virtual_store.join("lock.bin")]
+        .map(|file| std::fs::remove_file(file).is_ok());
+    let legacy = removed.contains(&true);
     // An empty `.fnpm` without those files is an isolated tree with no store entry (only
     // workspaces and `link:` packages): it stays, so the next install knows the layout.
     if legacy {
