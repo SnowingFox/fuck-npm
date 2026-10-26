@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, test } from "vitest";
+import { installNative } from "../../../scripts/install-native.js";
 import { extractFiles, matchesIntegrity, postinstall, skipReason } from "../../../scripts/postinstall.js";
 
 /**
@@ -52,7 +53,7 @@ function layout(): Layout {
   const root = mkdtempSync(join(tmpdir(), "fnpm-shim-"));
   roots.push(root);
   const pkg = join(root, "node_modules", "fuck-npm");
-  for (const file of ["package.json", "bin/fnpm", "bin/fnpm-lock", "bin/fnpmx", "bin/fnpx", "bin/package.json", "lib/native.cjs", "lib/shim.cjs", "scripts/postinstall.js"]) {
+  for (const file of ["package.json", "bin/fnpm", "bin/fnpm-lock", "bin/fnpmx", "bin/fnpx", "bin/package.json", "lib/native.cjs", "lib/shim.cjs", "lib/archive.cjs", "scripts/postinstall.js", "scripts/install-native.js"]) {
     mkdirSync(dirname(join(pkg, file)), { recursive: true });
     copyFileSync(join(PACKAGE, file), join(pkg, file));
   }
@@ -467,4 +468,67 @@ describe.runIf(unix)("postinstall without the platform package", () => {
     const nested = join(pkg, "node_modules", "@fuck-npm", `binding-${ABI}`, native.executableName("fnpm"));
     expect(statSync(join(pkg, "bin", "fnpm")).ino).toBe(statSync(nested).ino);
   }, 60_000);
+});
+
+
+describe.runIf(unix)("single-package native download", () => {
+  function archiveFixture({ version = VERSION, incomplete = false } = {}) {
+    const { pkg } = layout();
+    const entries: [string, string][] = [
+      ["fnpm", fakeExecutable("fnpm", version)],
+      ["fnpm-lock", fakeExecutable("fnpm-lock", version)],
+      [`fnpm.${ABI}.node`, "fixture addon"],
+    ];
+    const archive = tarball(incomplete ? entries.slice(0, 2) : entries);
+    const files = entries.map(([name]) => name);
+    writeFileSync(join(pkg, "lib/native-release.json"), JSON.stringify({
+      version: VERSION,
+      assets: { [ABI!]: { url: "https://example.com/native.tar.gz", integrity: sri(archive), files } },
+    }));
+    return { pkg, archive };
+  }
+
+  test("downloads this platform, validates it and reuses complete native files", async () => {
+    const { pkg, archive } = archiveFixture();
+    let requests = 0;
+    const fetchImpl = (async () => { requests++; return new Response(archive); }) as typeof fetch;
+    const dir = await installNative({ root: pkg, abi: ABI, fetchImpl });
+    expect(dir).toBe(join(pkg, "native", ABI!));
+    expect(requests).toBe(1);
+    expect(readFileSync(join(dir, `fnpm.${ABI}.node`), "utf8")).toBe("fixture addon");
+    expect(await installNative({ root: pkg, abi: ABI, fetchImpl })).toBe(dir);
+    expect(requests).toBe(1);
+    expect(await postinstall({ root: pkg, env: NPM_ENV, abi: ABI })).toBe("swapped");
+  });
+
+  test("rejects modified downloads without installing an executable", async () => {
+    const { pkg } = archiveFixture();
+    await expect(installNative({ root: pkg, abi: ABI, fetchImpl: (async () => new Response("modified")) as typeof fetch })).rejects.toThrow("integrity check failed");
+    expect(existsSync(join(pkg, "native", ABI!, "fnpm"))).toBe(false);
+  });
+
+  test.each([
+    [{ incomplete: true }, "incomplete"],
+    [{ version: "999.0.0" }, "version does not match"],
+  ] as const)("preserves the previous directory when validation fails: %j", async (options, message) => {
+    const { pkg, archive } = archiveFixture(options);
+    const dir = join(pkg, "native", ABI!);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "previous"), "untouched");
+    await expect(installNative({ root: pkg, abi: ABI, fetchImpl: (async () => new Response(archive)) as typeof fetch })).rejects.toThrow(message);
+    expect(readFileSync(join(dir, "previous"), "utf8")).toBe("untouched");
+    expect(existsSync(join(dir, "fnpm"))).toBe(false);
+  });
+
+  test.each([
+    ["pnpm/10.0.0", "pnpm", process.platform],
+    ["npm/11.0.0", "Windows", "win32"],
+  ] as const)("downloads native files before retaining the %s shim", async (agent, reason, platform) => {
+    const { pkg, archive } = archiveFixture();
+    const shim = readFileSync(join(pkg, "bin/fnpm"));
+    const status = await postinstall({ root: pkg, abi: ABI, platform, env: { npm_config_user_agent: agent }, fetchImpl: (async () => new Response(archive)) as typeof fetch });
+    expect(status).toContain(reason);
+    expect(readFileSync(join(pkg, "bin/fnpm"))).toEqual(shim);
+    expect(runShim(pkg, "fnpm", ["--version"]).stdout.trim()).toBe(VERSION);
+  });
 });

@@ -4,7 +4,8 @@
  * Locating the native fnpm executables. Shared by the bin shims (`bin/fnpm`,
  * `bin/fnpm-lock`) and the postinstall swap (`scripts/postinstall.js`).
  *
- * The executables ship in the napi-rs platform packages
+ * Single-package releases use native/<abi>, populated by the verified archive
+ * installer. Source workspaces can also resolve the napi-rs platform packages
  * (`@fuck-npm/binding-<platform>-<arch>[-gnu|-musl|-msvc]`) next to
  * `fnpm.<triple>.node`. CommonJS and Node built-ins only: the shim runs this on
  * every invocation that did not get the postinstall swap, so it must stay cheap.
@@ -72,6 +73,8 @@ function resolveFrom(request, base) {
  * package to its dependents.
  */
 function platformPackageDir(abi, root = PACKAGE_ROOT) {
+  const local = join(root, 'native', abi);
+  if (existsSync(join(root, 'lib', 'native-release.json'))) return existsSync(local) ? local : null;
   const request = `${PLATFORM_PACKAGE_PREFIX}${abi}/package.json`;
   let manifest = resolveFrom(request, root);
   if (!manifest) {
@@ -101,6 +104,13 @@ function findNativeExecutable(bin, options = {}) {
   return existsSync(exe) ? exe : null;
 }
 
+function findNativeBinding(root = PACKAGE_ROOT) {
+  const abi = platformArchAbi();
+  const dir = abi && platformPackageDir(abi, root);
+  const path = dir && join(dir, `fnpm.${abi}.node`);
+  return path && existsSync(path) ? path : null;
+}
+
 /** The TS CLI bundle for `bin`. */
 function jsEntry(bin, root = PACKAGE_ROOT) {
   return join(root, 'dist', `${bin}.js`);
@@ -117,6 +127,7 @@ module.exports = {
   PLATFORM_PACKAGE_PREFIX,
   executableName,
   findNativeExecutable,
+  findNativeBinding,
   isMusl,
   jsEntry,
   packageVersion,

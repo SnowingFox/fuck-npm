@@ -10,7 +10,8 @@ export function publishRelease({ dir, cli = 'npm', registry, publish = false }, 
   if (!['npm', 'bnpm'].includes(cli)) throw new Error('--cli must be npm or bnpm');
   const directory = resolve(dir);
   const release = JSON.parse(readFileSync(join(directory, 'packed.json'), 'utf8'));
-  if (!release.complete || release.packages.length !== 10) throw new Error('Publication requires all eight platform packages, the binding, and CLI');
+  const expectedPackages = release.distribution === 'single' ? 1 : 10;
+  if (!release.complete || release.packages.length !== expectedPackages) throw new Error('Publication requires a complete release');
   const stagedRegistry = release.registry ?? 'https://registry.npmjs.org/';
   const registryUrl = new URL(registry ?? stagedRegistry);
   if (!['http:', 'https:'].includes(registryUrl.protocol) || registryUrl.username || registryUrl.password || registryUrl.search || registryUrl.hash) {

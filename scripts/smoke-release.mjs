@@ -16,6 +16,13 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const server = createServer((req, res) => {
   try {
     const path = decodeURIComponent(req.url.split('?')[0]).slice(1);
+    if (release.distribution === 'single' && path.startsWith('native/')) {
+      const filename = path.slice('native/'.length);
+      const asset = Object.values(release.assets).find(asset => new URL(asset.url).pathname.split('/').at(-1) === filename);
+      if (!asset) { res.writeHead(404); res.end(); return; }
+      res.end(readFileSync(join(directory, 'assets', filename)));
+      return;
+    }
     const tar = /^tarball\/(\d+)$/.exec(path);
     if (tar) {
       const pkg = release.packages[Number(tar[1])];
@@ -37,6 +44,7 @@ await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const registry = `http://127.0.0.1:${server.address().port}`;
 const env = { ...process.env,
   npm_config_cache: join(scratch, 'npm-cache'), npm_config_userconfig: join(scratch, 'npmrc'),
+  FNPM_NATIVE_MIRROR: `${registry}/native/`,
   npm_config_registry: registry, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost',
 };
 // Installed-package smoke must not resolve a development override.
@@ -63,7 +71,6 @@ try {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'release-smoke', private: true, allowScripts: { [release.name]: true } }));
     await run(npm, ['install', `${release.name}@${release.version}`, '--no-audit', '--no-fund', ...(ignoreScripts ? ['--ignore-scripts'] : [])], root);
     const cli = join(root, 'node_modules', release.name);
-    await run(process.execPath, ['-e', `const {createRequire}=require('node:module'); const binding=createRequire(${JSON.stringify(join(cli, 'package.json'))})(${JSON.stringify(release.bindingName)}); if(typeof binding.install!=='function')process.exit(1);`], root);
     const native = createRequire(join(cli, 'package.json'))('./lib/native.cjs');
     const fixture = join(root, 'project');
     mkdirSync(fixture);
@@ -75,6 +82,8 @@ try {
       assert.equal((await invoke(bin, ['--version'])).trim(), release.version);
       assert.match(await invoke(bin, ['--help']), /Usage:/i);
     }
+    const binding = release.distribution === 'single' ? './lib/binding.cjs' : release.bindingName;
+    await run(process.execPath, ['-e', `const {createRequire}=require('node:module'); const binding=createRequire(${JSON.stringify(join(cli, 'package.json'))})(${JSON.stringify(binding)}); if(typeof binding.install!=='function')process.exit(1);`], root);
     for (const alias of ['fnpmx', 'fnpx']) {
       await invoke(alias, ['--help']);
     }

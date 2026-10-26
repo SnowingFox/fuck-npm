@@ -1873,8 +1873,8 @@ interactive flows (`update -i`). It talks to the core only through the `Core` in
 
 With the native launcher, the TS CLI is reached by exec for every command that
 [fnpm-cli](#fnpm-cli) does not handle natively. It still implements every command itself,
-including install, because it is what runs in development (`node dist/fnpm.js`), under the JS
-shim when postinstall scripts were skipped, and on platforms without a native binary. Its
+including install, because it runs in development (`node dist/fnpm.js`) and when an
+installed executable cannot run but its addon remains usable. Its
 command registry is the single source of the CLI surface: the build emits
 `crates/fnpm-cli/cli-spec.json` from it, and the native output renderers are ports of
 `src/output/*`, checked against shared golden fixtures.
@@ -1894,9 +1894,10 @@ passed under `--json` / `--silent`. Tests: vitest with injected fakes.
 `crates/` and `target/` candidates only apply in the repository checkout: in an installed
 copy `../../` is the user's `node_modules`, where a dependency named `target` or `crates`
 could plant a library that every fnpm process would load, scripts allowed or not.
-`index.d.ts` is the contract above. Platform packages are napi-rs standard prebuilt packages
-built in CI (`napi build --platform --profile release-napi`); they also carry the native
-executables (see [packaging](#packaging-and-distribution)).
+`index.d.ts` is the contract above. CI builds the addon with
+`napi build --platform --profile release-napi`. The single-package distribution uses
+an internal loader instead of this development binding package
+(see [packaging](#packaging-and-distribution)).
 
 ## bench
 
@@ -1928,66 +1929,56 @@ done when the conformance tests for its PARITY rows pass.
 
 ## Packaging and distribution
 
-Status: implemented and verified with staged npm tarballs on all eight targets
-([`00ec69f` CI](https://github.com/SnowingFox/fuck-npm/actions/runs/40265278514)); public
-npm publication and other package-manager installs remain open (P6 in `docs/ROADMAP.md`).
-The shape follows bun's npm distribution (`submodule/bun/packages/bun-release`), with
-napi-rs's prebuilt-package conventions. The names below are source workspace names:
-`scripts/stage-release.mjs --name <owned-name>` generates the actual published namespace.
-The unscoped npm name `fuck-npm` belongs to an unrelated package.
+The `0.0.2` distribution publishes one npm package, `@tiktok-fe/fnpm`, through
+bnpm. `scripts/stage-single-release.mjs` builds a separate staging directory;
+source workspace names remain `fuck-npm` and `@fuck-npm/binding`. The unscoped
+npm name `fuck-npm` belongs to another maintainer. The previous `0.0.1` release
+published separate binding and platform packages; those versions remain unchanged.
 
-| package | contents |
+| artifact | contents |
 |---|---|
-| `fuck-npm` | `dist/` (the TS bundle), `bin/fnpm`, `bin/fnpm-lock`, `bin/fnpx`, and `bin/fnpmx` (JS shims as published, `lib/shim.cjs`), `lib/native.cjs`, `scripts/postinstall.js`, `optionalDependencies` on every `@fuck-npm/binding-<triple>` at the same version |
-| `@fuck-npm/binding` | the loader (`index.js`, `index.d.ts`) that finds `fnpm.<triple>.node` |
-| `@fuck-npm/binding-<triple>` | `fnpm.<triple>.node`, plus the native `fnpm` and `fnpm-lock` executables (`.exe` on Windows); `os` / `cpu` / `libc` set so package managers install only the matching one |
+| `@tiktok-fe/fnpm` npm tarball | TS `dist/`, four bin shims, native downloader and archive helper, internal addon loader, `lib/native-release.json`; no npm dependencies or optional dependencies |
+| `fnpm-v<version>-<abi>.tar.gz` GitHub asset | Native `fnpm`, `fnpm-lock` (`.exe` on Windows), and `fnpm.<abi>.node` |
 
 Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`,
 `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
 `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
 
-- **Postinstall swap.** `scripts/postinstall.js` (modelled on bun's
-  `packages/bun-release/src/npm/install.ts`) resolves the platform package (from `fuck-npm`,
-  then from `@fuck-npm/binding`, the only package an isolated layout lets see it); if it is
-  missing (`--no-optional`) it `npm install`s it into a temp dir and moves it under
-  the binding's own `node_modules` (or the CLI's when the binding cannot be resolved),
-  so both loaders can resolve it. Failing that it downloads the tarball from the registry
-  (`npm_config_registry`), checks it against the packument's integrity, and extracts
-  the addon and both executables. It then runs each
-  executable's `--version`, requires the package version, and replaces `bin/fnpm` and
-  `bin/fnpm-lock` with hardlinks to (or copies of) the executables: link or copy to a temp name,
-  then rename, so a store-backed file is never written in place. Package managers point
-  `node_modules/.bin/fnpm` (and global bins) at `bin/fnpm`, so after the swap invoking `fnpm`
-  starts the native binary directly, with no Node and no wrapper. The native binary finds the
-  bundle at `../dist/` relative to itself. The swap is skipped on Windows (below), under pnpm
-  and yarn berry (their `.bin` entries are scripts that run the target with node, decided when
-  the bin was linked, before postinstall), in a development checkout (not under
-  `node_modules`) and with `FNPM_SKIP_NATIVE_SWAP=1`. A platform package installed at our
-  version without the executables is not installed again. It never fails the install; on any
-  problem the shim stays.
-- **Shim fallback.** If the swap did not happen, `bin/fnpm` is still the published JS shim
-  (`lib/shim.cjs`, CommonJS, Node built-ins only). It resolves the platform package and runs
-  the native binary as a child with inherited stdio, `FNPM_JS_ENTRY` pointing at its own bundle,
-  signals forwarded, and the child's exit status (or signal) passed through; if there is no
-  binary for the platform, or it cannot be executed, it imports `dist/fnpm.js` and runs in
-  process through napi. Either way the CLI behaves the same, only with Node's startup added.
-  `fnpm doctor` reports when the shim is in use and how to fix it.
-- **Windows.** npm's `cmd-shim` writes `.bin/fnpm.cmd` before postinstall runs and bakes in the
-  interpreter from the shebang of whatever `bin/fnpm` is at that moment. bun publishes a
-  shebang-less placeholder for this reason. fnpm retains the JS shim on Windows;
-  it launches the platform package's `.exe` with explicit bundle entry paths. Both
-  architectures pass staged npm tarball smoke with scripts enabled and disabled.
-  Other package-manager installs and full bin conformance remain to be tested.
-- **Size.** The native executable and `fnpm.node` both link `fnpm-core`, so each platform package
-  carries the core twice. Accepted for now; the alternative (the TS CLI calling the native
-  binary instead of napi) can be revisited after measuring.
-- **Versioning and publishing.** Every package shares one version. CI builds release
-  launchers and a `release-napi` addon per target; GNU Linux uses Zig with a glibc 2.17
-  baseline. It installs staged tarballs through a temporary localhost registry on all
-  eight targets. Publication runs manually on the release Mac using local npm authentication:
-  platforms first, binding next, CLI last. The release scripts check bundle chunks, tarball
-  contents and SHA-512 integrity. Retrying skips an existing exact version only when registry
-  integrity matches. See [RELEASING.md](RELEASING.md) for commands.
+- **Download and validation.** Postinstall selects the ABI, downloads its GitHub
+  release archive and checks the SHA-512 digest embedded in the npm tarball. It
+  extracts only the expected files into a new staging directory, checks both
+  executable versions, and renames the complete directory into `native/<abi>`.
+  A failed download or validation leaves the previous directory untouched.
+  `FNPM_NATIVE_MIRROR` selects a mirror directory while retaining integrity checks;
+  HTTPS is required except for localhost smoke fixtures.
+- **Native bin swap.** Eligible Unix installs link or copy each native executable
+  to a temporary sibling of its bin shim, then rename over it. Existing hardlinked
+  files are never overwritten in place. `fnpx` and `fnpmx` use the `fnpm` executable,
+  which recognizes those aliases. The swapped binary finds the TS bundle in
+  `../dist/`; its install hot path avoids Node startup.
+- **Retained JS shims.** Windows, pnpm and Yarn Berry generate bin wrappers that
+  invoke Node explicitly, so they keep the JS shims after downloading native
+  files. `FNPM_SKIP_NATIVE_SWAP=1` also keeps them. The shim starts the native
+  executable with inherited stdio, explicit TS bundle paths, forwarded signals
+  and the child's exit status. If install scripts were disabled or download
+  failed, first execution retries native installation before launching. It fails
+  with a download error if native files remain unavailable. That initial download
+  needs Node 20.19+ and network access to the release asset.
+- **Addon loading.** Staging rewrites the compiled TS loader to use the internal
+  `lib/binding.cjs`, which loads `native/<abi>/fnpm.<abi>.node`. Development source
+  keeps `@fuck-npm/binding` and its checkout-only cargo lookup. No development
+  addon search is performed by the published internal loader.
+- **Build and release.** CI builds both launchers and a `release-napi` addon for
+  each target; GNU Linux uses Zig with a glibc 2.17 baseline. Its staged tarball
+  smoke covers normal and disabled-script installs on all eight targets,
+  including Alpine for musl. Release staging creates eight native archives and
+  one npm tarball. Upload the exact archives to GitHub first, then publish only
+  the npm tarball with bnpm from the Mac. The release helper verifies registry
+  and tarball integrity and resumes an existing version only if its integrity
+  matches. See [RELEASING.md](RELEASING.md) for commands and release status.
+- **Size.** Both the executable and addon link `fnpm-core`, so the current ABI
+  archive carries the core twice. Other platforms' bytes are never downloaded
+  by the installer.
 
 ## Startup budget
 

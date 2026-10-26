@@ -32,7 +32,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -85,7 +85,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -138,7 +138,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm ci v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm ci v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -192,7 +192,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -249,7 +249,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -306,7 +306,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -363,7 +363,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -443,7 +443,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -499,7 +499,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -555,7 +555,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -611,7 +611,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -669,7 +669,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -726,7 +726,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -781,7 +781,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -837,7 +837,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -906,7 +906,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -963,7 +963,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1017,7 +1017,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1072,7 +1072,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1125,7 +1125,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "0.0.1\n",
+        "stdout": "0.0.2\n",
         "stderr": "",
         "install": null
       }
@@ -1137,7 +1137,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "0.0.1\n",
+        "stdout": "0.0.2\n",
         "stderr": "",
         "install": null
       }
@@ -1150,7 +1150,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "0.0.1\n",
+        "stdout": "0.0.2\n",
         "stderr": "",
         "install": null
       }
@@ -1163,7 +1163,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "0.0.1\n",
+        "stdout": "0.0.2\n",
         "stderr": "",
         "install": null
       }
@@ -1177,7 +1177,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "0.0.1\n",
+        "stdout": "0.0.2\n",
         "stderr": "",
         "install": null
       }
@@ -1325,7 +1325,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1384,7 +1384,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1441,7 +1441,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1550,7 +1550,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1605,7 +1605,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1661,7 +1661,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1715,7 +1715,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1770,7 +1770,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1826,7 +1826,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1881,7 +1881,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1936,7 +1936,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -1992,7 +1992,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2048,7 +2048,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2104,7 +2104,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2158,7 +2158,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2212,7 +2212,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2266,7 +2266,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2320,7 +2320,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2375,7 +2375,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2431,7 +2431,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2486,7 +2486,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2541,7 +2541,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2597,7 +2597,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2653,7 +2653,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2707,7 +2707,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2761,7 +2761,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2815,7 +2815,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2869,7 +2869,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2923,7 +2923,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm ci v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm ci v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -2981,7 +2981,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3049,7 +3049,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app/sub",
@@ -3104,7 +3104,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/x/y",
@@ -3158,7 +3158,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/abs/dir",
@@ -3212,7 +3212,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/abs/link/../x/",
@@ -3266,7 +3266,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3375,7 +3375,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3432,7 +3432,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3520,7 +3520,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3590,7 +3590,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3660,7 +3660,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3716,7 +3716,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3772,7 +3772,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3841,7 +3841,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3898,7 +3898,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -3962,7 +3962,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4039,7 +4039,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4125,7 +4125,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4181,7 +4181,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4236,7 +4236,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4292,7 +4292,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4347,7 +4347,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4403,7 +4403,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4457,7 +4457,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4512,7 +4512,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4568,7 +4568,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4630,7 +4630,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4690,7 +4690,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4747,7 +4747,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4802,7 +4802,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4859,7 +4859,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4922,7 +4922,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -4979,7 +4979,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5037,7 +5037,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5094,7 +5094,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5152,7 +5152,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5211,7 +5211,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5270,7 +5270,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5328,7 +5328,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5387,7 +5387,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5485,7 +5485,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm ci v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm ci v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5557,7 +5557,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5655,7 +5655,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5726,7 +5726,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5834,7 +5834,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5888,7 +5888,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -5942,7 +5942,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6009,7 +6009,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6063,7 +6063,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6117,7 +6117,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6171,7 +6171,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6226,7 +6226,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6283,7 +6283,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6340,7 +6340,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm remove v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm remove v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6504,7 +6504,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6558,7 +6558,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6675,7 +6675,7 @@
       },
       "expected": {
         "exit": 1,
-        "stdout": "fnpm install v0.0.1\n",
+        "stdout": "fnpm install v0.0.2\n",
         "stderr": "error: lockfile had changes, but lockfile is frozen\n",
         "install": {
           "cwd": "/work/app",
@@ -6810,7 +6810,7 @@
       },
       "expected": {
         "exit": 1,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\nFailed to install 2 packages\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\nFailed to install 2 packages\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -6957,7 +6957,7 @@
       },
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\nChecked 12 installs across 40 packages (no changes) [3.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\nChecked 12 installs across 40 packages (no changes) [3.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -7037,7 +7037,7 @@
       },
       "expected": {
         "exit": 0,
-        "stdout": "fnpm add v0.0.1\n\ninstalled typescript@5.9.3 with binaries:\n - tsc\n - tsserver\n\n1 package installed [12.00ms]\n",
+        "stdout": "fnpm add v0.0.2\n\ninstalled typescript@5.9.3 with binaries:\n - tsc\n - tsserver\n\n1 package installed [12.00ms]\n",
         "stderr": "",
         "install": {
           "cwd": "/work/app",
@@ -7135,7 +7135,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "warn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7233,7 +7233,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7334,7 +7334,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7434,7 +7434,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm add \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm add \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\r\u001b[2K⠋ Resolvi\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7537,7 +7537,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7638,7 +7638,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7739,7 +7739,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7838,7 +7838,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -7937,7 +7937,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -8233,7 +8233,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "\r\u001b[2K\u001b[36m⠋\u001b[39m \u001b[36mResolving\u001b[39m 1/3  \u001b[2m0.0s\u001b[22m\r\u001b[2K\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -8332,7 +8332,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.1\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m^\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 ->\u001b[22m \u001b[1m3.23.8\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m^\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 ->\u001b[22m \u001b[1m3.23.8\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -8433,7 +8433,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm install v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm install v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",
@@ -8534,7 +8534,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "fnpm update v0.0.1\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
+        "stdout": "fnpm update v0.0.2\n\n+ react@18.3.1\n^ zod 3.22.0 -> 3.23.8\n\n2 packages installed [12.00ms]\n",
         "stderr": "\r\u001b[2K⠋ Resolving 1/3  0.0s\r\u001b[2Kwarn: deprecated: request@2.88.2\nerror: postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",

@@ -10,12 +10,36 @@ run package executables.
 > execution and security commands are wired end to end. Full Bun conformance and the
 > requirement to beat Bun on every benchmark remain open. See the [roadmap](#roadmap).
 
-## Try the development build
+## Install
 
-This repository has not published an npm release yet. The existing unscoped
-`fuck-npm` package on npm belongs to another maintainer. Do not install it to
-try this project. [Release preparation](docs/RELEASING.md) documents the package
-namespace, complete native artifacts, tarball checks, and local publication.
+Install the scoped package from the registry configured for bnpm:
+
+```sh
+bnpm install -g @tiktok-fe/fnpm@0.0.2
+fnpm --version
+fnpm install
+fnpx --help
+```
+
+The distribution is one npm package, `@tiktok-fe/fnpm`. Its postinstall downloads
+only this machine's native archive from [GitHub Releases](https://github.com/SnowingFox/fuck-npm/releases),
+checks the embedded SHA-512 digest and executable versions, and installs the
+launchers and Rust addon. There are no separate platform npm dependencies.
+Node 20.19+ and access to GitHub release assets are required.
+
+On Unix, npm, bnpm, Bun and Yarn classic can replace the bin shim with the native
+launcher to avoid Node startup. Windows, pnpm and Yarn Berry keep a Node shim
+that starts the native launcher. If lifecycle scripts are disabled or the download
+fails during installation, the first `fnpm`, `fnpm-lock`, `fnpx` or `fnpmx` invocation
+retries the download. That first invocation needs network access; subsequent runs
+use the installed files. With npm versions that require lifecycle approval, use
+`--allow-scripts=@tiktok-fe/fnpm` to allow the automatic native-bin swap.
+
+The existing unscoped `fuck-npm` package on npm belongs to another maintainer.
+This project's `0.0.1` used separate platform packages; `0.0.2` replaces that layout.
+See [release preparation](docs/RELEASING.md) for verification and publication.
+
+## Development build
 
 From a source checkout with Node 20.19+ and Rust 1.90+:
 
@@ -28,8 +52,8 @@ node packages/fuck-npm/dist/fnpm.js install --cwd /path/to/project
 node packages/fuck-npm/dist/fnpm-lock.js --help
 ```
 
-This path runs the Node CLI with the Rust addon. Release platform packages also
-need the native launcher for the startup times shown in the benchmarks.
+This path runs the Node CLI with the Rust addon. Release archives also
+contain the native launcher for the startup times shown in the benchmarks.
 
 ## Why
 

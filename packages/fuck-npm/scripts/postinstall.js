@@ -7,6 +7,9 @@
  * running `fnpm` starts the native launcher directly, with no Node startup.
  * The shape follows bun's `packages/bun-release/src/npm/install.ts`:
  *
+ * Single-package releases first download the current ABI archive using the
+ * embedded SHA-512 manifest. The source workspace retains this fallback:
+ *
  *   1. resolve `@fuck-npm/binding-<triple>` (normally an installed
  *      optionalDependency),
  *   2. if it is missing (`--no-optional`, `--omit=optional`), `npm install` it
@@ -18,7 +21,8 @@
  *      install is never modified in place.
  *
  * Nothing here can fail the install: on any problem the shim stays, and the
- * shim runs the native executable as a child or falls back to the TS CLI.
+ * shim retries the native download on first execution. In source workspaces
+ * it runs the native executable as a child or falls back to the TS CLI.
  * The swap is skipped where it would break the bin entry: on Windows (cmd-shim
  * bakes `node` into `.bin/fnpm.cmd`), under pnpm and yarn berry (their `.bin`
  * entries are scripts that run the target with node), and in a development
@@ -42,12 +46,13 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gunzipSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 const native = require("../lib/native.cjs");
+const { nativeVersion, extractFiles } = require("../lib/archive.cjs");
+export { nativeVersion, extractFiles };
 
 const DEFAULT_REGISTRY = "https://registry.npmjs.org";
 
@@ -69,16 +74,6 @@ export function skipReason({ env = process.env, platform = process.platform, roo
   const yarn = /^yarn\/(\d+)/.exec(agent);
   if (yarn && Number(yarn[1]) >= 2) return "yarn berry runs bins through node";
   return null;
-}
-
-/** `<exe> --version`, trimmed; null when it does not run. */
-export function nativeVersion(exe) {
-  const result = spawnSync(exe, ["--version"], { encoding: "utf8", timeout: 10_000, windowsHide: true });
-  if (result.error || result.status !== 0) {
-    debug(`${exe} --version failed:`, result.error?.message ?? result.stderr);
-    return null;
-  }
-  return result.stdout.trim();
 }
 
 /**
@@ -161,40 +156,6 @@ export function matchesIntegrity(bytes, integrity) {
 }
 
 /**
- * Write the regular files of a gzipped npm tarball whose names (without the
- * `package/` prefix) are in `wanted` into `destination`. Entries that would
- * escape `destination` are ignored (bun's `downloadBun` parser, with the
- * traversal check).
- */
-export function extractFiles(tgz, destination, wanted) {
-  const buffer = gunzipSync(tgz);
-  const field = (offset, length) =>
-    buffer.subarray(offset, offset + length).toString("utf8").replace(/\0.*$/s, "");
-  const written = [];
-  let offset = 0;
-  while (offset + 512 <= buffer.length) {
-    const name = field(offset, 100);
-    if (name === "") break;
-    const prefix = field(offset + 345, 155);
-    const size = Number.parseInt(field(offset + 124, 12).trim() || "0", 8);
-    const type = field(offset + 156, 1);
-    offset += 512;
-    const full = (prefix ? `${prefix}/${name}` : name).replace(/^package\//, "");
-    if ((type === "" || type === "0") && wanted.includes(full)) {
-      const target = join(destination, full);
-      const inside = relative(destination, target);
-      if (inside && !inside.startsWith("..") && !isAbsolute(inside)) {
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, buffer.subarray(offset, offset + size));
-        written.push(full);
-      }
-    }
-    offset += (size + 511) & ~511;
-  }
-  return written;
-}
-
-/**
  * Download `name@version` from the registry, check it against the packument's
  * integrity, and extract the executables into `<root>/node_modules/<name>`.
  */
@@ -259,6 +220,10 @@ async function resolveExecutables(abi, version, root, options) {
  */
 export async function postinstall({ root = native.PACKAGE_ROOT, env = process.env, platform = process.platform, abi = native.platformArchAbi(), npm, fetchImpl } = {}) {
   try {
+    if (existsSync(join(root, 'lib/native-release.json'))) {
+      // Download on every supported platform, including those that retain Node bin shims.
+      await (await import('./install-native.js')).installNative({ root, abi, env, ...(fetchImpl ? { fetchImpl } : {}) });
+    }
     const reason = skipReason({ env, platform, root });
     if (reason) return `skipped: ${reason}`;
     if (!abi) return `kept shim: no prebuilt executable for ${process.platform}-${process.arch}`;

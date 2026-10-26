@@ -12,8 +12,10 @@
  */
 
 const { spawn } = require('node:child_process');
+const { existsSync } = require('node:fs');
+const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { findNativeExecutable, jsEntry } = require('./native.cjs');
+const { PACKAGE_ROOT, findNativeExecutable, jsEntry } = require('./native.cjs');
 
 const FORWARDED_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT', 'SIGBREAK', 'SIGWINCH'];
 
@@ -32,12 +34,14 @@ function runNative(bin, exe) {
   if (!env.FNPM_JS_ENTRY) env.FNPM_JS_ENTRY = jsEntry('fnpm');
   if (!env.FNPM_LOCK_JS_ENTRY) env.FNPM_LOCK_JS_ENTRY = jsEntry('fnpm-lock');
 
-  const child = spawn(exe, process.argv.slice(2), { stdio: 'inherit', env, windowsHide: false });
+  let child;
+  const pendingSignals = [];
   const listeners = new Map();
   for (const signal of FORWARDED_SIGNALS) {
     const forward = () => {
       try {
-        child.kill(signal);
+        if (child) child.kill(signal);
+        else pendingSignals.push(signal);
       } catch {
         // The child is already gone.
       }
@@ -52,6 +56,17 @@ function runNative(bin, exe) {
   const cleanup = () => {
     for (const [signal, forward] of listeners) process.removeListener(signal, forward);
   };
+
+  // Register before starting the executable: a fast child may print readiness
+  // before spawn returns and the caller may immediately signal this process.
+  try {
+    child = spawn(exe, process.argv.slice(2), { stdio: 'inherit', env, windowsHide: false });
+    for (const signal of pendingSignals) child.kill(signal);
+  } catch (error) {
+    cleanup();
+    fail(error);
+    return;
+  }
 
   child.on('error', (error) => {
     cleanup();
@@ -79,10 +94,14 @@ function fail(error) {
 }
 
 /** Entry point of the bin shims. `fnpmx` and `fnpx` are `fnpm x`. */
-function main(bin) {
+async function main(bin) {
   if (bin === 'fnpmx' || bin === 'fnpx') {
     process.argv.splice(2, 0, 'x');
     bin = 'fnpm';
+  }
+  if (existsSync(join(PACKAGE_ROOT, 'lib/native-release.json')) && !findNativeExecutable(bin)) {
+    try { await (await import('../scripts/install-native.js')).installNative(); }
+    catch (error) { fail(error); return; }
   }
   const exe = findNativeExecutable(bin);
   if (exe) {

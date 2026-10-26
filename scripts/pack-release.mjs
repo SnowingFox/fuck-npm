@@ -25,7 +25,15 @@ for (const pkg of release.packages) {
   for (const file of ['package.json', 'LICENSE', ...required]) {
     if (!files.includes(file)) throw new Error(`${pkg.name} tarball is missing ${file}`);
   }
-  if (pkg.name === release.name) checkBundle(pkg.directory, files);
+  if (pkg.name === release.name) {
+    checkBundle(pkg.directory, files);
+    if (release.distribution === 'single') {
+      if (manifest.dependencies || manifest.optionalDependencies) throw new Error('Single-package releases must not depend on platform npm packages');
+      for (const file of ['lib/native-release.json', 'lib/binding.cjs', 'lib/archive.cjs', 'scripts/install-native.js']) {
+        if (!files.includes(file)) throw new Error(`Single package release is missing ${file}`);
+      }
+    }
+  }
   packed.push({ ...pkg, tarball: join(tarballs, info.filename), integrity: info.integrity, shasum: info.shasum, size: info.size, files });
   console.log(`${pkg.name}@${pkg.version}: ${info.size} bytes, ${files.length} files`);
 }

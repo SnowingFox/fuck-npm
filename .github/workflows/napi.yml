@@ -189,7 +189,7 @@ jobs:
           npm run build -w fuck-npm
           cp artifacts/binding-${{ matrix.target }}/fnpm.*.node packages/fuck-npm-binding/
           node packages/fuck-npm-binding/tests/smoke.cjs
-          node scripts/stage-release.mjs --name @fnpm-ci/fuck-npm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke
+          node scripts/stage-single-release.mjs --name @fnpm-ci/fnpm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke --registry https://registry.npmjs.org/ --asset-base https://github.com/SnowingFox/fuck-npm/releases/download/ci-smoke
           node scripts/pack-release.mjs release-smoke
           node scripts/smoke-release.mjs release-smoke
       - if: matrix.alpine
@@ -200,6 +200,6 @@ jobs:
           npm run build -w fuck-npm &&
           cp artifacts/binding-${{ matrix.target }}/fnpm.*.node packages/fuck-npm-binding/ &&
           node packages/fuck-npm-binding/tests/smoke.cjs &&
-          node scripts/stage-release.mjs --name @fnpm-ci/fuck-npm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke &&
+          node scripts/stage-single-release.mjs --name @fnpm-ci/fnpm --target "${{ matrix.target }}" --artifacts artifacts --out release-smoke --registry https://registry.npmjs.org/ --asset-base https://github.com/SnowingFox/fuck-npm/releases/download/ci-smoke &&
           node scripts/pack-release.mjs release-smoke &&
           node scripts/smoke-release.mjs release-smoke'

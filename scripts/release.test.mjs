@@ -119,3 +119,19 @@ for (const code of ['E404', 'E403']) {
     }
   });
 }
+
+
+test('single-package publication publishes exactly one CLI tarball', () => {
+  const { dir, release } = fixture();
+  release.distribution = 'single';
+  release.packages = release.packages.slice(-1);
+  writeFileSync(join(dir, 'packed.json'), JSON.stringify(release));
+  const calls = [];
+  publishRelease({ dir, cli: 'bnpm' }, (command, args) => { calls.push({ command, args }); return { status: 0 }; });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args[1], release.packages[0].tarball);
+  assert.ok(calls[0].args.includes('--dry-run'));
+  release.complete = false;
+  writeFileSync(join(dir, 'packed.json'), JSON.stringify(release));
+  assert.throws(() => publishRelease({ dir, cli: 'bnpm' }), /complete release/);
+});
