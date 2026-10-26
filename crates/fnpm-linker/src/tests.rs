@@ -2211,3 +2211,21 @@ fn concurrent_shebang_normalisation_of_one_target_is_safe() {
         );
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn clone_dir_preserves_source_symlinks() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("package");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("index.js"), "module.exports = 1;").unwrap();
+    let source = temp.path().join("source");
+    std::os::unix::fs::symlink("package", &source).unwrap();
+    let dest = temp.path().join("cloned");
+    crate::fsutil::clone_dir(&source, &dest).unwrap();
+    assert_eq!(std::fs::read_link(&dest).unwrap(), Path::new("package"));
+    assert_eq!(
+        std::fs::read_to_string(target.join("index.js")).unwrap(),
+        "module.exports = 1;"
+    );
+}

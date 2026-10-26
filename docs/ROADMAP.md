@@ -26,7 +26,10 @@ binding test jobs passed, as did Linux GNU x64, both musl, and both Windows rele
 Release smoke jobs were skipped because the build matrix failed. The follow-up defines the Darwin clone flag
 from verified platform references and corrects Unix-only store guards for Windows. ARM GNU now uses Zig
 with an explicit glibc 2.17 target. Store tests join the native platform test jobs so the clonefile regression
-runs on macOS. These fixes require a fresh CI run before the blockers can be considered closed.
+runs on macOS. The follow-up run ([40253207146](https://github.com/SnowingFox/fuck-npm/actions/runs/40253207146))
+passed the ARM GNU release build and all Linux test jobs. It exposed the same missing clone flag in the
+linker and two Windows store test failures (file-identity accounting and path separators); those fixes
+require another native CI run before the blockers can be considered closed.
 
 - Rust workspace: 1,395 passed, 13 ignored across 74 targets; strict Clippy and formatting passed.
 - TypeScript CLI: 652 passed; CLI and harness type checks, bundle build and benchmark/corpus strict type checks passed.

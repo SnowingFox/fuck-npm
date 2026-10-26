@@ -14,6 +14,11 @@ use fnpm_store::fsops::StickyBackend;
 use fnpm_store::{FileIndex, IndexedFile, MaterializeError};
 use rayon::prelude::*;
 
+// CLONE_NOFOLLOW from <sys/clonefile.h>, absent from libc 0.2.191. Same verified
+// flag as fnpm-store (Bun 179664ea and reflink-copy 0.1.30).
+#[cfg(target_os = "macos")]
+const CLONE_NOFOLLOW: u32 = 0x0001;
+
 /// A package with at least this many files has them linked by several threads (the calling
 /// thread's rayon pool), [`LINK_CHUNK`] files per task: one big package (next: ~8,700 files)
 /// would otherwise bound the whole link step.
@@ -415,7 +420,7 @@ pub fn clone_dir(src: &Path, dest: &Path) -> io::Result<()> {
     let d = std::ffi::CString::new(dest.as_os_str().as_bytes())
         .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     // SAFETY: both pointers are valid NUL-terminated strings for the duration of the call.
-    let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), libc::CLONE_NOFOLLOW) };
+    let rc = unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), CLONE_NOFOLLOW) };
     if rc == 0 {
         Ok(())
     } else {
