@@ -483,6 +483,15 @@ impl BinLinker {
                 if self.owner.is_some() {
                     return Err(io::Error::from_raw_os_error(libc::EEXIST));
                 }
+                // A directory in the `.bin` of a symlinked `node_modules` is not a linker's.
+                if fsutil::kind(dest) == fsutil::Kind::Dir
+                    && self
+                        .bin_dir
+                        .parent()
+                        .is_some_and(fsutil::is_linked_node_modules)
+                {
+                    return Err(fsutil::in_the_way(dest));
+                }
                 // pnpm writes its commands as files; a directory goes too.
                 fsutil::remove_any(dest)?;
             }

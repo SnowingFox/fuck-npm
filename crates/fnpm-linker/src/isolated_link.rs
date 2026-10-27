@@ -130,16 +130,28 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         .filter(|d| crate::is_inside_project(cx.project_dir, d))
         .collect();
     let mut is_new_fnpm = is_new_nm;
+    // Symlinked `node_modules` folders that hold another linker's tree: nothing is moved out of
+    // them (bun `LinkedNodeModules`), which is worth a warning.
+    let mut not_cleared = Vec::new();
+    let mut clear = |node_modules: &Path, keep: &[&str]| {
+        if fsutil::is_linked_node_modules(node_modules) {
+            if crate::holds_a_tree(node_modules) {
+                not_cleared.push(crate::shown_folder(cx.project_dir, node_modules));
+            }
+        } else {
+            crate::move_node_modules_aside(node_modules, keep);
+        }
+    };
     if !is_new_nm && !crate::is_isolated_tree(cx.project_dir) {
         // Another linker made this tree (or none did): move its entries aside.
-        crate::move_node_modules_aside(&nm, &[".fnpm"]);
+        clear(&nm, &[".fnpm"]);
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
         is_new_fnpm = true;
     } else if is_new_nm {
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
     }
     if !is_new_fnpm {
@@ -431,6 +443,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     let installed = installed.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
+        not_cleared,
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
         written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
@@ -524,7 +537,12 @@ fn link_entry(
     ) = match &st.kind {
         Kindof::Importer(dir) => {
             let nm = dir.join("node_modules");
-            (nm.clone(), None, false, Strategy::ExpectExisting, nm)
+            let strategy = if fsutil::is_linked_node_modules(&nm) {
+                Strategy::KeepOthers
+            } else {
+                Strategy::ExpectExisting
+            };
+            (nm.clone(), None, false, strategy, nm)
         }
         Kindof::Nothing | Kindof::External(_) => return Ok(()),
         Kindof::Local => {

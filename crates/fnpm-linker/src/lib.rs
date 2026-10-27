@@ -282,6 +282,9 @@ pub struct LinkReport {
     pub dirs: Vec<(PackageId, PathBuf)>,
     /// The weakest backend that was used for a file, if any file was placed.
     pub backend_used: Option<Backend>,
+    /// `node_modules` folders (relative to the project) that are symlinks and hold another
+    /// linker's tree, which a switch of linker would have cleared (bun `warn_not_cleared`).
+    pub not_cleared: Vec<String>,
 }
 
 /// Decides which packages count as trusted (their scripts may run), so they are never shared
@@ -666,6 +669,23 @@ pub(crate) fn is_a_linkers(name: &str) -> bool {
         || OF_A_PACKAGE_MANAGER.contains(&name)
         || name.starts_with(".pnpm")
         || fsutil::is_leftover(name)
+}
+
+/// Whether `node_modules` has an entry a package manager made (bun `holds_a_tree`).
+pub(crate) fn holds_a_tree(node_modules: &Path) -> bool {
+    std::fs::read_dir(node_modules).is_ok_and(|rd| {
+        rd.flatten()
+            .any(|e| is_a_linkers(&e.file_name().to_string_lossy()))
+    })
+}
+
+/// `node_modules` relative to the project, with `/`, for messages.
+pub(crate) fn shown_folder(project_dir: &Path, node_modules: &Path) -> String {
+    node_modules
+        .strip_prefix(project_dir)
+        .unwrap_or(node_modules)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// Moves every linker-made entry of `node_modules` (except `keep`) into

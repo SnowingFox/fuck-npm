@@ -46,6 +46,34 @@ pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
     let (_, layout) = current_layout(&project, &graph)?;
     let view = crate::install::link_view(&graph);
     let plan = fnpm_linker::prune::plan(&project.root_dir, &view, &layout);
+    // bun: a symlinked `node_modules` may hold what no linker made, so nothing is pruned.
+    if !plan.linked_folders.is_empty() {
+        let mut folders: Vec<String> = plan
+            .linked_folders
+            .iter()
+            .map(|f| {
+                f.strip_prefix(&project.root_dir)
+                    .unwrap_or(f)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect();
+        folders.sort();
+        for f in &folders {
+            cx.events.emit(Event::Error {
+                message: format!("cannot prune symlink {f}"),
+                code: None,
+            });
+        }
+        cx.events.emit(Event::notice(
+            "note: to prune this project, remove the link and run 'fnpm install'",
+        ));
+        return Ok(exit(
+            1,
+            json!({ "removed": [], "linked": folders }),
+            Vec::new(),
+        ));
+    }
     let names: Vec<String> = plan.removals.iter().map(|r| r.name.clone()).collect();
     if cx.flag("check") || cx.pm.dry_run {
         let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();

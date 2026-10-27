@@ -192,6 +192,13 @@ pub fn plan(project_dir: &Path, graph: &LockGraph, layout: &Layout) -> PrunePlan
             folders.sort();
             folders.dedup();
             for folder in &folders {
+                // Nothing behind a symlinked `node_modules` is pruned (bun `LinkedNodeModules`).
+                if fsutil::kind(folder) == Kind::Symlink {
+                    if !out.linked_folders.contains(folder) {
+                        out.linked_folders.push(folder.clone());
+                    }
+                    continue;
+                }
                 leftovers(folder, &mut out.removals);
                 for (alias, path, kind) in list_packages(folder) {
                     out.checked += 1;
@@ -214,8 +221,10 @@ pub fn plan(project_dir: &Path, graph: &LockGraph, layout: &Layout) -> PrunePlan
                     continue;
                 };
                 let folder = dir.join("node_modules");
-                if *pkg != fnpm_types::PackageId::ROOT && fsutil::kind(&folder) == Kind::Symlink {
-                    out.linked_folders.push(folder.clone());
+                if fsutil::kind(&folder) == Kind::Symlink {
+                    if !out.linked_folders.contains(&folder) {
+                        out.linked_folders.push(folder.clone());
+                    }
                     continue;
                 }
                 let mut names: HashSet<&str> = deps.iter().map(|(a, _)| a.as_str()).collect();
@@ -235,6 +244,15 @@ pub fn plan(project_dir: &Path, graph: &LockGraph, layout: &Layout) -> PrunePlan
                 }
             }
             let fnpm = nm.join(".fnpm");
+            // The store is inside the root `node_modules`: behind a link, it is not pruned.
+            if fsutil::kind(&fnpm) == Kind::Symlink {
+                out.linked_folders.push(fnpm.clone());
+            }
+            if fsutil::kind(&nm) == Kind::Symlink || fsutil::kind(&fnpm) == Kind::Symlink {
+                out.removals.sort();
+                out.removals.dedup();
+                return out;
+            }
             let keys: HashSet<&str> = l
                 .entries
                 .iter()
@@ -329,6 +347,10 @@ pub fn execute(project_dir: &Path, plan: &PrunePlan) -> (u32, Vec<(PathBuf, std:
 /// Returns how many entries went.
 pub fn remove_unplaced(project_dir: &Path, graph: &LockGraph, layout: &Layout) -> u32 {
     let p = plan(project_dir, graph, layout);
+    // bun leaves every folder alone when one `node_modules` is a symlink.
+    if !p.linked_folders.is_empty() {
+        return 0;
+    }
     let nm = project_dir.join("node_modules");
     let top: PrunePlan = PrunePlan {
         removals: p

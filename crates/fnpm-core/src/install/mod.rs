@@ -831,6 +831,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     )
     .await?;
     phases.mark("link");
+    // bun `warn_not_cleared`: a symlinked `node_modules` keeps the other linker's tree.
+    if !linked.report.not_cleared.is_empty() {
+        for folder in &linked.report.not_cleared {
+            events.emit(Event::warn(
+                format!("cannot clear symlink {folder}, packages from another linker remain"),
+                None,
+            ));
+        }
+        events.emit(Event::notice(
+            "note: remove the link and run 'fnpm install'",
+        ));
+    }
     // `+` rows: the direct dependencies of the cwd's workspace that this run wrote.
     let ws_path = ws
         .member_for_dir(&project.cwd)

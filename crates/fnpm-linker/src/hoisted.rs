@@ -282,7 +282,12 @@ impl Out {
 pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let nm = cx.project_dir.join("node_modules");
     let mut fresh = cx.opts.fresh || !nm.exists();
-    if !fresh && crate::is_isolated_tree(cx.project_dir) {
+    let mut not_cleared = Vec::new();
+    // Nothing behind a symlinked `node_modules` is cleared, so each install finds the isolated
+    // tree again: warn instead of treating every install as a switch of linker (bun).
+    if !fresh && fsutil::is_linked_node_modules(&nm) && crate::is_isolated_tree(cx.project_dir) {
+        not_cleared.push(crate::shown_folder(cx.project_dir, &nm));
+    } else if !fresh && crate::is_isolated_tree(cx.project_dir) {
         // Switching from the isolated layout: move the whole tree aside.
         crate::move_node_modules_aside(&nm, &[]);
         for (ws, _) in &tree.workspace_roots {
@@ -406,6 +411,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let mut dirs = out.dirs.into_inner();
     dirs.sort();
     Ok(LinkReport {
+        not_cleared,
         installed: out.installed.load(Ordering::Relaxed),
         installed_packages: out.installed_packages.load(Ordering::Relaxed),
         verified: out.verified.load(Ordering::Relaxed),
@@ -594,6 +600,10 @@ pub(crate) fn remove_stale<'a>(
     node_modules: &Path,
     expected: impl Iterator<Item = &'a str>,
 ) -> u32 {
+    // What is behind a symlinked `node_modules` may not be a linker's (bun `LinkedNodeModules`).
+    if fsutil::is_linked_node_modules(node_modules) {
+        return 0;
+    }
     let Ok(rd) = std::fs::read_dir(node_modules) else {
         return 0;
     };
