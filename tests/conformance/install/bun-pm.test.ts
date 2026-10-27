@@ -3178,7 +3178,7 @@ describe.concurrent("without a package.json", () => {
     for (const cmd of [["pm", "whoami"], ["whoami"]]) {
       expect(await project.run(...cmd)).toEqual({
         stdout: "",
-        stderr: "error: missing authentication (run `bunx npm login`)\n",
+        stderr: "error: missing authentication (run `fnpm x npm login`)\n",
         exitCode: 1,
       });
     }

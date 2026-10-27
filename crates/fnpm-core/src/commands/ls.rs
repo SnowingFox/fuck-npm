@@ -275,7 +275,25 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
     // takes precedence over `--all`.
     let all = depth.is_none() && (!names.is_empty() || cx.flag("all"));
     let trusted_only = cx.flag("trusted");
-    let (project, _, graph) = match cx.load()? {
+    // A global listing before the first global install, or after the last one was removed:
+    // the global directory with nothing in it.
+    let empty_global = |dir: &std::path::Path| {
+        let dir = dir.display();
+        let line = if all {
+            format!("{dir} node_modules")
+        } else {
+            format!("{dir} node_modules (0 installed)")
+        };
+        Ok(exit(0, json!({ "dependencies": [] }), vec![line]))
+    };
+    let loaded = match cx.load() {
+        Err(Error::Workspace(fnpm_workspace::Error::NoProject(dir))) if cx.pm.global => {
+            return empty_global(&dir);
+        }
+        other => other?,
+    };
+    let (project, _, graph) = match loaded {
+        (p, _, None) if cx.pm.global => return empty_global(&p.root_dir),
         (p, ws, Some(g)) => (p, ws, g),
         _ => {
             if loud {
@@ -349,7 +367,12 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
         installed += folder.deps.len();
         max_depth = max_depth.max(dir.matches("node_modules").count());
     }
-    let cwd = cx.req.cwd.display().to_string();
+    // With -g bun lists from the global directory.
+    let cwd = if cx.pm.global {
+        project.root_dir.display().to_string()
+    } else {
+        cx.req.cwd.display().to_string()
+    };
     let mut lines = Vec::new();
     let first = directories.remove(0);
     let listed: Vec<(String, PackageId)>;

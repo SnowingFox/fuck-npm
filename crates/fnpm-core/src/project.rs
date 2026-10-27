@@ -90,8 +90,13 @@ impl Project {
         })?;
         let root_dir = config.project_dir.clone();
         if global {
-            std::fs::create_dir_all(&root_dir).map_err(Error::io(&root_dir))?;
+            // bun opens (creating) the global directory; only a command that installs into it
+            // starts a project there.
+            make_global_dir(&root_dir)?;
             if !root_dir.join("package.json").exists() {
+                if !create_package_json {
+                    return Err(fnpm_workspace::Error::NoProject(root_dir).into());
+                }
                 write_new_package_json(&root_dir)?;
             }
         }
@@ -161,6 +166,17 @@ impl Project {
     pub fn store(&self) -> Result<Store> {
         Ok(Store::open(&self.config.store_dir)?)
     }
+}
+
+/// Creates a global directory (`-g`), failing like bun with `ENAMETOOLONG` when its path does
+/// not fit a path buffer.
+pub(crate) fn make_global_dir(dir: &Path) -> Result<()> {
+    if !fnpm_config::path_fits(dir) {
+        return Err(Error::usage(
+            "ENAMETOOLONG: the global directory path is longer than the system allows",
+        ));
+    }
+    std::fs::create_dir_all(dir).map_err(Error::io(dir))
 }
 
 fn write_new_package_json(dir: &Path) -> Result<()> {

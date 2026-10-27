@@ -12,15 +12,34 @@ use crate::{CoreResult, Error, Result};
 
 /// `fnpm pm bin [-g]`.
 pub(crate) fn bin(cx: &Ctx) -> Result<CoreResult> {
-    let project = if cx.pm.global {
-        cx.project_anywhere()?
-    } else {
-        cx.project()?
-    };
     let dir: PathBuf = if cx.pm.global {
-        project.config.global_bin_dir.clone()
+        // bun opens the global directory, then the global bin directory, creating both; a
+        // query starts no project in them.
+        // Loading the global project creates the global directory.
+        let config = cx.project_anywhere()?.config;
+        let bin = config.global_bin_dir.clone();
+        crate::project::make_global_dir(&bin)?;
+        // bun warns, in colour only, when the folder is not on $PATH.
+        let out = super::pack::out::Out::new();
+        let shown = bin.to_string_lossy();
+        let dir = shown.trim_end_matches(['/', '\\']);
+        let on_path = cx.env.get("PATH").is_none_or(|path| {
+            std::env::split_paths(std::ffi::OsStr::new(path)).any(|entry| {
+                let entry = entry.to_string_lossy();
+                let entry = entry.trim_end_matches(['/', '\\']);
+                if cfg!(windows) {
+                    entry.eq_ignore_ascii_case(dir)
+                } else {
+                    entry == dir
+                }
+            })
+        });
+        if out.color_err && !on_path {
+            out.eprint(&format!("\n{}: not in $PATH\n\n", out.paint_err("33", "warn")));
+        }
+        bin
     } else {
-        project.root_dir.join("node_modules").join(".bin")
+        cx.project()?.root_dir.join("node_modules").join(".bin")
     };
     let s = dir.to_string_lossy().into_owned();
     Ok(ok(json!({ "path": s }), vec![s]))

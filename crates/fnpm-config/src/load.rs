@@ -45,6 +45,24 @@ fn env_path(base: &Path, value: &str, home: Option<&Path>) -> PathBuf {
     resolve_path(base, value, home)
 }
 
+/// `path` with `.` and `..` resolved without touching the filesystem, as bun joins paths.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push(c);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn first_env<'a>(env: &'a Env, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|k| env.get_not_empty(k))
 }
@@ -521,21 +539,29 @@ fn global_dirs(
     let bun_install = env
         .get_not_empty("BUN_INSTALL")
         .map(|v| env_path(cwd, v, home));
+    let xdg_cache = env
+        .get_not_empty("XDG_CACHE_HOME")
+        .map(|v| env_path(cwd, v, home));
     let pick = |env_keys: &[&str],
                 configured: &Option<PathBuf>,
                 under_bun: &[&str],
                 under_fnpm: &str|
      -> PathBuf {
         if let Some(v) = first_env(env, env_keys) {
-            return env_path(cwd, v, home);
+            return normalize_lexically(&env_path(cwd, v, home));
         }
         if let Some(p) = configured.as_ref().filter(|p| !p.as_os_str().is_empty()) {
             return p.clone();
         }
         if !fnpm_home_set && let Some(root) = &bun_install {
-            return under_bun.iter().fold(root.clone(), |p, s| p.join(s));
+            return normalize_lexically(&under_bun.iter().fold(root.clone(), |p, s| p.join(s)));
         }
-        fnpm_home.join(under_fnpm)
+        // bun's `$XDG_CACHE_HOME/.bun/install/global` and `$XDG_CACHE_HOME/.bun/bin`.
+        if !fnpm_home_set && let Some(root) = &xdg_cache {
+            let under = under_bun.iter().fold(root.join(".fnpm"), |p, s| p.join(s));
+            return normalize_lexically(&under);
+        }
+        normalize_lexically(&fnpm_home.join(under_fnpm))
     };
     (
         pick(

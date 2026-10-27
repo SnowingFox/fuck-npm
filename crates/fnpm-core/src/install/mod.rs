@@ -1015,8 +1015,54 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     if phases.on {
         eprintln!("[fnpm timing] registry {:?}", client.stats());
     }
+    if opts.pm.global
+        && opts.command == InstallCommand::Add
+        && config.log_level != fnpm_config::LogLevel::Silent
+        && let Some(bin) = summary.requested.iter().find_map(|r| r.bins.first())
+    {
+        warn_global_bin_not_in_path(&config.global_bin_dir, bin, &project.env, &*events);
+    }
     summary.elapsed_ms = start.elapsed().as_millis() as u64;
     Ok(summary)
+}
+
+/// bun: after `add -g`, the command to put the global bin folder on `$PATH` when the first bin
+/// it installed is not found there, in the user's shell.
+fn warn_global_bin_not_in_path(
+    bin_dir: &std::path::Path,
+    bin: &str,
+    env: &fnpm_config::Env,
+    events: &dyn EventSink,
+) {
+    if let Some(path) = env.get("PATH")
+        && fnpm_scripts::shell::which(bin, std::ffi::OsStr::new(path), bin_dir).is_some()
+    {
+        return;
+    }
+    let folder = bin_dir.to_string_lossy();
+    let quoted = if cfg!(windows) {
+        folder.into_owned()
+    } else {
+        folder.replace('\\', "\\\\")
+    };
+    let shell = env
+        .get("SHELL")
+        .and_then(|s| s.rsplit(['/', '\\']).next())
+        .unwrap_or("");
+    let instructions = match shell {
+        "bash" | "zsh" => format!("export PATH=\"{quoted}:$PATH\""),
+        "fish" => format!("fish_add_path {}", serde_json::to_string(&*folder_raw(bin_dir)).unwrap_or_default()),
+        "pwsh" | "powershell" | "pwsh.exe" | "powershell.exe" => format!("$env:PATH += \";{quoted}\""),
+        _ => quoted,
+    };
+    events.emit(Event::warn(
+        format!("To run {}, add the global bin folder to $PATH:\n\n{instructions}\n", serde_json::to_string(bin).unwrap_or_default()),
+        None,
+    ));
+}
+
+fn folder_raw(dir: &std::path::Path) -> String {
+    dir.to_string_lossy().into_owned()
 }
 
 /// [`LockGraph::reachable`] that stops at packages built for another platform: like bun, their
