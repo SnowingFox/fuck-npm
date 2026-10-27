@@ -169,10 +169,7 @@ impl PmOptions {
             cafile: self.cafile.clone(),
             ca_store: self.ca_store.clone(),
             minimum_release_age_ms: self.minimum_release_age_ms,
-            minimum_release_age_excludes: self
-                .minimum_release_age_excludes
-                .clone()
-                .unwrap_or_default(),
+            minimum_release_age_excludes: self.minimum_release_age_excludes.clone(),
             cpu: self.cpu.clone(),
             os: self.os.clone(),
             libc: self.libc.clone(),

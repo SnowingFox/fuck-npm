@@ -852,6 +852,28 @@ impl Engine<'_> {
             };
             pick::find_for_dependency(&manifest, wanted, gate.as_ref())
         };
+        // bun's `--verbose` note of a pick the gate moved to an older version.
+        if let Picked::FoundWithFilter {
+            result,
+            newest_filtered: Some(newest),
+        } = picked
+            && self.cfg.log_level == fnpm_config::LogLevel::Verbose
+            && let Some((ms, _)) = &self.gate
+        {
+            let wanted = match (&range, &tag) {
+                (Some(r), _) => match r.to_string().as_str() {
+                    "" | "*" => ">=0.0.0".to_owned(),
+                    text => text.to_owned(),
+                },
+                (None, Some(t)) => fnpm_types::text::escape_control_chars(t),
+                _ => String::new(),
+            };
+            self.manifests.verbose_line(format!(
+                "[minimum-release-age] {name}@{wanted} selected {} instead of {newest} due to {}-second filter",
+                result.version,
+                ms / 1000
+            ));
+        }
         let mut chosen = match picked {
             Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
             Picked::Err(err) => {

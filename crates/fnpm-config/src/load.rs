@@ -1091,9 +1091,8 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(ms) = cli.minimum_release_age_ms {
         minimum_release_age_ms = Some(ms);
     }
-    if !cli.minimum_release_age_excludes.is_empty() {
-        let entries = cli
-            .minimum_release_age_excludes
+    if let Some(list) = &cli.minimum_release_age_excludes {
+        let entries = list
             .iter()
             .flat_map(|l| l.split(','))
             .map(str::trim)

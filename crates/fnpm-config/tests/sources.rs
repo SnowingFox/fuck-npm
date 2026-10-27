@@ -899,7 +899,7 @@ fn cli_flags() {
         ca: vec!["B".into()],
         ca_store: Some("bundled".into()),
         minimum_release_age_ms: Some(5),
-        minimum_release_age_excludes: vec!["a, b@1.0.0 || 1.0.1".into(), "bad@^1".into()],
+        minimum_release_age_excludes: Some(vec!["a, b@1.0.0 || 1.0.1".into(), "bad@^1".into()]),
         backend: Some(Backend::Symlink),
         log_level: Some(LogLevel::Silent),
         cpu: vec!["arm64".into()],
@@ -936,6 +936,15 @@ fn cli_flags() {
     );
     assert_eq!(cfg.minimum_release_age_ms, Some(60_000));
     assert_eq!(cfg.minimum_release_age_excludes, ["x"]);
+    // An empty `--minimum-release-age-excludes` clears the configured list.
+    let cfg = fx.load_with(
+        &[],
+        CliOverrides {
+            minimum_release_age_excludes: Some(Vec::new()),
+            ..Default::default()
+        },
+    );
+    assert!(cfg.minimum_release_age_excludes.is_empty());
     let err = fx
         .try_load_in(
             "project",

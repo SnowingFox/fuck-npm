@@ -48,6 +48,11 @@ pub trait ManifestSource: Send + Sync {
         let _ = name;
         None
     }
+
+    /// A `--verbose` line about a resolution decision. The default drops it.
+    fn verbose_line(&self, line: String) {
+        let _ = line;
+    }
 }
 
 /// A git / tarball package after it was downloaded (or read from disk).
@@ -177,6 +182,10 @@ impl ManifestSource for RegistrySource {
 
     fn manifest_url(&self, name: &str) -> Option<String> {
         self.client.manifest_url(name)
+    }
+
+    fn verbose_line(&self, line: String) {
+        self.client.verbose_notice(|| line);
     }
 }
 

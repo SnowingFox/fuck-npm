@@ -578,8 +578,9 @@ pub struct CliOverrides {
     pub ca_store: Option<String>,
     /// `--minimum-release-age`, in milliseconds.
     pub minimum_release_age_ms: Option<u64>,
-    /// `--minimum-release-age-excludes` (comma-separated, repeatable).
-    pub minimum_release_age_excludes: Vec<String>,
+    /// `--minimum-release-age-excludes` (comma-separated, repeatable). `Some(empty)` (an empty
+    /// value) clears the configured list.
+    pub minimum_release_age_excludes: Option<Vec<String>>,
     /// `--cpu`.
     pub cpu: Vec<String>,
     /// `--os`.
