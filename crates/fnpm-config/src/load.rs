@@ -623,7 +623,8 @@ fn read_layers(opts: &LoadOptions) -> Result<Layers> {
     let mut merged = npmrc::load_npmrc_files(&npmrc_paths, env, &files_layer, h, &mut warnings);
     merged.overlay(files_layer);
     merged.overlay(env_layer(env, &cwd, h));
-    if env_ignores_scripts(env) {
+    // The process environment, not a project's `.env` (bun reads those for scripts only).
+    if env_ignores_scripts(&opts.env) {
         merged.ignore_scripts = Some(true);
     }
 
@@ -1063,8 +1064,9 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(v) = cli.ignore_scripts {
         ignore_scripts = v;
     }
-    // `NPM_CONFIG_IGNORE_SCRIPTS` and friends can only turn scripts off, even under a flag.
-    if env_ignores_scripts(env) {
+    // `NPM_CONFIG_IGNORE_SCRIPTS` and friends can only turn scripts off, even under a flag
+    // (from the process environment; a `.env` file does not set them).
+    if env_ignores_scripts(&opts.env) {
         ignore_scripts = true;
     }
     if let Some(v) = cli.save_text_lockfile {
