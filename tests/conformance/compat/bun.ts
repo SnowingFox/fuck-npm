@@ -13,6 +13,7 @@ import { basename, dirname, join, matchesGlob, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import tls from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { rememberCacheStore } from "./stores.ts";
 import { inspect, isDeepStrictEqual, stripVTControlCharacters } from "node:util";
 import zlib from "node:zlib";
 import semverLib from "semver";
@@ -306,6 +307,7 @@ function cleanEnv(env: Env | undefined): NodeJS.ProcessEnv {
   const { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: store } = out;
   if (cache && store && isWorkerStore(store) && join(dirname(store), "cache") !== cache) {
     out.FNPM_STORE_DIR = storeOfCache(dirname(store), cache);
+    rememberCacheStore(cache, out.FNPM_STORE_DIR);
   }
   return out;
 }
