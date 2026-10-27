@@ -323,6 +323,7 @@ pub fn plan_install(
 }
 
 /// Packages reached only through optional dependency edges.
+/// Packages that only optional edges reach (an optional peer counts as optional).
 fn optional_only(graph: &LockGraph) -> Vec<bool> {
     let mut any_edge = vec![false; graph.len()];
     let mut required = vec![false; graph.len()];
@@ -330,7 +331,7 @@ fn optional_only(graph: &LockGraph) -> Vec<bool> {
         for edge in &pkg.dependencies {
             if let Some(t) = edge.target.filter(|t| t.index() < graph.len()) {
                 any_edge[t.index()] = true;
-                if !edge.behavior.is_optional() {
+                if !edge.behavior.is_optional() && !edge.behavior.is_optional_peer() {
                     required[t.index()] = true;
                 }
             }
