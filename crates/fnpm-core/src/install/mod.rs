@@ -806,7 +806,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             project.env.clone(),
         );
         let json = opts.pm.json;
-        tokio::task::spawn_blocking(move || {
+        let scanned = tokio::task::spawn_blocking(move || {
             crate::security::scan_for_install(&crate::security::Scan {
                 config: &config,
                 root: &root,
@@ -817,7 +817,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             })
         })
         .await
-        .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))??;
+        .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))?;
+        if let Err(e) = scanned {
+            // bun reports what it downloaded before the scanner's verdict ends the install.
+            announce_resolved(&client, &*events, announced);
+            return Err(e);
+        }
     }
 
     // A name fnpm.lock carries (the resolver reused it) is checked like a resolved one.
