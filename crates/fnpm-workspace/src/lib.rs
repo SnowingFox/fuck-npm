@@ -193,6 +193,13 @@ impl Workspace {
         discover::find_root(cwd)
     }
 
+    /// [`Workspace::find_root`], with bun's warning for each package.json it ignores.
+    pub fn find_root_reporting(cwd: &Path) -> Result<(PathBuf, Vec<String>)> {
+        let mut warnings = Vec::new();
+        let root = discover::find_root_reporting(cwd, &mut warnings)?;
+        Ok((root, warnings))
+    }
+
     /// Reads the root package.json and expands workspace globs over a parallel walk that skips
     /// `node_modules`, `.git`, `CMakeFiles` and dot-directories; `!pattern` excludes. Member
     /// package.json files are read in parallel (rayon). Missing literal members are an error
@@ -225,6 +232,57 @@ impl Workspace {
     }
 
     /// The member called `name`.
+    /// The paths of the self-contained members (bun `self_contained_workspace_ids`): listed in
+    /// the root's `workspaces.selfContained` (by path or name) or declaring
+    /// `"installConfig": { "hoistingLimits": "workspaces" }`. Also bun's warnings for an entry
+    /// that matches no member and for an unsupported `hoistingLimits` value.
+    pub fn self_contained(&self) -> (Vec<String>, Vec<String>) {
+        let mut paths: Vec<String> = Vec::new();
+        let mut warnings = Vec::new();
+        for m in &self.members {
+            match m
+                .manifest
+                .raw
+                .get("installConfig")
+                .and_then(|c| c.get("hoistingLimits"))
+            {
+                None => {}
+                Some(v) if v.as_str() == Some("workspaces") => paths.push(m.path.clone()),
+                Some(v) if v.as_str() == Some("none") => {}
+                Some(v) => warnings.push(format!(
+                    "workspace \"{}\": installConfig.hoistingLimits \"{}\" is not supported (only \"workspaces\" and \"none\" are); ignoring",
+                    m.name,
+                    v.as_str().unwrap_or("<non-string>")
+                )),
+            }
+        }
+        let listed = self
+            .root
+            .raw
+            .get("workspaces")
+            .and_then(|w| w.get("selfContained"))
+            .and_then(|v| v.as_array());
+        for item in listed.into_iter().flatten() {
+            let Some(item) = item.as_str() else { continue };
+            let key = item.trim_end_matches('/');
+            let key = key.strip_prefix("./").unwrap_or(key);
+            let found: Vec<&Member> = self
+                .members
+                .iter()
+                .filter(|m| m.path == key || m.name == key)
+                .collect();
+            if found.is_empty() {
+                warnings.push(format!(
+                    "\"workspaces.selfContained\": \"{item}\" does not match any workspace path or name"
+                ));
+            }
+            paths.extend(found.into_iter().map(|m| m.path.clone()));
+        }
+        paths.sort();
+        paths.dedup();
+        (paths, warnings)
+    }
+
     pub fn member(&self, name: &str) -> Option<&Member> {
         self.members.iter().find(|m| m.name == name)
     }

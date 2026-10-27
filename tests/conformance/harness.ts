@@ -100,6 +100,24 @@ export async function evictCacheEntries(cache: string, evict: (entry: string) =>
   }
 }
 
+/**
+ * The package folders of `<name>@<version>` in a cache: bun's `<name>@<version>@...` entries and fnpm's store packages
+ * (`<store>/v2/pkgs/<name>@<version>-<hash>/package`, scoped names with `+`), so a test that reads a package out of
+ * bun's cache reads it from fnpm's store instead. The store is `<cache>/store` unless `store` (the FNPM_STORE_DIR the
+ * install ran with) says otherwise.
+ */
+export function cacheEntryDirs(cache: string, name: string, version: string, store?: string): string[] {
+  const bun = (fs.existsSync(cache) ? fs.readdirSync(cache).sort() : [])
+    .filter(entry => entry.startsWith(`${name}@${version}@`))
+    .map(entry => join(cache, entry));
+  const pkgs = join(store ?? join(cache, "store"), "v2", "pkgs");
+  const stored = name.replace(/^@([^/]+)\//, "@$1+");
+  const fnpm = (fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [])
+    .filter(entry => entry.startsWith(`${stored}@${version}-`))
+    .map(entry => join(pkgs, entry, "package"));
+  return [...bun, ...fnpm];
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }

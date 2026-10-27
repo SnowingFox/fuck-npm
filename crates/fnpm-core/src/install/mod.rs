@@ -362,7 +362,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             (ws, warnings, lock)
         }
     };
-    for w in ws_warnings {
+    for w in ws_warnings.into_iter().chain(ws.self_contained().1) {
         events.emit(Event::warn(w, None));
     }
     for w in &lock.warnings {
@@ -563,6 +563,55 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         )
         .await?;
     }
+    // bun writes an added range to package.json before it resolves it, so a range that the
+    // workspace of that name satisfies links the workspace: `fnpm add no-deps@latest` next to
+    // a no-deps 2.0.0 member writes `^2.0.0` and links the member. Resolve once more with it.
+    if config.link_workspace_packages {
+        let mut relinked = false;
+        for add in &mut planned.adds {
+            let req = &planned.requests[add.request];
+            if add.catalog.is_some() || !add.positional.has_version() {
+                continue;
+            }
+            let Some(member) = ws.member(&req.name) else {
+                continue;
+            };
+            let Some(version) = out
+                .requests
+                .iter()
+                .find(|(r, _)| r == req)
+                .and_then(|(_, id)| out.graph.get(*id))
+                .filter(|p| p.name == req.name)
+                .and_then(|p| p.resolution.npm_version())
+            else {
+                continue;
+            };
+            let literal = crate::spec::added_literal(&add.positional, version, config.exact);
+            let links = matches!(
+                (
+                    fnpm_semver::Range::parse(&literal),
+                    fnpm_semver::Version::parse(&member.version),
+                ),
+                (Ok(r), Ok(v)) if r.satisfies(&v)
+            );
+            if links {
+                planned.requests[add.request].spec = literal;
+                add.relinked = true;
+                relinked = true;
+            }
+        }
+        if relinked {
+            out = resolve(
+                &resolver,
+                &ws,
+                previous,
+                &planned,
+                stream.then(|| (&fetcher, skip.clone())),
+                &events,
+            )
+            .await?;
+        }
+    }
     // bun announces the resolve when it had to ask the network; its warnings follow.
     let mut announced = false;
     announce_resolving(&client, &*events, &mut announced);
@@ -572,10 +621,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     phases.mark("resolve");
     let ResolveOutput {
         mut graph,
-        changed,
+        mut changed,
         requests: resolved_requests,
+        unsaved,
         ..
     } = out;
+    let config = if unsaved {
+        let mut c = (*config).clone();
+        c.lockfile.save = false;
+        Arc::new(c)
+    } else {
+        config
+    };
 
     // package.json edits, mirrored into the graph so the saved lockfile matches them.
     let mut edits = package_json_edits(
@@ -595,6 +652,29 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .extend(updates);
     }
 
+    // bun writes the ranges `update` picks to package.json before it resolves them, so a range
+    // that now reaches the workspace of that name (directly or through a rule) links it.
+    if opts.command == InstallCommand::Update
+        && config.link_workspace_packages
+        && let Some(edited) = edits::edited_for_members(&ws, &edits)
+    {
+        let again = resolver
+            .resolve(
+                ResolveInput {
+                    workspace: &edited,
+                    previous,
+                    mode: Mode::Normal,
+                    requests: Vec::new(),
+                    removals: Vec::new(),
+                },
+                None,
+                &*events,
+            )
+            .await?;
+        graph = again.graph;
+        changed = true;
+    }
+
     let kind = fnpm_linker::choose_linker(
         config.linker.fixed().or(graph.node_linker),
         graph.config_version,
@@ -602,7 +682,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lock.migrated && lock.format == Some(Format::Npm),
         &root,
     );
-    if kind == NodeLinker::Isolated && (changed || lock.migrated || !edits.is_empty()) {
+    // An unsaved graph (an omitted local dependency left unresolved) would not load.
+    if kind == NodeLinker::Isolated && !unsaved && (changed || lock.migrated || !edits.is_empty()) {
         lock::normalize_bindings(&mut graph, &ws)?;
     }
 
@@ -967,7 +1048,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     // 7. Lifecycle scripts.
-    let blocked = run_scripts(&project, &ws, &graph, &linked, &trust_names, &events).await?;
+    let (blocked, failed_optional) = run_scripts(
+        &project,
+        &ws,
+        &graph,
+        &linked,
+        selected_ids.as_deref(),
+        &trust_names,
+        &events,
+    )
+    .await?;
     phases.mark("scripts");
     summary.blocked_scripts = blocked;
 
@@ -975,8 +1065,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // The state file goes last, after everything succeeded.
     // Not when this run left the lockfile or package.json behind node_modules (`--no-save`,
     // a frozen install never changes either).
+    // Not either after a failed optional script: like bun, the next install tries it again.
     let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
-        && (config.save_package_json || edits.is_empty());
+        && (config.save_package_json || edits.is_empty())
+        && !failed_optional;
     // A `--filter` install links only part of the project; `update -r` links all of it.
     if selected_ids.is_none() && saved_everything {
         // Directories the linker moved aside are deleted in the background; their removal
@@ -1179,7 +1271,9 @@ fn package_json_edits(
         let literal = match &pkg.resolution {
             Resolution::Npm { version, .. } => added_literal(p, version, config.exact),
             Resolution::Workspace { .. } => {
-                if p.literal.starts_with("workspace:")
+                if add.relinked {
+                    req.spec.clone()
+                } else if p.literal.starts_with("workspace:")
                     || crate::spec::split_npm_alias(&p.literal).is_some()
                 {
                     p.literal.clone()
@@ -1192,7 +1286,11 @@ fn package_json_edits(
         };
         explicit.push((req.workspace.clone(), req.name.clone()));
         if let Some(cat) = &add.catalog {
-            let entry = add.catalog_existing.clone().unwrap_or(literal);
+            let entry = add
+                .catalog_existing
+                .clone()
+                .or_else(|| add.catalog_seed.clone())
+                .unwrap_or(literal);
             if add.catalog_existing.is_none() {
                 edits.push(
                     "",
@@ -1202,12 +1300,10 @@ fn package_json_edits(
                         spec: entry.clone(),
                     },
                 );
-                let map = if cat.is_empty() || cat == "default" {
-                    &mut graph.catalogs.default
-                } else {
-                    graph.catalogs.named.entry(cat.clone()).or_default()
-                };
-                map.insert(req.name.clone(), entry);
+                graph
+                    .catalogs
+                    .entries_for(cat, &req.name)
+                    .insert(req.name.clone(), entry);
             }
             let reference = if cat.is_empty() {
                 "catalog:".to_owned()
@@ -1268,6 +1364,42 @@ fn package_json_edits(
             continue;
         };
         let is_peer_only = plan::declared(ws, &u.workspace, &u.name).is_none();
+        // A `catalog:` reference stays; the catalog entry it reads moves instead (bun).
+        // bun moves the entry of a `catalog:` reference, and neither the entry nor the reference
+        // of ` catalog:` (leading whitespace).
+        if u.original.trim_start() != u.original && u.original.trim().starts_with("catalog:") {
+            continue;
+        }
+        if let Some(catalog) = u.original.strip_prefix("catalog:") {
+            let catalog = match catalog.trim() {
+                "default" => "",
+                c => c,
+            };
+            let Some(entry) = edits::catalog_entry(&ws.root.raw, catalog, &u.name) else {
+                continue;
+            };
+            let entry = entry.trim().to_owned();
+            let new = updated_literal(&entry, &version, config.exact, planned.latest)
+                .unwrap_or_else(|| entry.clone());
+            let map = graph.catalogs.entries_for(catalog, &u.name);
+            if map.get(&u.name) == Some(&new) && new == entry {
+                continue;
+            }
+            map.insert(u.name.clone(), new.clone());
+            let edit = Edit::Catalog {
+                catalog: catalog.to_owned(),
+                name: u.name.clone(),
+                spec: new,
+            };
+            if !edits
+                .by_workspace
+                .get("")
+                .is_some_and(|e| e.contains(&edit))
+            {
+                edits.push("", edit);
+            }
+            continue;
+        }
         if let Some(new) = updated_literal(
             &u.original,
             &version,
@@ -1445,6 +1577,16 @@ pub(crate) fn link_view(graph: &LockGraph) -> LockGraph {
     g
 }
 
+/// Whether the flags of the install leave packages of the tree out (`--production`, `--omit`,
+/// another `--os` / `--cpu` / `--libc`).
+fn omits_packages(config: &Config) -> bool {
+    config.production
+        || config.omit.dev
+        || config.omit.optional
+        || config.omit.peer
+        || config.platform != fnpm_types::Platform::current()
+}
+
 /// The layout for `view` (a [`link_view`] of the graph). The hoisted tree from
 /// `fnpm_lockfile::tree::hoist` records a workspace's own `node_modules` entries with the
 /// workspace's node as parent and lists them in `workspace_roots`; the linker places
@@ -1463,6 +1605,7 @@ pub(crate) fn plan_layout(
                     include: linker.include(),
                     platform: linker.config().platform,
                     workspaces: selected,
+                    self_contained: linker.self_contained_ids(view),
                 },
             ));
             if let Layout::Hoisted(tree) = &mut layout {
@@ -1519,7 +1662,8 @@ async fn link(
         });
         let linker = Linker::new(config.clone(), fetcher.store().clone())
             .with_trust(trusted)
-            .with_native_dependencies(native_dependencies(config, ws));
+            .with_native_dependencies(native_dependencies(config, ws))
+            .with_self_contained(ws.self_contained().0);
         let mut view = link_view(graph);
         // A root scanner remains available even when its devDependency group is
         // omitted. Only the linking view changes; the saved declaration stays dev.
@@ -1702,8 +1846,33 @@ async fn link(
             force: config.force || newly_trusted || dlx.is_some_and(|d| d.relink),
             fresh: !root.join("node_modules").exists(),
             selected_workspaces: selected.clone(),
-            hoisted_prune_tree: (selected.is_some() && kind == NodeLinker::Hoisted).then(|| {
-                match plan_layout(&linker, &view, kind, None) {
+            // bun places every package wherever the flags of the install leave them and only
+            // skips what they omit: a package `--production`, `--omit` or `--os` leaves out
+            // stays in a node_modules that has it, like one that `--filter` does not select.
+            hoisted_prune_tree: (kind == NodeLinker::Hoisted
+                && (selected.is_some() || omits_packages(config)))
+            .then(|| {
+                let mut all =
+                    fnpm_lockfile::tree::HoistOptions::all(fnpm_types::Platform::current());
+                all.self_contained = linker.self_contained_ids(&view);
+                // A peer that `--omit=peer` leaves out has no place of its own to keep.
+                if config.omit.peer {
+                    all.include = all.include.with(fnpm_types::Behavior::PEER, false);
+                }
+                let full = if omits_packages(config) {
+                    let mut tree = fnpm_lockfile::tree::hoist(&view, &all);
+                    for (_, ids) in &tree.workspace_roots.clone() {
+                        for &id in ids {
+                            if let Some(node) = tree.nodes.get_mut(id as usize) {
+                                node.parent = None;
+                            }
+                        }
+                    }
+                    Layout::Hoisted(tree)
+                } else {
+                    plan_layout(&linker, &view, kind, None)
+                };
+                match full {
                     Layout::Hoisted(tree) => tree,
                     _ => unreachable!("hoisted layout requested"),
                 }
@@ -1986,9 +2155,10 @@ async fn run_scripts(
     ws: &Workspace,
     graph: &LockGraph,
     linked: &Linked,
+    members: Option<&[PackageId]>,
     trust_names: &[String],
     events: &Arc<dyn EventSink>,
-) -> Result<u32> {
+) -> Result<(u32, bool)> {
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
@@ -2015,30 +2185,58 @@ async fn run_scripts(
             trusted_from_requests: &from_requests,
             registry_for: &|n: &str| cfg.registry_for(n).url.as_str(),
             installed: Some(&linked.reachable),
+            members,
         },
         &locate,
     )
     .map_err(Error::io(&root))?;
     let blocked = plan.blocked_scripts();
     if plan.jobs.is_empty() {
-        return Ok(blocked);
+        return Ok((blocked, false));
     }
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
         shell: None,
         env: Vec::new(),
         silent: config.log_level == fnpm_config::LogLevel::Silent,
+        verbose: config.log_level == fnpm_config::LogLevel::Verbose,
         project_dir: root.clone(),
     };
-    let cleanup = |failed: &Path| -> std::io::Result<()> {
+    let cleanup = |failed: &Path| -> std::io::Result<&'static str> {
         let Some(id) = linked
             .report
             .dirs
             .iter()
             .find_map(|(id, dir)| (dir == failed).then_some(*id))
         else {
-            return Ok(());
+            // A member reached only through an optional dependency: bun keeps its folder and
+            // removes the links to it.
+            if ws.members.iter().any(|m| m.dir == failed) {
+                let real = std::fs::canonicalize(failed)?;
+                remove_optional_links(&root.join("node_modules"), &real)?;
+                for member in &ws.members {
+                    remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+                }
+                return Ok(if linked.linker == NodeLinker::Isolated {
+                    "skipping"
+                } else {
+                    "deleting"
+                });
+            }
+            return Ok("deleting");
         };
+        // A `link:` package: the folder is not the install's, only the links to it are.
+        if matches!(
+            graph.get(id).map(|p| &p.resolution),
+            Some(Resolution::Symlink { .. })
+        ) {
+            let real = std::fs::canonicalize(failed)?;
+            remove_optional_links(&root.join("node_modules"), &real)?;
+            for member in &ws.members {
+                remove_optional_links(&root.join(&member.path).join("node_modules"), &real)?;
+            }
+            return Ok("deleting");
+        }
         // Global bin links point through the root alias rather than an isolated store path.
         if config.global {
             for edge in graph
@@ -2089,11 +2287,12 @@ async fn run_scripts(
                 Err(e) => return Err(e),
             }
         }
-        Ok(())
+        Ok("deleting")
     };
-    fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
-        .await?;
-    Ok(blocked)
+    let report =
+        fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
+            .await?;
+    Ok((blocked, !report.failed_optional.is_empty()))
 }
 
 /// Remove isolated aliases and their bins while the failed package still exists, so realpath

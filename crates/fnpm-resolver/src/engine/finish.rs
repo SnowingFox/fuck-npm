@@ -201,6 +201,7 @@ impl Engine<'_> {
             requests,
             warnings,
             manifest_order: self.manifest_order,
+            unsaved: self.unsaved,
         })
     }
 }

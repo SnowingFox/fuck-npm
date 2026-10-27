@@ -583,7 +583,13 @@ impl Harness {
                 Some(tx),
                 &sink,
             )
-            .await?;
+            .await
+            // The tests look at the failed row; the report of every failed row is the
+            // engine's (`Error::Unresolved`), tested where it is built.
+            .map_err(|e| match e {
+                fnpm_resolver::Error::Unresolved { first, .. } => *first,
+                e => e,
+            })?;
         let mut events = Vec::new();
         while let Ok(e) = rx.try_recv() {
             events.push(e);

@@ -1188,6 +1188,7 @@ pub(crate) fn export_hoist_options() -> crate::tree::HoistOptions {
             libc: LibcSet::ALL,
         },
         workspaces: None,
+        self_contained: Vec::new(),
     }
 }
 

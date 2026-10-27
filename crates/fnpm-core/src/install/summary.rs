@@ -86,7 +86,7 @@ pub(crate) fn changes(
 }
 
 /// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
-/// run wrote (`written`, per package id), workspace links excluded, by name.
+/// run wrote (`written`, per package id), membership edges excluded, by name.
 pub(crate) fn installed_direct(
     graph: &LockGraph,
     ws_path: &str,
@@ -100,14 +100,16 @@ pub(crate) fn installed_direct(
     edges.sort_by(|a, b| a.name.cmp(&b.name));
     for edge in edges {
         let Some(id) = edge.target else { continue };
+        // bun skips the root's membership edges (`link_view`), not a declared `workspace:`
+        // dependency: that one prints as `+ bar@workspace:packages/bar` when its link is new.
+        if graph.workspaces.get(&edge.literal) == Some(&id) {
+            continue;
+        }
         if !written.get(id.index()).copied().unwrap_or(false) {
             continue;
         }
         let Some(t) = graph.get(id) else { continue };
-        if matches!(
-            t.resolution,
-            Resolution::Workspace { .. } | Resolution::Root
-        ) {
+        if matches!(t.resolution, Resolution::Root) {
             continue;
         }
         let entry = AddedPackage {

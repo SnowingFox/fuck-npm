@@ -6,6 +6,7 @@ use std::path::Path;
 
 use fnpm_config::Config;
 use fnpm_resolver::{Mode, Request};
+use fnpm_types::spec::DependencySpec;
 use fnpm_types::{DependencyGroup, Event, EventSink};
 use fnpm_workspace::{PackageJson, RootSelection, SelectOptions, Selector, Workspace};
 
@@ -25,6 +26,11 @@ pub(crate) struct Add {
     pub catalog: Option<String>,
     /// The catalog already had an entry (it is kept).
     pub catalog_existing: Option<String>,
+    /// The range a target declared, which seeds a new catalog entry as written.
+    pub catalog_seed: Option<String>,
+    /// The request was resolved again with the range it writes, which links the workspace
+    /// of that name.
+    pub relinked: bool,
 }
 
 /// A direct dependency `fnpm update` may rewrite in package.json.
@@ -171,6 +177,45 @@ fn targets(
     Ok((vec![here], false))
 }
 
+/// Why `--catalog` cannot record `p`: a workspace package (by name or `workspace:`) or a
+/// local path, which the catalog would read from the workspace root.
+fn catalog_refusal(p: &Positional, ws: &Workspace) -> Result<()> {
+    let refuse = |why: String| Err(Error::usage(format!("--catalog cannot add {why}")));
+    match &p.spec {
+        DependencySpec::Workspace { .. } => {
+            refuse(format!("a workspace package, but got \"{}\"", p.input))
+        }
+        // An absolute path means the same from the root: it is cataloged as written.
+        DependencySpec::Folder { path } | DependencySpec::Symlink { path }
+            if !Path::new(path.trim_start_matches("file:")).is_absolute() =>
+        {
+            refuse(format!(
+                "\"{}\": a local path in the catalog would resolve from the workspace root, not from the package that added it",
+                p.input
+            ))
+        }
+        DependencySpec::Npm {
+            is_alias: false, ..
+        }
+        | DependencySpec::DistTag { .. } => {
+            let name = p.request_name();
+            if let Some(member) = ws.member(&name) {
+                refuse(format!(
+                    "a workspace package, but \"{name}\" is the workspace at {}",
+                    member.path
+                ))
+            } else if ws.root.name.as_deref() == Some(name.as_str()) {
+                refuse(format!(
+                    "a workspace package, but \"{name}\" is the workspace root"
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Builds the resolver input.
 pub(crate) fn plan(
     opts: &InstallOptions,
@@ -205,8 +250,30 @@ pub(crate) fn plan(
                     "--catalog requires a \"workspaces\" field in the root package.json",
                 ));
             }
+            if opts.catalog.is_some() {
+                // bun refuses the whole add before it resolves anything.
+                for input in &opts.packages {
+                    catalog_refusal(&Positional::parse(input)?, ws)?;
+                }
+            }
             for input in &opts.packages {
                 let positional = Positional::parse(input)?;
+                // `--catalog` without a version: the first selected target that declares the
+                // name with a range seeds a new entry with that range, as written.
+                let seed = opts
+                    .catalog
+                    .as_ref()
+                    .filter(|_| !positional.has_version() && !opts.only_missing)
+                    .and_then(|_| {
+                        let name = positional.request_name();
+                        targets.iter().find_map(|t| {
+                            declared_literal(manifest_of(ws, t), &name)
+                                .filter(|l| {
+                                    !l.starts_with("catalog:") && !l.starts_with("workspace:")
+                                })
+                                .map(str::to_owned)
+                        })
+                    });
                 for target in &targets {
                     let positional = positional.relative_to(cwd, &ws.root_dir.join(target));
                     let manifest = manifest_of(ws, target);
@@ -214,18 +281,83 @@ pub(crate) fn plan(
                     if opts.only_missing && declared_group(manifest, &name).is_some() {
                         continue;
                     }
+                    // pnpm's rule for a bare `--catalog` add over a range the target declares.
+                    if let Some(cat) = opts.catalog.as_ref().filter(|_| !positional.has_version())
+                        && let Some(declared) = declared_literal(manifest, &name)
+                            .filter(|l| !l.starts_with("catalog:") && !l.starts_with("workspace:"))
+                    {
+                        let existing = edits::catalog_entry(&ws.root.raw, cat, &name);
+                        let entry = existing.clone().or_else(|| seed.clone());
+                        if let Some(entry) = entry.filter(|e| e != declared) {
+                            let who = manifest
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "package.json".into());
+                            let follows = existing.is_some()
+                                || matches!(
+                                    (
+                                        fnpm_semver::Range::parse(&entry),
+                                        fnpm_semver::Version::parse(declared),
+                                    ),
+                                    (Ok(r), Ok(v)) if r.satisfies(&v)
+                                );
+                            let note = if follows {
+                                format!(
+                                    "note: {name} in {who} now follows the catalog entry \"{entry}\" instead of \"{declared}\""
+                                )
+                            } else {
+                                format!(
+                                    "note: {name} in {who} keeps \"{declared}\" because the catalog entry is \"{entry}\""
+                                )
+                            };
+                            if config.log_level != fnpm_config::LogLevel::Silent {
+                                events.emit(Event::notice(note));
+                            }
+                            if !follows {
+                                continue;
+                            }
+                        }
+                    }
                     let group = opts
                         .group
                         .or_else(|| {
                             declared_group(manifest, &name).filter(|g| *g != DependencyGroup::Peer)
                         })
                         .unwrap_or(DependencyGroup::Prod);
+                    // A target that already reads the name from a catalog keeps that one.
+                    let referenced = declared_literal(manifest, &name)
+                        .and_then(|l| l.trim().strip_prefix("catalog:"))
+                        .map(|c| match c.trim() {
+                            "default" => String::new(),
+                            c => c.to_owned(),
+                        });
+                    // Without `--catalog`, a bare name (or the entry's own text) that the
+                    // default catalog has is added as `catalog:` (bun).
+                    let default_entry = (opts.catalog.is_none()
+                        && edits::catalog_supported(&ws.root.raw)
+                        && matches!(
+                            positional.spec,
+                            DependencySpec::Npm {
+                                is_alias: false,
+                                ..
+                            } | DependencySpec::DistTag { .. }
+                        ))
+                    .then(|| edits::catalog_entry(&ws.root.raw, "", &name))
+                    .flatten()
+                    .filter(|e| !positional.has_version() || positional.literal == *e);
+                    let catalog = match (&opts.catalog, &referenced) {
+                        (Some(_), Some(r)) => Some(r.clone()),
+                        (Some(c), None) => Some(c.clone()),
+                        (None, _) if default_entry.is_some() => Some(String::new()),
+                        (None, _) => None,
+                    };
                     let mut catalog_existing = None;
-                    let spec = match &opts.catalog {
-                        Some(cat) if !positional.has_version() => {
+                    let spec = match &catalog {
+                        Some(cat) if !positional.has_version() || default_entry.is_some() => {
                             catalog_existing = edits::catalog_entry(&ws.root.raw, cat, &name);
                             catalog_existing
                                 .clone()
+                                .or_else(|| seed.clone())
                                 .unwrap_or_else(|| positional.resolve_literal())
                         }
                         _ if positional.literal.is_empty() => String::new(),
@@ -234,8 +366,10 @@ pub(crate) fn plan(
                     planned.adds.push(Add {
                         positional: positional.clone(),
                         request: planned.requests.len(),
-                        catalog: opts.catalog.clone(),
+                        catalog,
+                        catalog_seed: seed.clone().filter(|_| catalog_existing.is_none()),
                         catalog_existing,
+                        relinked: false,
                     });
                     planned.requests.push(Request {
                         workspace: target.clone(),
@@ -306,6 +440,8 @@ pub(crate) fn plan(
                                     request: planned.requests.len() - 1,
                                     catalog: None,
                                     catalog_existing: None,
+                                    catalog_seed: None,
+                                    relinked: false,
                                 });
                             }
                         }
@@ -333,6 +469,35 @@ pub(crate) fn plan(
                             name: name.clone(),
                             original: literal.clone(),
                         });
+                    }
+                }
+            }
+            // The root owns the catalogs: an update there also moves the entries that members
+            // read through `catalog:` (bun).
+            if targets.iter().any(String::is_empty) {
+                for member in &ws.members {
+                    if targets.contains(&member.path) {
+                        continue;
+                    }
+                    for g in &groups {
+                        for (name, literal) in member.manifest.group(*g) {
+                            let wanted = if patterns.is_empty() {
+                                opts.packages.is_empty()
+                            } else {
+                                patterns.iter().any(|pat| name_matches(pat, name))
+                            };
+                            if !wanted || !literal.starts_with("catalog:") {
+                                continue;
+                            }
+                            if !names.contains(name) {
+                                names.push(name.clone());
+                            }
+                            planned.updates.push(UpdateTarget {
+                                workspace: member.path.clone(),
+                                name: name.clone(),
+                                original: literal.clone(),
+                            });
+                        }
                     }
                 }
             }

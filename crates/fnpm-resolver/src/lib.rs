@@ -139,6 +139,16 @@ pub enum Error {
         /// The read error.
         message: String,
     },
+    /// Dependencies that failed to resolve, reported like bun: each row's error as it happened,
+    /// then `<name>@<spec> failed to resolve` (or the catalog advice) for each, then the notes.
+    /// `first` is the first row's error, for callers that look at the cause.
+    #[error("{}", lines.join("\n"))]
+    Unresolved {
+        /// The first row's error.
+        first: Box<Error>,
+        /// The report; the first line has no `error: ` (the caller prints it), the others do.
+        lines: Vec<String>,
+    },
     /// A resolver-owned command-line value is invalid (`--minimum-release-age`, `--cpu`, …).
     #[error("{message}")]
     InvalidOption {
@@ -147,6 +157,16 @@ pub enum Error {
         /// bun's message.
         message: String,
     },
+}
+
+impl Error {
+    /// The error of the first failed row of an [`Error::Unresolved`], else `self`.
+    pub fn cause(&self) -> &Error {
+        match self {
+            Self::Unresolved { first, .. } => first.cause(),
+            other => other,
+        }
+    }
 }
 
 /// `Result` with this crate's [`Error`].
@@ -243,6 +263,9 @@ pub struct ResolveOutput {
     pub requests: Vec<(Request, PackageId)>,
     /// Non-fatal problems (peer warnings, deprecations, ignored overrides).
     pub warnings: Vec<String>,
+    /// A local dependency in an omitted group was missing and left unresolved; like bun, the
+    /// lockfile is then not saved.
+    pub unsaved: bool,
 }
 
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
@@ -316,12 +339,11 @@ impl Resolver {
             None => None,
         };
 
-        if mode == Mode::Frozen {
-            let Some(prev) = previous else {
-                return Err(Error::FrozenLockfile {
-                    changes: vec!["lockfile is missing".into()],
-                });
-            };
+        // bun only checks a lockfile that exists; without one a frozen install resolves (and
+        // saves nothing).
+        if mode == Mode::Frozen
+            && let Some(prev) = previous
+        {
             let mut changes = frozen::changes(workspace, prev)?;
             for r in &requests {
                 changes.push(format!("{} was added", r.name));
@@ -349,6 +371,7 @@ impl Resolver {
             && let Some(prev) = previous
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
+            && !dedupe::overrides_unmet(prev)
         {
             return self.unchanged(workspace, prev, tx, events, warnings);
         }
@@ -396,6 +419,7 @@ impl Resolver {
             changed,
             requests: out.requests,
             warnings,
+            unsaved: out.unsaved,
         })
     }
 
@@ -436,6 +460,7 @@ impl Resolver {
             changed: false,
             requests: Vec::new(),
             warnings,
+            unsaved: false,
         })
     }
 }

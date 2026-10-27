@@ -495,9 +495,11 @@ fn unanswered(error: &crate::Error) -> bool {
                     message: message.clone(),
                 })
         }
-        crate::Error::Registry(e) | crate::Error::Resolve(fnpm_resolver::Error::Registry(e)) => {
-            registry(e)
-        }
+        crate::Error::Registry(e) => registry(e),
+        crate::Error::Resolve(e) => match e.cause() {
+            fnpm_resolver::Error::Registry(e) => registry(e),
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -505,29 +507,31 @@ fn unanswered(error: &crate::Error) -> bool {
 /// bun's wording for an install failure (`GET <url> - <status>`).
 fn install_error(error: &crate::Error, registry: &str) -> String {
     use fnpm_registry::Error as R;
-    match error {
-        crate::Error::Resolve(fnpm_resolver::Error::NotFound(name))
-        | crate::Error::Registry(R::NotFound(name))
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::NotFound(name))) => {
-            let base = if registry.ends_with('/') {
-                registry.to_owned()
-            } else {
-                format!("{registry}/")
-            };
-            format!("GET {base}{} - 404", name.replace('/', "%2f"))
-        }
-        crate::Error::Registry(R::Status { url, status })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Status { url, status })) => {
-            format!("GET {url} - {status}")
-        }
-        crate::Error::Registry(R::Network { url, message })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Network { url, message }))
-            if url.is_empty() =>
-        {
-            message.clone()
-        }
-        other => other.to_string(),
-    }
+    let not_found = |name: &str| {
+        let base = if registry.ends_with('/') {
+            registry.to_owned()
+        } else {
+            format!("{registry}/")
+        };
+        format!("GET {base}{} - 404", name.replace('/', "%2f"))
+    };
+    let from_registry = |e: &R| match e {
+        R::NotFound(name) => Some(not_found(name)),
+        R::Status { url, status } => Some(format!("GET {url} - {status}")),
+        R::Network { url, message } if url.is_empty() => Some(message.clone()),
+        _ => None,
+    };
+    let worded = match error {
+        // The first package that failed (a report of several has it as its cause).
+        crate::Error::Resolve(e) => match e.cause() {
+            fnpm_resolver::Error::NotFound(name) => Some(not_found(name)),
+            fnpm_resolver::Error::Registry(r) => from_registry(r),
+            _ => None,
+        },
+        crate::Error::Registry(r) => from_registry(r),
+        _ => None,
+    };
+    worded.unwrap_or_else(|| error.to_string())
 }
 
 /// An exclusive `flock` on `<tree>.lock`, released when dropped (and closed on exec).

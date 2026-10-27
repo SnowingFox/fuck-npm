@@ -114,6 +114,8 @@ pub(crate) struct Asked {
     pub replaced: bool,
     /// The replacement came from a root-level override rule.
     pub from_rule: bool,
+    /// A project's `catalog:` reference was replaced by its catalog entry.
+    pub from_catalog: bool,
 }
 
 /// Update scope of `fnpm update`.
@@ -179,6 +181,11 @@ pub(crate) struct Engine<'a> {
     /// this run; [`Engine::finish`] reports what the project asks for.
     pub deprecated: Vec<(PackageId, String)>,
     pub warnings: Vec<String>,
+    /// An omitted local dependency was left unresolved: the lockfile must not be saved.
+    pub unsaved: bool,
+    /// Rows that failed to resolve, `(row, error)` in the order they failed (bun logs each and
+    /// fails the install after the resolve).
+    pub failed: Vec<(Row, Error)>,
     pub peer_askers: Option<peers::Askers>,
     /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
     /// kept up to date by [`Engine::set_target`] / [`Engine::add_package`] from then on.
@@ -207,6 +214,7 @@ pub(crate) struct EngineOutput {
     pub requests: Vec<(Request, PackageId)>,
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
+    pub unsaved: bool,
 }
 
 /// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A
@@ -331,6 +339,8 @@ impl<'a> Engine<'a> {
             kept_patched: Vec::new(),
             deprecated: Vec::new(),
             warnings: Vec::new(),
+            unsaved: false,
+            failed: Vec::new(),
             peer_askers: None,
             parents: None,
             progress: 0,
@@ -839,6 +849,9 @@ impl<'a> Engine<'a> {
 
     pub(crate) async fn run(mut self) -> Result<EngineOutput> {
         self.drive().await?;
+        if !self.failed.is_empty() {
+            return Err(self.unresolved());
+        }
         // Peer warnings, collapsing and pruning are CPU work over the whole graph: keep them off
         // the async workers when the runtime allows it.
         let multi_thread = tokio::runtime::Handle::try_current()

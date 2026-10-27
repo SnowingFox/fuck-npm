@@ -76,6 +76,34 @@ impl Edits {
     }
 }
 
+/// The project as it is once `edits` are written, when one of them sets a dependency named
+/// like a workspace member (that range may now link the member). `None` otherwise.
+pub(crate) fn edited_for_members(ws: &Workspace, edits: &Edits) -> Option<Workspace> {
+    let names_member = edits.by_workspace.values().flatten().any(|e| match e {
+        Edit::Set { name, .. } | Edit::Update { name, .. } => ws.member(name).is_some(),
+        _ => false,
+    });
+    if !names_member {
+        return None;
+    }
+    let mut edited = ws.clone();
+    for (path, list) in &edits.by_workspace {
+        let manifest = if path.is_empty() {
+            &mut edited.root
+        } else {
+            &mut edited
+                .members
+                .iter_mut()
+                .find(|m| &m.path == path)?
+                .manifest
+        };
+        let text = serde_json::to_string(&manifest.raw).ok()?;
+        let out = apply_text(&text, list).ok()?;
+        *manifest = fnpm_workspace::PackageJson::parse(&out).ok()?;
+    }
+    Some(edited)
+}
+
 fn group_of(value: &Value, name: &str) -> Option<DependencyGroup> {
     DependencyGroup::ALL
         .into_iter()
@@ -109,17 +137,30 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
                 spec,
             } => {
                 let current: Value = parse(&editor.text)?;
-                let (container, _) = catalog_container(&current);
-                let path = if catalog.is_empty() || catalog == "default" {
-                    join(&container, "catalog")
-                } else {
-                    join(&join(&container, "catalogs"), catalog)
-                };
+                let path = catalog_path(&current, catalog, name);
                 let mut entries = lookup(&current, &path)
                     .and_then(Value::as_object)
                     .cloned()
                     .unwrap_or_default();
-                entries.insert(name.clone(), Value::String(spec.clone()));
+                if entries.contains_key(name) {
+                    entries.insert(name.clone(), Value::String(spec.clone()));
+                } else {
+                    // A new entry goes in name order, like bun writes it.
+                    let at = entries.keys().position(|k| k.as_str() > name.as_str());
+                    let mut sorted = Map::new();
+                    let mut placed = false;
+                    for (i, (k, v)) in std::mem::take(&mut entries).into_iter().enumerate() {
+                        if at == Some(i) {
+                            sorted.insert(name.clone(), Value::String(spec.clone()));
+                            placed = true;
+                        }
+                        sorted.insert(k, v);
+                    }
+                    if !placed {
+                        sorted.insert(name.clone(), Value::String(spec.clone()));
+                    }
+                    entries = sorted;
+                }
                 set_object(&mut editor, &current, &path, entries);
             }
             Edit::Trust { names } => {
@@ -178,13 +219,25 @@ pub(crate) fn catalog_supported(root: &Value) -> bool {
 
 /// The existing entry of `name` in catalog `catalog` of the root package.json.
 pub(crate) fn catalog_entry(root: &Value, catalog: &str, name: &str) -> Option<String> {
+    let path = catalog_path(root, catalog, name);
+    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+}
+
+/// Where the entry of `name` in `catalog` is (or goes): the default catalog is `catalog` or
+/// its alias `catalogs.default`, whichever defines the name (`catalog` when neither does).
+fn catalog_path(root: &Value, catalog: &str, name: &str) -> Vec<String> {
     let (container, _) = catalog_container(root);
-    let path = if catalog.is_empty() || catalog == "default" {
-        join(&container, "catalog")
+    if catalog.is_empty() || catalog == "default" {
+        let singular = join(&container, "catalog");
+        let alias = join(&join(&container, "catalogs"), "default");
+        let defines = |path: &[String]| lookup(root, path).and_then(|c| c.get(name)).is_some();
+        if !defines(&singular) && defines(&alias) {
+            return alias;
+        }
+        singular
     } else {
         join(&join(&container, "catalogs"), catalog)
-    };
-    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+    }
 }
 
 fn join(base: &[String], key: &str) -> Vec<String> {

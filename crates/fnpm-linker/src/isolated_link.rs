@@ -321,15 +321,38 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         return Err(e);
     }
 
-    // Phase B: dependency links and bins.
+    // Phase B: dependency links and bins. `external`: each link to a `link:` package, and
+    // whether this run made it.
+    let external: Mutex<Vec<(PackageId, PathBuf, bool)>> = Mutex::new(Vec::new());
+    // Store entries that were in place and got a new dependency link: bun installs them again.
+    let relinked: Mutex<Vec<u32>> = Mutex::new(Vec::new());
     (0..layout.entries.len()).into_par_iter().for_each(|i| {
-        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh) {
+        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh, &external, &relinked) {
             fail(err);
         }
     });
     if let Some(e) = first_error.lock().take() {
         cleanup_staging(&states);
         return Err(e);
+    }
+
+    let mut relinked = relinked.into_inner();
+    relinked.sort();
+    relinked.dedup();
+    for i in relinked {
+        // Counted as installed, not also as checked.
+        states[i as usize].built.store(true, Ordering::Relaxed);
+        count_written(layout.entries[i as usize].package);
+    }
+
+    // bun runs the scripts of a `link:` package when it links it (and on `--force`), not when
+    // another dependent gains a link to it: only a package all of whose links are new is
+    // reported.
+    let external = external.into_inner();
+    for (pkg, target, _) in &external {
+        if external.iter().all(|(p, _, made)| p != pkg || *made) {
+            dirs.lock().push((*pkg, target.clone()));
+        }
     }
 
     // Hidden hoist: `.fnpm/node_modules/<alias>`.
@@ -428,6 +451,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
 
     let mut dirs = dirs.into_inner();
     dirs.sort();
+    dirs.dedup();
     let installed = installed.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
@@ -507,6 +531,8 @@ fn link_entry(
     states: &[EntryState],
     i: u32,
     fresh: bool,
+    external: &Mutex<Vec<(PackageId, PathBuf, bool)>>,
+    relinked: &Mutex<Vec<u32>>,
 ) -> Result<()> {
     let layout = paths.layout;
     let e = &layout.entries[i as usize];
@@ -558,12 +584,21 @@ fn link_entry(
         Vec::new()
     };
     deps.extend(public);
+    // A member reached through a symlinked path (`link -> ../app`): its links are written
+    // relative to where its node_modules really is, or they would point beside it.
+    let mut real_nm: Option<PathBuf> = None;
     if matches!(st.kind, Kindof::Importer(_)) {
         fsutil::create_dir_all(&entry_nm).map_err(|source| Error::Io {
             path: entry_nm.clone(),
             source,
         })?;
+        real_nm = std::fs::canonicalize(&entry_nm)
+            .ok()
+            .filter(|real| *real != entry_nm);
     }
+    let project_real = real_nm
+        .as_ref()
+        .and_then(|_| std::fs::canonicalize(cx.project_dir).ok());
     for (alias, dep) in &deps {
         if !fnpm_types::name::is_safe_install_folder_name(alias) {
             return Err(Error::UnsafePath {
@@ -578,9 +613,34 @@ fn link_entry(
         let Some(target) = paths.store_path(states, *dep, from_global) else {
             continue;
         };
-        let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
-        fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
+        let rel = match (&real_nm, &project_real) {
+            (Some(real), Some(project)) => {
+                // Both sides by their real paths: the store is inside the project.
+                let target = target
+                    .strip_prefix(cx.project_dir)
+                    .map(|r| project.join(r))
+                    .unwrap_or_else(|_| target.clone());
+                let parent = dest.parent().unwrap_or(&entry_nm);
+                let parent = parent
+                    .strip_prefix(&entry_nm)
+                    .map(|r| real.join(r))
+                    .unwrap_or_else(|_| parent.to_path_buf());
+                fsutil::relative(&parent, &target)
+            }
+            _ => fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target),
+        };
+        let made = fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
+        if made && matches!(st.kind, Kindof::Local) && !st.built.load(Ordering::Relaxed) {
+            relinked.lock().push(i);
+        }
+        if matches!(states[*dep as usize].kind, Kindof::External(_)) {
+            external.lock().push((
+                layout.entries[*dep as usize].package,
+                target,
+                made || cx.opts.force,
+            ));
+        }
     }
 
     // Bins of the dependencies, direct ones first (bun `link_dependency_bins`).

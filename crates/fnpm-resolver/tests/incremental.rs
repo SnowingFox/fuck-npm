@@ -74,10 +74,8 @@ async fn frozen_installs_report_every_change() {
         ),
         other => panic!("{other:?}"),
     }
-    assert!(matches!(
-        h.run(&ws, None, Mode::Frozen).await,
-        Err(Error::FrozenLockfile { .. })
-    ));
+    // Like bun, a frozen install without a lockfile resolves.
+    assert!(h.run(&ws, None, Mode::Frozen).await.is_ok());
     let err = h.run(&ws, Some(&first), Mode::Frozen).await;
     assert!(err.is_ok());
     let (_, _) = (DependencyGroup::Prod, PackageId::ROOT);

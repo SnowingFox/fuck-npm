@@ -112,15 +112,22 @@ impl Error {
     /// (fallback).
     pub fn code(&self) -> &'static str {
         use fnpm_resolver::Error as Rv;
+        // A report of several failed rows has the code of the first one.
+        if let Self::Resolve(e) = self {
+            return match e.cause() {
+                Rv::FrozenLockfile { .. } => "FROZEN_LOCKFILE",
+                Rv::NoMatchingVersion { .. }
+                | Rv::DistTagNotFound { .. }
+                | Rv::TooRecent { .. } => "NO_MATCHING_VERSION",
+                Rv::NotFound(_) | Rv::WorkspaceNotFound { .. } => "NOT_FOUND",
+                Rv::Registry(e) => registry_code(e),
+                Rv::InvalidPackageJson { .. } => "INVALID_PACKAGE_JSON",
+                Rv::InvalidOption { .. } => "USAGE",
+                _ => "CORE_ERROR",
+            };
+        }
         match self {
-            Self::Resolve(Rv::FrozenLockfile { .. }) => "FROZEN_LOCKFILE",
-            Self::Resolve(
-                Rv::NoMatchingVersion { .. } | Rv::DistTagNotFound { .. } | Rv::TooRecent { .. },
-            ) => "NO_MATCHING_VERSION",
-            Self::Resolve(Rv::NotFound(_) | Rv::WorkspaceNotFound { .. }) => "NOT_FOUND",
-            Self::Resolve(Rv::Registry(e)) | Self::Registry(e) => registry_code(e),
-            Self::Resolve(Rv::InvalidPackageJson { .. }) => "INVALID_PACKAGE_JSON",
-            Self::Resolve(Rv::InvalidOption { .. }) => "USAGE",
+            Self::Registry(e) => registry_code(e),
             Self::Store(fnpm_store::Error::Integrity { .. }) => "INTEGRITY",
             Self::Scripts(
                 fnpm_scripts::Error::Failed { .. } | fnpm_scripts::Error::Signaled { .. },

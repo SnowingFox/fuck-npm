@@ -222,6 +222,21 @@ impl Materializer {
         Ok(weakest)
     }
 
+    /// Copies `from` to a new file `to`. An existing `to` is an error, as for the other backends:
+    /// `std::fs::copy` would truncate it, and through a hardlink into the store that empties the
+    /// store's file (two trees writing one folder, as a self-contained workspace and a sibling's
+    /// own tree do).
+    fn copy_new(from: &Path, to: &Path) -> io::Result<()> {
+        let mut src = std::fs::File::open(from)?;
+        let mut dst = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(to)?;
+        io::copy(&mut src, &mut dst)?;
+        let perms = src.metadata()?.permissions();
+        dst.set_permissions(perms)
+    }
+
     /// Places one file, degrading the sticky backend on "unsupported" errors.
     pub fn place_file(&self, from: &Path, to: &Path) -> Result<Backend, MaterializeError> {
         loop {
@@ -229,7 +244,7 @@ impl Materializer {
             let result = match backend {
                 Backend::Clonefile => reflink_copy::reflink(from, to),
                 Backend::Hardlink => std::fs::hard_link(from, to),
-                Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                Backend::Copyfile => Self::copy_new(from, to),
                 Backend::Symlink => symlink_file(from, to),
             };
             match result {
@@ -242,7 +257,7 @@ impl Materializer {
                     let retry = match backend {
                         Backend::Clonefile => reflink_copy::reflink(from, to),
                         Backend::Hardlink => std::fs::hard_link(from, to),
-                        Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                        Backend::Copyfile => Self::copy_new(from, to),
                         Backend::Symlink => symlink_file(from, to),
                     };
                     match retry {
