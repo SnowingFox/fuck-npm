@@ -106,7 +106,11 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     ctx.output.json(rawDocument ? result.data : { ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
     return result.exitCode;
   }
-  if (logLevel !== "silent" || head === "run" || head === "exec" || head === "x") {
+  // `bun pm cache` prints the cache directory with no newline, for `$(bun pm cache)`.
+  const cachePath = /^(pm )?cache( path)?$/.test(ctx.path.join(" ")) && result.exitCode === 0;
+  if (cachePath && logLevel !== "silent") {
+    ctx.runtime.stdout.write((result.lines ?? []).join("\n"));
+  } else if (logLevel !== "silent" || head === "run" || head === "exec" || head === "x") {
     for (const line of result.lines ?? []) {
       ctx.output.line(line);
     }

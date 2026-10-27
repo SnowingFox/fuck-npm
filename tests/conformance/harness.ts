@@ -240,6 +240,14 @@ export function installEnv(dir: string, env: Record<string, string | undefined> 
   };
 }
 
+/**
+ * Where the global virtual store keeps its entries for a cache set up with {@link cacheDirEnv}: bun uses
+ * `<cache>/links`, fnpm `<cache>/store/v2/links` (the store's own layout version).
+ */
+export function globalStoreLinks(cache: string): string {
+  return join(cache, "store", "v2", "links");
+}
+
 export interface RunOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;

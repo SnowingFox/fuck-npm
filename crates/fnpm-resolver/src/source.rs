@@ -47,6 +47,11 @@ pub trait ManifestSource: Send + Sync {
         let _ = name;
         None
     }
+
+    /// A `--verbose` line about a resolution decision. The default drops it.
+    fn verbose_line(&self, line: String) {
+        let _ = line;
+    }
 }
 
 /// A git / tarball package after it was downloaded (or read from disk).
@@ -189,6 +194,10 @@ impl ManifestSource for RegistrySource {
     fn manifest_url(&self, name: &str) -> Option<String> {
         self.client.manifest_url(name)
     }
+
+    fn verbose_line(&self, line: String) {
+        self.client.verbose_notice(|| line);
+    }
 }
 
 fn io_error(message: impl Into<String>) -> fnpm_registry::Error {
@@ -226,12 +235,27 @@ impl PackageFetcher for RegistrySource {
             let url = this.client.github_tarball_url(&owner, &repo, &committish);
             let bytes = this.client.tarball_bytes(&url).await?;
             tokio::task::spawn_blocking(move || {
-                let tag = crate::tarball::github_tag_from_tgz(&bytes, &owner, &repo).map_err(
-                    |message| fnpm_registry::Error::InvalidManifest {
+                // The whole body is read to name the commit after the archive's root directory.
+                this.client.verbose_notice(|| {
+                    let name = crate::tarball::package_json_from_tgz(&bytes)
+                        .ok()
+                        .and_then(|text| parse_package_json(&text, &url).ok()?.name)
+                        .unwrap_or_else(|| repo.clone());
+                    format!(
+                        "[{}] Extract {} ({} tgz file)",
+                        fnpm_types::text::escape_control_chars(&name),
+                        fnpm_types::text::escape_control_chars(
+                            url.rsplit('/').next().unwrap_or(&url)
+                        ),
+                        fnpm_types::text::format_size(bytes.len() as u64)
+                    )
+                });
+                let tag = crate::tarball::github_tag_from_tgz(&bytes).map_err(|message| {
+                    fnpm_registry::Error::InvalidManifest {
                         name: url.clone(),
                         message,
-                    },
-                )?;
+                    }
+                })?;
                 let fallback = fnpm_types::name::fallback_package_name(&repo).to_owned();
                 let package = this.finish_tarball(&url, &bytes, &fallback)?;
                 this.github

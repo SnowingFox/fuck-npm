@@ -29,8 +29,9 @@ fn label(r: &Resolution) -> String {
     }
 }
 
+/// For the terminal: a URL's credentials masked (bun `for_terminal`), controls escaped.
 fn escape(s: &str) -> String {
-    fnpm_types::text::escape_control_chars(s)
+    fnpm_types::text::escape_control_chars(&fnpm_config::redact::redacted(s))
 }
 
 /// Whether a dependency is on disk (bun `InstalledFilter`). `or_in_store`: an isolated install

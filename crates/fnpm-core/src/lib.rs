@@ -73,7 +73,7 @@ pub enum Error {
     #[error("unknown command {0:?}")]
     UnknownCommand(Vec<String>),
     /// A package could not be downloaded or put into the store.
-    #[error("{package}: {message}")]
+    #[error("{}", fetch_message(package, message))]
     Fetch {
         /// `name@version`.
         package: String,
@@ -107,6 +107,19 @@ pub enum Error {
         /// The command path, space-separated.
         command: String,
     },
+}
+
+/// bun's words for a failed download: a failed request (`GET <url> - 404`) and an integrity
+/// mismatch name what failed themselves; a URL that cannot be fetched names the package after it.
+fn fetch_message(package: &str, message: &str) -> String {
+    if message.starts_with("GET ") || message.starts_with("Integrity check failed") {
+        return message.to_owned();
+    }
+    if message.starts_with("Expected tarball URL") {
+        let name = fnpm_types::name::split_name_and_maybe_version(package).0;
+        return format!("{message} while fetching package \"{name}\"");
+    }
+    format!("{package}: {message}")
 }
 
 pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
@@ -158,6 +171,12 @@ impl Error {
             Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }
+    }
+
+    /// The message as the CLIs print it: every URL with its credentials masked, as bun masks
+    /// each URL it echoes.
+    pub fn shown_message(&self) -> String {
+        fnpm_config::redact::redacted_message(&self.to_string()).into_owned()
     }
 
     /// A [`Error::Usage`].

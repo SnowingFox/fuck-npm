@@ -654,7 +654,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.clone(),
     )
     .with_reuse_counter(telemetry.as_ref().map(|guard| guard.reuse_counter()))
-    .with_download_reuse(!config.cache_disabled);
+    .with_download_reuse(!config.cache_disabled)
+    .with_verbose(config.log_level == fnpm_config::LogLevel::Verbose);
     let omits = config.omit.dev || config.omit.optional || config.omit.peer || config.production;
     let stream =
         config.install_packages && !opts.pm.lockfile_only && !omits && planned.selected.is_none();
@@ -1232,6 +1233,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     )
     .await?;
     phases.mark("link");
+    // bun `warn_not_cleared`: a symlinked `node_modules` keeps the other linker's tree.
+    if !linked.report.not_cleared.is_empty() {
+        for folder in &linked.report.not_cleared {
+            events.emit(Event::warn(
+                format!("cannot clear symlink {folder}, packages from another linker remain"),
+                None,
+            ));
+        }
+        events.emit(Event::notice(
+            "note: remove the link and run 'fnpm install'",
+        ));
+    }
     // `+` rows: the direct dependencies of the cwd's workspace that this run wrote.
     let ws_path = ws
         .member_for_dir(&project.cwd)
@@ -2940,6 +2953,17 @@ fn write_state(
         workspace_patterns,
         workspace_dirs,
         missing_bins: missing_workspace_bins(root, ws),
+        folders: graph
+            .packages
+            .iter()
+            .filter_map(|p| match &p.resolution {
+                Resolution::Folder { path } => {
+                    let id = fast_path::dir_identity(&root.join(path)).ok()?;
+                    Some((path.clone(), id))
+                }
+                _ => None,
+            })
+            .collect(),
     };
     let _ = fast_path::write(root, meta, &state);
 }

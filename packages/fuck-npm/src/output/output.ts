@@ -53,3 +53,17 @@ export function createOutput(runtime: CliRuntime, mode: OutputMode): Output {
     },
   };
 }
+
+/**
+ * bun's `escape_control_chars` for a message that may span lines on purpose: C0 and C1
+ * controls, DEL and the bidi controls are written as escapes, a newline stays one.
+ */
+export function escapeControlInLines(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069]/g, (c) => {
+    if (c === "\r") return "\\r";
+    if (c === "\t") return "\\t";
+    const code = c.charCodeAt(0);
+    return code < 0x80 ? `\\x${code.toString(16).padStart(2, "0")}` : `\\u${code.toString(16).padStart(4, "0")}`;
+  });
+}

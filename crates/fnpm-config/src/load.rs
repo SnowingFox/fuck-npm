@@ -70,23 +70,12 @@ fn first_env<'a>(env: &'a Env, keys: &[&str]) -> Option<&'a str> {
 /// bun's install cache when nothing names one: `$FNPM_HOME/install/cache` (bun's
 /// `$BUN_INSTALL`, which is honoured too), else `$XDG_CACHE_HOME/.fnpm/install/cache`, else
 /// `$HOME/.fnpm/install/cache`.
-fn default_cache_dir(
-    env: &Env,
-    home: Option<&Path>,
-    cwd: &Path,
-    fnpm_home: &Path,
-) -> Option<PathBuf> {
-    let install_cache = |dir: PathBuf| dir.join("install").join("cache");
-    if env.get_not_empty(crate::env::names::HOME).is_some() {
-        return Some(install_cache(fnpm_home.to_path_buf()));
-    }
-    if let Some(v) = env.get_not_empty("BUN_INSTALL") {
-        return Some(install_cache(env_path(cwd, v, home)));
-    }
-    if let Some(v) = env.get_not_empty("XDG_CACHE_HOME") {
-        return Some(install_cache(env_path(cwd, v, home).join(".fnpm")));
-    }
-    home.map(|h| install_cache(h.join(".fnpm")))
+fn default_cache_dir(env: &Env, home: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
+    // The same root as `-g` uses ([`install_root`]): `$FNPM_INSTALL`, `$FNPM_HOME`,
+    // `$BUN_INSTALL`, `$XDG_CACHE_HOME/.fnpm`, else `~/.fnpm`.
+    install_root(env, cwd, home)
+        .or_else(|| home.map(|h| h.join(".fnpm")))
+        .map(|dir| dir.join("install").join("cache"))
 }
 
 /// Whether `path` fits bun's path buffer (`MAX_PATH_BYTES`) and every name in it fits
@@ -100,7 +89,11 @@ pub fn path_fits(path: &Path) -> bool {
 
 /// `FNPM_HOME`, else `$HOME/.fnpm`, else `<cwd>/.fnpm`.
 fn fnpm_home(env: &Env, home: Option<&Path>, cwd: &Path) -> PathBuf {
-    match env.get_not_empty(crate::env::names::HOME) {
+    // `FNPM_INSTALL` is the name that mirrors bun's `BUN_INSTALL`; `FNPM_HOME` the older one.
+    let named = env
+        .get_not_empty(crate::env::names::INSTALL)
+        .or_else(|| env.get_not_empty(crate::env::names::HOME));
+    match named {
         Some(v) => env_path(cwd, v, home),
         None => home.map_or_else(|| cwd.join(".fnpm"), |h| h.join(".fnpm")),
     }
@@ -528,6 +521,25 @@ struct Layers {
     warnings: Vec<String>,
 }
 
+/// bun's install root for `-g`: `$FNPM_INSTALL` (`$FNPM_HOME`, bun's `$BUN_INSTALL`), else
+/// `$XDG_CACHE_HOME/.fnpm`, else `~/.fnpm`. `None` when nothing names one (the default).
+fn install_root(env: &Env, cwd: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    [
+        crate::env::names::INSTALL,
+        crate::env::names::HOME,
+        "BUN_INSTALL",
+    ]
+    .iter()
+    .find_map(|key| env.get_not_empty(key))
+    .map(|v| env_path(cwd, v, home))
+    .or_else(|| {
+        env.get_not_empty("XDG_CACHE_HOME")
+            .map(|v| env_path(cwd, v, home).join(".fnpm"))
+    })
+}
+
+/// `-g` directories in bun's layout under [`install_root`]: `<root>/install/global` and
+/// `<root>/bin`. A `~/.fnpm/global` of an older fnpm stays in use until it is moved.
 fn global_dirs(
     env: &Env,
     cwd: &Path,
@@ -535,46 +547,31 @@ fn global_dirs(
     fnpm_home: &Path,
     layer: &InstallFile,
 ) -> (PathBuf, PathBuf) {
-    let fnpm_home_set = env.get_not_empty(crate::env::names::HOME).is_some();
-    let bun_install = env
-        .get_not_empty("BUN_INSTALL")
-        .map(|v| env_path(cwd, v, home));
-    let xdg_cache = env
-        .get_not_empty("XDG_CACHE_HOME")
-        .map(|v| env_path(cwd, v, home));
-    let pick = |env_keys: &[&str],
-                configured: &Option<PathBuf>,
-                under_bun: &[&str],
-                under_fnpm: &str|
-     -> PathBuf {
+    let root = install_root(env, cwd, home).unwrap_or_else(|| fnpm_home.to_path_buf());
+    let pick = |env_keys: &[&str], configured: &Option<PathBuf>, default: PathBuf| -> PathBuf {
         if let Some(v) = first_env(env, env_keys) {
             return normalize_lexically(&env_path(cwd, v, home));
         }
         if let Some(p) = configured.as_ref().filter(|p| !p.as_os_str().is_empty()) {
             return p.clone();
         }
-        if !fnpm_home_set && let Some(root) = &bun_install {
-            return normalize_lexically(&under_bun.iter().fold(root.clone(), |p, s| p.join(s)));
-        }
-        // bun's `$XDG_CACHE_HOME/.bun/install/global` and `$XDG_CACHE_HOME/.bun/bin`.
-        if !fnpm_home_set && let Some(root) = &xdg_cache {
-            let under = under_bun.iter().fold(root.join(".fnpm"), |p, s| p.join(s));
-            return normalize_lexically(&under);
-        }
-        normalize_lexically(&fnpm_home.join(under_fnpm))
+        normalize_lexically(&default)
     };
+    let mut global = root.join("install").join("global");
+    let legacy = fnpm_home.join("global");
+    if root == fnpm_home && !global.exists() && legacy.join("package.json").is_file() {
+        global = legacy;
+    }
     (
         pick(
-            &["FNPM_GLOBAL_DIR", "BUN_INSTALL_GLOBAL_DIR"],
+            &[crate::env::names::GLOBAL_DIR, "BUN_INSTALL_GLOBAL_DIR"],
             &layer.global_dir,
-            &["install", "global"],
-            "global",
+            global,
         ),
         pick(
-            &["FNPM_GLOBAL_BIN_DIR", "BUN_INSTALL_BIN"],
+            &[crate::env::names::GLOBAL_BIN_DIR, "BUN_INSTALL_BIN"],
             &layer.global_bin_dir,
-            &["bin"],
-            "bin",
+            root.join("bin"),
         ),
     )
 }
@@ -1020,10 +1017,9 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
             continue;
         };
         if breaks_header_line(token) {
-            return Err(Error::InvalidValue {
-                key: key.to_owned(),
-                message: format!("${key} contains a newline or NUL byte"),
-            });
+            return Err(Error::Credential(format!(
+                "${key} contains a newline or NUL byte"
+            )));
         }
         regs.scope.auth = Auth::Token {
             token: token.to_owned(),
@@ -1135,9 +1131,8 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(ms) = cli.minimum_release_age_ms {
         minimum_release_age_ms = Some(ms);
     }
-    if !cli.minimum_release_age_excludes.is_empty() {
-        let entries = cli
-            .minimum_release_age_excludes
+    if let Some(list) = &cli.minimum_release_age_excludes {
+        let entries = list
             .iter()
             .flat_map(|l| l.split(','))
             .map(str::trim)
@@ -1226,16 +1221,17 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         project_dir.join("node_modules").join(".cache")
     } else if let Some(dir) = cache_dir_flag {
         dir
-    } else if let Some(v) = env.get_not_empty(crate::env::names::CACHE_DIR) {
-        env_path(&cwd, v, h)
-    } else if let Some(v) = env.get_not_empty("BUN_INSTALL_CACHE_DIR") {
-        // CI sets it once for the whole repository.
+    } else if let Some(v) = env
+        .get_not_empty(crate::env::names::CACHE_DIR)
+        .or_else(|| env.get_not_empty("BUN_INSTALL_CACHE_DIR"))
+    {
+        // CI sets it once for the whole repository: a relative path starts at its root.
         env_path(&project_dir, v, h)
     } else if let Some(v) = env.config_var("cache") {
         env_path(&project_dir, v, h)
     } else if let Some(dir) = m.cache_dir.clone().filter(|d| !d.as_os_str().is_empty()) {
         dir
-    } else if let Some(dir) = default_cache_dir(env, h, &cwd, &fnpm_home) {
+    } else if let Some(dir) = default_cache_dir(env, h, &cwd) {
         cache_configured = false;
         dir
     } else {

@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
-import { SilentError } from "../errors.ts";
+import { CoreError, SilentError } from "../errors.ts";
 import { read, type ParsedFlags } from "../cli/parse-flags.ts";
 import type {
   Backend,
@@ -90,17 +90,30 @@ const UNIT_SECONDS: Record<string, number> = {
   w: 604800, week: 604800, weeks: 604800,
 };
 
-/** bun's parse_seconds: a number of seconds, or `90m`, `12 hours`, `3d`, `2 weeks`. Returns ms. */
+/** A whole number as bun's `parse_f64` reads it: digits, `.`, an exponent and a sign; no `0x`, `inf` or spaces. */
+function parseNumber(text: string): number | undefined {
+  return /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(text) ? Number(text) : undefined;
+}
+
+/**
+ * bun's parse_seconds: the whole value is a number of seconds, or digits and a unit (`90m`,
+ * `12 hours`, `3d`, `2 weeks`). Returns ms; 0 turns off a configured gate.
+ */
 export function parseReleaseAge(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
-  const match = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(value);
-  const unit = match?.[2]?.toLowerCase() ?? "";
-  const factor = unit === "" ? 1 : UNIT_SECONDS[unit];
-  if (!match || factor === undefined) {
+  let seconds = parseNumber(value);
+  if (seconds === undefined) {
+    const digits = /^[\d.]*/.exec(value)![0];
+    const unit = value.slice(digits.length).trimStart();
+    const factor = Object.hasOwn(UNIT_SECONDS, unit) ? UNIT_SECONDS[unit] : undefined;
+    const number = parseNumber(digits);
+    if (factor !== undefined && number !== undefined) seconds = number * factor;
+  }
+  if (seconds === undefined || !(seconds >= 0) || !Number.isFinite(seconds)) {
     throw invalid(`Expected --minimum-release-age to be a positive number: ${value}`);
   }
-  const ms = Math.round(Number(match[1]) * factor * 1000);
-  return ms === 0 ? undefined : ms;
+  // 0 turns off a gate bunfig.toml or .npmrc configured.
+  return Math.round(seconds * 1000);
 }
 
 /**
@@ -127,12 +140,19 @@ function parsePlatformList(what: string, values: string[], valid: string[]): str
 function parseRegistry(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   if (/^https?:\/\//.test(value)) return value;
-  throw invalid(`Registry URL must start with 'https://' or 'http://': "${redactUrl(value)}"`);
+  // bun prints this one without the pointer to --help.
+  throw new CoreError(`Registry URL must start with 'https://' or 'http://': "${redactUrl(value)}"`, "INVALID_FLAG_VALUE");
 }
 
-/** Never echo credentials back: strip userinfo and anything that looks like a token. */
+/**
+ * Never echo credentials back (bun's `redacted_npm_url`): the userinfo, also of a URL written
+ * without a scheme (`//user:pass@host/`, `user:pass@host/`), and token values.
+ */
 function redactUrl(value: string): string {
-  return value.replace(/\/\/[^/@]*@/, "//<redacted>@").replace(/(_authToken|token)=[^&]*/gi, "$1=<redacted>");
+  const authority = value.includes("://") ? /^([^/]*:\/\/)([^/?#]*)@/ : /^(\/\/)?([^/?#]*)@/;
+  return value
+    .replace(authority, (_, before = "", userinfo: string) => (userinfo ? `${before}***@` : `${before}@`))
+    .replace(/(_authToken|_auth|_password|token)=[^/&?#]+/gi, "$1=***");
 }
 
 function caStoreOf(values: Values): CaStore | undefined {

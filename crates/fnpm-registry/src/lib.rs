@@ -51,7 +51,8 @@ pub enum Error {
     Status { url: String, status: u16 },
     #[error("package \"{0}\" not found")]
     NotFound(String),
-    #[error("{url}: {message}")]
+    /// A request that failed or could not be made; `url` is empty when `message` names it.
+    #[error("{}{message}", if url.is_empty() { String::new() } else { format!("{url}: ") })]
     Network { url: String, message: String },
     #[error("--offline: no cached manifest for \"{0}\"")]
     Offline(String),
@@ -185,6 +186,16 @@ impl RegistryClient {
         Ok(Self {
             inner: Arc::new(client::Inner::build(config, env)?),
         })
+    }
+
+    /// A `--verbose` line (bun's `[name] Extract …`); nothing without `--verbose`.
+    pub fn verbose_notice(&self, message: impl FnOnce() -> String) {
+        if !self.inner.verbose {
+            return;
+        }
+        if let Some(sink) = self.inner.events.read().as_ref() {
+            sink.emit(fnpm_types::Event::notice(message()));
+        }
     }
 
     /// Where warnings go (retry waits, throttling, unaudited registries, refused credentials).

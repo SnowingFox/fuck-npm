@@ -1149,7 +1149,7 @@ impl<'a> Migrator<'a> {
                     list.push_str(", ");
                 }
                 list.push('"');
-                list.push_str(key);
+                list.push_str(&fnpm_types::text::escape_control_chars(key));
                 list.push('"');
             }
         }

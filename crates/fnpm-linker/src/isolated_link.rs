@@ -130,16 +130,28 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         .filter(|d| crate::is_inside_project(cx.project_dir, d))
         .collect();
     let mut is_new_fnpm = is_new_nm;
+    // Symlinked `node_modules` folders that hold another linker's tree: nothing is moved out of
+    // them (bun `LinkedNodeModules`), which is worth a warning.
+    let mut not_cleared = Vec::new();
+    let mut clear = |node_modules: &Path, keep: &[&str]| {
+        if fsutil::is_linked_node_modules(node_modules) {
+            if crate::holds_a_tree(node_modules) {
+                not_cleared.push(crate::shown_folder(cx.project_dir, node_modules));
+            }
+        } else {
+            crate::move_node_modules_aside(node_modules, keep);
+        }
+    };
     if !is_new_nm && !crate::is_isolated_tree(cx.project_dir) {
         // Another linker made this tree (or none did): move its entries aside.
-        crate::move_node_modules_aside(&nm, &[".fnpm"]);
+        clear(&nm, &[".fnpm"]);
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
         is_new_fnpm = true;
     } else if is_new_nm {
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
     }
     if !is_new_fnpm {
@@ -274,6 +286,17 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                 Kindof::Local => {
                     let entry_dir = paths.local_entry_dir(i as u32);
                     let pkg_dir = fsutil::join_name(&entry_dir.join("node_modules"), name);
+                    if !fresh && fsutil::kind(&entry_dir) != Kind::Symlink {
+                        // The store is the linker's: a link planted in an entry (its
+                        // `node_modules`, a scope, the package itself) is removed, never
+                        // written through, and the package is installed again.
+                        fsutil::remove_planted_links(&pkg_dir, &entry_dir).map_err(|source| {
+                            Error::Io {
+                                path: pkg_dir.clone(),
+                                source,
+                            }
+                        })?;
+                    }
                     if !fresh {
                         if fsutil::kind(&entry_dir) == Kind::Symlink {
                             // An entry that left the global store is still a link into it.
@@ -455,6 +478,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
     let installed = installed.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
+        not_cleared,
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
         written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
@@ -550,17 +574,24 @@ fn link_entry(
     ) = match &st.kind {
         Kindof::Importer(dir) => {
             let nm = dir.join("node_modules");
-            (nm.clone(), None, false, Strategy::ExpectExisting, nm)
+            let strategy = if fsutil::is_linked_node_modules(&nm) {
+                Strategy::KeepOthers
+            } else {
+                Strategy::ExpectExisting
+            };
+            (nm.clone(), None, false, strategy, nm)
         }
         Kindof::Nothing | Kindof::External(_) => return Ok(()),
         Kindof::Local => {
-            let nm = paths.local_entry_dir(i).join("node_modules");
+            let entry_dir = paths.local_entry_dir(i);
+            let nm = entry_dir.join("node_modules");
             let strat = if st.built.load(Ordering::Relaxed) && fresh {
                 Strategy::ExpectMissing
             } else {
                 Strategy::ExpectExisting
             };
-            (nm.clone(), Some(pkg.name.as_str()), false, strat, nm)
+            // From the entry itself: its `node_modules` may be a planted link too.
+            (nm, Some(pkg.name.as_str()), false, strat, entry_dir)
         }
         Kindof::Global { .. } => {
             let Some(staging) = st.real_entry_dir.lock().clone() else {
@@ -675,8 +706,8 @@ fn link_entry(
         ))
     });
     let bin_dir = entry_nm.join(".bin");
-    if is_importer && !fresh {
-        fsutil::remove_planted_links(&bin_dir, &entry_nm).map_err(|source| Error::Io {
+    if !from_global && !fresh {
+        fsutil::remove_planted_links(&bin_dir, &real_base).map_err(|source| Error::Io {
             path: bin_dir.clone(),
             source,
         })?;

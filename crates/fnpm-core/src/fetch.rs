@@ -153,6 +153,8 @@ struct Inner {
     /// disabled, where bun downloads every tarball and clones every repository again (unless
     /// `--offline`): only what this install already imported is taken from the store then.
     reuse_downloads: bool,
+    /// `--verbose`: say how each downloaded tarball was extracted, as bun does.
+    verbose: bool,
 }
 
 /// Starts and tracks the imports of one install. Cheap to clone.
@@ -210,6 +212,7 @@ impl Fetcher {
                 counters: Counters::default(),
                 reused_packages: None,
                 reuse_downloads: true,
+                verbose: false,
             }),
         }
     }
@@ -219,6 +222,14 @@ impl Fetcher {
         Arc::get_mut(&mut self.inner)
             .expect("fetcher not started")
             .reuse_downloads = on;
+        self
+    }
+
+    /// [`Inner::verbose`].
+    pub(crate) fn with_verbose(mut self, on: bool) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("fetcher not started")
+            .verbose = on;
         self
     }
 
@@ -577,11 +588,11 @@ async fn remote(
         }
         chunk.map_err(to_io)
     });
-    match integrity {
+    let (fetched, report) = match integrity {
         Some(pin) if !inner.verify => {
-            let (key, entry) = inner
+            let (key, entry, report) = inner
                 .store
-                .import_tarball_unpinned(name, version, stream)
+                .import_tarball_unpinned_with_report(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
             if key.integrity != pin
@@ -591,7 +602,7 @@ async fn remote(
                     .store
                     .remember_url(&inner.cache_dir, name, version, record, &key.integrity);
             }
-            Ok(Fetched { entry, key })
+            (Fetched { entry, key }, report)
         }
         Some(integrity) => {
             let key = PackageKey {
@@ -599,9 +610,9 @@ async fn remote(
                 version: version.to_owned(),
                 integrity,
             };
-            let entry = inner
+            let (entry, report) = inner
                 .store
-                .import_tarball(
+                .import_tarball_with_report(
                     &key,
                     stream,
                     ImportOptions {
@@ -610,12 +621,12 @@ async fn remote(
                 )
                 .await
                 .map_err(FetchFailure::from)?;
-            Ok(Fetched { entry, key })
+            (Fetched { entry, key }, report)
         }
         None => {
-            let (key, entry) = inner
+            let (key, entry, report) = inner
                 .store
-                .import_tarball_unpinned(name, version, stream)
+                .import_tarball_unpinned_with_report(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
             if inner.reuse_downloads {
@@ -623,8 +634,32 @@ async fn remote(
                     .store
                     .remember_url(&inner.cache_dir, name, version, url, &key.integrity);
             }
-            Ok(Fetched { entry, key })
+            (Fetched { entry, key }, report)
         }
+    };
+    if inner.verbose {
+        inner
+            .events
+            .emit(Event::notice(extracted_line(name, url, &report)));
+    }
+    Ok(fetched)
+}
+
+/// bun's `--verbose` line for an extracted tarball: `[name] Extract <file> (<size> tgz file)`
+/// once the body was buffered, `[name] Streamed <size> tarball → <n> entries` when it was
+/// extracted while it downloaded.
+fn extracted_line(name: &str, url: &str, report: &fnpm_store::ImportReport) -> String {
+    let name = fnpm_types::text::escape_control_chars(name);
+    let size = fnpm_types::text::format_size(report.bytes);
+    if report.streamed {
+        format!(
+            "[{name}] Streamed {size} tarball → {} entries",
+            report.entries
+        )
+    } else {
+        let file = url.rsplit('/').next().unwrap_or(url);
+        let file = fnpm_types::text::escape_control_chars(&fnpm_config::redact_url(file));
+        format!("[{name}] Extract {file} ({size} tgz file)")
     }
 }
 

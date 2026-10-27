@@ -508,7 +508,10 @@ fn entry_resolution(
         return Err(if e.version.is_empty() {
             "missing \"version\" field".into()
         } else {
-            format!("invalid version \"{}\"", e.version.escape_debug())
+            format!(
+                "invalid version \"{}\"",
+                fnpm_types::text::escape_control_chars(e.version)
+            )
         });
     };
     // The bare URL a fresh install records; `None` is the configured registry's location.

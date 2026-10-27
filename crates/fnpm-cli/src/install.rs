@@ -325,7 +325,12 @@ pub fn report_error(
     }
     let (frame, message) = fnpm_core::frame::split(&error.message);
     let mut text = frame.map_or_else(String::new, |f| format!("{f}\n"));
-    text.push_str(&format!("error: {message}\n"));
+    text.push_str(&format!(
+        "error: {}\n",
+        fnpm_types::text::escape_control_chars_in_lines(&fnpm_config::redact::redacted_message(
+            message
+        ))
+    ));
     if error.code == "UNKNOWN_FLAG" {
         text.push_str(&format!(
             "note: Run '{} {} --help' for more information\n",

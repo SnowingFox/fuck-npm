@@ -220,10 +220,11 @@ impl Inner {
         })?;
         match v.get("username").and_then(Value::as_str) {
             Some(u) => Ok((u.to_owned(), notice)),
-            None => Err(Error::InvalidResponse {
-                url: redact_url(spec.url.as_str()),
-                message: "probably invalid auth".to_owned(),
-            }),
+            // No username: probably invalid auth. bun names the registry, not the request.
+            None => Err(Error::NeedAuth(format!(
+                "failed to authenticate with registry '{}'",
+                redact_url(base.as_str())
+            ))),
         }
     }
 

@@ -718,6 +718,24 @@ pub enum Strategy {
     ExpectMissing,
     /// Read the current link first; keep it when it already points at the target.
     ExpectExisting,
+    /// [`Strategy::ExpectExisting`] in a `node_modules` that is a symlink: what is in the way
+    /// and is not a link is not the linker's, so it is an `EEXIST` error instead of removed.
+    KeepOthers,
+}
+
+/// An `EEXIST` error that says so (bun prints the code): something the linker did not create
+/// is where it would write.
+pub fn in_the_way(path: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        format!("EEXIST: {} is in the way", path.display()),
+    )
+}
+
+/// Whether `node_modules` is itself a symlink (bun `LinkedNodeModules`): the linkers install
+/// through it, but never clear or prune what is behind it, which may not be theirs.
+pub fn is_linked_node_modules(node_modules: &Path) -> bool {
+    kind(node_modules) == Kind::Symlink
 }
 
 #[cfg(unix)]
@@ -781,7 +799,7 @@ fn ensure_inner(
             }
             Err(e) => Err(e),
         },
-        Strategy::ExpectExisting => match std::fs::read_link(dest) {
+        Strategy::ExpectExisting | Strategy::KeepOthers => match std::fs::read_link(dest) {
             Ok(current) => {
                 if strip_trailing_sep(&current) == target {
                     return Ok(false);
@@ -801,6 +819,9 @@ fn ensure_inner(
                 // A file or a directory.
                 if dest.join("package.json").exists() && kind(dest) == Kind::Dir {
                     return Ok(false);
+                }
+                if strategy == Strategy::KeepOthers {
+                    return Err(in_the_way(dest));
                 }
                 remove_any(dest)?;
                 create_link(target, dest).map(|()| true)

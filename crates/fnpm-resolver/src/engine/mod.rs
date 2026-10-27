@@ -232,11 +232,20 @@ pub(crate) fn patch_hash(root_dir: &Path, key: &str, path: &str) -> Result<Strin
         Ok(bytes) => {
             Ok(fnpm_types::Integrity::compute(fnpm_types::HashAlgorithm::Sha256, &bytes).to_hex())
         }
-        Err(e) => Err(Error::PatchFile {
-            key: key.to_owned(),
-            path: path.to_owned(),
-            message: format!("Couldn't find patch file: {e}"),
-        }),
+        Err(e) => {
+            let message = if e.kind() == std::io::ErrorKind::NotFound {
+                format!(
+                    "patch file not found: '{path}'\n\nTo recreate it from the patched package in node_modules, run:\n\n  fnpm patch --commit {key}\n\nTo install without the patch, remove \"{key}\" from \"patchedDependencies\" in package.json"
+                )
+            } else {
+                format!("patchedDependencies \"{key}\": {path}: Couldn't read patch file: {e}")
+            };
+            Err(Error::PatchFile {
+                key: key.to_owned(),
+                path: path.to_owned(),
+                message,
+            })
+        }
     }
 }
 

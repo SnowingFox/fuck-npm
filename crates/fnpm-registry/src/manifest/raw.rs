@@ -23,7 +23,9 @@ pub(crate) fn publish_time_of(value: &Value) -> u64 {
     }
     match value.as_str() {
         Some("") => 0,
-        Some(s) => crate::date::parse_iso8601_ms(s).unwrap_or(u64::MAX),
+        Some(s) => crate::date::parse_iso8601_ms(s)
+            .or_else(|| crate::date::parse_rfc2822_ms(s))
+            .unwrap_or(u64::MAX),
         None => u64::MAX,
     }
 }

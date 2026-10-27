@@ -22,7 +22,7 @@ fn defaults() {
     assert_eq!(cfg.home_dir, home.join(".fnpm"));
     assert_eq!(cfg.store_dir, home.join(".fnpm/store/v2"));
     assert_eq!(cfg.cache_dir, home.join(".fnpm/install/cache"));
-    assert_eq!(cfg.global_dir, home.join(".fnpm/global"));
+    assert_eq!(cfg.global_dir, home.join(".fnpm/install/global"));
     assert_eq!(cfg.global_bin_dir, home.join(".fnpm/bin"));
     assert_eq!(cfg.registry.url, fnpm_config::DEFAULT_REGISTRY);
     assert_eq!(cfg.network.concurrency, 64);
@@ -69,7 +69,7 @@ fn fnpm_home_and_store_env() {
     assert_eq!(cfg.home_dir, fx.path("home/fh"));
     assert_eq!(cfg.store_dir, PathBuf::from("/s/v2"));
     assert_eq!(cfg.cache_dir, fx.path("home/fh/install/cache"));
-    assert_eq!(cfg.global_dir, fx.path("home/fh/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/fh/install/global"));
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn project_global_dirs_are_ignored_with_a_warning() {
         &bunfig("globalDir = \"/victim/g\"\nglobalBinDir = \"/victim/b\""),
     )]);
     let cfg = fx.load();
-    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
     assert_eq!(
         cfg.warnings
             .iter()
@@ -394,7 +394,7 @@ fn project_global_dirs_are_ignored_with_a_warning() {
         },
     );
     assert!(cfg.warnings.is_empty(), "{:?}", cfg.warnings);
-    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
     // Honoured when passed with --config.
     let cfg = fx.load_with(
         &[],
@@ -442,8 +442,43 @@ fn global_dir_env_precedence() {
     );
     assert_eq!(
         (cfg.global_dir, cfg.global_bin_dir),
-        (PathBuf::from("/f/global"), PathBuf::from("/f/bin"))
+        (PathBuf::from("/f/install/global"), PathBuf::from("/f/bin"))
     );
+}
+
+#[test]
+fn global_dirs_follow_buns_install_root() {
+    let fx = Fx::new(&[]);
+    // `FNPM_INSTALL` is fnpm's `BUN_INSTALL`, and wins over it.
+    let cfg = fx.load_with(
+        &[("FNPM_INSTALL", "/i"), ("BUN_INSTALL", "/b")],
+        CliOverrides::default(),
+    );
+    assert_eq!(
+        (cfg.global_dir, cfg.global_bin_dir),
+        (PathBuf::from("/i/install/global"), PathBuf::from("/i/bin"))
+    );
+    // bun: `$XDG_CACHE_HOME/.bun` when no install root is named.
+    let cfg = fx.load_with(&[("XDG_CACHE_HOME", "~/c")], CliOverrides::default());
+    assert_eq!(
+        (cfg.global_dir, cfg.global_bin_dir),
+        (
+            fx.path("home/c/.fnpm/install/global"),
+            fx.path("home/c/.fnpm/bin")
+        )
+    );
+}
+
+#[test]
+fn an_older_global_dir_stays_in_use() {
+    // fnpm used to keep `-g` packages in `~/.fnpm/global`.
+    let fx = Fx::new(&[("home/.fnpm/global/package.json", "{}")]);
+    let cfg = fx.load();
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    // Once the new folder exists it is the one used.
+    std::fs::create_dir_all(fx.path("home/.fnpm/install/global")).unwrap();
+    let cfg = fx.load();
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
 }
 
 #[test]
@@ -864,7 +899,7 @@ fn cli_flags() {
         ca: vec!["B".into()],
         ca_store: Some("bundled".into()),
         minimum_release_age_ms: Some(5),
-        minimum_release_age_excludes: vec!["a, b@1.0.0 || 1.0.1".into(), "bad@^1".into()],
+        minimum_release_age_excludes: Some(vec!["a, b@1.0.0 || 1.0.1".into(), "bad@^1".into()]),
         backend: Some(Backend::Symlink),
         log_level: Some(LogLevel::Silent),
         cpu: vec!["arm64".into()],
@@ -906,6 +941,15 @@ fn cli_flags() {
     );
     assert_eq!(cfg.minimum_release_age_ms, Some(60_000));
     assert_eq!(cfg.minimum_release_age_excludes, ["x"]);
+    // An empty `--minimum-release-age-excludes` clears the configured list.
+    let cfg = fx.load_with(
+        &[],
+        CliOverrides {
+            minimum_release_age_excludes: Some(Vec::new()),
+            ..Default::default()
+        },
+    );
+    assert!(cfg.minimum_release_age_excludes.is_empty());
     let err = fx
         .try_load_in(
             "project",

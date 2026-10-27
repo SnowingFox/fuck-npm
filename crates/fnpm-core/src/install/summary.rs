@@ -31,9 +31,10 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
     out
 }
 
-/// The terminal resolution: registry version, source URL, or local path without `file:`.
+/// The terminal resolution: registry version, source URL, or local path without `file:`. A
+/// URL's credentials are masked and control characters escaped, as bun prints it.
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
-    match &p.resolution {
+    let shown = match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
         // bun prints the commit of the `owner-repo-<commit>` tag, after its last `-`.
         Resolution::Github {
@@ -46,7 +47,7 @@ pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
                 .rsplit('-')
                 .next()
                 .unwrap_or(resolved_commit);
-            fnpm_registry::redact_url(&format!("github:{owner}/{repo}#{commit}"))
+            fnpm_config::redact_url(&format!("github:{owner}/{repo}#{commit}"))
         }
         // An ssh login without a password (`ssh://git@host/...`) is no secret; bun prints it.
         Resolution::Git { url, .. }
@@ -57,8 +58,9 @@ pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
         {
             p.resolution.to_string()
         }
-        resolution => fnpm_registry::redact_url(&resolution.to_string()),
-    }
+        resolution => fnpm_config::redact::redacted(&resolution.to_string()).into_owned(),
+    };
+    fnpm_types::text::escape_control_chars(&shown)
 }
 
 /// `added`, `updated` and `removed` between the previous and the new graph.
@@ -267,7 +269,7 @@ pub(crate) fn requested(
                 .bin
                 .entries(&p.name)
                 .into_iter()
-                .map(|(n, _)| n.to_owned())
+                .map(|(n, _)| fnpm_types::text::escape_control_chars(n))
                 .collect(),
             skipped: p.is_disabled(platform).then_some(true),
         };

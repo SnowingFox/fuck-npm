@@ -46,6 +46,8 @@ pub mod names {
     pub const PROGRESS: &str = "FNPM_PROGRESS";
     /// Any value turns on verbose logging.
     pub const VERBOSE: &str = "FNPM_VERBOSE";
+    /// fnpm's `$BUN_INSTALL`: the root of `install/global` and `bin` (`bun -g`'s layout).
+    pub const INSTALL: &str = "FNPM_INSTALL";
     /// `-g` install directory.
     pub const GLOBAL_DIR: &str = "FNPM_GLOBAL_DIR";
     /// `-g` bin directory.

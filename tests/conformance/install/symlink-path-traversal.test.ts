@@ -18,7 +18,7 @@ import {
   symlink,
   writeFile,
 } from "../compat/fs-promises.ts";
-import { fnpmExe, fnpmEnv as env, tempDir } from "../harness.ts";
+import { cacheDirEnv, fnpmExe, fnpmEnv as env, globalStoreLinks, tempDir } from "../harness.ts";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { tmpdir } from "os";
@@ -1239,7 +1239,8 @@ async function runBun(cwd: string, args: string[], cache = join(cwd, ".bun-cache
     cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...env, FNPM_CACHE_DIR: cache },
+    // A store of its own in the cache, as bun's: tests running at the same time don't share packages.
+    env: { ...env, ...cacheDirEnv(cache) },
   });
   const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
   return { stdout, stderr, exitCode };
@@ -1860,8 +1861,8 @@ describe.concurrent("links below node_modules with the isolated linker", () => {
   // With the global store, an entry IS a link, to the one path that Bun computes for it. Nothing is read or written
   // through whatever has its name, which is replaced.
   describe.each([
-    ["<cache>/links/../..", (cache: string) => `${join(cache, "links")}/../..`],
-    ["a sibling of <cache>/links", (cache: string) => join(cache, "links-evil", "x")],
+    ["<cache>/links/../..", (cache: string) => `${globalStoreLinks(cache)}/../..`],
+    ["a sibling of <cache>/links", (cache: string) => join(dirname(globalStoreLinks(cache)), "links-evil", "x")],
   ])("global store: an entry that is a link to %s", (_, target) => {
     it.each([
       ["is pointed at the global store", true, []],
@@ -1878,7 +1879,7 @@ describe.concurrent("links below node_modules with the isolated linker", () => {
       await expectInstalled(repo, await run(true));
       const entry = await entryOf(repo, "@x+dep@.+");
       const computed = await readlink(entry);
-      expect(dirname(computed)).toBe(join(cache, "links"));
+      expect(dirname(computed)).toBe(globalStoreLinks(cache));
 
       // This is what a write to `<entry>/node_modules/@x/dep` would reach.
       const victim = join(resolve(target(cache)), "node_modules", "@x", "dep");
@@ -1901,7 +1902,7 @@ describe.concurrent("links below node_modules with the isolated linker", () => {
       using p = await projectWithOptionalPackage(String(root), { globalStore: true });
       const entry = await entryOf(p.repo, "@x+gone@");
       expect((await lstat(entry)).isDirectory()).toBe(true);
-      await mkdir(join(p.cache, "links"), { recursive: true });
+      await mkdir(globalStoreLinks(p.cache), { recursive: true });
       const victim = join(resolve(target(p.cache)), "node_modules", "@x", "gone");
       await mkdir(victim, { recursive: true });
       await writeFile(join(victim, "keep.txt"), KEEP);
@@ -2128,7 +2129,8 @@ describe.concurrent.skipIf(isWindows)("the target of a link at node_modules", ()
 
   it("the hoisted linker doesn't reinstall everything because of a .bun there", async () => {
     using root = tempDir("nm-outside-store", {});
-    const files = { ...MINE, ".bun/bin/tool": KEEP };
+    // bun's isolated store is node_modules/.bun; fnpm's is node_modules/.fnpm.
+    const files = { ...MINE, ".fnpm/bin/tool": KEEP };
     const outside = await plant(String(root), files);
     const repo = await workspace(String(root));
     await symlink("../outside", join(repo, "node_modules"));

@@ -63,7 +63,19 @@ impl Npmrc {
         let Ok(bytes) = std::fs::read(path) else {
             return Ok(None);
         };
-        let text = String::from_utf8_lossy(&bytes);
+        // bun converts a file that starts with the UTF-16LE byte order mark (Notepad's
+        // "Unicode") to UTF-8 first.
+        let text = match bytes.strip_prefix(&[0xff, 0xfe]) {
+            Some(utf16) => std::borrow::Cow::Owned(String::from_utf16_lossy(
+                &utf16
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&c| u16::from_le_bytes(c))
+                    .collect::<Vec<_>>(),
+            )),
+            None => String::from_utf8_lossy(&bytes),
+        };
         let mut rc = Self::parse(&text, env)?;
         rc.path = Some(path.to_path_buf());
         Ok(Some(rc))
@@ -437,7 +449,14 @@ fn parse_npmrc_into(
                 && !word.contains('/')
                 && folds_to_credential_option(word)
             {
-                warnings.push(format!("{display}: ignoring unknown .npmrc option {word}"));
+                // bun points at the line, like its other config diagnostics.
+                let warning = match rc.path().and_then(|p| key_location(p, key)) {
+                    Some((line, col)) => format!(
+                        "ignoring unknown .npmrc option {word}\n    at {display}:{line}:{col}"
+                    ),
+                    None => format!("{display}: ignoring unknown .npmrc option {word}"),
+                };
+                warnings.push(warning);
             }
             continue;
         };
@@ -455,6 +474,23 @@ fn parse_npmrc_into(
             file,
         });
     }
+}
+
+/// The 1-based line and column of the last `key=` line of the file at `path`. Read again only
+/// for a diagnostic, so parsing keeps no text around.
+fn key_location(path: &Path, key: &str) -> Option<(usize, usize)> {
+    let text = std::fs::read(path).ok()?;
+    let text = String::from_utf8_lossy(&text);
+    let mut found = None;
+    for (i, line) in text.lines().enumerate() {
+        let start = line.len() - line.trim_start().len();
+        if let Some((k, _)) = line[start..].split_once('=')
+            && k.trim_end() == key
+        {
+            found = Some((i + 1, start + 1));
+        }
+    }
+    found
 }
 
 /// npm's config is a flat map, so a key repeated across files collapses to the last one read.

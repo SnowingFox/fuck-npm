@@ -326,13 +326,12 @@ pub(crate) async fn run(cx: &Ctx) -> Result<crate::CoreResult> {
         };
         let latest = m.pick_latest(opts, Some(&excludes));
         let update = find_update(m, &r.literal, opts, &excludes);
+        // bun `is_outdated`: an update in range, or a newer release at all. A newer release that
+        // the age gate holds back still lists the package, its columns marked with `*`.
         let is_outdated = update
             .version()
             .is_some_and(|u| u.version.cmp_precedence(&r.current).is_ne())
-            || actual_latest.version.cmp_precedence(&r.current).is_gt()
-                && latest
-                    .version()
-                    .is_some_and(|l| l.version.cmp_precedence(&r.current).is_gt());
+            || actual_latest.version.cmp_precedence(&r.current).is_gt();
         if !is_outdated {
             continue;
         }

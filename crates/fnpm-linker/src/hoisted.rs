@@ -294,7 +294,12 @@ impl Out {
 pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let nm = cx.project_dir.join("node_modules");
     let mut fresh = cx.opts.fresh || !nm.exists();
-    if !fresh && crate::is_isolated_tree(cx.project_dir) {
+    let mut not_cleared = Vec::new();
+    // Nothing behind a symlinked `node_modules` is cleared, so each install finds the isolated
+    // tree again: warn instead of treating every install as a switch of linker (bun).
+    if !fresh && fsutil::is_linked_node_modules(&nm) && crate::is_isolated_tree(cx.project_dir) {
+        not_cleared.push(crate::shown_folder(cx.project_dir, &nm));
+    } else if !fresh && crate::is_isolated_tree(cx.project_dir) {
         // Switching from the isolated layout: move the whole tree aside.
         crate::move_node_modules_aside(&nm, &[]);
         for (ws, _) in &tree.workspace_roots {
@@ -439,6 +444,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let mut dirs = out.dirs.into_inner();
     dirs.sort();
     Ok(LinkReport {
+        not_cleared,
         installed: out.installed.load(Ordering::Relaxed),
         installed_packages: out.installed_packages.load(Ordering::Relaxed),
         verified: out.verified.load(Ordering::Relaxed),
@@ -581,6 +587,12 @@ fn place_node<'s>(
                         source,
                     })?;
                 }
+                // A workspace's `node_modules` was not made by this run: a link planted at the
+                // package (or its scope) is removed, not written through. Below a fresh root
+                // `node_modules` nothing can be planted, so that costs nothing there.
+                if !parent_fresh || !dest.starts_with(&nm) {
+                    unplant_dest(dest)?;
+                }
                 let placed = if plan.physical[idx] {
                     cx.materialize_physical(node.package, dest)
                 } else {
@@ -656,12 +668,35 @@ fn top_level_names(node_modules: &Path) -> Vec<String> {
     out
 }
 
+/// Removes a symlink at `dest` or at its scope folder (never what it points to).
+fn unplant_dest(dest: &Path) -> Result<()> {
+    let io = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| Error::Io { path, source }
+    };
+    if let Some(scope) = dest.parent().filter(|p| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('@'))
+    }) && fsutil::kind(scope) == Kind::Symlink
+    {
+        fsutil::remove_link(scope).map_err(io(scope))?;
+    }
+    if fsutil::kind(dest) == Kind::Symlink {
+        fsutil::remove_link(dest).map_err(io(dest))?;
+    }
+    Ok(())
+}
+
 /// Removes linker-made entries of `node_modules` whose name is not `expected` (scoped names
 /// handled per scope). Dot entries (`.bin`, `.fnpm`, other tools') stay. Returns the count.
 pub(crate) fn remove_stale<'a>(
     node_modules: &Path,
     expected: impl Iterator<Item = &'a str>,
 ) -> u32 {
+    // What is behind a symlinked `node_modules` may not be a linker's (bun `LinkedNodeModules`).
+    if fsutil::is_linked_node_modules(node_modules) {
+        return 0;
+    }
     let Ok(rd) = std::fs::read_dir(node_modules) else {
         return 0;
     };

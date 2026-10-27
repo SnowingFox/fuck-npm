@@ -479,7 +479,17 @@ impl BinLinker {
         if self.refused.is_some() {
             return Ok(false);
         }
-        let rel = fsutil::relative(&self.bin_dir, abs_target);
+        // In a symlinked `node_modules` a relative target would resolve from where it really
+        // is, so the link gets the absolute path (bun `LinkedNodeModules::resolve`).
+        let linked = self
+            .bin_dir
+            .parent()
+            .is_some_and(fsutil::is_linked_node_modules);
+        let rel = if linked && abs_target.is_absolute() {
+            abs_target.to_path_buf()
+        } else {
+            fsutil::relative(&self.bin_dir, abs_target)
+        };
         let mut result = std::os::unix::fs::symlink(&rel, dest);
         if self.owner.is_none()
             && !self.created_dir
@@ -510,6 +520,15 @@ impl BinLinker {
             Err(e) if e.raw_os_error() == Some(libc::EINVAL) => {
                 if self.owner.is_some() {
                     return Err(io::Error::from_raw_os_error(libc::EEXIST));
+                }
+                // A directory in the `.bin` of a symlinked `node_modules` is not a linker's.
+                if fsutil::kind(dest) == fsutil::Kind::Dir
+                    && self
+                        .bin_dir
+                        .parent()
+                        .is_some_and(fsutil::is_linked_node_modules)
+                {
+                    return Err(fsutil::in_the_way(dest));
                 }
                 // pnpm writes its commands as files; a directory goes too.
                 fsutil::remove_any(dest)?;

@@ -146,9 +146,9 @@ fn assign(values: &mut HashMap<&'static str, Value>, spec: &'static FlagDef, val
     values.insert(spec.key, value);
 }
 
-/// A token that cannot be a value: a flag, but not a lone `-`.
+/// A token that cannot be a value: a flag, but not a lone `-` or a PEM block (`-----BEGIN`).
 fn looks_like_flag(next: &str) -> bool {
-    next.starts_with('-') && next != "-"
+    next.starts_with('-') && next != "-" && !next.starts_with("---")
 }
 
 /// `parseFlags`: values stay the exact strings typed; arity follows bun's clap.

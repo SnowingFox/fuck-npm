@@ -56,6 +56,12 @@ pub enum Error {
         /// What is wrong.
         message: String,
     },
+    /// A config file value bun reports by itself, followed by where it is (`\n    at <file>:<line>:<col>`).
+    #[error("{0}")]
+    Located(String),
+    /// A credential that cannot be sent: a CR, LF or NUL would break the header line.
+    #[error("{0}")]
+    Credential(String),
     /// A config file named with `--config` that cannot be read.
     #[error("{path}: {source}")]
     Io {
@@ -575,8 +581,9 @@ pub struct CliOverrides {
     pub ca_store: Option<String>,
     /// `--minimum-release-age`, in milliseconds.
     pub minimum_release_age_ms: Option<u64>,
-    /// `--minimum-release-age-excludes` (comma-separated, repeatable).
-    pub minimum_release_age_excludes: Vec<String>,
+    /// `--minimum-release-age-excludes` (comma-separated, repeatable). `Some(empty)` (an empty
+    /// value) clears the configured list.
+    pub minimum_release_age_excludes: Option<Vec<String>>,
     /// `--cpu`.
     pub cpu: Vec<String>,
     /// `--os`.

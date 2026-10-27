@@ -3801,6 +3801,7 @@
           "cpu": [],
           "os": [],
           "libc": [],
+          "minimumReleaseAgeMs": 0,
           "command": "install",
           "packages": [],
           "saveProd": false,
@@ -4099,7 +4100,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"ftp://<redacted>@host/x?token=<redacted>&b=1\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"ftp://***@host/x?token=***&b=1\"\n",
         "install": null
       }
     },
@@ -4113,7 +4114,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"host?_AuthToken=<redacted>\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"host?_AuthToken=***\"\n",
         "install": null
       }
     },
@@ -5809,7 +5810,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"-\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"-\"\n",
         "install": null
       }
     },

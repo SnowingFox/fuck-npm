@@ -410,11 +410,16 @@ async fn a_remote_answering_with_something_other_than_a_commit_is_an_error() {
     let h = Harness::new();
     h.fetcher
         .commit("https://git.test/r.git", "", "../../../escape")
-        .commit("github:owner/repo", "main", "main");
-    for spec in ["git+https://git.test/r.git", "github:owner/repo#main"] {
+        .commit("github:owner/repo", "main", "../escape");
+    // A git remote must answer with a commit; a GitHub archive is named by its root directory
+    // (bun), which must be a name a folder may have.
+    for (spec, refusal) in [
+        ("git+https://git.test/r.git", "is not a commit"),
+        ("github:owner/repo#main", "is not a valid folder name"),
+    ] {
         let ws = workspace(json!({"dependencies": {"r": spec}}), &[]);
         let err = h.run(&ws, None, Mode::Normal).await.unwrap_err();
-        assert!(err.to_string().contains("is not a commit"), "{spec}: {err}");
+        assert!(err.to_string().contains(refusal), "{spec}: {err}");
     }
     assert!(h.fetcher.fetches.lock().is_empty());
 }

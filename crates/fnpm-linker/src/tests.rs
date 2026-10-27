@@ -2258,3 +2258,100 @@ fn clone_dir_preserves_source_symlinks() {
         "module.exports = 1;"
     );
 }
+
+/// A `node_modules` that is a symlink to a folder with what no linker made in it.
+fn linked_node_modules(env: &Env) -> PathBuf {
+    let outside = env.project.parent().unwrap().join("outside");
+    for (path, text) in [
+        ("notes.txt", "mine"),
+        ("thesis/chapter.tex", "mine"),
+        ("@me/notes/a.txt", "mine"),
+        ("other/package.json", "{}"),
+    ] {
+        let file = outside.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    std::os::unix::fs::symlink(&outside, env.project.join("node_modules")).unwrap();
+    outside
+}
+
+fn assert_untouched(outside: &Path) {
+    for path in ["notes.txt", "thesis/chapter.tex", "@me/notes/a.txt"] {
+        assert_eq!(read(&outside.join(path)), "mine", "{path}");
+    }
+    assert_eq!(read(&outside.join("other/package.json")), "{}");
+}
+
+#[test]
+fn hoisted_installs_through_a_symlinked_node_modules_and_deletes_nothing_behind_it() {
+    let env = Env::new();
+    let outside = linked_node_modules(&env);
+    let mut store = FakeStore::new(&env.store_dir);
+    let g = sample(&mut store);
+    let layout = Layout::Hoisted(sample_tree());
+    for _ in 0..2 {
+        env.linker()
+            .link(
+                &env.project,
+                &g.g,
+                &layout,
+                &store,
+                &lopts(false),
+                &NoopSink,
+            )
+            .unwrap();
+        crate::flush_background_deletes();
+        assert!(crate::fsutil::is_linked_node_modules(
+            &env.project.join("node_modules")
+        ));
+        assert_untouched(&outside);
+        assert_eq!(read(&outside.join("b/lib/x.js")), "1");
+    }
+}
+
+#[test]
+fn isolated_refuses_to_replace_what_is_in_the_way_behind_a_symlinked_node_modules() {
+    let env = Env::new();
+    let outside = linked_node_modules(&env);
+    let mut store = FakeStore::new(&env.store_dir);
+    let mut g = G::new();
+    let thesis = g.npm("thesis", "1.0.0");
+    g.dep(PackageId::ROOT, thesis);
+    store.add(thesis, "thesis", "1.0.0", &[("index.js", "x")]);
+    let linker = env.linker();
+    let layout = Layout::Isolated(linker.plan_isolated(&g.g, None));
+    let err = linker
+        .link(
+            &env.project,
+            &g.g,
+            &layout,
+            &store,
+            &lopts(false),
+            &NoopSink,
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("EEXIST"), "{err}");
+    crate::flush_background_deletes();
+    assert_untouched(&outside);
+}
+
+#[test]
+fn nothing_is_pruned_behind_a_symlinked_node_modules() {
+    let env = Env::new();
+    let outside = linked_node_modules(&env);
+    let mut store = FakeStore::new(&env.store_dir);
+    let g = sample(&mut store);
+    let layout = Layout::Hoisted(sample_tree());
+    let plan = crate::prune::plan(&env.project, &g.g, &layout);
+    assert!(plan.removals.is_empty(), "{:?}", plan.removals);
+    assert_eq!(plan.linked_folders, [env.project.join("node_modules")]);
+    assert_eq!(
+        crate::prune::remove_unplaced(&env.project, &g.g, &layout),
+        0
+    );
+    let nm = env.project.join("node_modules");
+    assert_eq!(crate::hoisted::remove_stale(&nm, std::iter::empty()), 0);
+    crate::flush_background_deletes();
+    assert_untouched(&outside);
+}
