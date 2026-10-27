@@ -202,6 +202,14 @@ export function cacheWithPackages(dir: string): Record<string, string | undefine
   return { FNPM_CACHE_DIR: dir, FNPM_STORE_DIR: undefined };
 }
 
+/**
+ * Where the global virtual store keeps its entries for a cache directory set up with `cacheWithPackages`: bun uses
+ * `<cache>/links`, fnpm `<cache>/store/v2/links` (the store sits in the cache, in its own layout version).
+ */
+export function globalStoreLinks(cache: string): string {
+  return join(cache, "store", "v2", "links");
+}
+
 export interface RunOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;

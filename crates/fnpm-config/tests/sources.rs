@@ -22,7 +22,7 @@ fn defaults() {
     assert_eq!(cfg.home_dir, home.join(".fnpm"));
     assert_eq!(cfg.store_dir, home.join(".fnpm/store/v2"));
     assert_eq!(cfg.cache_dir, home.join(".fnpm/cache"));
-    assert_eq!(cfg.global_dir, home.join(".fnpm/global"));
+    assert_eq!(cfg.global_dir, home.join(".fnpm/install/global"));
     assert_eq!(cfg.global_bin_dir, home.join(".fnpm/bin"));
     assert_eq!(cfg.registry.url, fnpm_config::DEFAULT_REGISTRY);
     assert_eq!(cfg.network.concurrency, 64);
@@ -69,7 +69,7 @@ fn fnpm_home_and_store_env() {
     assert_eq!(cfg.home_dir, fx.path("home/fh"));
     assert_eq!(cfg.store_dir, PathBuf::from("/s/v2"));
     assert_eq!(cfg.cache_dir, fx.path("home/fh/cache"));
-    assert_eq!(cfg.global_dir, fx.path("home/fh/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/fh/install/global"));
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn project_global_dirs_are_ignored_with_a_warning() {
         &bunfig("globalDir = \"/victim/g\"\nglobalBinDir = \"/victim/b\""),
     )]);
     let cfg = fx.load();
-    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
     assert_eq!(
         cfg.warnings
             .iter()
@@ -394,7 +394,7 @@ fn project_global_dirs_are_ignored_with_a_warning() {
         },
     );
     assert!(cfg.warnings.is_empty(), "{:?}", cfg.warnings);
-    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
     // Honoured when passed with --config.
     let cfg = fx.load_with(
         &[],
@@ -442,8 +442,43 @@ fn global_dir_env_precedence() {
     );
     assert_eq!(
         (cfg.global_dir, cfg.global_bin_dir),
-        (PathBuf::from("/f/global"), PathBuf::from("/f/bin"))
+        (PathBuf::from("/f/install/global"), PathBuf::from("/f/bin"))
     );
+}
+
+#[test]
+fn global_dirs_follow_buns_install_root() {
+    let fx = Fx::new(&[]);
+    // `FNPM_INSTALL` is fnpm's `BUN_INSTALL`, and wins over it.
+    let cfg = fx.load_with(
+        &[("FNPM_INSTALL", "/i"), ("BUN_INSTALL", "/b")],
+        CliOverrides::default(),
+    );
+    assert_eq!(
+        (cfg.global_dir, cfg.global_bin_dir),
+        (PathBuf::from("/i/install/global"), PathBuf::from("/i/bin"))
+    );
+    // bun: `$XDG_CACHE_HOME/.bun` when no install root is named.
+    let cfg = fx.load_with(&[("XDG_CACHE_HOME", "~/c")], CliOverrides::default());
+    assert_eq!(
+        (cfg.global_dir, cfg.global_bin_dir),
+        (
+            fx.path("home/c/.fnpm/install/global"),
+            fx.path("home/c/.fnpm/bin")
+        )
+    );
+}
+
+#[test]
+fn an_older_global_dir_stays_in_use() {
+    // fnpm used to keep `-g` packages in `~/.fnpm/global`.
+    let fx = Fx::new(&[("home/.fnpm/global/package.json", "{}")]);
+    let cfg = fx.load();
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/global"));
+    // Once the new folder exists it is the one used.
+    std::fs::create_dir_all(fx.path("home/.fnpm/install/global")).unwrap();
+    let cfg = fx.load();
+    assert_eq!(cfg.global_dir, fx.path("home/.fnpm/install/global"));
 }
 
 #[test]

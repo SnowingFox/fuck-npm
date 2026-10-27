@@ -51,7 +51,11 @@ fn first_env<'a>(env: &'a Env, keys: &[&str]) -> Option<&'a str> {
 
 /// `FNPM_HOME`, else `$HOME/.fnpm`, else `<cwd>/.fnpm`.
 fn fnpm_home(env: &Env, home: Option<&Path>, cwd: &Path) -> PathBuf {
-    match env.get_not_empty(crate::env::names::HOME) {
+    // `FNPM_INSTALL` is the name that mirrors bun's `BUN_INSTALL`; `FNPM_HOME` the older one.
+    let named = env
+        .get_not_empty(crate::env::names::INSTALL)
+        .or_else(|| env.get_not_empty(crate::env::names::HOME));
+    match named {
         Some(v) => env_path(cwd, v, home),
         None => home.map_or_else(|| cwd.join(".fnpm"), |h| h.join(".fnpm")),
     }
@@ -479,6 +483,25 @@ struct Layers {
     warnings: Vec<String>,
 }
 
+/// bun's install root for `-g`: `$FNPM_INSTALL` (`$FNPM_HOME`, bun's `$BUN_INSTALL`), else
+/// `$XDG_CACHE_HOME/.fnpm`, else `~/.fnpm`. `None` when nothing names one (the default).
+fn install_root(env: &Env, cwd: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    [
+        crate::env::names::INSTALL,
+        crate::env::names::HOME,
+        "BUN_INSTALL",
+    ]
+    .iter()
+    .find_map(|key| env.get_not_empty(key))
+    .map(|v| env_path(cwd, v, home))
+    .or_else(|| {
+        env.get_not_empty("XDG_CACHE_HOME")
+            .map(|v| env_path(cwd, v, home).join(".fnpm"))
+    })
+}
+
+/// `-g` directories in bun's layout under [`install_root`]: `<root>/install/global` and
+/// `<root>/bin`. A `~/.fnpm/global` of an older fnpm stays in use until it is moved.
 fn global_dirs(
     env: &Env,
     cwd: &Path,
@@ -486,38 +509,31 @@ fn global_dirs(
     fnpm_home: &Path,
     layer: &InstallFile,
 ) -> (PathBuf, PathBuf) {
-    let fnpm_home_set = env.get_not_empty(crate::env::names::HOME).is_some();
-    let bun_install = env
-        .get_not_empty("BUN_INSTALL")
-        .map(|v| env_path(cwd, v, home));
-    let pick = |env_keys: &[&str],
-                configured: &Option<PathBuf>,
-                under_bun: &[&str],
-                under_fnpm: &str|
-     -> PathBuf {
+    let root = install_root(env, cwd, home).unwrap_or_else(|| fnpm_home.to_path_buf());
+    let pick = |env_keys: &[&str], configured: &Option<PathBuf>, default: PathBuf| -> PathBuf {
         if let Some(v) = first_env(env, env_keys) {
             return env_path(cwd, v, home);
         }
         if let Some(p) = configured.as_ref().filter(|p| !p.as_os_str().is_empty()) {
             return p.clone();
         }
-        if !fnpm_home_set && let Some(root) = &bun_install {
-            return under_bun.iter().fold(root.clone(), |p, s| p.join(s));
-        }
-        fnpm_home.join(under_fnpm)
+        default
     };
+    let mut global = root.join("install").join("global");
+    let legacy = fnpm_home.join("global");
+    if root == fnpm_home && !global.exists() && legacy.join("package.json").is_file() {
+        global = legacy;
+    }
     (
         pick(
-            &["FNPM_GLOBAL_DIR", "BUN_INSTALL_GLOBAL_DIR"],
+            &[crate::env::names::GLOBAL_DIR, "BUN_INSTALL_GLOBAL_DIR"],
             &layer.global_dir,
-            &["install", "global"],
-            "global",
+            global,
         ),
         pick(
-            &["FNPM_GLOBAL_BIN_DIR", "BUN_INSTALL_BIN"],
+            &[crate::env::names::GLOBAL_BIN_DIR, "BUN_INSTALL_BIN"],
             &layer.global_bin_dir,
-            &["bin"],
-            "bin",
+            root.join("bin"),
         ),
     )
 }
