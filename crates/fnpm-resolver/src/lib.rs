@@ -565,7 +565,11 @@ impl Resolver {
             && let Some(prev) = previous
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
-            && !dedupe::overrides_unmet(prev)
+            && !dedupe::overrides_unmet(
+                prev,
+                workspace.root.raw.get("overrides").is_none()
+                    && workspace.root.raw.get("resolutions").is_some(),
+            )
             && !frozen::stale_pin(prev)
         {
             return self.unchanged(workspace, prev, tx, events, warnings);

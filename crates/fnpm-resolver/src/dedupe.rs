@@ -74,11 +74,16 @@ fn npm_version(p: &fnpm_types::Package) -> Option<Version> {
 /// Whether a locked registry package is outside the range that an override rule gives its
 /// edge (a lockfile written before the rule, or by a merge). bun resolves such an entry again
 /// on a normal install, while a frozen install keeps it.
-pub(crate) fn overrides_unmet(graph: &LockGraph) -> bool {
+/// `yarn`: the rules are yarn `resolutions` ([`OverrideSet::yarn`]).
+pub(crate) fn overrides_unmet(graph: &LockGraph, yarn: bool) -> bool {
     if graph.overrides.is_empty() {
         return false;
     }
-    let set = OverrideSet::new(&graph.overrides);
+    let set = if yarn {
+        OverrideSet::yarn(&graph.overrides)
+    } else {
+        OverrideSet::new(&graph.overrides)
+    };
     graph.packages.iter().enumerate().any(|(i, p)| {
         let owner = PackageId(i as u32);
         let owner_version = crate::engine::package_version(p);

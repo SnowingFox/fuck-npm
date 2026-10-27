@@ -353,6 +353,9 @@ pub(crate) struct OverrideSet {
     flat: HashMap<String, usize>,
     scoped: Vec<Scoped>,
     scoped_names: HashSet<String>,
+    /// yarn `resolutions`: a `name@<range>` key selects a dependency declared with the same
+    /// range only (`npm:^1.0.0` and `^1.0.0` are one range), not every overlapping one.
+    exact_ranges: bool,
 }
 
 fn same_catalog(a: &str, b: &str) -> bool {
@@ -364,8 +367,9 @@ fn is_npm_alias(spec: &DependencySpec) -> bool {
     matches!(spec, DependencySpec::Npm { is_alias: true, .. })
 }
 
-/// npm and pnpm select a `name@<range>` key when the ranges overlap.
-fn range_selects(range: &DependencySpec, declared: &DependencySpec) -> bool {
+/// npm and pnpm select a `name@<range>` key when the ranges overlap; yarn (`exact`) when they
+/// are the same range.
+fn range_selects(range: &DependencySpec, declared: &DependencySpec, exact: bool) -> bool {
     match (range, declared) {
         (
             DependencySpec::Npm {
@@ -382,6 +386,9 @@ fn range_selects(range: &DependencySpec, declared: &DependencySpec) -> bool {
             if ra != da || (*ra && rn != dn) {
                 return false;
             }
+            if exact {
+                return rr.trim() == dr.trim();
+            }
             match (Range::parse(rr), Range::parse(dr)) {
                 (Ok(a), Ok(b)) => a.intersects(&b),
                 _ => false,
@@ -395,12 +402,20 @@ fn range_selects(range: &DependencySpec, declared: &DependencySpec) -> bool {
 }
 
 impl OverrideSet {
+    /// The set of yarn `resolutions` ([`OverrideSet::exact_ranges`]).
+    pub(crate) fn yarn(rules: &[OverrideRule]) -> Self {
+        let mut set = Self::new(rules);
+        set.exact_ranges = true;
+        set
+    }
+
     pub(crate) fn new(rules: &[OverrideRule]) -> Self {
         let mut set = Self {
             rules: rules.to_vec(),
             flat: HashMap::new(),
             scoped: Vec::new(),
             scoped_names: HashSet::new(),
+            exact_ranges: false,
         };
         for (i, rule) in rules.iter().enumerate() {
             let OverrideSelector { parent, target } = &rule.selector;
@@ -485,7 +500,7 @@ impl OverrideSet {
                     if best.is_some_and(|(_, t)| t > tier + 1) {
                         continue;
                     }
-                    if !range_selects(range, declared) {
+                    if !range_selects(range, declared, self.exact_ranges) {
                         continue;
                     }
                     tier += 1;
