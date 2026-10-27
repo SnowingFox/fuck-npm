@@ -1,6 +1,6 @@
 //! `bun.lockb`, bun's binary lockfile (a port of the reader in bun
-//! `install/lockfile/bun.lockb.rs`, `Buffers.rs` and `Package.rs` `serializer::load`).
-//! Read-only: fnpm migrates from it and never writes it.
+//! `install/lockfile/bun.lockb.rs`, `Buffers.rs` and `Package.rs` `serializer::load`), and
+//! the writer (`serializer::save`), for projects that keep bun.lockb.
 //!
 //! Layout (little-endian, 64-bit): a header, the format version (2 or 3), a meta hash, the
 //! package table as one column per field (name, name hash, resolution, dependency slice,
@@ -10,7 +10,8 @@
 //! configVersion, scoped overrides, package extensions). Strings are bun's 8-byte
 //! `semver.String`: inline when short, else an offset/length into the string bytes.
 //!
-//! Dependencies are bound by the stored resolution ids, so the hoisted tree is not needed.
+//! Dependencies are bound by the stored resolution ids, so the reader does not need the
+//! hoisted tree; the writer stores it for bun.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -820,14 +821,14 @@ fn read_sections(
                 .iter()
                 .map(|c| u32::from_le_bytes(*c))
                 .collect();
-            // Only the truncated hashes are stored; names come from the installed packages.
-            let names = trust_candidates(graph);
-            graph.trusted_dependencies = Some(
-                names
-                    .into_iter()
-                    .filter(|n| hashes.contains(&(string_hash(n.as_bytes()) as u32)))
-                    .collect(),
-            );
+            // Only the truncated hashes are stored; names come from the installed packages. A
+            // list that names none of them records nothing, as bun.lock (which writes only the
+            // installed names) would.
+            let names: BTreeSet<String> = trust_candidates(graph)
+                .into_iter()
+                .filter(|n| hashes.contains(&(string_hash(n.as_bytes()) as u32)))
+                .collect();
+            graph.trusted_dependencies = (!names.is_empty()).then_some(names);
         } else if next == HAS_EMPTY_TRUSTED_DEPENDENCIES {
             graph.trusted_dependencies = Some(BTreeSet::new());
         } else {
@@ -961,4 +962,513 @@ fn read_sections(
         let _ = s.array(8, 8)?;
     }
     Ok(())
+}
+
+// ─── writing ────────────────────────────────────────────────────────────────────────────────
+
+/// bun's `semver.String` pool: every string goes into `bytes` once, short ones inline.
+#[derive(Default)]
+struct Strings {
+    bytes: Vec<u8>,
+    at: HashMap<String, u64>,
+}
+
+impl Strings {
+    /// The 8-byte `semver.String` for `s` (bun `String.Builder.append`).
+    fn add(&mut self, s: &str) -> [u8; 8] {
+        let b = s.as_bytes();
+        let inline = b.len() < 8 || (b.len() == 8 && b[7] & 0x80 == 0);
+        if inline && !b.contains(&0) {
+            let mut raw = [0u8; 8];
+            raw[..b.len()].copy_from_slice(b);
+            return raw;
+        }
+        let off = *self.at.entry(s.to_owned()).or_insert_with(|| {
+            let off = self.bytes.len() as u64;
+            self.bytes.extend_from_slice(b);
+            off
+        });
+        (off | (b.len() as u64) << 32 | 1 << 63).to_le_bytes()
+    }
+
+    /// bun's `ExternalString`: the string, then its hash.
+    fn external(&mut self, s: &str) -> [u8; 16] {
+        let mut raw = [0u8; 16];
+        raw[..8].copy_from_slice(&self.add(s));
+        raw[8..].copy_from_slice(&string_hash(s.as_bytes()).to_le_bytes());
+        raw
+    }
+
+    /// A semver version as format 3 stores it, or `None` when `v` is not one.
+    fn version(&mut self, v: &str) -> Option<[u8; 56]> {
+        let (core, build) = v.split_once('+').unwrap_or((v, ""));
+        let (core, pre) = core.split_once('-').unwrap_or((core, ""));
+        let mut parts = core.split('.').map(|n| n.parse::<u64>().ok());
+        let (Some(Some(major)), Some(Some(minor)), Some(Some(patch)), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            return None;
+        };
+        let mut raw = [0u8; 56];
+        raw[0..8].copy_from_slice(&major.to_le_bytes());
+        raw[8..16].copy_from_slice(&minor.to_le_bytes());
+        raw[16..24].copy_from_slice(&patch.to_le_bytes());
+        if !pre.is_empty() {
+            raw[24..40].copy_from_slice(&self.external(pre));
+        }
+        if !build.is_empty() {
+            raw[40..56].copy_from_slice(&self.external(build));
+        }
+        Some(raw)
+    }
+
+    /// bun `Dependency.External`: name, name hash, behavior, version tag, literal.
+    fn dependency(&mut self, name: &str, behavior: Behavior, tag: u8, literal: &str) -> [u8; 26] {
+        let mut row = [0u8; DEPENDENCY_SIZE];
+        row[0..8].copy_from_slice(&self.add(name));
+        row[8..16].copy_from_slice(&string_hash(name.as_bytes()).to_le_bytes());
+        row[16] = behavior.0 & 0b0111_1110;
+        row[17] = tag;
+        row[18..26].copy_from_slice(&self.add(literal));
+        row
+    }
+}
+
+/// bun's `Dependency.Version.Tag` of a literal.
+fn version_tag(literal: &str) -> u8 {
+    crate::flat::Spec::parse(literal).tag as u8
+}
+
+/// The output stream with bun's positioned writes.
+struct Out(Vec<u8>);
+
+impl Out {
+    fn u32(&mut self, v: u32) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn u64(&mut self, v: u64) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn align8(&mut self) {
+        while !self.0.len().is_multiple_of(8) {
+            self.0.push(0);
+        }
+    }
+
+    fn patch_u64(&mut self, at: usize, v: u64) {
+        self.0[at..at + 8].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// bun `Buffers::write_array`: `[start, end)`, the type-name prefix, then the payload
+    /// aligned to 8.
+    fn array(&mut self, bytes: &[u8], prefix: &str) {
+        let field = self.0.len();
+        self.u64(0xDEAD_BEEF);
+        self.u64(0xDEAD_BEEF);
+        self.0.extend_from_slice(prefix.as_bytes());
+        if !bytes.is_empty() {
+            self.align8();
+        }
+        let start = self.0.len() as u64;
+        self.0.extend_from_slice(bytes);
+        let end = self.0.len() as u64;
+        self.patch_u64(field, start);
+        self.patch_u64(field + 8, end);
+    }
+}
+
+/// The tagged sections, written after the buffers (their arrays hold absolute positions).
+#[derive(Default)]
+struct Sections(Vec<Op>);
+
+enum Op {
+    U64(u64),
+    Array(Vec<u8>, &'static str),
+}
+
+impl Sections {
+    fn u64(&mut self, v: u64) {
+        self.0.push(Op::U64(v));
+    }
+
+    fn array(&mut self, bytes: &[u8], prefix: &'static str) {
+        self.0.push(Op::Array(bytes.to_vec(), prefix));
+    }
+}
+
+const PREFIX_U64: &str = "\n<u64> 8 sizeof, 8 alignof\n";
+const PREFIX_U32: &str = "\n<u32> 4 sizeof, 4 alignof\n";
+const PREFIX_DEP_EXTERNAL: &str = "\n<[26]u8> 26 sizeof, 1 alignof\n";
+const PREFIX_SEMVER_VERSION: &str = "\n<semver.Version.Version> 56 sizeof, 8 alignof\n";
+const PREFIX_SEMVER_STRING: &str = "\n<semver.String> 8 sizeof, 1 alignof\n";
+const PREFIX_PATCHED_DEP: &str = "\n<install.lockfile.PatchedDep> 24 sizeof, 8 alignof\n";
+
+/// The 72-byte format-3 resolution of a package.
+fn resolution_bytes(res: &Resolution, version: &str, s: &mut Strings) -> [u8; 72] {
+    let mut raw = [0u8; 72];
+    let put = |raw: &mut [u8; 72], at: usize, v: &str, s: &mut Strings| {
+        raw[at..at + 8].copy_from_slice(&s.add(v));
+    };
+    match res {
+        Resolution::Root => raw[0] = res_tag::ROOT,
+        Resolution::Npm { tarball_url, .. } => {
+            raw[0] = res_tag::NPM;
+            put(&mut raw, 8, tarball_url.as_deref().unwrap_or(""), s);
+            if let Some(v) = s.version(version) {
+                raw[16..72].copy_from_slice(&v);
+            }
+        }
+        Resolution::Folder { path } => {
+            raw[0] = res_tag::FOLDER;
+            put(&mut raw, 8, path, s);
+        }
+        Resolution::LocalTarball { path, .. } => {
+            raw[0] = res_tag::LOCAL_TARBALL;
+            put(&mut raw, 8, path, s);
+        }
+        Resolution::RemoteTarball { url, .. } => {
+            raw[0] = res_tag::REMOTE_TARBALL;
+            put(&mut raw, 8, url, s);
+        }
+        Resolution::Symlink { path } => {
+            raw[0] = res_tag::SYMLINK;
+            put(&mut raw, 8, path, s);
+        }
+        Resolution::Workspace { path } => {
+            raw[0] = res_tag::WORKSPACE;
+            put(&mut raw, 8, path, s);
+        }
+        Resolution::Git {
+            url,
+            committish,
+            resolved_commit,
+            ..
+        } => {
+            raw[0] = res_tag::GIT;
+            put(&mut raw, 16, url, s);
+            put(&mut raw, 24, committish, s);
+            put(&mut raw, 32, resolved_commit, s);
+        }
+        Resolution::Github {
+            owner,
+            repo,
+            committish,
+            resolved_commit,
+            ..
+        } => {
+            raw[0] = res_tag::GITHUB;
+            put(&mut raw, 8, owner, s);
+            put(&mut raw, 16, repo, s);
+            put(&mut raw, 24, committish, s);
+            put(&mut raw, 32, resolved_commit, s);
+        }
+    }
+    raw
+}
+
+/// The 65 bytes of bun's `Integrity`: the algorithm, then the digest.
+fn integrity_bytes(i: Option<&Integrity>) -> [u8; 65] {
+    let mut raw = [0u8; 65];
+    if let Some(i) = i {
+        raw[0] = match i.algorithm() {
+            HashAlgorithm::Sha1 => 1,
+            HashAlgorithm::Sha256 => 2,
+            HashAlgorithm::Sha384 => 3,
+            HashAlgorithm::Sha512 => 4,
+        };
+        raw[1..1 + i.digest().len()].copy_from_slice(i.digest());
+    }
+    raw
+}
+
+/// Writes a bun.lockb (format 3) the way bun 1.x does: the package columns, the buffers of the
+/// hoisted install tree, then the tagged sections.
+pub fn serialize(graph: &LockGraph) -> Result<Vec<u8>> {
+    let mut flat = crate::flat::Flat::new(graph);
+    let hoisted = crate::tree::resolve(&mut flat);
+    if let Some(cycle) = hoisted.cycle {
+        return Err(Error::DependencyCycle(cycle));
+    }
+    let mut s = Strings::default();
+    let count = graph.packages.len();
+
+    // The dependency rows, in the flat view's per-package order.
+    let mut deps: Vec<u8> = Vec::with_capacity(flat.deps.len() * DEPENDENCY_SIZE);
+    for d in &flat.deps {
+        // bun's root lists each workspace member with its path as the literal.
+        let literal = match &d.workspace_path {
+            Some(path) if d.edge.is_none() => path.as_ref(),
+            _ => d.literal,
+        };
+        deps.extend_from_slice(&s.dependency(d.name, d.behavior, d.version.tag as u8, literal));
+    }
+    let resolutions: Vec<u8> = flat
+        .resolutions
+        .iter()
+        .flat_map(|r| r.to_le_bytes())
+        .collect();
+
+    // The install tree.
+    let mut trees: Vec<u8> = Vec::with_capacity(hoisted.trees.len() * 20);
+    let mut hoisted_ids: Vec<u8> = Vec::new();
+    let mut off = 0u32;
+    for (i, t) in hoisted.trees.iter().enumerate() {
+        let rows = hoisted.rows.get(i).map_or(&[][..], Vec::as_slice);
+        let (dependency_id, parent) = if i == 0 {
+            (INVALID_ID - 1, INVALID_ID)
+        } else {
+            (t.dependency_id, t.parent)
+        };
+        for v in [i as u32, dependency_id, parent, off, rows.len() as u32] {
+            trees.extend_from_slice(&v.to_le_bytes());
+        }
+        off += rows.len() as u32;
+        for d in rows {
+            hoisted_ids.extend_from_slice(&d.to_le_bytes());
+        }
+    }
+
+    // The package columns.
+    let mut extern_strings: Vec<u8> = Vec::new();
+    let mut columns: [Vec<u8>; 8] = Default::default();
+    for (i, p) in graph.packages.iter().enumerate() {
+        columns[0].extend_from_slice(&s.add(&p.name));
+        columns[1].extend_from_slice(&string_hash(p.name.as_bytes()).to_le_bytes());
+        columns[2].extend_from_slice(&resolution_bytes(&p.resolution, &p.version, &mut s));
+        let (b, e) = flat.lists[i];
+        let slice = [b.to_le_bytes(), (e - b).to_le_bytes()].concat();
+        columns[3].extend_from_slice(&slice);
+        columns[4].extend_from_slice(&slice);
+        let mut meta = [0u8; META_SIZE];
+        // bun's `Origin`: local for the root, npm for every other package.
+        meta[0] = u8::from(i != 0);
+        meta[2..4].copy_from_slice(&p.platform.cpu.0.to_le_bytes());
+        meta[4..6].copy_from_slice(&p.platform.os.0.to_le_bytes());
+        meta[6] = p.platform.libc.0;
+        meta[8..12].copy_from_slice(&(i as u32).to_le_bytes());
+        meta[20..85].copy_from_slice(&integrity_bytes(p.resolution.integrity()));
+        meta[85] = if p.meta.has_install_script { 2 } else { 1 };
+        columns[5].extend_from_slice(&meta);
+        let mut bin = [0u8; BIN_SIZE];
+        match &p.bin {
+            Bin::None => {}
+            Bin::File { path } => {
+                bin[0] = 1;
+                bin[4..12].copy_from_slice(&s.add(path));
+            }
+            Bin::NamedFile { name, path } => {
+                bin[0] = 2;
+                bin[4..12].copy_from_slice(&s.add(name));
+                bin[12..20].copy_from_slice(&s.add(path));
+            }
+            Bin::Dir { path } => {
+                bin[0] = 3;
+                bin[4..12].copy_from_slice(&s.add(path));
+            }
+            Bin::Map { entries } => {
+                bin[0] = 4;
+                let at = (extern_strings.len() / 16) as u32;
+                for (name, path) in entries {
+                    extern_strings.extend_from_slice(&s.external(name));
+                    extern_strings.extend_from_slice(&s.external(path));
+                }
+                bin[4..8].copy_from_slice(&at.to_le_bytes());
+                bin[8..12].copy_from_slice(&(2 * entries.len() as u32).to_le_bytes());
+            }
+        }
+        columns[6].extend_from_slice(&bin);
+        // No script text (bun reads it from package.json when it installs); bun marks the
+        // project's own packages as read.
+        let mut scripts = [0u8; SCRIPTS_SIZE];
+        scripts[48] = u8::from(p.resolution.is_local_tree());
+        columns[7].extend_from_slice(&scripts);
+    }
+
+    // The tagged sections, built before the string bytes are final.
+    let mut sections = Sections::default();
+    let members: Vec<&Package> = graph
+        .workspaces
+        .iter()
+        .filter(|(path, _)| !path.is_empty())
+        .filter_map(|(_, id)| graph.get(*id))
+        .collect();
+    let versions: Vec<(u64, [u8; 56])> = members
+        .iter()
+        .filter_map(|m| Some((string_hash(m.name.as_bytes()), s.version(&m.version)?)))
+        .collect();
+    let paths: Vec<(u64, [u8; 8])> = graph
+        .workspaces
+        .iter()
+        .filter(|(path, _)| !path.is_empty())
+        .filter_map(|(path, id)| {
+            let m = graph.get(*id)?;
+            Some((string_hash(m.name.as_bytes()), s.add(path)))
+        })
+        .collect();
+    if !versions.is_empty() {
+        sections.u64(HAS_WORKSPACE_PACKAGE_IDS);
+        let keys: Vec<u8> = versions.iter().flat_map(|v| v.0.to_le_bytes()).collect();
+        let values: Vec<u8> = versions.iter().flat_map(|v| v.1).collect();
+        sections.array(&keys, PREFIX_U64);
+        sections.array(&values, PREFIX_SEMVER_VERSION);
+        let keys: Vec<u8> = paths.iter().flat_map(|v| v.0.to_le_bytes()).collect();
+        let values: Vec<u8> = paths.iter().flat_map(|v| v.1).collect();
+        sections.array(&keys, PREFIX_U64);
+        sections.array(&values, PREFIX_SEMVER_STRING);
+    }
+    match &graph.trusted_dependencies {
+        Some(names) if !names.is_empty() => {
+            sections.u64(HAS_TRUSTED_DEPENDENCIES);
+            let keys: Vec<u8> = names
+                .iter()
+                .flat_map(|n| (string_hash(n.as_bytes()) as u32).to_le_bytes())
+                .collect();
+            sections.array(&keys, PREFIX_U32);
+        }
+        Some(_) => sections.u64(HAS_EMPTY_TRUSTED_DEPENDENCIES),
+        None => {}
+    }
+    let (flat_rules, scoped): (Vec<&OverrideRule>, Vec<&OverrideRule>) = graph
+        .overrides
+        .iter()
+        .partition(|r| r.selector.parent.is_none() && r.selector.target.range.is_empty());
+    if !flat_rules.is_empty() {
+        sections.u64(HAS_OVERRIDES);
+        let keys: Vec<u8> = flat_rules
+            .iter()
+            .flat_map(|r| string_hash(r.selector.target.name.as_bytes()).to_le_bytes())
+            .collect();
+        let values: Vec<u8> = flat_rules
+            .iter()
+            .flat_map(|r| {
+                let name = &r.selector.target.name;
+                s.dependency(name, Behavior(0), version_tag(&r.value), &r.value)
+            })
+            .collect();
+        sections.array(&keys, PREFIX_U64);
+        sections.array(&values, PREFIX_DEP_EXTERNAL);
+    }
+    if !graph.patched_dependencies.is_empty() {
+        sections.u64(HAS_PATCHED_DEPENDENCIES);
+        let keys: Vec<u8> = graph
+            .patched_dependencies
+            .keys()
+            .flat_map(|k| string_hash(k.as_bytes()).to_le_bytes())
+            .collect();
+        let mut values: Vec<u8> = Vec::new();
+        for patch in graph.patched_dependencies.values() {
+            let mut raw = [0u8; 24];
+            raw[0..8].copy_from_slice(&s.add(&patch.path));
+            match patch
+                .hash
+                .as_deref()
+                .and_then(|h| u64::from_str_radix(h, 16).ok())
+            {
+                Some(h) => raw[16..24].copy_from_slice(&h.to_le_bytes()),
+                None => raw[15] = 1,
+            }
+            values.extend_from_slice(&raw);
+        }
+        sections.array(&keys, PREFIX_U64);
+        sections.array(&values, PREFIX_PATCHED_DEP);
+    }
+    let catalogs = &graph.catalogs;
+    if !catalogs.default.is_empty() || !catalogs.named.is_empty() {
+        sections.u64(HAS_CATALOGS);
+        let entries = |map: &BTreeMap<String, String>, sections: &mut Sections, s: &mut Strings| {
+            let names: Vec<u8> = map.keys().flat_map(|n| s.add(n)).collect();
+            let deps: Vec<u8> = map
+                .iter()
+                .flat_map(|(n, v)| s.dependency(n, Behavior(0), version_tag(v), v))
+                .collect();
+            sections.array(&names, PREFIX_SEMVER_STRING);
+            sections.array(&deps, PREFIX_DEP_EXTERNAL);
+        };
+        entries(&catalogs.default, &mut sections, &mut s);
+        let groups: Vec<u8> = catalogs.named.keys().flat_map(|n| s.add(n)).collect();
+        sections.array(&groups, PREFIX_SEMVER_STRING);
+        for map in catalogs.named.values() {
+            entries(map, &mut sections, &mut s);
+        }
+    }
+    sections.u64(HAS_CONFIG_VERSION);
+    sections.u64(u64::from(u8::from(graph.config_version)));
+    if !scoped.is_empty() {
+        sections.u64(HAS_SCOPED_OVERRIDES);
+        let mut parents: Vec<u8> = Vec::new();
+        let mut ranges: Vec<u8> = Vec::new();
+        let mut values: Vec<u8> = Vec::new();
+        for r in &scoped {
+            let target = &r.selector.target;
+            let parent = r
+                .selector
+                .parent
+                .as_ref()
+                .map_or([0u8; DEPENDENCY_SIZE], |p| {
+                    s.dependency(&p.name, Behavior(0), version_tag(&p.range), &p.range)
+                });
+            parents.extend_from_slice(&parent);
+            ranges.extend_from_slice(&s.dependency(
+                &target.name,
+                Behavior(0),
+                version_tag(&target.range),
+                &target.range,
+            ));
+            values.extend_from_slice(&s.dependency(
+                &target.name,
+                Behavior(0),
+                version_tag(&r.value),
+                &r.value,
+            ));
+        }
+        sections.array(&parents, PREFIX_DEP_EXTERNAL);
+        sections.array(&ranges, PREFIX_DEP_EXTERNAL);
+        sections.array(&values, PREFIX_DEP_EXTERNAL);
+    }
+
+    // The file.
+    let mut out = Out(Vec::with_capacity(
+        512 + columns.iter().map(Vec::len).sum::<usize>() + deps.len() + s.bytes.len(),
+    ));
+    out.0.extend_from_slice(HEADER);
+    out.u32(FORMAT_CURRENT);
+    out.0.extend_from_slice(&crate::hash::meta_hash(graph));
+    let total_at = out.0.len();
+    out.u64(0);
+    out.u64(count as u64);
+    out.u64(8);
+    out.u64(FIELD_COUNT);
+    let begin_at = out.0.len();
+    out.u64(0);
+    out.u64(0);
+    out.align8();
+    let begin = out.0.len() as u64;
+    for column in &columns {
+        out.0.extend_from_slice(column);
+    }
+    let end = out.0.len() as u64;
+    out.patch_u64(begin_at, begin);
+    out.patch_u64(begin_at + 8, end);
+    out.array(&trees, "\n<install.lockfile.Tree> 20 sizeof, 4 alignof\n");
+    out.array(&hoisted_ids, PREFIX_U32);
+    out.array(&resolutions, PREFIX_U32);
+    out.array(&deps, PREFIX_DEP_EXTERNAL);
+    out.array(
+        &extern_strings,
+        "\n<semver.ExternalString.ExternalString> 16 sizeof, 8 alignof\n",
+    );
+    out.array(&s.bytes, "\n<u8> 1 sizeof, 1 alignof\n");
+    out.u64(0);
+    for op in sections.0 {
+        match op {
+            Op::U64(v) => out.u64(v),
+            Op::Array(bytes, prefix) => out.array(&bytes, prefix),
+        }
+    }
+    let total = out.0.len() as u64;
+    out.patch_u64(total_at, total);
+    out.0.extend_from_slice(&[0u8; 144]);
+    Ok(out.0)
 }

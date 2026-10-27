@@ -40,7 +40,7 @@ pub(crate) fn current_layout(
             .unwrap_or_default();
     let linker = Linker::new(config.clone(), project.store()?).with_self_contained(self_contained);
     let view = crate::install::link_view(graph);
-    let layout = crate::install::plan_layout(&linker, &view, kind, None);
+    let layout = crate::install::plan_layout(&linker, &view, kind, None, &[]);
     Ok((linker, layout))
 }
 
@@ -140,7 +140,7 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if check || cx.pm.dry_run {
         return Ok(exit(i32::from(check), data, lines));
     }
-    fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
+    fnpm_lockfile::save_keeping_format(&project.root_dir, &graph, None)?;
     if !lock_tool {
         reinstall(cx).await?;
     }
@@ -173,7 +173,8 @@ fn migration_sources(from: Option<&str>) -> Result<Vec<&'static str>> {
 /// `fnpm migrate` / `pm migrate` / `fnpm-lock migrate [--from x] [--dry-run] [--force]`.
 pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     let project = cx.project()?;
-    let ws = project.workspace(&*cx.events)?;
+    let (ws, ws_warnings) =
+        fnpm_workspace::Workspace::load_with(&project.root_dir, &Default::default())?;
     let root = project.root_dir.clone();
     let target = root.join(fnpm_lockfile::FNPM_LOCK);
     if target.exists() && !cx.pm.force && !cx.pm.dry_run {
@@ -188,14 +189,17 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         let client = project.client()?;
         crate::install::backfill_migrated(&mut state, &client, &project.config).await;
     }
+    for w in crate::install::workspace_warnings(&ws_warnings, &state) {
+        cx.events.emit(Event::warn(w.clone(), None));
+    }
+    for e in &state.failures {
+        cx.events.emit(e.clone());
+    }
     for w in &state.warnings {
         cx.events.emit(Event::warn(w.clone(), None));
     }
     let Some(graph) = state.graph.as_ref() else {
-        return Err(Error::usage(format!(
-            "no lockfile to migrate from in {}",
-            root.display()
-        )));
+        return Err(Error::usage("could not find any other lockfile"));
     };
     let source = state
         .path
@@ -204,6 +208,19 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let count = graph.len().saturating_sub(1);
+    // Like bun, `pm migrate` reports the migration on stderr and keeps stdout empty (a dry run
+    // prints the file it would write); `fnpm-lock migrate` prints the lockfile and a count.
+    let notice = || {
+        cx.events
+            .emit(Event::notice(format!("migrated lockfile from {source}")))
+    };
+    if cx.pm.dry_run && !lock_tool {
+        notice();
+        return Ok(ok(
+            json!({ "from": source, "packages": count }),
+            vec![format!("dry run: would write {}", fnpm_lockfile::FNPM_LOCK)],
+        ));
+    }
     if cx.pm.dry_run {
         let text =
             String::from_utf8(fnpm_lockfile::serialize(Format::Fnpm, graph)?).unwrap_or_default();
@@ -218,7 +235,13 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     }
     let mut lines = crate::install::write_migration(&root, &ws, &state)?;
     fnpm_lockfile::save_with(&root, graph, None)?;
-    let _ = lock_tool;
+    if !lock_tool {
+        notice();
+        for line in lines {
+            cx.events.emit(Event::notice(line));
+        }
+        return Ok(ok(json!({ "from": source, "packages": count }), Vec::new()));
+    }
     lines.push(format!(
         "migrated lockfile from {source} ({count} {})",
         plural(count, "package")

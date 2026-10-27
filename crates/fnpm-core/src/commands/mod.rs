@@ -163,18 +163,60 @@ impl Ctx {
         let project = self.project()?;
         let ws = project.workspace(&*self.events)?;
         let lock = crate::install::load_lock(&project.config, &ws)?;
-        for w in &lock.warnings {
-            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
-        }
+        self.report_lock(&lock);
         Ok((project, ws, lock.graph))
     }
 
+    /// What loading the lockfile printed in bun: the failures, `migrated lockfile from <file>`
+    /// for another manager's lockfile (read only; nothing is written), the warnings.
+    fn report_lock(&self, lock: &crate::install::LockState) {
+        for e in &lock.failures {
+            self.events.emit(e.clone());
+        }
+        if lock.migrated
+            && matches!(
+                lock.format,
+                Some(
+                    fnpm_lockfile::Format::Npm
+                        | fnpm_lockfile::Format::YarnV1
+                        | fnpm_lockfile::Format::YarnBerry
+                        | fnpm_lockfile::Format::Pnpm
+                )
+            )
+            && let Some(name) = lock.path.as_deref().and_then(std::path::Path::file_name)
+        {
+            self.events.emit(fnpm_types::Event::notice(format!(
+                "migrated lockfile from {}",
+                name.to_string_lossy()
+            )));
+        }
+        for w in &lock.warnings {
+            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
+        }
+    }
+
     /// [`Ctx::load`] that requires a lockfile (bun: `error: Lockfile not found`, with the
-    /// command's `nothing <x>` suffix).
+    /// command's `nothing <x>` suffix). One that does not parse stops the command, with its
+    /// source frame.
     pub fn load_locked(&self, nothing: &str) -> Result<(Project, Workspace, LockGraph)> {
-        let (p, ws, g) = self.load()?;
-        match g {
-            Some(g) => Ok((p, ws, g)),
+        self.load_locked_with(nothing, true)
+    }
+
+    /// [`Ctx::load_locked`]; `framed: false` names only the failure (bun `pm ls`).
+    pub fn load_locked_with(
+        &self,
+        nothing: &str,
+        framed: bool,
+    ) -> Result<(Project, Workspace, LockGraph)> {
+        let project = self.project()?;
+        let ws = project.workspace(&*self.events)?;
+        let lock = crate::install::load_lock(&project.config, &ws)?;
+        if let Some(failure) = &lock.parse_failure {
+            return Err(failure.read_error(framed));
+        }
+        self.report_lock(&lock);
+        match lock.graph {
+            Some(g) => Ok((project, ws, g)),
             None => Err(Error::usage(format!("missing lockfile, {nothing}"))),
         }
     }

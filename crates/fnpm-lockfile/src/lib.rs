@@ -40,7 +40,7 @@ pub enum Error {
         /// What is wrong, in bun's wording.
         message: String,
     },
-    /// The format is read-only (bun.lockb, yarn berry).
+    /// The format is read-only (yarn berry).
     #[error("{format:?} lockfiles cannot be written")]
     Unsupported {
         /// The format that was asked for.
@@ -76,7 +76,7 @@ pub const FNPM_LOCK: &str = "fnpm.lock";
 /// (`LockGraph::lockfile_version`) so the writer picks it the way bun picks it for a new
 /// lockfile: 3 with scoped overrides, else 2, or 1 when a package breaks a v2 invariant.
 /// A loaded lockfile keeps its version (v0 is written as v1).
-pub const TEXT_LOCKFILE_VERSION_CURRENT: u32 = 3;
+pub const TEXT_LOCKFILE_VERSION_CURRENT: u32 = LockGraph::LOCKFILE_VERSION;
 
 /// A lockfile format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -171,6 +171,12 @@ impl ParseOptions {
     }
 }
 
+/// The text lockfile `bytes` is not JSONC at all (bun's `ParserError`), rather than a document
+/// with a wrong field (`InvalidLockfile`).
+pub fn is_syntax_error(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).map_or(true, |src| jsonc::parse(src).is_err())
+}
+
 /// Reads bun.lock-format text; errors carry `line:column`.
 pub(crate) fn text_parse(
     bytes: &[u8],
@@ -214,6 +220,8 @@ pub struct Loaded {
     pub migrated: bool,
     /// xxh3-64 of the file bytes (sidecar and state-file key).
     pub hash: u64,
+    /// fnpm.lock has no `configVersion`: bun saves it again with one (`0`).
+    pub config_version_missing: bool,
     /// Problems that did not stop loading: ignored malformed integrities in old lockfiles,
     /// and higher-priority foreign lockfiles that failed to migrate.
     pub warnings: Vec<String>,
@@ -293,6 +301,8 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
         };
         let hash = content_hash(&bytes);
         let migrated = format != Format::Fnpm;
+        let config_version_missing =
+            format == Format::Fnpm && !bytes.windows(15).any(|w| w == b"\"configVersion\"");
         if format == Format::Fnpm
             && !opts.no_sidecar
             && let Some(graph) = match &opts.sidecar_path {
@@ -306,6 +316,7 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
                 path,
                 migrated,
                 hash,
+                config_version_missing,
                 warnings,
             }));
         }
@@ -329,6 +340,7 @@ pub fn load_with(dir: &Path, workspace: &Workspace, opts: &LoadOptions) -> Resul
                     path,
                     migrated,
                     hash,
+                    config_version_missing,
                     warnings,
                 }));
             }
@@ -363,19 +375,24 @@ pub fn parse(format: Format, bytes: &[u8], workspace: &Workspace) -> Result<Lock
     }
 }
 
-/// Serialises to a format (`fnpm-lock export`). bun.lockb and yarn berry are read-only.
+/// Parses fnpm.lock text with the registries the project is configured with: the
+/// lockfileVersion 2 integrity check accepts tarballs under them.
+pub fn parse_text(bytes: &[u8], opts: &ParseOptions) -> Result<LockGraph> {
+    text_parse(bytes, FNPM_LOCK, opts).map(|(g, _)| g)
+}
+
+/// Serialises to a format (`fnpm-lock export`). Yarn berry is read-only.
 pub fn serialize(format: Format, graph: &LockGraph) -> Result<Vec<u8>> {
     match format {
         Format::Fnpm => Ok(formats::fnpm::serialize(graph).into_bytes()),
-        // bun's dialect of the shared writer: byte-identical with every bun.lock in bun's test
-        // snapshots (`text::roundtrip_tests`).
-        Format::BunText => Ok(text::write::write(graph, text::Dialect::Bun)
-            .text
-            .into_bytes()),
+        // The shared writer: byte-identical with every bun.lock in bun's test snapshots
+        // (`text::roundtrip_tests`).
+        Format::BunText => Ok(text::write::write(graph).text.into_bytes()),
         Format::Npm => formats::npm::serialize(graph).map(String::into_bytes),
         Format::YarnV1 => Ok(formats::yarn_v1::serialize(graph).into_bytes()),
         Format::Pnpm => formats::pnpm::serialize(graph).map(String::into_bytes),
-        Format::BunBinary | Format::YarnBerry => Err(Error::Unsupported { format }),
+        Format::BunBinary => formats::bun_binary::serialize(graph),
+        Format::YarnBerry => Err(Error::Unsupported { format }),
     }
 }
 
@@ -452,6 +469,36 @@ pub fn save_prepared_with(
         let _ = sidecar::write_at(sidecar_path, bytes);
     }
     Ok(*hash)
+}
+
+/// bun's binary lockfile name.
+pub const BUN_LOCKB: &str = "bun.lockb";
+
+/// Writes `graph` as bun.lockb (atomic, skipped when the bytes are unchanged). Returns whether
+/// the file changed.
+pub fn save_binary(dir: &Path, graph: &LockGraph) -> Result<bool> {
+    let bytes = formats::bun_binary::serialize(graph)?;
+    let path = dir.join(BUN_LOCKB);
+    if read(&path)?.is_some_and(|old| old == bytes) {
+        return Ok(false);
+    }
+    write_atomic(&path, &bytes)?;
+    Ok(true)
+}
+
+/// Saves `graph` in the project's lockfile: bun.lockb when that is the lockfile the project
+/// keeps (no fnpm.lock beside it), else fnpm.lock. For commands that edit a loaded lockfile.
+pub fn save_keeping_format(
+    dir: &Path,
+    graph: &LockGraph,
+    sidecar_path: Option<&Path>,
+) -> Result<()> {
+    if !dir.join(FNPM_LOCK).exists() && dir.join(BUN_LOCKB).exists() {
+        save_binary(dir, graph)?;
+    } else {
+        save_with(dir, graph, sidecar_path)?;
+    }
+    Ok(())
 }
 
 /// Writes `yarn.lock` v1 next to the lockfile (`--yarn`, `install.lockfile.print = "yarn"`),

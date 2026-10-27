@@ -118,6 +118,15 @@ fn watched_files(ws: &Workspace, graph: &LockGraph) -> (Vec<String>, Vec<String>
             v.push(rel);
         }
     }
+    // An edited `file:` folder is read again by the next install.
+    for p in &graph.packages {
+        if let fnpm_types::Resolution::Folder { path } = &p.resolution {
+            let rel = format!("{path}/package.json");
+            if !v.contains(&rel) {
+                v.push(rel);
+            }
+        }
+    }
     for patch in graph.patched_dependencies.values() {
         let rel = patch.path.replace('\\', "/");
         if !rel.is_empty() && !v.contains(&rel) {
@@ -131,6 +140,8 @@ fn watched_files(ws: &Workspace, graph: &LockGraph) -> (Vec<String>, Vec<String>
 fn registry_lookup<'c>(config: &'c Config) -> impl for<'x> Fn(&'x str) -> &'c str + 'c {
     move |name| config.registry_for(name).url.as_str()
 }
+
+pub(crate) use lock::{LockState, workspace_warnings};
 
 /// The previous graph for `ws` (fnpm.lock, bun.lock(b) or a migrated foreign lockfile).
 pub(crate) fn load_lock(config: &Config, ws: &Workspace) -> Result<lock::LockState> {
@@ -274,6 +285,9 @@ fn prepare_with_patch(
         && !opts.pm.trust
         && config.install_packages
         && config.security_scanner.is_none()
+        // `--save-text-lockfile` turns bun.lockb into fnpm.lock, even on a no-op install.
+        && !(config.save_text_lockfile == Some(true)
+            && project.root_dir.join(fnpm_lockfile::BUN_LOCKB).exists())
         && opts.patch.is_none()
         && opts.manifest_updates.is_empty()
         && opts.interactive_choices.is_none()
@@ -297,9 +311,7 @@ fn prepare_with_patch(
                     let _ = crate::runtime();
                 });
         }
-        let (ws, warnings) = Workspace::load_with(&project.root_dir, &Default::default())?;
-        phases.mark("workspace");
-        let lock = lock::load(config, &ws)?;
+        let (ws, warnings, lock) = load_workspace(config, &project.root_dir)?;
         phases.mark("lockfile");
         Some((ws, warnings, lock))
     } else {
@@ -338,6 +350,100 @@ pub(crate) async fn run_with_patch(
         .await
 }
 
+/// The workspace and its lockfile. Like bun, `--frozen-lockfile` tolerates a listed workspace
+/// whose package.json is missing when the lockfile lists it (a pruned checkout); any other
+/// missing one is still `Workspace not found`.
+fn load_workspace(
+    config: &Config,
+    root: &Path,
+) -> Result<(Workspace, Vec<String>, lock::LockState)> {
+    let (ws, warnings) = match Workspace::load_with(root, &Default::default()) {
+        Err(fnpm_workspace::Error::WorkspaceNotFound(entry)) if config.frozen_lockfile => {
+            let skip = fnpm_workspace::LoadOptions {
+                missing: fnpm_workspace::MissingWorkspace::Skip,
+            };
+            let (ws, warnings) = Workspace::load_with(root, &skip)?;
+            let lock = lock::load(config, &ws)?;
+            let listed = |path: &str| {
+                lock.graph
+                    .as_ref()
+                    .is_some_and(|g| g.workspaces.contains_key(path))
+            };
+            let entries = match ws.root.raw.get("workspaces") {
+                Some(serde_json::Value::Array(a)) => Some(a),
+                Some(serde_json::Value::Object(o)) => o.get("packages").and_then(|p| p.as_array()),
+                _ => None,
+            };
+            let missing = entries
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|e| !e.contains(['*', '?', '{', '[', '!']))
+                .find(|e| {
+                    let path = e.trim_start_matches("./").trim_end_matches('/');
+                    !root.join(path).join("package.json").exists() && !listed(path)
+                });
+            if let Some(entry) = missing.or((lock.graph.is_none()).then_some(entry.as_str())) {
+                return Err(not_found(root, entry));
+            }
+            return Ok((ws, warnings, lock));
+        }
+        Err(fnpm_workspace::Error::WorkspaceNotFound(entry)) => {
+            return Err(not_found(root, &entry));
+        }
+        other => other?,
+    };
+    let lock = lock::load(config, &ws)?;
+    Ok((ws, warnings, lock))
+}
+
+/// bun's `Workspace not found "<entry>"`, framed at the entry in the root package.json.
+fn not_found(root: &Path, entry: &str) -> Error {
+    let error = Error::from(fnpm_workspace::Error::WorkspaceNotFound(entry.to_owned()));
+    let path = root.join("package.json");
+    let frame = std::fs::read_to_string(&path).ok().and_then(|source| {
+        fnpm_workspace::frame::Frame::of_string_after(&source, "workspaces", entry)
+    });
+    match frame {
+        Some(frame) => Error::Framed {
+            message: frame.framed(&path, &error.to_string()),
+            source: Box::new(error),
+        },
+        None => error,
+    }
+}
+
+/// Writes fnpm.lock (with its sidecar), or bun.lockb when the project keeps it. Converting
+/// bun.lockb to fnpm.lock removes it, as bun does. Returns whether a file changed.
+fn write_lockfile(
+    root: &Path,
+    config: &Config,
+    lock: &lock::LockState,
+    graph: &LockGraph,
+    prepared: Option<fnpm_lockfile::PreparedSave>,
+) -> Result<bool> {
+    if lock::saves_binary(config, lock) {
+        return Ok(fnpm_lockfile::save_binary(root, graph)?);
+    }
+    let path = root.join(fnpm_lockfile::FNPM_LOCK);
+    let before = std::fs::read(&path).ok();
+    let hash = match prepared {
+        Some(p) => {
+            fnpm_lockfile::save_prepared_with(root, &p, Some(&lock::sidecar_path(config, root)))?
+        }
+        None => fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?,
+    };
+    if lock.format == Some(Format::BunBinary) {
+        let lockb = root.join(fnpm_lockfile::BUN_LOCKB);
+        match std::fs::remove_file(&lockb) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io(&lockb)(e)),
+        }
+    }
+    Ok(before.is_none_or(|b| fnpm_lockfile::content_hash(&b) != hash))
+}
+
 /// Steps 2-8.
 async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Result<InstallSummary> {
     let PreparedInstall {
@@ -356,14 +462,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 2. Workspace and 3. lockfile (read by `prepare`).
     let (mut ws, ws_warnings, mut lock) = match loaded {
         Some(l) => l,
-        None => {
-            let (ws, warnings) = Workspace::load_with(&root, &Default::default())?;
-            let lock = lock::load(&config, &ws)?;
-            (ws, warnings, lock)
-        }
+        None => load_workspace(&config, &root)?,
     };
-    for w in ws_warnings.into_iter().chain(ws.self_contained().1) {
+    for w in lock::workspace_warnings(&ws_warnings, &lock)
+        .cloned()
+        .chain(ws.self_contained().1)
+    {
         events.emit(Event::warn(w, None));
+    }
+    for e in &lock.failures {
+        events.emit(e.clone());
     }
     for w in &lock.warnings {
         events.emit(Event::warn(w.clone(), None));
@@ -377,6 +485,20 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             "migrated lockfile from {}",
             name.to_string_lossy()
         )));
+        if config.frozen_lockfile
+            && !opts.pm.lockfile_only
+            && config.log_level == fnpm_config::LogLevel::Verbose
+        {
+            let files = if lock.write_back.is_empty() {
+                "fnpm.lock"
+            } else {
+                "fnpm.lock and package.json"
+            };
+            events.emit(Event::notice(format!(
+                "note: lockfile is frozen, migration from {} not written to {files}; run 'fnpm install' and commit the result",
+                name.to_string_lossy()
+            )));
+        }
     }
     lock::apply_in_memory(&mut ws, &lock.write_back)?;
     if let Some(pending) = &pending_patch {
@@ -524,6 +646,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         HashSet::new()
     });
+    let lockfile_name = lock.path.as_deref().and_then(Path::file_name).map_or_else(
+        || fnpm_lockfile::FNPM_LOCK.to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
     let mut out = resolve(
         &resolver,
         &ws,
@@ -531,6 +657,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &planned,
         stream.then(|| (&fetcher, skip.clone())),
         &events,
+        &lockfile_name,
+        config.log_level == fnpm_config::LogLevel::Silent,
     )
     .await?;
     // Positionals without a name (git, tarball, folder) were requested under a guessed name;
@@ -560,6 +688,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             &planned,
             stream.then(|| (&fetcher, skip.clone())),
             &events,
+            &lockfile_name,
+            config.log_level == fnpm_config::LogLevel::Silent,
         )
         .await?;
     }
@@ -608,6 +738,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 &planned,
                 stream.then(|| (&fetcher, skip.clone())),
                 &events,
+                &lockfile_name,
+                config.log_level == fnpm_config::LogLevel::Silent,
             )
             .await?;
         }
@@ -622,6 +754,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     let ResolveOutput {
         mut graph,
         mut changed,
+        behind,
         requests: resolved_requests,
         unsaved,
         ..
@@ -684,7 +817,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     );
     // An unsaved graph (an omitted local dependency left unresolved) would not load.
     if kind == NodeLinker::Isolated && !unsaved && (changed || lock.migrated || !edits.is_empty()) {
-        lock::normalize_bindings(&mut graph, &ws)?;
+        lock::normalize_bindings(&mut graph, &config)?;
     }
 
     // Without a link (`--lockfile-only`, `--dry-run`) the rows are what the lockfile gained.
@@ -725,7 +858,14 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         || changed
         || opts.patch.is_some()
         || lock.migrated
-        || !root.join(fnpm_lockfile::FNPM_LOCK).exists();
+        // bun re-saves a v0 lockfile as v1: v0 is a different layout of the workspaces (a
+        // project without workspace members reads the same in both).
+        || lock
+            .graph
+            .as_ref()
+            .is_some_and(|g| g.lockfile_version == 0 && g.workspaces.len() > 1)
+        || lock.config_version_missing
+        || !root.join(lock::target_name(&config, &lock)).exists();
 
     let mut patch_rollback = if !config.dry_run {
         pending_patch
@@ -759,7 +899,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                     pending.manifest.as_bytes(),
                 )?;
             }
-            save(
+            let mut saved = save(
                 &root,
                 &config,
                 &ws,
@@ -770,6 +910,23 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 None,
                 &*events,
             )?;
+            // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too, so the file is in
+            // the writer's form afterwards; it was saved only when that changed its bytes
+            // (`Saved lockfile`, `Saved fnpm.lock (N packages)`), else bun says `Checked`.
+            if !saved && config.lockfile.save {
+                saved = write_lockfile(&root, &config, &lock, &graph, None)?;
+                if saved {
+                    events.emit(Event::status("Saved lockfile"));
+                }
+            }
+            // bun's line under `--lockfile-only`: `Saved bun.lock (N packages)`, or `Checked`;
+            // nothing when the lockfile is not saved (`--frozen-lockfile`).
+            summary.lockfile_only =
+                (config.lockfile.save || saved).then(|| fnpm_types::LockfileOnly {
+                    saved,
+                    packages: graph.len() as u32,
+                    binary: lock::saves_binary(&config, &lock),
+                });
         }
         if let Some(rollback) = &mut patch_rollback {
             rollback.finish();
@@ -1066,7 +1223,8 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // Not when this run left the lockfile or package.json behind node_modules (`--no-save`,
     // a frozen install never changes either).
     // Not either after a failed optional script: like bun, the next install tries it again.
-    let saved_everything = (config.lockfile.save || !(lockfile_dirty || integrity_filled))
+    let saved_everything = !behind
+        && (config.lockfile.save || !(lockfile_dirty || integrity_filled))
         && (config.save_package_json || edits.is_empty())
         && !failed_optional;
     // A `--filter` install links only part of the project; `update -r` links all of it.
@@ -1166,6 +1324,7 @@ fn not_fetched(previous: Option<&LockGraph>, config: &Config) -> HashSet<String>
 
 /// One resolve; with a fetcher, every streamed package starts its fetch immediately (except
 /// the `skip` keys).
+#[allow(clippy::too_many_arguments)]
 async fn resolve(
     resolver: &Resolver,
     ws: &Workspace,
@@ -1173,6 +1332,8 @@ async fn resolve(
     planned: &Planned,
     fetcher: Option<(&Fetcher, Arc<HashSet<String>>)>,
     events: &Arc<dyn EventSink>,
+    lockfile: &str,
+    silent: bool,
 ) -> Result<ResolveOutput> {
     let (tx, consumer) = match fetcher {
         Some((f, skip)) => {
@@ -1208,7 +1369,11 @@ async fn resolve(
     if let Some(task) = consumer {
         let _ = task.await;
     }
-    Ok(out?)
+    match out {
+        // bun's pruned-checkout error says nothing under `--silent`, and still fails.
+        Err(fnpm_resolver::Error::PrunedWorkspace { .. }) if silent => Err(Error::Reported),
+        out => Ok(out.map_err(|e| e.with_lockfile(lockfile))?),
+    }
 }
 
 /// Points the edge `name` of workspace `ws_path` at the literal written to package.json.
@@ -1591,15 +1756,18 @@ fn omits_packages(config: &Config) -> bool {
 /// `fnpm_lockfile::tree::hoist` records a workspace's own `node_modules` entries with the
 /// workspace's node as parent and lists them in `workspace_roots`; the linker places
 /// `workspace_roots` entries as top-level nodes of that workspace, so they are made tops here.
+/// `reserved`: workspaces in the lockfile that a frozen install leaves out (pruned from disk),
+/// whose root folders stay theirs.
 pub(crate) fn plan_layout(
     linker: &Linker,
     view: &LockGraph,
     kind: NodeLinker,
     selected: Option<Vec<PackageId>>,
+    reserved: &[&str],
 ) -> Layout {
     match kind {
         NodeLinker::Hoisted => {
-            let mut layout = Layout::Hoisted(fnpm_lockfile::tree::hoist(
+            let mut layout = Layout::Hoisted(fnpm_lockfile::tree::hoist_reserving(
                 view,
                 &fnpm_lockfile::tree::HoistOptions {
                     include: linker.include(),
@@ -1607,6 +1775,7 @@ pub(crate) fn plan_layout(
                     workspaces: selected,
                     self_contained: linker.self_contained_ids(view),
                 },
+                reserved,
             ));
             if let Layout::Hoisted(tree) = &mut layout {
                 for (_, ids) in &tree.workspace_roots {
@@ -1649,6 +1818,16 @@ async fn link(
         migrated_npm,
         &root,
     );
+    // The names of the workspaces fnpm.lock has that a frozen install skips (not on disk).
+    let pruned: Vec<&str> = match lock.graph.as_ref() {
+        Some(prev) if config.frozen_lockfile => prev
+            .workspaces
+            .iter()
+            .filter(|(path, _)| !path.is_empty() && !ws.members.iter().any(|m| &m.path == *path))
+            .filter_map(|(_, id)| prev.get(*id).map(|p| p.name.as_str()))
+            .collect(),
+        _ => Vec::new(),
+    };
     let mut failed = 0u32;
     let mut offline_missing = false;
     loop {
@@ -1674,7 +1853,7 @@ async fn link(
                 }
             }
         }
-        let layout = plan_layout(&linker, &view, kind, selected.clone());
+        let layout = plan_layout(&linker, &view, kind, selected.clone(), &pruned);
         // The previous install's tree, for packages that keep their place (hoisted only,
         // without patches, whose files may have changed under the same key).
         let previous = match (intact, &layout) {
@@ -1684,7 +1863,7 @@ async fn link(
                     && selected.is_none() =>
             {
                 let prev_view = link_view(prev);
-                match plan_layout(&linker, &prev_view, NodeLinker::Hoisted, None) {
+                match plan_layout(&linker, &prev_view, NodeLinker::Hoisted, None, &[]) {
                     Layout::Hoisted(tree) => Some(fnpm_linker::Previous {
                         graph: Arc::new(prev_view),
                         tree: Arc::new(tree),
@@ -1781,7 +1960,8 @@ async fn link(
                 .filter(|previous| *previous != graph)
                 .map(|previous| {
                     let old_view = link_view(previous);
-                    let Layout::Hoisted(old_tree) = plan_layout(&linker, &old_view, kind, None)
+                    let Layout::Hoisted(old_tree) =
+                        plan_layout(&linker, &old_view, kind, None, &[])
                     else {
                         unreachable!("hoisted layout requested");
                     };
@@ -1870,7 +2050,7 @@ async fn link(
                     }
                     Layout::Hoisted(tree)
                 } else {
-                    plan_layout(&linker, &view, kind, None)
+                    plan_layout(&linker, &view, kind, None, &pruned)
                 };
                 match full {
                     Layout::Hoisted(tree) => tree,
@@ -1992,14 +2172,18 @@ fn save(
     if config.save_package_json && !edits.is_empty() {
         edits.apply(root, ws)?;
     }
-    let save_lock =
-        config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());
+    // `--save-text-lockfile` turns bun.lockb into fnpm.lock even when nothing else is saved
+    // (bun `converts_binary_lockfile_to_text`).
+    let converts =
+        lock.format == Some(Format::BunBinary) && config.save_text_lockfile == Some(true);
+    let save_lock = converts
+        || config.lockfile.save && (dirty || config.lockfile.force_save || !edits.is_empty());
     if !save_lock {
         return Ok(false);
     }
     if config.save_package_json && !lock.write_back.is_empty() {
         for line in lock::write_back(root, ws, &lock.write_back)? {
-            events.emit(Event::warn(line, Some("MIGRATED_PACKAGE_JSON")));
+            events.emit(Event::notice(line));
         }
     }
     // Bun deletes the lockfile when remove leaves only the dependency-free root.
@@ -2024,12 +2208,7 @@ fn save(
         }
         return Ok(true);
     }
-    match prepared {
-        Some(p) => {
-            fnpm_lockfile::save_prepared_with(root, &p, Some(&lock::sidecar_path(config, root)))?
-        }
-        None => fnpm_lockfile::save_with(root, graph, Some(&lock::sidecar_path(config, root)))?,
-    };
+    write_lockfile(root, config, lock, graph, prepared)?;
     events.emit(Event::status("Saved lockfile"));
     if config.lockfile.print_yarn {
         fnpm_lockfile::save_yarn(
@@ -2040,6 +2219,7 @@ fn save(
                 ..Default::default()
             },
         )?;
+        events.emit(Event::status("Saved yarn.lock"));
     }
     Ok(true)
 }
@@ -2137,9 +2317,14 @@ fn layout_aliases(root: &Path, events: &dyn EventSink) {
             Err(_) => {}
         }
         match fnpm_store::fsops::symlink_dir(&store, &link) {
-            Ok(()) => events.emit(Event::notice(format!(
-                "node_modules/{alias} links to node_modules/.fnpm for scripts written for {manager}"
-            ))),
+            // Said when fnpm.lock sits beside the other manager's lockfile; a project that keeps
+            // bun.lockb as its lockfile gets the alias silently, as bun has the folder.
+            Ok(()) if root.join(fnpm_lockfile::FNPM_LOCK).exists() => {
+                events.emit(Event::notice(format!(
+                    "node_modules/{alias} links to node_modules/.fnpm for scripts written for {manager}"
+                )))
+            }
+            Ok(()) => {}
             Err(e) => events.emit(Event::warn(
                 format!("could not link node_modules/{alias} to node_modules/.fnpm: {e}"),
                 None,
@@ -2355,7 +2540,7 @@ fn write_state(
     linker: &NodeLinker,
     installs: u32,
 ) {
-    let Ok(bytes) = std::fs::read(root.join(fnpm_lockfile::FNPM_LOCK)) else {
+    let Some(bytes) = fast_path::lockfile_bytes(root) else {
         return;
     };
     let (files, workspace_patterns, workspace_dirs) = watched_files(ws, graph);
@@ -2413,6 +2598,7 @@ mod tests {
         std::fs::create_dir_all(nm.join(".fnpm/macos-alias@2.2.0/node_modules/macos-alias"))
             .unwrap();
         let sink = fnpm_types::event::VecSink::default();
+        std::fs::write(root.join("fnpm.lock"), "{}").unwrap();
 
         // No other lockfile: no alias.
         layout_aliases(root, &sink);

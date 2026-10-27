@@ -136,6 +136,9 @@ pub(crate) struct Flat<'g> {
     /// Workspace name id to `(path, version)`.
     pub workspaces_by_name: FxHashMap<u32, (&'g str, &'g str)>,
     pub overridden_names: Vec<u32>,
+    /// Name ids whose root `node_modules` folder belongs to a workspace that is not installed
+    /// (pruned from disk): nothing is hoisted into it ([`Flat::reserve_root`]).
+    pub reserved_root: Vec<u32>,
 }
 
 impl<'g> Flat<'g> {
@@ -295,9 +298,18 @@ impl<'g> Flat<'g> {
             package_index,
             workspaces_by_name,
             overridden_names,
+            reserved_root: Vec::new(),
         };
         flat.tag_workspace_links();
         flat
+    }
+
+    /// Keeps the root folders of `names` free, as if their packages were placed there.
+    pub fn reserve_root(&mut self, names: &[&str]) {
+        self.reserved_root = names
+            .iter()
+            .filter_map(|n| self.names.get(n).copied())
+            .collect();
     }
 
     #[inline]

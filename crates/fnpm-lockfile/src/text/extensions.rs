@@ -13,7 +13,6 @@ use fnpm_types::{LockGraph, PackageExtension, PeerMeta, Resolution};
 
 use crate::flat::{Flat, INVALID};
 use crate::json_out::quoted;
-use crate::semver;
 use crate::tree::{Folder, Hoisted};
 
 /// A `packageExtensions` record: `(name@version, dependencies, peerDependencies, optionalPeers)`.
@@ -33,8 +32,22 @@ fn rules_for<'g>(
         .iter()
         .filter_map(move |(key, ext)| {
             let (n, range) = split_name_and_maybe_version(key);
-            let ok =
-                n == name && range.is_none_or(|r| r == version || semver::satisfies(r, version));
+            // Prereleases match as the install matches the rule (node-semver
+            // `includePrerelease`).
+            let ok = n == name
+                && range.is_none_or(|r| {
+                    r == version
+                        || matches!(
+                            (
+                                fnpm_semver::Range::parse_including_prerelease(r),
+                                fnpm_semver::Version::parse(version),
+                            ),
+                            (Ok(r), Ok(v)) if r.satisfies_with(
+                                &v,
+                                fnpm_semver::SatisfyOptions { include_prerelease: true },
+                            )
+                        )
+                });
             ok.then_some(ext)
         })
 }

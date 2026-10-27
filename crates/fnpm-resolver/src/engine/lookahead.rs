@@ -25,6 +25,17 @@ impl Engine<'_> {
         let Ok(Some(asked)) = self.asked(row, &edge) else {
             return;
         };
+        // A project's tarball, git and folder dependencies: what they depend on is only known
+        // from their package.json, so it is fetched (read) now.
+        if self.st[row.pkg.index()].kind == super::Kind::Project && !asked.replaced {
+            match &asked.spec {
+                DependencySpec::Tarball { .. }
+                | DependencySpec::Git(_)
+                | DependencySpec::Github(_) => self.fetch_remote_ahead(row, &edge, &asked),
+                DependencySpec::Folder { path } => self.follow_folder_ahead(row, path),
+                _ => {}
+            }
+        }
         if !asked.spec.tag().is_npm() || !is_npm_package_name(&asked.name) {
             return;
         }
@@ -44,7 +55,7 @@ impl Engine<'_> {
 
     /// The row will be bound from the previous graph, a workspace or an installed version.
     fn settles_without_manifest(&self, row: Row, edge: &DepEdge, asked: &Asked) -> bool {
-        if self.linked_workspace(asked).is_some() {
+        if self.linked_workspace(asked).is_some() || self.root_tag_workspace(row, asked).is_some() {
             return true;
         }
         if row.install_peer && edge.behavior.is_peer() {
@@ -162,6 +173,33 @@ impl Engine<'_> {
         }
         for (dep, range, is_peer) in next {
             self.follow_dependency(&dep, &range, is_peer, follows_peers);
+        }
+    }
+
+    /// The registry dependencies of a project's `file:` folder, followed before its turn.
+    fn follow_folder_ahead(&mut self, row: Row, path: &str) {
+        let Some(dir) = self.st[row.pkg.index()].dir.clone() else {
+            return;
+        };
+        if let Ok(Some(manifest)) = self.fetcher.read_package_json(&dir.join(path)) {
+            self.follow_remote_ahead(&manifest);
+        }
+    }
+
+    /// The registry dependencies of a downloaded tarball or git package, followed before its
+    /// turn to bind them comes.
+    pub(crate) fn follow_remote_ahead(&mut self, manifest: &fnpm_workspace::PackageJson) {
+        let mut next: Vec<(String, String)> = Vec::new();
+        for group in [
+            fnpm_types::DependencyGroup::Optional,
+            fnpm_types::DependencyGroup::Prod,
+        ] {
+            for (dep, range) in manifest.group(group) {
+                next.push((dep.clone(), range.clone()));
+            }
+        }
+        for (dep, range) in next {
+            self.follow_dependency(&dep, &range, false, false);
         }
     }
 

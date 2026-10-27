@@ -79,6 +79,12 @@ const textChanges: [RegExp, string][] = [
   // A command name in a variable: `bun ${command} has no --x flag`, `bun ${command} <version> (<revision>)`
   // (not `bun ${script}.js`, which runs a file).
   [/\bbun (\$\{(?:command|header|cmd|subcommand)\})/g, "fnpm $1"],
+  // Messages that name the package manager itself: fnpm prints its own name there.
+  [/\b[Bb]un (?=(?:does not|doesn't|is configured|currently only supports|cannot tell|supports one|can't keep)\b)/g, "fnpm "],
+  [/\bnewer version of Bun\b/g, "newer version of fnpm"],
+  [/\bThis is Bun v/g, "This is fnpm v"],
+  // fnpm points to its own configuration file where bun names bunfig.toml as the place to add a registry.
+  [/\bbunfig\.toml or \.npmrc\b/g, "fnpm.toml or .npmrc"],
   [/\bBUN_INSTALL_CACHE_DIR\b/g, "FNPM_CACHE_DIR"],
   [/\bBUN_CONFIG_/g, "FNPM_CONFIG_"],
   [/node_modules\/\.bun\//g, "node_modules/.fnpm/"],

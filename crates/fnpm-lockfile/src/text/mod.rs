@@ -10,15 +10,6 @@ use fnpm_types::LockGraph;
 /// The default registry without its trailing slash, as bun compares tarball URLs with it.
 pub(crate) const DEFAULT_REGISTRY: &str = "https://registry.npmjs.org";
 
-/// Which file is written. `Fnpm` adds `deprecated` to INFO objects and sorts
-/// `trustedDependencies` / `patchedDependencies`; `Bun` writes them in bun's hash-map order
-/// so a bun.lock round-trips byte-for-byte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Dialect {
-    Fnpm,
-    Bun,
-}
-
 /// bun's text lockfile versions (`bun.lock.rs` `Version`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]

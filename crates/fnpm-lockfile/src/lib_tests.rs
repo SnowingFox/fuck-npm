@@ -114,10 +114,9 @@ fn serialize_formats() {
         serialize(Format::Fnpm, &g).unwrap(),
         formats::fnpm::serialize(&g).into_bytes()
     );
-    assert!(matches!(
-        serialize(Format::BunBinary, &g),
-        Err(Error::Unsupported { .. })
-    ));
+    // bun.lockb is written too, and reads back to the same graph.
+    let lockb = serialize(Format::BunBinary, &g).unwrap();
+    assert_eq!(formats::bun_binary::parse(&lockb).unwrap().len(), g.len());
     assert!(matches!(
         serialize(Format::YarnBerry, &g),
         Err(Error::Unsupported { .. })

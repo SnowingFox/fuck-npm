@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`pnpm-lock.yaml v9 v9 git and userinfo-tarball references migrate: fnpm.lock 1`] = `
+exports[`pnpm-lock.yaml v9 > v9 git and userinfo-tarball references migrate > fnpm.lock 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,
@@ -27,7 +27,7 @@ exports[`pnpm-lock.yaml v9 v9 git and userinfo-tarball references migrate: fnpm.
 "
 `;
 
-exports[`pnpm-lock.yaml v9 snapshot alias whose dep-path version is a file: directory or tarball: fnpm.lock 1`] = `
+exports[`pnpm-lock.yaml v9 > snapshot alias whose dep-path version is a file: directory or tarball > fnpm.lock 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,

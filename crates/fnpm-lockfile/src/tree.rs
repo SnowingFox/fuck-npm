@@ -89,7 +89,23 @@ pub fn hoist(graph: &LockGraph, opts: &HoistOptions) -> Tree {
 
 /// [`hoist`] that reports an endless nesting cycle instead of breaking it silently.
 pub fn try_hoist(graph: &LockGraph, opts: &HoistOptions) -> Result<Tree, HoistError> {
+    try_hoist_reserving(graph, opts, &[])
+}
+
+/// [`hoist`] with the root folders of `reserved` kept free: the names of workspaces that the
+/// lockfile has but the install leaves out (pruned from disk). bun places their registry
+/// twins where they would be with the workspace at the root.
+pub fn hoist_reserving(graph: &LockGraph, opts: &HoistOptions, reserved: &[&str]) -> Tree {
+    try_hoist_reserving(graph, opts, reserved).unwrap_or_else(|e| e.partial)
+}
+
+fn try_hoist_reserving(
+    graph: &LockGraph,
+    opts: &HoistOptions,
+    reserved: &[&str],
+) -> Result<Tree, HoistError> {
     let mut flat = Flat::new(graph);
+    flat.reserve_root(reserved);
     let barrier: Vec<u32> = opts.self_contained.iter().map(|p| p.0).collect();
     let hoisted = resolve_with(&mut flat, &barrier);
     let tree = install_tree(&flat, &hoisted, opts);
@@ -704,6 +720,13 @@ impl<'a, 'g> Builder<'a, 'g> {
         let dependency = self.dep(input_dep_id);
         let this = self.trees[self_id as usize];
         if !as_defined && !self.probes.is_empty() && self.is_hidden_by(this.id) {
+            return HoistResult::DependencyLoop;
+        }
+        // A pruned workspace's folder at the root: taken, by something else.
+        if !as_defined
+            && this.parent == INVALID_ID
+            && self.flat.reserved_root.contains(&dependency.name_id)
+        {
             return HoistResult::DependencyLoop;
         }
         if let Some(&dep_id) = self.placed.get(&(this.id, dependency.name_id)) {

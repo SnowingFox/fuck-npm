@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`pnpm-lock.yaml migration simple pnpm lockfile migration produces correct fnpm.lock: simple-pnpm-migration 1`] = `
+exports[`pnpm-lock.yaml migration > simple pnpm lockfile migration produces correct fnpm.lock > simple-pnpm-migration 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,
@@ -22,7 +22,7 @@ exports[`pnpm-lock.yaml migration simple pnpm lockfile migration produces correc
 "
 `;
 
-exports[`pnpm-lock.yaml migration pnpm workspace lockfile migration: workspace-pnpm-migration 1`] = `
+exports[`pnpm-lock.yaml migration > pnpm workspace lockfile migration > workspace-pnpm-migration 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,
@@ -75,7 +75,7 @@ exports[`pnpm-lock.yaml migration pnpm workspace lockfile migration: workspace-p
 "
 `;
 
-exports[`pnpm-lock.yaml migration pnpm workspace lockfile migration: workspace-pnpm-migration-package-json 1`] = `
+exports[`pnpm-lock.yaml migration > pnpm workspace lockfile migration > workspace-pnpm-migration-package-json 1`] = `
 {
   "name": "monorepo-root",
   "private": true,
@@ -87,7 +87,7 @@ exports[`pnpm-lock.yaml migration pnpm workspace lockfile migration: workspace-p
 }
 `;
 
-exports[`pnpm-lock.yaml migration pnpm with npm protocol aliases: npm-aliases-pnpm-migration 1`] = `
+exports[`pnpm-lock.yaml migration > pnpm with npm protocol aliases > npm-aliases-pnpm-migration 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 1,

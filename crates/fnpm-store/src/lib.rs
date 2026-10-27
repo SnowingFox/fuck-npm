@@ -340,25 +340,40 @@ impl Store {
         &self.inner.tuning
     }
 
-    /// `urls/<hash>`: the record of an unpinned download (see [`Store::remember_url`]).
-    fn url_record(&self, name: &str, version: &str, url: &str) -> PathBuf {
+    /// `<cache>/urls/<hash>`: the record of an unpinned download (see [`Store::remember_url`]).
+    /// It lives in the cache directory, not the store: like bun's name@version cache, a fresh
+    /// cache downloads the tarball again even when the shared store has the package.
+    fn url_record(cache_dir: &Path, name: &str, version: &str, url: &str) -> PathBuf {
         let hash = xxhash_rust::xxh3::xxh3_128(format!("{name}\0{version}\0{url}").as_bytes());
-        self.root.join("urls").join(format!("{hash:032x}"))
+        cache_dir.join("urls").join(format!("{hash:032x}"))
     }
 
     /// The integrity a tarball URL without one in the lockfile or manifest had when it was
-    /// last imported, recorded by [`Store::remember_url`]. Lets a later install (an offline
-    /// one too) reuse the package instead of downloading it again, as bun's name@version
-    /// cache does.
-    pub fn integrity_for_url(&self, name: &str, version: &str, url: &str) -> Option<Integrity> {
-        let text = std::fs::read_to_string(self.url_record(name, version, url)).ok()?;
+    /// last imported with this cache, recorded by [`Store::remember_url`]. Lets a later install
+    /// (an offline one too) reuse the package instead of downloading it again, as bun's
+    /// name@version cache does.
+    pub fn integrity_for_url(
+        &self,
+        cache_dir: &Path,
+        name: &str,
+        version: &str,
+        url: &str,
+    ) -> Option<Integrity> {
+        let text = std::fs::read_to_string(Self::url_record(cache_dir, name, version, url)).ok()?;
         Integrity::parse(text.trim()).ok()
     }
 
     /// Records what an unpinned tarball URL imported as. Best effort: a failed write only
     /// means the next install downloads it again.
-    pub fn remember_url(&self, name: &str, version: &str, url: &str, integrity: &Integrity) {
-        let record = self.url_record(name, version, url);
+    pub fn remember_url(
+        &self,
+        cache_dir: &Path,
+        name: &str,
+        version: &str,
+        url: &str,
+        integrity: &Integrity,
+    ) {
+        let record = Self::url_record(cache_dir, name, version, url);
         let Some(dir) = record.parent() else { return };
         if std::fs::create_dir_all(dir).is_err() {
             return;

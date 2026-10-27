@@ -309,7 +309,9 @@ pub fn report_error(
         // The core already printed why.
         return 1;
     }
-    let mut text = format!("error: {}\n", error.message);
+    let (frame, message) = fnpm_core::frame::split(&error.message);
+    let mut text = frame.map_or_else(String::new, |f| format!("{f}\n"));
+    text.push_str(&format!("error: {message}\n"));
     if error.code == "UNKNOWN_FLAG" {
         text.push_str(&format!(
             "note: Run '{} {} --help' for more information\n",

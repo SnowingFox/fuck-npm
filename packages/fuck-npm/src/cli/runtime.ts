@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import cac from "cac";
-import { errorCode, formatError, SilentError } from "../errors.ts";
+import { errorCode, formatError, SilentError, splitFrame } from "../errors.ts";
 import { loadHandler } from "../commands/index.ts";
 import { createColors } from "picocolors";
 import { colorEnabled, createOutput, resolveMode } from "../output/output.ts";
@@ -197,7 +197,8 @@ function reportError(
     // The core already printed why.
     return 1;
   }
-  runtime.stderr.write(`error: ${message}\n`);
+  const framed = splitFrame(message);
+  runtime.stderr.write(`${framed.frame === undefined ? "" : `${framed.frame}\n`}error: ${framed.message}\n`);
   if (error instanceof SilentError && error.code === "UNKNOWN_FLAG") {
     runtime.stderr.write(`note: Run '${unknownFlagCommand(registry, plan?.matched ?? [])} --help' for more information\n`);
   } else if (error instanceof SilentError && error.code !== "CORE_UNAVAILABLE") {

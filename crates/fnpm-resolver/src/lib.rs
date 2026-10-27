@@ -64,11 +64,24 @@ pub enum Error {
         /// The dependency name.
         name: String,
     },
-    /// `--frozen-lockfile`: the declared dependencies differ from the lockfile.
-    #[error("lockfile had changes, but lockfile is frozen")]
+    /// A remaining project of a pruned checkout needs a workspace that is not on disk. Each
+    /// message is one of bun's `error:` lines.
+    #[error("{}\nnote: a pruned checkout must keep every workspace that its remaining workspaces depend on", messages.join("\nerror: "))]
+    PrunedWorkspace {
+        /// What needs which workspace.
+        messages: Vec<String>,
+    },
+    /// `--frozen-lockfile`: the declared dependencies differ from the lockfile. Prints bun's
+    /// notes below the error: what changed, then how to fix it.
+    #[error(
+        "lockfile had changes, but lockfile is frozen{}",
+        frozen_notes(changes, lockfile)
+    )]
     FrozenLockfile {
         /// Each difference, in bun's words (`a changed from ^1 to ^2`, `b was added`, …).
         changes: Vec<String>,
+        /// The lockfile the notes name (`fnpm.lock`, `bun.lockb`, `yarn.lock`, …).
+        lockfile: String,
     },
     /// A specifier that cannot be used (unparsable, unsafe name, forbidden path).
     #[error("{name}@{spec}: {message}")]
@@ -172,6 +185,53 @@ impl Error {
 /// `Result` with this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+impl Error {
+    /// A [`Error::FrozenLockfile`] about fnpm.lock ([`Error::with_lockfile`] names another).
+    pub fn frozen(changes: Vec<String>) -> Self {
+        Self::FrozenLockfile {
+            changes,
+            lockfile: "fnpm.lock".into(),
+        }
+    }
+
+    /// Names the lockfile a [`Error::FrozenLockfile`] was checked against.
+    #[must_use]
+    pub fn with_lockfile(self, name: &str) -> Self {
+        match self {
+            Self::FrozenLockfile { changes, .. } => Self::FrozenLockfile {
+                changes,
+                lockfile: name.to_owned(),
+            },
+            other => other,
+        }
+    }
+}
+
+/// bun's notes under `lockfile had changes, but lockfile is frozen`: the section that changed
+/// (overrides, then the catalog, then packageExtensions, else the first dependency change),
+/// then the way out.
+fn frozen_notes(changes: &[String], lockfile: &str) -> String {
+    let since = format!("in package.json changed since {lockfile} was saved");
+    let section = frozen::SECTIONS
+        .iter()
+        .find(|s| changes.iter().any(|c| *c == format!("{s} changed")));
+    let mut out = String::new();
+    if let Some(section) = section {
+        let section = if *section == "catalogs" {
+            "the catalog"
+        } else {
+            section
+        };
+        out.push_str(&format!("\nnote: {section} {since}"));
+    } else if let Some(change) = changes.iter().find(|c| frozen::is_dependency_change(c)) {
+        out.push_str(&format!("\nnote: dependencies {since}: {change}"));
+    }
+    out.push_str(
+        "\nnote: try re-running without --frozen-lockfile and commit the updated lockfile",
+    );
+    out
+}
+
 /// What a resolve may change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
@@ -259,6 +319,10 @@ pub struct ResolveOutput {
     pub graph: LockGraph,
     /// The graph differs from `previous` (the lockfile must be saved).
     pub changed: bool,
+    /// `--frozen-lockfile` kept a lockfile that is behind package.json (a pruned workspace,
+    /// patches or trust it does not record): nothing is saved, and the next plain install must
+    /// not take the no-op fast path.
+    pub behind: bool,
     /// For each `Request`, the package it resolved to (summary and package.json writes).
     pub requests: Vec<(Request, PackageId)>,
     /// Non-fatal problems (peer warnings, deprecations, ignored overrides).
@@ -266,6 +330,15 @@ pub struct ResolveOutput {
     /// A local dependency in an omitted group was missing and left unresolved; like bun, the
     /// lockfile is then not saved.
     pub unsaved: bool,
+}
+
+/// The lockfile records exactly what the package.json files declare, with every required
+/// dependency bound: a resolve would reproduce it without asking any registry. Stricter than
+/// `--frozen-lockfile`, which also accepts edits that keep every package where it is.
+pub fn lockfile_matches(workspace: &Workspace, previous: &LockGraph) -> Result<bool> {
+    Ok(frozen::complete(previous)
+        && frozen::changes(workspace, previous)?.is_empty()
+        && !frozen::stale_pin(previous))
 }
 
 /// Resolves workspaces into [`LockGraph`]s. Cheap to create; holds no per-resolve state.
@@ -339,12 +412,77 @@ impl Resolver {
             None => None,
         };
 
-        // bun only checks a lockfile that exists; without one a frozen install resolves (and
-        // saves nothing).
-        if mode == Mode::Frozen
-            && let Some(prev) = previous
-        {
-            let mut changes = frozen::changes(workspace, prev)?;
+        // Like bun, `--frozen-lockfile` without a lockfile resolves from package.json (and
+        // saves nothing): there is no lockfile to keep.
+        let mode = if mode == Mode::Frozen && previous.is_none() {
+            Mode::Normal
+        } else {
+            mode
+        };
+        if mode == Mode::Frozen {
+            let Some(prev) = previous else {
+                unreachable!("a frozen resolve without a lockfile resolves normally");
+            };
+            let pruned = frozen::pruned(workspace, prev);
+            // The lockfile is behind package.json (a pruned workspace, patches or trust it does
+            // not record): the install keeps it, and the next plain install saves it.
+            let behind = !pruned.is_empty() || !frozen::changes(workspace, prev)?.is_empty();
+            warnings.extend(frozen::orphaned_patches(workspace, prev));
+            let stripped;
+            let prev = if pruned.is_empty() {
+                prev
+            } else {
+                let dependents = frozen::pruned_dependents(workspace, prev, &pruned, true)?;
+                if !dependents.is_empty() {
+                    return Err(Error::PrunedWorkspace {
+                        messages: dependents,
+                    });
+                }
+                stripped = frozen::without_pruned(prev, &pruned);
+                &stripped
+            };
+            // bun installs an edited `file:` folder as the lockfile has it, and says so.
+            // Only its dependencies: bun links a folder's bins from its package.json.
+            for path in frozen::folder_edits(workspace, prev, false) {
+                events.emit(Event::warn(
+                    format!(
+                        "dependencies in {path}/package.json changed since lockfile was saved (run 'fnpm install')"
+                    ),
+                    None,
+                ));
+            }
+            let (mut changes, edits) = frozen::classified(workspace, prev, true)?;
+            // The note comes before most changes, but a changed section fails first.
+            let section = changes.iter().any(|c| frozen::is_section_change(c));
+            if !pruned.is_empty() && !section {
+                let mut names: Vec<&str> = pruned
+                    .iter()
+                    .map(|(_, id)| prev.packages[id.index()].name.as_str())
+                    .collect();
+                names.sort_unstable();
+                let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+                events.emit(Event::notice(format!(
+                    "note: skipped {} workspace{} listed in fnpm.lock but not on disk: {}",
+                    names.len(),
+                    if names.len() == 1 { "" } else { "s" },
+                    quoted.join(", ")
+                )));
+            }
+            if !section {
+                let declared =
+                    catalogs::parse_catalogs(&workspace.root.raw, &workspace.settings.catalogs)?;
+                if let Some(skipped) = frozen::skipped_catalogs(workspace, prev, &declared)
+                    && !skipped.is_empty()
+                {
+                    let quoted: Vec<String> = skipped.iter().map(|n| format!("\"{n}\"")).collect();
+                    events.emit(Event::notice(format!(
+                        "note: skipped {} catalog {} not in fnpm.lock (unused by the workspaces on disk): {}",
+                        skipped.len(),
+                        if skipped.len() == 1 { "entry" } else { "entries" },
+                        quoted.join(", ")
+                    )));
+                }
+            }
             for r in &requests {
                 changes.push(format!("{} was added", r.name));
             }
@@ -359,10 +497,66 @@ impl Resolver {
             if !frozen::complete(prev) {
                 changes.push("lockfile is missing resolutions".into());
             }
-            if !changes.is_empty() {
-                return Err(Error::FrozenLockfile { changes });
+            // A pin outside the range that package.json and the lockfile both record (one side of
+            // a merge conflict taken) resolves again, and fails if that moves a package.
+            let stale = changes.is_empty() && frozen::stale_pin(prev);
+            if changes.is_empty() && !stale {
+                let mut graph = prev.clone();
+                graph.patched_dependencies = frozen::declared_patches(workspace);
+                let mut out = self.unchanged(workspace, &graph, tx, events, warnings)?;
+                out.behind = behind;
+                return Ok(out);
             }
-            return self.unchanged(workspace, prev, tx, events, warnings);
+            // Like bun, edited dependency lists pass as long as resolving them against the
+            // lockfile installs the same packages (a loosened range the locked version still
+            // satisfies, a dependency moved to another group). Nothing is fetched until the
+            // result is known to match.
+            if changes.len() != edits {
+                return Err(Error::frozen(changes));
+            }
+            let engine = engine::Engine::new(engine::EngineInput {
+                cfg,
+                patch_hashes: &self.patch_hashes,
+                ws: workspace,
+                prev: Some(prev),
+                mode: Mode::Normal,
+                requests,
+                removals,
+                manifests: self.manifests.clone(),
+                fetcher: self.fetcher.clone(),
+                events,
+                tx: None,
+                hints: Vec::new(),
+            })?;
+            let out = engine.run().await?;
+            if !frozen::same_packages(prev, &out.graph) {
+                return Err(Error::frozen(changes));
+            }
+            frozen::emit_all(&out.graph, cfg, tx.as_ref());
+            warnings.extend(out.warnings);
+            // The lockfile is behind package.json: the next plain install records the edits.
+            return Ok(ResolveOutput {
+                graph: out.graph,
+                changed: false,
+                behind: true,
+                requests: out.requests,
+                warnings,
+                unsaved: out.unsaved,
+            });
+        }
+
+        // A plain install drops a workspace that is gone from disk, but not one that a remaining
+        // project still names with `workspace:`.
+        if let Some(prev) = previous {
+            let pruned = frozen::pruned(workspace, prev);
+            if !pruned.is_empty() {
+                let dependents = frozen::pruned_dependents(workspace, prev, &pruned, false)?;
+                if !dependents.is_empty() {
+                    return Err(Error::PrunedWorkspace {
+                        messages: dependents,
+                    });
+                }
+            }
         }
 
         if mode == Mode::Normal
@@ -372,6 +566,7 @@ impl Resolver {
             && frozen::complete(prev)
             && frozen::changes(workspace, prev)?.is_empty()
             && !dedupe::overrides_unmet(prev)
+            && !frozen::stale_pin(prev)
         {
             return self.unchanged(workspace, prev, tx, events, warnings);
         }
@@ -417,6 +612,7 @@ impl Resolver {
         Ok(ResolveOutput {
             graph: out.graph,
             changed,
+            behind: false,
             requests: out.requests,
             warnings,
             unsaved: out.unsaved,
@@ -458,6 +654,7 @@ impl Resolver {
         Ok(ResolveOutput {
             graph,
             changed: false,
+            behind: false,
             requests: Vec::new(),
             warnings,
             unsaved: false,

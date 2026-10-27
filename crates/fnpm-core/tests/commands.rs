@@ -239,14 +239,9 @@ async fn migrate_export_verify_diff_print() {
         .unwrap();
     assert!(exists(&p.path("package-lock.json")));
     std::fs::remove_file(p.path("fnpm.lock")).unwrap();
+    // Like `bun pm migrate`, it reports on stderr (an event) and prints nothing.
     let r = p.invoke(&["migrate"], &[], json!({})).await.unwrap();
-    assert!(
-        r.lines
-            .unwrap()
-            .last()
-            .unwrap()
-            .contains("from package-lock.json")
-    );
+    assert!(r.lines.unwrap_or_default().is_empty());
     assert!(p.read("fnpm.lock").contains("\"a@1.0.0\""));
     let err = p
         .invoke(&["lock", "migrate"], &[], json!({}))

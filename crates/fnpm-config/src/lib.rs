@@ -451,8 +451,10 @@ pub struct Config {
     pub ignore_scripts: bool,
     /// Check tarball integrity.
     pub verify_integrity: bool,
-    /// Write the text lockfile (`fnpm.lock`).
-    pub save_text_lockfile: bool,
+    /// `--save-text-lockfile` / `install.saveTextLockfile`: `Some(true)` writes the text
+    /// lockfile (`fnpm.lock`), `Some(false)` makes a new project keep bun.lockb, `None` keeps
+    /// the format the project has (fnpm.lock for a new one).
+    pub save_text_lockfile: Option<bool>,
     /// Lockfile reading and writing.
     pub lockfile: LockfileConfig,
     /// Dependency groups not to install.

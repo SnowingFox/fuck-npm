@@ -639,7 +639,7 @@ async fn omitted_groups_are_not_streamed() {
 }
 
 #[tokio::test]
-async fn custom_tarball_urls_are_kept_default_ones_dropped() {
+async fn tarball_urls_are_kept_for_registries_other_than_npmjs() {
     let h = Harness::new();
     h.registry.add("a", &[("1.0.0", no_deps())]).add(
         "m",
@@ -655,7 +655,7 @@ async fn custom_tarball_urls_are_kept_default_ones_dropped() {
             tarball_url,
             integrity,
             ..
-        } => assert!(tarball_url.is_none() && integrity.is_some()),
+        } => assert!(tarball_url.is_some() && integrity.is_some()),
         r => panic!("{r:?}"),
     }
     match &dep(&g, PackageId::ROOT, "m").unwrap().resolution {

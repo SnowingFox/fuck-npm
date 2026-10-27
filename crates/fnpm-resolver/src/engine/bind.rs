@@ -248,9 +248,15 @@ impl Engine<'_> {
             }
             return Ok(Step::Done);
         }
-        let tolerated = edge.behavior.is_optional()
-            || edge.behavior.is_peer()
-            || self.st[row.pkg.index()].optional_only;
+        // bun logs a `link:` it cannot find as an error even for a peer, which fails the install.
+        let missing_link = edge.behavior.is_peer()
+            && !edge.behavior.is_optional()
+            && matches!(err, Error::MissingPackageJson { .. })
+            && fnpm_types::spec::trim_literal(&edge.literal).starts_with("link:");
+        let tolerated = !missing_link
+            && (edge.behavior.is_optional()
+                || edge.behavior.is_peer()
+                || self.st[row.pkg.index()].optional_only);
         if !tolerated {
             // bun logs the row and goes on, then reports every row that failed.
             if row_error(&err) {
@@ -315,7 +321,14 @@ impl Engine<'_> {
             Err(e) => return self.fail(row, &edge, e),
         };
         let alias_ok = alias_is_safe_install_target(&edge.name);
-        if !alias_ok || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name)) {
+        // A range that links a workspace never asks the registry (bun turns it into a
+        // `workspace:` dependency when it parses package.json), so any workspace name passes.
+        let registry_name_ok = || {
+            !asked.spec.tag().is_npm()
+                || is_npm_package_name(&asked.name)
+                || self.linked_workspace(&asked).is_some()
+        };
+        if !alias_ok || !registry_name_ok() {
             let bad = if alias_ok { &asked.name } else { &edge.name };
             let err = Error::InvalidName {
                 name: fnpm_types::text::escape_control_chars(&edge.name),
@@ -332,6 +345,10 @@ impl Engine<'_> {
             if edge.behavior.is_optional_peer() {
                 return Ok(Step::Done);
             }
+        }
+        if let Some(target) = self.root_tag_workspace(row, &asked) {
+            self.set_target(row, target);
+            return Ok(Step::Done);
         }
         if !edge.behavior.is_peer()
             && let Some(target) = self.reuse_previous(row, &edge, &asked)
@@ -472,10 +489,11 @@ impl Engine<'_> {
         edge: &DepEdge,
         asked: &Asked,
     ) -> Option<PackageId> {
-        if self.update.active
-            || self.st[row.pkg.index()].kind == Kind::Project
-            || self.changed_peer_providers.contains(&asked.name)
-        {
+        // A project's optional peer keeps the package the lockfile bound it to (bun keeps it
+        // even when only that peer holds it, as in a pruned checkout); its other peers resolve
+        // again.
+        let project = self.st[row.pkg.index()].kind == Kind::Project;
+        if self.update.active || (project && !edge.behavior.is_optional_peer()) {
             return None;
         }
         let prev = self.prev?;
@@ -491,9 +509,33 @@ impl Engine<'_> {
         if package.name != asked.name || !matches!(package.resolution, Resolution::Npm { .. }) {
             return None;
         }
+        // bun never resolves a peer that no version satisfied again: once what held its
+        // version is gone, it moves to another version of the name in the tree, or keeps the
+        // one it had when none is left.
+        let unmet = match &asked.spec {
+            DependencySpec::Npm { range, .. } => matches!(
+                (Range::parse(range), self.prev_versions[target.index()].as_ref()),
+                (Ok(r), Some(v)) if !r.satisfies(v)
+            ),
+            _ => false,
+        };
+        let held =
+            !self.prev_non_peer_targets.contains(&target) || self.imported.contains_key(&target);
+        if unmet && !held {
+            let other = self
+                .candidates(&asked.name)
+                .into_iter()
+                .filter_map(|(c, v)| match c {
+                    Cand::New(id) => Some((id, v)),
+                    Cand::Prev(_) => None,
+                })
+                .max_by(|a, b| a.1.cmp(&b.1))
+                .map(|(id, _)| id);
+            return other.or_else(|| self.import_prev(target));
+        }
         // A target formerly provided by a non-peer dependency is reusable only when that
         // dependency is still in the current graph. Peer-only locked copies have no such holder.
-        if self.prev_non_peer_targets.contains(&target) && !self.imported.contains_key(&target) {
+        if self.changed_peer_providers.contains(&asked.name) || !held {
             return None;
         }
         self.import_prev(target)
@@ -682,6 +724,21 @@ impl Engine<'_> {
         }
         let version = self.st[id.index()].version.as_ref()?;
         Range::parse(range).ok()?.satisfies(version).then_some(id)
+    }
+
+    /// bun: the workspace wins over the root's dependency on a dist-tag of its own name
+    /// (`"foo": "latest"`), because only the registry knows which version a tag names.
+    pub(crate) fn root_tag_workspace(&self, row: Row, asked: &Asked) -> Option<PackageId> {
+        if row.pkg != PackageId::ROOT || asked.replaced {
+            return None;
+        }
+        let DependencySpec::DistTag {
+            is_alias: false, ..
+        } = &asked.spec
+        else {
+            return None;
+        };
+        self.member_id_by_name(&asked.name)
     }
 
     fn member_id_by_name(&self, name: &str) -> Option<PackageId> {
@@ -1142,9 +1199,13 @@ impl Engine<'_> {
         vm: &fnpm_registry::VersionManifest,
     ) -> PackageId {
         let version = vm.version.to_string();
-        let default_url = self.manifests.default_tarball_url(name, &version);
-        let tarball = (!vm.dist.tarball.is_empty() && vm.dist.tarball != default_url)
-            .then(|| vm.dist.tarball.clone());
+        // Like bun.lock, fnpm.lock records the tarball URL of every registry but npmjs (whose
+        // packages it writes as `""`), so a lockfile from a private registry names it.
+        let npmjs = fnpm_config::DEFAULT_REGISTRY;
+        let under_npmjs = vm.dist.tarball.strip_prefix(npmjs).is_some()
+            || vm.dist.tarball == npmjs.trim_end_matches('/');
+        let tarball =
+            (!vm.dist.tarball.is_empty() && !under_npmjs).then(|| vm.dist.tarball.clone());
         let mut package = local::package_from_manifest(name, vm, tarball);
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
@@ -1370,7 +1431,9 @@ impl Engine<'_> {
                         edge.name
                     ),
                 })?;
-            let mut package = local::package_from_json(&pj, &edge.name, resolution);
+            // bun names a folder without a package.json name after the folder.
+            let fallback = fnpm_types::name::fallback_package_name(&rel).to_owned();
+            let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);
                 return Ok(Step::Done);
@@ -1664,22 +1727,48 @@ impl Engine<'_> {
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
-            Some(RState::Failed(e)) => return Err(Error::Registry(clone_registry_error(e))),
+            Some(RState::Failed(e)) if self.remote_turned.contains(&key) => {
+                return Err(Error::Registry(clone_registry_error(e)));
+            }
+            // In flight, or downloaded ahead of its turn ([`Engine::fetch_remote_ahead`]).
             Some(_) => {
+                if self.remote_turned.insert(key.clone()) {
+                    self.remote_turns.push_back(key.clone());
+                }
                 self.remote_waiters.entry(key).or_default().push(row);
                 return Ok(Step::Done);
             }
             None => {}
         }
-        self.remote.insert(key.clone(), RState::Pending);
+        self.remote_turned.insert(key.clone());
         self.remote_turns.push_back(key.clone());
         self.remote_waiters
             .entry(key.clone())
             .or_default()
             .push(row);
+        self.start_remote(key, kind, edge.name.clone());
+        Ok(Step::Done)
+    }
+
+    /// Starts downloading the git / tarball package a project row declares before the row's
+    /// turn: what it depends on is only known from it. Its turn still comes in queue order.
+    pub(crate) fn fetch_remote_ahead(&mut self, row: Row, edge: &DepEdge, asked: &Asked) {
+        let Ok(kind) = self.remote_kind(row, edge, asked) else {
+            return;
+        };
+        let key = Self::remote_key(&kind);
+        if self.remote.contains_key(&key)
+            || (!self.should_update(row, edge, asked) && self.locked_remote(&kind).is_some())
+        {
+            return;
+        }
+        self.start_remote(key, kind, edge.name.clone());
+    }
+
+    fn start_remote(&mut self, key: String, kind: RemoteKind, name: String) {
+        self.remote.insert(key.clone(), RState::Pending);
         let fetcher = self.fetcher.clone();
         let tx = self.done_tx.clone();
-        let name = edge.name.clone();
         self.in_flight += 1;
         tokio::spawn(async move {
             let result = async {
@@ -1768,7 +1857,6 @@ impl Engine<'_> {
             .await;
             let _ = tx.send(Completion::Remote(key, result));
         });
-        Ok(Step::Done)
     }
 
     /// The turn of a git / tarball package: create it and bind every dependency waiting for it.
@@ -1780,10 +1868,19 @@ impl Engine<'_> {
                 if let Some(integrity) = fetched.integrity {
                     resolution.set_integrity(integrity);
                 }
-                let fallback = waiters
-                    .first()
-                    .map(|w| self.edge(*w).name.clone())
-                    .unwrap_or_default();
+                // bun names a tarball without a package.json name after its file.
+                let fallback = match &resolution {
+                    Resolution::RemoteTarball { url, .. } => {
+                        fnpm_types::name::fallback_package_name(url).to_owned()
+                    }
+                    Resolution::LocalTarball { path, .. } => {
+                        fnpm_types::name::fallback_package_name(path).to_owned()
+                    }
+                    _ => waiters
+                        .first()
+                        .map(|w| self.edge(*w).name.clone())
+                        .unwrap_or_default(),
+                };
                 let mut package =
                     local::package_from_json(&fetched.manifest, &fallback, resolution);
                 let id = match self.by_key.get(&package.key()) {

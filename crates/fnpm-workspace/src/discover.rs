@@ -100,11 +100,17 @@ pub(crate) fn read_pnpm_workspace(
         }
         Err(source) => return Err(Error::Io { path, source }),
     };
-    let doc: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&text).map_err(|e| Error::InvalidPackageJson {
-            path: path.clone(),
-            message: e.to_string(),
-        })?;
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&text).map_err(|e| {
+        let message = e.to_string();
+        if message.starts_with("recursion limit exceeded") {
+            Error::PnpmWorkspaceTooDeep
+        } else {
+            Error::InvalidPackageJson {
+                path: path.clone(),
+                message,
+            }
+        }
+    })?;
     let mut ws = PnpmWorkspace::default();
     let get = |key: &str| doc.as_mapping().and_then(|m| m.get(key));
     if let Some(seq) = get("packages").and_then(|v| v.as_sequence()) {

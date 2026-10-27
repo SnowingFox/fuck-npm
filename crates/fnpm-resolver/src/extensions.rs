@@ -58,7 +58,8 @@ impl ExtensionRule {
         let range = if selector.range.is_empty() {
             None
         } else {
-            match Range::parse(&selector.range) {
+            // node-semver `includePrerelease` desugaring, as yarn matches the keys.
+            match Range::parse_including_prerelease(&selector.range) {
                 Ok(r) => Some(r),
                 Err(_) => return Err("expected a semver range after the \"@\""),
             }
@@ -150,6 +151,60 @@ impl ExtensionRule {
                 )
             })
     }
+}
+
+/// Whether `rules` extend the packages of `prev` the way `prev` records it. fnpm.lock (bun.lock)
+/// keeps only what the rules added to each installed package, keyed by its exact version, so the
+/// rules of package.json are compared by what they do: every registry package a rule matches has
+/// the rule's dependencies, and the record of it names the same ones.
+pub fn applied_alike(rules: &[ExtensionRule], prev: &fnpm_types::LockGraph) -> bool {
+    use std::collections::BTreeSet;
+    let Ok(recorded) = serde_json::to_value(&prev.package_extensions) else {
+        return false;
+    };
+    let (recorded, _, _) =
+        parse_package_extensions(&serde_json::json!({ "packageExtensions": recorded }));
+    // `(name, peer, optional peer)` of what the rules matching `name@version` add.
+    let added = |rules: &[ExtensionRule], name: &str, version: &Version| {
+        rules
+            .iter()
+            .filter(|r| r.matches(name, version))
+            .flat_map(|r| &r.edges)
+            .map(|e| {
+                (
+                    e.name.clone(),
+                    e.behavior.is_peer(),
+                    e.behavior.is_optional_peer(),
+                )
+            })
+            .collect::<BTreeSet<_>>()
+    };
+    prev.packages.iter().all(|p| {
+        let fnpm_types::Resolution::Npm { version, .. } = &p.resolution else {
+            return true;
+        };
+        let Ok(version) = Version::parse(version) else {
+            return true;
+        };
+        let wanted = added(rules, &p.name, &version);
+        // The record names only edges a rule added, so each has the rule's specifier.
+        let specifier = |name: &str, peer: bool| {
+            rules
+                .iter()
+                .filter(|r| r.matches(&p.name, &version))
+                .flat_map(|r| &r.edges)
+                .find(|e| e.name == name && e.behavior.is_peer() == peer)
+                .map(|e| e.literal.as_str())
+        };
+        wanted == added(&recorded, &p.name, &version)
+            && wanted.iter().all(|(name, peer, _)| {
+                p.dependencies.iter().any(|e| {
+                    &e.name == name
+                        && e.behavior.is_peer() == *peer
+                        && (*peer || specifier(name, *peer) == Some(e.literal.as_str()))
+                })
+            })
+    })
 }
 
 /// Parses root `packageExtensions`. Returns the rules, the lockfile form (valid rules only) and

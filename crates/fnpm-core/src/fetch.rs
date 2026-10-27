@@ -441,10 +441,26 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
             integrity,
             ..
         } => {
-            if let Some(hit) = cached(inner, name, version, *integrity) {
+            // fnpm.lock (bun's format) records no integrity for a git checkout: the store
+            // entry of this commit is found through the record of an earlier checkout.
+            let pinned = format!("{url}#{resolved_commit}");
+            let known = integrity.or_else(|| {
+                inner
+                    .store
+                    .integrity_for_url(&inner.cache_dir, name, version, &pinned)
+            });
+            if let Some(hit) = cached(inner, name, version, known) {
                 return Ok(hit);
             }
-            git(inner, name, version, url, resolved_commit).await
+            let fetched = git(inner, name, version, url, resolved_commit).await?;
+            inner.store.remember_url(
+                &inner.cache_dir,
+                name,
+                version,
+                &pinned,
+                &fetched.key.integrity,
+            );
+            Ok(fetched)
         }
         Resolution::Folder { path } => {
             let dir = inner.root_dir.join(path);
@@ -486,7 +502,11 @@ async fn remote(
     let known = integrity.or_else(|| {
         inner
             .reuse_unpinned
-            .then(|| inner.store.integrity_for_url(name, version, url))
+            .then(|| {
+                inner
+                    .store
+                    .integrity_for_url(&inner.cache_dir, name, version, url)
+            })
             .flatten()
     });
     if let Some(hit) = cached(inner, name, version, known) {
@@ -540,7 +560,9 @@ async fn remote(
                 .await
                 .map_err(FetchFailure::from)?;
             if inner.reuse_unpinned {
-                inner.store.remember_url(name, version, url, &key.integrity);
+                inner
+                    .store
+                    .remember_url(&inner.cache_dir, name, version, url, &key.integrity);
             }
             Ok(Fetched { entry, key })
         }

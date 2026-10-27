@@ -327,6 +327,23 @@ describe("generic commands", () => {
     expect(await bed.run(["pm", "hash"])).toBe(1);
     expect(bed.stderr.text()).toBe("error: lockfile is corrupt\n");
   });
+
+  test("a core error's source frame is printed above error:", async () => {
+    const { CoreError } = await import("@/errors.ts");
+    const message = '1 | {"workspaces":["a"]}\n                   ^\nWorkspace not found "a"\n    at /w/package.json:1:16';
+    const bed = testBed({
+      core: {
+        invoke: () => {
+          throw new CoreError(message, "CORE_ERROR");
+        },
+      },
+    });
+
+    expect(await bed.run(["pm", "hash"])).toBe(1);
+    expect(bed.stderr.text()).toBe(
+      '1 | {"workspaces":["a"]}\n                   ^\nerror: Workspace not found "a"\n    at /w/package.json:1:16\n',
+    );
+  });
 });
 
 test("script paths own help, tree and version arguments", async () => {

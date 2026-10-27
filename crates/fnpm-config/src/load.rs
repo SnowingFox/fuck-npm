@@ -849,7 +849,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if m.frozen_lockfile == Some(true) {
         frozen = true;
     }
-    let mut save_text_lockfile = m.save_text_lockfile.unwrap_or(true);
+    let mut save_text_lockfile = m.save_text_lockfile;
     let mut concurrent_scripts = m
         .concurrent_scripts
         .map_or_else(default_concurrent_scripts, |n| n as usize);
@@ -1068,7 +1068,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
         ignore_scripts = true;
     }
     if let Some(v) = cli.save_text_lockfile {
-        save_text_lockfile = v;
+        save_text_lockfile = Some(v);
     }
     if let Some(n) = cli.concurrent_scripts.filter(|&n| n > 0) {
         concurrent_scripts = n;

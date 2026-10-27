@@ -56,8 +56,10 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
 
   const header = head === "outdated" ? "fnpm outdated" : ctx.path.join(" ") === "pm scan" ? "fnpm pm scan" : undefined;
   if (header !== undefined && ctx.output.mode !== "json" && logLevel !== "silent") {
-    const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
-    ctx.runtime.stderr.write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
+    // bun prints `bun outdated vX` on stdout (`prettyln`), above the table.
+    const stdout = head === "outdated";
+    const pc = createColors(colorEnabled(ctx.runtime, stdout ? ctx.runtime.stdoutIsTTY : ctx.runtime.stderrIsTTY));
+    (stdout ? ctx.runtime.stdout : ctx.runtime.stderr).write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
   }
 
   // Commands that print their own header (`fnpm audit fix vX`) print the CLI's version.

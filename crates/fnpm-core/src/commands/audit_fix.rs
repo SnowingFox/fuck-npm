@@ -792,27 +792,10 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     let client = project.client()?;
     // Reuse the resolver's complete declared-state check, including workspaces,
     // catalogs, overrides and missing resolutions, before asking the audit endpoint.
-    match fnpm_resolver::Resolver::new(project.config.clone(), client.clone())
-        .resolve(
-            fnpm_resolver::ResolveInput {
-                workspace: &ws,
-                previous: Some(&graph),
-                mode: fnpm_resolver::Mode::Frozen,
-                requests: Vec::new(),
-                removals: Vec::new(),
-            },
-            None,
-            &fnpm_types::NoopSink,
-        )
-        .await
-    {
-        Ok(_) => {}
-        Err(fnpm_resolver::Error::FrozenLockfile { .. }) => {
-            return Err(Error::usage(
-                "fnpm.lock does not match package.json. Run 'fnpm install' before 'fnpm audit fix'",
-            ));
-        }
-        Err(error) => return Err(error.into()),
+    if !fnpm_resolver::lockfile_matches(&ws, &graph)? {
+        return Err(Error::usage(
+            "fnpm.lock does not match package.json. Run 'fnpm install' before 'fnpm audit fix'",
+        ));
     }
     let resp = client.audit(&packages).await?;
     let ignore = cx.strings("ignore");

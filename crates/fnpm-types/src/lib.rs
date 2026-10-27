@@ -20,7 +20,7 @@ pub mod text;
 
 pub use behavior::{Behavior, DependencyGroup, PeerMeta};
 pub use bin::Bin;
-pub use event::{Event, EventSink, InstallSummary, NoopSink};
+pub use event::{Event, EventSink, InstallSummary, LockfileOnly, NoopSink};
 pub use graph::{
     Catalogs, ConfigVersion, DepEdge, GraphError, GraphIndex, LockGraph, NodeLinker, Package,
     PackageExtension, PackageId, PatchedDependency,

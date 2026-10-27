@@ -156,6 +156,8 @@ pub(crate) struct Engine<'a> {
     pub remote_turns: VecDeque<String>,
     pub remote: HashMap<String, RState>,
     pub remote_waiters: HashMap<String, Vec<Row>>,
+    /// Remote packages whose turn is queued (a download started ahead has none yet).
+    pub remote_turned: HashSet<String>,
     pub manifest_state: HashMap<String, MState>,
     pub done_tx: mpsc::UnboundedSender<Completion>,
     pub done_rx: mpsc::UnboundedReceiver<Completion>,
@@ -319,6 +321,7 @@ impl<'a> Engine<'a> {
             remote_turns: VecDeque::new(),
             remote: HashMap::new(),
             remote_waiters: HashMap::new(),
+            remote_turned: HashSet::new(),
             manifest_state: HashMap::new(),
             done_tx,
             done_rx,
@@ -412,6 +415,7 @@ impl<'a> Engine<'a> {
         }
         self.graph.trusted_dependencies = crate::frozen::trusted(self.ws)?;
         if let Some(prev) = self.prev {
+            self.graph.lockfile_version = prev.lockfile_version;
             self.graph.node_linker = prev.node_linker;
             self.graph.config_version = prev.config_version;
         }
@@ -477,6 +481,7 @@ impl<'a> Engine<'a> {
             patched_dependencies: std::mem::take(&mut self.graph.patched_dependencies),
             trusted_dependencies: self.graph.trusted_dependencies.take(),
             package_extensions: std::mem::take(&mut self.graph.package_extensions),
+            lockfile_version: self.graph.lockfile_version,
             node_linker: self.graph.node_linker,
             config_version: self.graph.config_version,
             ..LockGraph::new(root)
@@ -839,7 +844,12 @@ impl<'a> Engine<'a> {
             }
             Completion::Remote(key, result) => {
                 let state = match result {
-                    Ok(r) => RState::Ready(r),
+                    Ok(r) => {
+                        // Its turn may wait for an earlier tarball: what it depends on is
+                        // requested now, like bun, so that one's download is not in its way.
+                        self.follow_remote_ahead(&r.1.manifest);
+                        RState::Ready(r)
+                    }
                     Err(e) => RState::Failed(Arc::new(e)),
                 };
                 self.remote.insert(key, state);

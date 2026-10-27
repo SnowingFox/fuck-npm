@@ -62,7 +62,7 @@ async fn frozen_installs_report_every_change() {
         &[("packages/w", json!({"name": "w", "version": "1.0.1"}))],
     );
     match h.run(&ws2, Some(&first), Mode::Frozen).await {
-        Err(Error::FrozenLockfile { changes }) => assert_eq!(
+        Err(Error::FrozenLockfile { changes, .. }) => assert_eq!(
             changes,
             [
                 "a changed from ^1 to ^1.1",
@@ -583,4 +583,145 @@ async fn workspace_version_changes_keep_locked_peer_copies_even_outside_their_ra
     let out = h.run(&changed, Some(&locked), Mode::Normal).await.unwrap();
     assert_eq!(versions(&out.graph, "host"), ["1.0.0"]);
     assert_eq!(versions(&out.graph, "extra"), ["1.0.0"]);
+}
+
+/// Bun 1.4 left a workspace out of the lockfile when the root's dependency on a registry version
+/// of its name (a range its version does not satisfy, or an alias of it) took its entry.
+#[tokio::test]
+async fn frozen_accepts_a_workspace_that_bun_1_4_left_out() {
+    let h = Harness::new();
+    registry(&h);
+    for (deps, plain_keeps) in [
+        (json!({"a": "1.0.0"}), true),
+        (json!({"pub": "npm:a@1.0.0"}), false),
+    ] {
+        let older = workspace(json!({ "dependencies": deps }), &[]);
+        let first = h.install(&older).await.graph;
+        let ws = workspace(
+            json!({ "dependencies": deps }),
+            &[("packages/a", json!({"name": "a", "version": "3.0.0"}))],
+        );
+        let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+        assert_eq!(frozen.graph, first, "{deps}");
+        let plain = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
+        assert_eq!(!plain.changed, plain_keeps, "{deps}");
+    }
+    // A version the range accepts: the workspace is new.
+    let older = workspace(json!({"dependencies": {"a": "^1"}}), &[]);
+    let first = h.install(&older).await.graph;
+    let ws = workspace(
+        json!({"dependencies": {"a": "^1"}}),
+        &[("packages/a", json!({"name": "a", "version": "1.5.0"}))],
+    );
+    match h.run(&ws, Some(&first), Mode::Frozen).await {
+        Err(Error::FrozenLockfile { changes, .. }) => {
+            assert_eq!(changes, ["workspace packages/a was added"]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Bun 1.4 wrote a name that is in `dependencies` and `optionalDependencies` (or in
+/// `dependencies` and, by a tag, in `devDependencies`) twice; package.json still says the same.
+#[tokio::test]
+async fn frozen_accepts_names_that_bun_1_4_wrote_twice() {
+    let h = Harness::new();
+    registry(&h);
+    let ws = workspace(
+        json!({"dependencies": {"a": "1.0.0"}, "optionalDependencies": {"a": "^1"}}),
+        &[],
+    );
+    let mut first = h.install(&ws).await.graph;
+    let optional = first.root().dependencies[0].clone();
+    let mut prod = fnpm_types::DepEdge::new("a", "1.0.0", DependencyGroup::Prod.behavior());
+    prod.target = optional.target;
+    first.packages[0].dependencies.insert(0, prod);
+    let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+    assert!(!frozen.changed);
+}
+
+/// bun: the root's dependency on a dist-tag of a workspace's name links the workspace, without
+/// asking the registry, also once the workspace is added next to a lockfile that has the tag.
+#[tokio::test]
+async fn a_root_tag_of_a_workspace_name_links_the_workspace() {
+    let h = Harness::new();
+    registry(&h);
+    let member = [("packages/a", json!({"name": "a", "version": "1.5.0"}))];
+    let linked = |graph: &fnpm_types::LockGraph| {
+        let target = graph.root().dependencies[0].target.unwrap();
+        matches!(
+            graph.packages[target.index()].resolution,
+            Resolution::Workspace { .. }
+        )
+    };
+    let ws = workspace(json!({"dependencies": {"a": "latest"}}), &member);
+    let fresh = h.install(&ws).await.graph;
+    assert!(linked(&fresh));
+    assert_eq!(h.registry.request_count("a"), 0);
+
+    let older = workspace(json!({"dependencies": {"a": "latest"}}), &[]);
+    let first = h.install(&older).await.graph;
+    assert!(!linked(&first));
+    let again = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
+    assert!(again.changed);
+    assert!(linked(&again.graph));
+}
+
+/// An edited `file:` folder: a frozen install keeps fnpm.lock's version of it and warns, a
+/// plain one reads it again.
+#[tokio::test]
+async fn an_edited_file_folder_warns_when_frozen_and_resolves_again() {
+    let h = Harness::new();
+    registry(&h);
+    let dir = tempfile::tempdir().unwrap();
+    let vendor = dir.path().join("vendor/lib");
+    std::fs::create_dir_all(&vendor).unwrap();
+    let write = |deps: serde_json::Value| {
+        let json = json!({"name": "lib", "version": "1.0.0", "dependencies": deps});
+        std::fs::write(vendor.join("package.json"), json.to_string()).unwrap();
+        h.fetcher.folder(&vendor, json);
+    };
+    write(json!({"c": "^1"}));
+    let ws = workspace_at(
+        dir.path().into(),
+        json!({"dependencies": {"lib": "file:./vendor/lib"}}),
+        &[],
+    );
+    let first = h.install(&ws).await.graph;
+    assert!(
+        !h.run(&ws, Some(&first), Mode::Normal)
+            .await
+            .unwrap()
+            .changed
+    );
+
+    write(json!({"c": "^1", "b": "1.0.0"}));
+    let frozen = h.run(&ws, Some(&first), Mode::Frozen).await.unwrap();
+    assert_eq!(frozen.graph, first);
+    assert!(frozen.behind);
+    let again = h.run(&ws, Some(&first), Mode::Normal).await.unwrap();
+    assert!(again.changed);
+    assert!(again.graph.packages.iter().any(|p| p.name == "b"));
+}
+
+/// fnpm.lock keeps what `packageExtensions` added per installed version
+/// (`"a@1.1.0": { "dependencies": ["c"] }`); the range key in package.json still matches it, and a
+/// changed specifier does not.
+#[tokio::test]
+async fn frozen_compares_package_extensions_by_what_they_add() {
+    let h = Harness::new();
+    registry(&h);
+    h.registry.add("x", &[("1.0.0", no_deps())]);
+    let rules = |x: &str| json!({"dependencies": {"a": "1.1.0"}, "packageExtensions": {"a@1.x": {"dependencies": {"x": x}}}});
+    let ws = workspace(rules("1.0.0"), &[]);
+    let mut first = h.install(&ws).await.graph;
+    let mut record = fnpm_types::PackageExtension::default();
+    record.dependencies.insert("x".into(), "1.0.0".into());
+    first.package_extensions = [("a@1.1.0".to_owned(), record)].into();
+    assert!(h.run(&ws, Some(&first), Mode::Frozen).await.is_ok());
+    let edited = workspace(rules("^1.0.0"), &[]);
+    assert!(matches!(
+        h.run(&edited, Some(&first), Mode::Frozen).await,
+        Err(Error::FrozenLockfile { .. })
+    ));
 }

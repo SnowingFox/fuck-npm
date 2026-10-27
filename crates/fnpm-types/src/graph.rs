@@ -268,7 +268,8 @@ pub enum GraphError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockGraph {
-    /// fnpm.lock format version.
+    /// fnpm.lock format version: the one the file was read with, or for a new graph (a fresh
+    /// resolve, a migration) the newest, which the writer lowers the way bun does.
     pub lockfile_version: u32,
     pub config_version: ConfigVersion,
     /// A linker recorded by the lockfile (`fnpm install --linker` with `--save-linker`) or by
@@ -297,7 +298,7 @@ pub struct LockGraph {
 }
 
 impl LockGraph {
-    pub const LOCKFILE_VERSION: u32 = 1;
+    pub const LOCKFILE_VERSION: u32 = 3;
 
     /// A graph containing only `root` (whose resolution is forced to [`Resolution::Root`]).
     pub fn new(mut root: Package) -> Self {

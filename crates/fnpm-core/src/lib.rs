@@ -22,6 +22,8 @@ use std::sync::{Arc, OnceLock};
 use fnpm_config::Env;
 use fnpm_types::{EventSink, InstallSummary};
 
+/// bun's source frames for errors in package.json (printed above `error:`).
+pub use fnpm_workspace::frame;
 pub use install::{PreparedInstall, config_hash};
 pub use options::{CoreRequest, CoreResult, InstallOptions, PmOptions};
 
@@ -84,6 +86,17 @@ pub enum Error {
     /// `node_modules` (bun's tree builder refuses it before anything is installed).
     #[error("invalid dependency name \"{0}\"")]
     UnsafeName(String),
+    /// An error at a place in a source file, with bun's source frame in front of the message
+    /// ([`fnpm_workspace::frame`]; the CLIs print the frame above `error:`). The code is the
+    /// underlying error's.
+    #[error("{message}")]
+    Framed {
+        /// [`fnpm_workspace::frame::Frame::framed`].
+        message: String,
+        /// The error without the frame.
+        #[source]
+        source: Box<Error>,
+    },
     /// The command failed and already said why on stderr/stdout (a fatal security advisory, a
     /// security scanner error). The CLIs print nothing more and exit 1.
     #[error("")]
@@ -139,6 +152,7 @@ impl Error {
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
             Self::Reported => "REPORTED",
+            Self::Framed { source, .. } => source.code(),
             Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }

@@ -15,6 +15,7 @@ import {
   fnpmEnv as env,
   isLinux,
   isWindows,
+  nodeExe,
   normalizeFnpmSnapshot,
   readdirSorted,
   runFnpmInstall,
@@ -1575,8 +1576,8 @@ it("prints an actionable error for a lockfile version newer than this build supp
   const [out, err] = await Promise.all([stdout.text(), stderr.text()]);
 
   expect(err).toContain("Unsupported lockfile version 99");
-  expect(err).toContain("newer version of Bun");
-  expect(err).toMatch(/This is Bun v\d+\.\d+\.\d+/);
+  expect(err).toContain("newer version of fnpm");
+  expect(err).toMatch(/This is fnpm v\d+\.\d+\.\d+/);
   expect(err).toMatch(/supports lockfile versions up to \d+/);
   expect(err).toContain("Run 'bun upgrade'");
   // the old message gave no hint at all
@@ -5650,8 +5651,9 @@ describe.concurrent("a file: folder listed in both dependencies and devDependenc
     await install(appDir);
     expect(packageKeys(await file(join(appDir, "fnpm.lock")).text())).toEqual(['    "a": [']);
 
+    // Porting: `bun -p` is Bun's runtime, which fnpm is not; Node evaluates the same require.
     await using proc = spawn({
-      cmd: [fnpmExe(), "-p", `require("a")`],
+      cmd: [nodeExe(), "-p", `require("a")`],
       cwd: appDir,
       env,
       stdout: "pipe",
@@ -5759,7 +5761,14 @@ describe.each(["hoisted", "isolated"] as const)(
           expect(await lock()).toBe(before);
         },
         async versionsResolvedByVdir() {
-          const { out, err, code } = await bun("-p", `JSON.stringify(require("vdir"))`);
+          // Porting: `bun -p` is Bun's runtime, which fnpm is not; Node evaluates the same require.
+          await using proc = spawn({
+            cmd: [nodeExe(), "-p", `JSON.stringify(require("vdir"))`],
+            cwd: packageDir,
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+          const [out, err, code] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
           expect({ out, err, code }).toMatchObject({ err: "", code: 0 });
           return JSON.parse(out);
         },

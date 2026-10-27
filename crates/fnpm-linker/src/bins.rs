@@ -317,7 +317,11 @@ impl BinLinker {
             if name.is_empty() || target.is_empty() || bin_target_escapes_package_dir(target) {
                 return;
             }
-            let target = target.trim_end_matches(['/', '\\']);
+            // Declared targets keep their spelling (`./cli.js`); links use the normal form.
+            let Some(target) = fnpm_types::bin::normalize_bin_target(target) else {
+                return;
+            };
+            let target = target.as_str();
             let rel_target = if redirect {
                 let real = resolve_redirect_target(real_dir, target, name);
                 real.strip_prefix(real_dir)
@@ -362,7 +366,10 @@ impl BinLinker {
                 if path.is_empty() || bin_target_escapes_package_dir(path) {
                     return false;
                 }
-                let sub = path.trim_end_matches(['/', '\\']);
+                let Some(sub) = fnpm_types::bin::normalize_bin_target(path) else {
+                    return false;
+                };
+                let sub = sub.as_str();
                 let dir = real_dir.join(sub);
                 let rd = match std::fs::read_dir(&dir) {
                     Ok(rd) => rd,

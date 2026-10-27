@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`yarn berry migration workspaces and workspace: ranges 1`] = `
+exports[`yarn berry migration > workspaces and workspace: ranges 1`] = `
 "{
   "lockfileVersion": 2,
   "configVersion": 0,

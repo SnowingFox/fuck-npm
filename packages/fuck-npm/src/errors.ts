@@ -53,6 +53,15 @@ export function formatError(error: unknown): string {
   return String(error);
 }
 
+/**
+ * Splits bun's source frame (`1 | {...}` and the caret line) off a core error message, so it
+ * is printed above `error:`. Mirrors `split` in `crates/fnpm-workspace/src/frame.rs`.
+ */
+export function splitFrame(message: string): { frame?: string; message: string } {
+  const match = /^(\d+ \| [^\n]*\n *\^)\n/.exec(message);
+  return match ? { frame: match[1], message: message.slice(match[0].length) } : { message };
+}
+
 export function errorCode(error: unknown): string {
   if (error instanceof SilentError || error instanceof CoreError) {
     return error.code;

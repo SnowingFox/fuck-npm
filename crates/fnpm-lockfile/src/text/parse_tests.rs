@@ -209,7 +209,7 @@ fn a_missing_packages_object_is_an_empty_one() {
     let src = "{\n  \"lockfileVersion\": 2,\n  \"workspaces\": {\n    \"\": {\n      \"name\": \"no-packages-object\"\n    },\n    \"packages/member\": {\n      \"name\": \"member\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}";
     let (g, _) = parse(src).unwrap();
     assert_eq!(g.workspaces.len(), 2);
-    let text = super::write::write(&g, super::Dialect::Bun).text;
+    let text = super::write::write(&g).text;
     assert!(
         text.contains(
             "\"packages\": {\n    \"member\": [\"member@workspace:packages/member\"],\n  }"
@@ -355,7 +355,7 @@ fn lockfile_version_0_lists_workspace_dependencies_under_packages() {
             .map(|t| g.packages[t.index()].version.as_str()),
         Some("1.0.0")
     );
-    let text = super::write::write(&g, super::Dialect::Bun).text;
+    let text = super::write::write(&g).text;
     // v0 is floored to v1, whose workspace packages are only listed by path.
     assert!(
         text.starts_with("{\n  \"lockfileVersion\": 1,\n  \"configVersion\": 0,\n"),
@@ -378,7 +378,7 @@ fn npm_versions_are_read_as_bun_parses_them() {
         let p = g.packages.iter().find(|p| p.name == "no-deps").unwrap();
         assert_eq!(p.resolution.npm_version(), Some("1.0.0"), "{written}");
         assert_eq!(p.version, "1.0.0", "{written}");
-        let out = crate::text::write::write(&g, crate::text::Dialect::Bun).text;
+        let out = crate::text::write::write(&g).text;
         assert!(out.contains("[\"no-deps@1.0.0\""), "{written}: {out}");
     }
     assert!(
