@@ -640,6 +640,17 @@ fn place_node<'s>(
             Ordering::Relaxed,
         );
     }
+    // Below a link (a workspace under another name, `link:`) is the target's own folder: its
+    // packages are placed there from the workspace's own tree, never through the link, or the
+    // planted-link check of a child would take the link for one and replace it.
+    if matches!(plan.places[idx], Place::Link(_)) {
+        let mut below = plan.children[idx].clone();
+        while let Some(c) = below.pop() {
+            cx.tick();
+            below.extend_from_slice(&plan.children[c as usize]);
+        }
+        return;
+    }
     for &c in &plan.children[idx] {
         s.spawn_fifo(move |s| place_node(s, cx, plan, out, unchanged, c, child_fresh, force));
     }
