@@ -2260,8 +2260,38 @@ fn write_state(
         installs,
         workspace_patterns,
         workspace_dirs,
+        missing_bins: missing_workspace_bins(root, ws),
     };
     let _ = fast_path::write(root, meta, &state);
+}
+
+/// The bin files that workspace packages declare and do not have yet, relative to `root`.
+fn missing_workspace_bins(root: &Path, ws: &Workspace) -> Vec<String> {
+    let mut out = Vec::new();
+    for m in &ws.members {
+        let targets: Vec<&str> = match m.manifest.raw.get("bin") {
+            Some(serde_json::Value::String(t)) => vec![t.as_str()],
+            Some(serde_json::Value::Object(map)) => {
+                map.values().filter_map(serde_json::Value::as_str).collect()
+            }
+            _ => Vec::new(),
+        };
+        for target in targets {
+            let target = target.trim_start_matches("./");
+            if target.is_empty() || target.split('/').any(|c| c == "..") {
+                continue;
+            }
+            let rel = if m.path.is_empty() {
+                target.to_owned()
+            } else {
+                format!("{}/{target}", m.path)
+            };
+            if !root.join(&rel).exists() {
+                out.push(rel);
+            }
+        }
+    }
+    out
 }
 
 #[allow(dead_code)]

@@ -72,6 +72,10 @@ pub struct State {
     /// member, which no manifest entry would show.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_dirs: Vec<String>,
+    /// Bin files of workspace packages that did not exist (a build writes them): once one
+    /// does, the next install links it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_bins: Vec<String>,
 }
 
 /// The result of [`check`].
@@ -210,7 +214,12 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         }
         std::fs::read(&path).is_ok_and(|b| xxhash_rust::xxh3::xxh3_64(&b) == *hash)
     });
-    manifests_unchanged && members_unchanged(project_dir, state)
+    manifests_unchanged
+        && members_unchanged(project_dir, state)
+        && !state
+            .missing_bins
+            .iter()
+            .any(|rel| project_dir.join(rel).exists())
 }
 
 /// The workspace globs select the same directories, and none of them gained a package.json.
@@ -290,6 +299,7 @@ mod tests {
 
     fn state_for(dir: &Path) -> State {
         State {
+            missing_bins: Vec::new(),
             version: STATE_VERSION,
             fnpm_version: crate::version().to_owned(),
             lockfile_hash: fnpm_lockfile::content_hash(b"{}\n"),
