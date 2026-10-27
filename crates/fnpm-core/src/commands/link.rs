@@ -116,21 +116,35 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
             fnpm_store::fsops::symlink_dir(&dir, &link)
                 .map_err(|e| Error::usage(format!("{}: {e}", link.display())))?;
         }
-        let link = registrations(&links, &name)[0].clone();
+        // The bins go through `<global dir>/node_modules/<name>`, where a global install puts
+        // packages, so `fnpm link` and `fnpm add -g` own the same bin names (bun).
+        let global = registrations(&links, &name)[1].clone();
+        let mut failed = false;
         if !pj.bin.is_none() {
             let project = cx.project_global()?;
             let bin_dir = project.config.global_bin_dir.clone();
             std::fs::create_dir_all(&bin_dir).map_err(Error::io(&bin_dir))?;
-            let mut bins = BinLinker::global(&bin_dir, &links);
-            bins.link(
+            let owner = global.parent().map(Path::to_path_buf).unwrap_or_default();
+            let mut bins = BinLinker::global(&bin_dir, &owner);
+            if let Err(e) = bins.link(
                 &name,
                 &pj.bin,
-                &link,
+                &global,
                 BinOptions {
                     refresh: true,
                     ..BinOptions::default()
                 },
-            )?;
+            ) {
+                let code = match &e {
+                    fnpm_linker::Error::Io { source, .. } => super::pack::out::errno_name(source),
+                    other => other.to_string(),
+                };
+                cx.events.emit(fnpm_types::Event::Error {
+                    message: format!("failed to link bin due to error {code}"),
+                    code: Some("BIN_LINK_FAILED".into()),
+                });
+                failed = true;
+            }
         }
         let lines = vec![
             format!("Success! Registered \"{name}\""),
@@ -141,7 +155,11 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
             "Or add it in dependencies in your package.json file:".into(),
             format!("  \"{name}\": \"link:{name}\""),
         ];
-        return Ok(ok(json!({ "registered": name, "path": dir }), lines));
+        let data = json!({ "registered": name, "path": dir });
+        if failed {
+            return Ok(super::exit(1, data, lines));
+        }
+        return Ok(ok(data, lines));
     }
     let mut packages = Vec::new();
     for name in &cx.req.positionals {
@@ -184,6 +202,8 @@ pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
         }
         if !pj.bin.is_none() {
             let project = cx.project_global()?;
+            let global = registrations(&links, &name)[1].clone();
+            let _ = fnpm_linker::bins::unlink_bins(&global, &project.config.global_bin_dir);
             let _ = fnpm_linker::bins::unlink_bins(&link, &project.config.global_bin_dir);
         }
         for r in registrations(&links, &name) {
