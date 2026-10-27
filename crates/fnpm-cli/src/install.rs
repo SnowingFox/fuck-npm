@@ -17,7 +17,7 @@ use crate::options::install_options;
 use crate::parse::{parse_flags, reject_unknown_flags};
 use crate::plan::Invocation;
 use crate::progress::{DiagnosticsSink, ProgressSink, wants_progress};
-use crate::spec::{BinDef, LeafDef, VERSION};
+use crate::spec::{BinDef, LeafDef};
 use crate::summary::format_install_summary_at;
 use crate::terminal::{Terminal, color_enabled};
 
@@ -135,7 +135,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
         terminal.stdout.write(&format!(
             "{}{}\n",
             pc.bold(&format!("fnpm {label} ")),
-            pc.dim(&format!("v{VERSION}"))
+            pc.dim(&format!("v{}", crate::spec::version_with_sha()))
         ));
     }
 

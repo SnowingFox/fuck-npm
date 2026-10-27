@@ -1,6 +1,6 @@
 import { createColors } from "picocolors";
 import { read } from "../cli/parse-flags.ts";
-import { getCliVersion } from "../cli/version.ts";
+import { getCliVersionWithSha } from "../cli/version.ts";
 import { SilentError } from "../errors.ts";
 import { logLevelOf, requestOptions } from "../core/options.ts";
 import type { CoreRequest } from "../core/types.ts";
@@ -37,7 +37,7 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     // `outdated` only reads; bun forces dry-run.
     options.dryRun = true;
   }
-  options.cliVersion = getCliVersion();
+  options.cliVersion = getCliVersionWithSha();
   if (head === "publish") {
     options.nodeVersion = process.versions.node;
     // bun: `fnpm --filter='*' publish` runs the workspaces' `publish` scripts, it does not publish them.
@@ -62,11 +62,11 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     // bun prints `bun outdated vX` on stdout (`prettyln`), above the table.
     const stdout = head === "outdated";
     const pc = createColors(colorEnabled(ctx.runtime, stdout ? ctx.runtime.stdoutIsTTY : ctx.runtime.stderrIsTTY));
-    (stdout ? ctx.runtime.stdout : ctx.runtime.stderr).write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
+    (stdout ? ctx.runtime.stdout : ctx.runtime.stderr).write(`${pc.bold(header)} ${pc.dim(`v${getCliVersionWithSha()}`)}\n`);
   }
 
   // Commands that print their own header (`fnpm audit fix vX`) print the CLI's version.
-  (options as Record<string, unknown>).cliVersion = getCliVersion();
+  (options as Record<string, unknown>).cliVersion = getCliVersionWithSha();
   const request: CoreRequest = {
     command: ctx.registry.bin === "fnpm-lock" ? ["lock", ...ctx.path] : ctx.path,
     cwd: String(options.cwd),

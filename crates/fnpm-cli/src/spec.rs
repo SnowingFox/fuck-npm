@@ -101,6 +101,18 @@ impl std::fmt::Debug for BinDef {
 
 include!(concat!(env!("OUT_DIR"), "/spec.rs"));
 
+/// The short git revision of the build, `""` when unknown.
+pub const REVISION: &str = env!("FNPM_REVISION");
+
+/// The version headers print, like bun's `version_with_sha`: `0.1.0 (abc1234)`.
+pub fn version_with_sha() -> String {
+    if REVISION.is_empty() {
+        VERSION.to_owned()
+    } else {
+        format!("{VERSION} ({REVISION})")
+    }
+}
+
 #[cfg(test)]
 mod version_tests {
     #[test]

@@ -3,7 +3,7 @@
  * ported tests run under vitest with their bodies unchanged. Only what the tests touch is here; it is not a
  * general Bun polyfill.
  */
-import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
+import { execFileSync, spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
 import { createHash, type BinaryToTextEncoding } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -1286,10 +1286,21 @@ function fnpmVersion(): string {
   }
 }
 
+/** The short git revision fnpm's build embeds (FNPM_REVISION, else `git rev-parse --short HEAD`), like `Bun.revision`. */
+function fnpmRevision(): string {
+  if (process.env.FNPM_REVISION !== undefined) return process.env.FNPM_REVISION.trim();
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
 export const version = fnpmVersion();
-export const revision = "";
-// bun's is "v<version> (<revision>)"; fnpm prints no revision in its headers.
-export const version_with_sha = `v${version}`;
+export const revision = fnpmRevision();
+// "v<version> (<revision>)", as fnpm's headers print it.
+export const version_with_sha = revision ? `v${version} (${revision})` : `v${version}`;
 export const env = process.env;
 export const argv = process.argv;
 export const main = process.argv[1] ?? "";

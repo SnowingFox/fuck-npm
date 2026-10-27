@@ -266,7 +266,7 @@ impl Display for XDisplay {
         self.stderr.write(&format!(
             "{} {}\n",
             self.pc.bold(&format!("fnpm {title}")),
-            self.pc.dim(&format!("v{VERSION}"))
+            self.pc.dim(&format!("v{}", crate::spec::version_with_sha()))
         ));
         let live = ProgressSink::start(self.pc, self.columns, Arc::clone(&self.stderr));
         *self
@@ -295,6 +295,7 @@ pub fn run_x(args: Vec<String>, create: bool) -> i32 {
         cwd: terminal.cwd.clone(),
         create,
         version: VERSION.to_owned(),
+        revision: crate::spec::REVISION.to_owned(),
         display: XDisplay::for_terminal(&terminal).map(|view| Arc::new(view) as Arc<dyn Display>),
     };
     match fnpm_core::x::plan(&request) {
@@ -355,7 +356,7 @@ mod tests {
         }));
         let text = capture.text();
         assert!(
-            text.starts_with(&format!("fnpm x create-vite v{VERSION}\n")),
+            text.starts_with(&format!("fnpm x create-vite v{}\n", crate::spec::version_with_sha())),
             "{text}"
         );
         assert!(text.contains("Resolving 1/3"), "{text}");

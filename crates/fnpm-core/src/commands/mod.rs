@@ -256,9 +256,12 @@ async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
         args,
         cwd: cx.req.cwd.clone(),
         create,
+        // The bare version (`--version`), without the revision headers carry.
         version: cx
             .string("cliVersion")
+            .map(|v| v.split(" (").next().unwrap_or_default().to_owned())
             .unwrap_or_else(|| crate::version().to_owned()),
+        revision: cx.string("cliRevision").unwrap_or_default(),
         display: None,
     };
     let code = tokio::task::spawn_blocking(move || crate::x::run(&req))

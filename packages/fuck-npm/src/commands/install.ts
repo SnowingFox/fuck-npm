@@ -1,6 +1,6 @@
 import { createColors } from "picocolors";
 import { read } from "../cli/parse-flags.ts";
-import { getCliVersion } from "../cli/version.ts";
+import { getCliVersionWithSha } from "../cli/version.ts";
 import { installOptions } from "../core/options.ts";
 import type { EventSink, InstallCommand, InstallOptions, InstallSummary } from "../core/types.ts";
 import { colorEnabled } from "../output/output.ts";
@@ -49,7 +49,7 @@ export function printHeader(ctx: CommandContext, options: InstallOptions, label:
     return;
   }
   const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY));
-  ctx.runtime.stdout.write(`${pc.bold(`fnpm ${label} `)}${pc.dim(`v${getCliVersion()}`)}\n`);
+  ctx.runtime.stdout.write(`${pc.bold(`fnpm ${label} `)}${pc.dim(`v${getCliVersionWithSha()}`)}\n`);
 }
 
 /**

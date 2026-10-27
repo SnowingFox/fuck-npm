@@ -67,6 +67,8 @@ pub struct Request {
     pub create: bool,
     /// The CLI version (`--version`).
     pub version: String,
+    /// The short git revision of the build, `""` when unknown (`--revision`).
+    pub revision: String,
     /// Draws the install while it runs (a terminal). Without it, the install prints bun's
     /// status lines instead.
     pub display: Option<Arc<dyn Display>>,
@@ -706,8 +708,17 @@ pub fn plan(req: &Request) -> Outcome {
             eprint!("{USAGE}");
             return Outcome::Exit(1);
         }
-        Parsed::Version | Parsed::Revision => {
+        Parsed::Version => {
             println!("{}", req.version);
+            return Outcome::Exit(0);
+        }
+        // bun's `package_json_version_with_revision`: `1.0.0+abcdef1`.
+        Parsed::Revision => {
+            if req.revision.is_empty() {
+                println!("{}", req.version);
+            } else {
+                println!("{}+{}", req.version, req.revision);
+            }
             return Outcome::Exit(0);
         }
         Parsed::Error { message, hint } => {

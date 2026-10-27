@@ -7,6 +7,20 @@ const PACKAGE_NAME = "fuck-npm";
 
 let cached: string | undefined;
 
+/** Set by the build (tsup `define`); absent when the sources run unbundled (tests). */
+declare const __FNPM_REVISION__: string | undefined;
+
+/** The short git revision the build was made from, `""` when unknown. */
+export function getCliRevision(): string {
+  return typeof __FNPM_REVISION__ === "string" ? __FNPM_REVISION__ : "";
+}
+
+/** The version headers print, like bun's `version_with_sha`: `0.1.0 (abc1234)`, or the bare version. */
+export function getCliVersionWithSha(): string {
+  const revision = getCliRevision();
+  return revision ? `${getCliVersion()} (${revision})` : getCliVersion();
+}
+
 /**
  * Read the version from the nearest `fuck-npm` package.json.
  *
