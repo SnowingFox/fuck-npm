@@ -848,7 +848,13 @@ impl Engine<'_> {
                 Error::InvalidName { bad, .. } => {
                     lines.push(format!("invalid dependency name \"{bad}\""))
                 }
-                other => lines.push(other.to_string()),
+                // One failed manifest is one error, however many rows asked for it.
+                other => {
+                    let line = other.to_string();
+                    if !lines.contains(&line) {
+                        lines.push(line);
+                    }
+                }
             }
         }
         let mut order: Vec<usize> = (0..failed.len()).collect();
@@ -896,6 +902,10 @@ impl Engine<'_> {
                 continue;
             }
             note |= matches!(err, Error::CatalogEntryMissing { .. });
+            // A package the command asked for is failed as a request: bun prints its error only.
+            if self.requested_rows.contains_key(&(row.pkg, row.edge)) {
+                continue;
+            }
             if name.is_empty() || name == literal {
                 lines.push(format!("{literal} failed to resolve"));
             } else {
