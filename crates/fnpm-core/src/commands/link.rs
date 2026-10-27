@@ -74,8 +74,32 @@ fn package_here(cwd: &Path) -> Result<(PathBuf, fnpm_workspace::PackageJson)> {
             cwd.to_path_buf()
         })
         .unwrap_or_else(|| cwd.to_path_buf());
-    let pj = fnpm_workspace::PackageJson::read(&dir.join("package.json"))?;
+    let file = dir.join("package.json");
+    if !file.is_file() {
+        return Err(Error::usage(
+            "fnpm could not find a package.json file to install from\nnote: Run \"fnpm init\" to initialize a project",
+        ));
+    }
+    let pj = fnpm_workspace::PackageJson::read(&file)?;
     Ok((dir, pj))
+}
+
+/// The name of the package in `dir`, which `fnpm link` / `fnpm unlink` register under: bun
+/// refuses a package.json without one, or with one that is not a valid package name.
+fn own_name(dir: &Path, pj: &fnpm_workspace::PackageJson) -> Result<String> {
+    let file = dir.join("package.json");
+    match pj.name.clone().filter(|n| !n.is_empty()) {
+        None => Err(Error::usage(format!(
+            "package.json missing \"name\" in \"{}\"",
+            file.display()
+        ))),
+        Some(name) if !fnpm_types::name::is_npm_package_name(&name) => Err(Error::usage(format!(
+            "invalid package.json name \"{}\" in \"{}\"",
+            super::pack::out::escape_control(&name),
+            file.display()
+        ))),
+        Some(name) => Ok(name),
+    }
 }
 
 /// `fnpm link` registers the current package; `fnpm link <names>` installs registered ones.
@@ -83,12 +107,7 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
     let links = links_dir(cx)?;
     if cx.req.positionals.is_empty() {
         let (dir, pj) = package_here(&cx.req.cwd)?;
-        let Some(name) = pj.name.clone().filter(|n| !n.is_empty()) else {
-            return Err(Error::usage(
-                "package.json missing \"name\" in this directory",
-            ));
-        };
-        checked_name(&name)?;
+        let name = own_name(&dir, &pj)?;
         // The relative link target is computed between the real paths: with a symlinked home
         // (`/home/u -> /data/home/u`) one from the spelled paths points elsewhere.
         let target = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
@@ -104,21 +123,35 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
             fnpm_store::fsops::symlink_dir(&target, &at)
                 .map_err(|e| Error::usage(format!("{}: {e}", link.display())))?;
         }
-        let link = registrations(&links, &name)[0].clone();
+        // The bins go through `<global dir>/node_modules/<name>`, where a global install puts
+        // packages, so `fnpm link` and `fnpm add -g` own the same bin names (bun).
+        let global = registrations(&links, &name)[1].clone();
+        let mut failed = false;
         if !pj.bin.is_none() {
             let project = cx.project_global()?;
             let bin_dir = project.config.global_bin_dir.clone();
             std::fs::create_dir_all(&bin_dir).map_err(Error::io(&bin_dir))?;
-            let mut bins = BinLinker::global(&bin_dir, &links);
-            bins.link(
+            let owner = global.parent().map(Path::to_path_buf).unwrap_or_default();
+            let mut bins = BinLinker::global(&bin_dir, &owner);
+            if let Err(e) = bins.link(
                 &name,
                 &pj.bin,
-                &link,
+                &global,
                 BinOptions {
                     refresh: true,
                     ..BinOptions::default()
                 },
-            )?;
+            ) {
+                let code = match &e {
+                    fnpm_linker::Error::Io { source, .. } => super::pack::out::errno_name(source),
+                    other => other.to_string(),
+                };
+                cx.events.emit(fnpm_types::Event::Error {
+                    message: format!("failed to link bin due to error {code}"),
+                    code: Some("BIN_LINK_FAILED".into()),
+                });
+                failed = true;
+            }
         }
         let lines = vec![
             format!("Success! Registered \"{name}\""),
@@ -129,7 +162,11 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
             "Or add it in dependencies in your package.json file:".into(),
             format!("  \"{name}\": \"link:{name}\""),
         ];
-        return Ok(ok(json!({ "registered": name, "path": dir }), lines));
+        let data = json!({ "registered": name, "path": dir });
+        if failed {
+            return Ok(super::exit(1, data, lines));
+        }
+        return Ok(ok(data, lines));
     }
     let mut packages = Vec::new();
     for name in &cx.req.positionals {
@@ -165,18 +202,15 @@ pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
     let links = links_dir(cx)?;
     if cx.req.positionals.is_empty() {
         let (dir, pj) = package_here(&cx.req.cwd)?;
-        let Some(name) = pj.name.clone().filter(|n| !n.is_empty()) else {
-            return Err(Error::usage(
-                "package.json missing \"name\" in this directory",
-            ));
-        };
-        checked_name(&name)?;
+        let name = own_name(&dir, &pj)?;
         let link = fnpm_linker::fsutil::join_name(&links, &name);
         if std::fs::symlink_metadata(&link).is_err() {
             return Err(Error::usage(format!("package \"{name}\" is not linked")));
         }
         if !pj.bin.is_none() {
             let project = cx.project_global()?;
+            let global = registrations(&links, &name)[1].clone();
+            let _ = fnpm_linker::bins::unlink_bins(&global, &project.config.global_bin_dir);
             let _ = fnpm_linker::bins::unlink_bins(&link, &project.config.global_bin_dir);
         }
         for r in registrations(&links, &name) {

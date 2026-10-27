@@ -35,7 +35,10 @@ pub(crate) fn bin(cx: &Ctx) -> Result<CoreResult> {
             })
         });
         if out.color_err && !on_path {
-            out.eprint(&format!("\n{}: not in $PATH\n\n", out.paint_err("33", "warn")));
+            out.eprint(&format!(
+                "\n{}: not in $PATH\n\n",
+                out.paint_err("33", "warn")
+            ));
         }
         bin
     } else {

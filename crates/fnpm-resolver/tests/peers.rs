@@ -58,7 +58,9 @@ async fn peers_bind_to_what_the_dependent_provides_even_out_of_range() {
     assert_eq!(peer(&out.graph, ui, "react").unwrap().version, "17.0.2");
     assert_eq!(versions(&out.graph, "react"), ["17.0.2"]);
     assert!(
-        !out.warnings.iter().any(|w| w.starts_with("incorrect peer dependency")),
+        !out.warnings
+            .iter()
+            .any(|w| w.starts_with("incorrect peer dependency")),
         "{:?}",
         out.warnings
     );

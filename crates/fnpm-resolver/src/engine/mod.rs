@@ -179,6 +179,10 @@ pub(crate) struct Engine<'a> {
     pub requests: Vec<Request>,
     pub request_targets: Vec<Option<PackageId>>,
     pub kept_patched: Vec<String>,
+    /// `fnpm update`: `<name>@<version> was not checked for updates: ...`, reported sorted.
+    pub not_checked: Vec<String>,
+    /// See [`crate::ResolveOutput::failed_requests`].
+    pub failed_requests: Vec<String>,
     /// `(package, deprecated warning)` of the registry packages resolved from a manifest by
     /// this run; [`Engine::finish`] reports what the project asks for.
     pub deprecated: Vec<(PackageId, String)>,
@@ -217,6 +221,8 @@ pub(crate) struct EngineOutput {
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
     pub unsaved: bool,
+    pub failed_requests: Vec<String>,
+    pub kept: Vec<String>,
 }
 
 /// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A
@@ -340,6 +346,8 @@ impl<'a> Engine<'a> {
             requests,
             request_targets: Vec::new(),
             kept_patched: Vec::new(),
+            not_checked: Vec::new(),
+            failed_requests: Vec::new(),
             deprecated: Vec::new(),
             warnings: Vec::new(),
             unsaved: false,

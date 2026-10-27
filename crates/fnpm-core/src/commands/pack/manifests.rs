@@ -131,12 +131,20 @@ impl WorkspaceManifests {
         let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
         let dir = real(dir);
         dir == real(&self.root_dir)
-            || self.paths.keys().any(|rel| real(&self.root_dir.join(rel)) == dir)
+            || self
+                .paths
+                .keys()
+                .any(|rel| real(&self.root_dir.join(rel)) == dir)
     }
 
     /// The version `fnpm pm pack` in `package_dir` publishes for the dependency `name` written
     /// as `spec`, when `spec` is a `workspace:` or `catalog:` version that resolves.
-    pub(crate) fn published_spec(&self, package_dir: &Path, name: &str, spec: &str) -> Option<String> {
+    pub(crate) fn published_spec(
+        &self,
+        package_dir: &Path,
+        name: &str,
+        spec: &str,
+    ) -> Option<String> {
         published(for_spec(spec)?, self, package_dir, name).ok()
     }
 }

@@ -108,7 +108,10 @@ fn find_package_json(cwd: &Path) -> Result<std::path::PathBuf> {
         dir = d.parent();
     }
     Err(fail(
-        &format!("No package.json was found for directory \"{}\"", cwd.display()),
+        &format!(
+            "No package.json was found for directory \"{}\"",
+            cwd.display()
+        ),
         Some("Run \"fnpm init\" to initialize a project"),
     ))
 }

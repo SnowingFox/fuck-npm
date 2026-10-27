@@ -355,7 +355,9 @@ fn is_npm_name(name: &str) -> bool {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"-._~".contains(&b))
     };
     match name.strip_prefix('@') {
-        Some(rest) => rest.split_once('/').is_some_and(|(a, b)| part(a) && part(b)),
+        Some(rest) => rest
+            .split_once('/')
+            .is_some_and(|(a, b)| part(a) && part(b)),
         None => part(name),
     }
 }
@@ -418,14 +420,18 @@ fn installed_version(cx: &Ctx, name: &str) -> Option<(String, String, Option<Int
         .nodes
         .iter()
         .enumerate()
-        .filter(|(i, n)| n.parent.is_none() && !in_workspace.contains(&(*i as u32)) && n.name == name)
+        .filter(|(i, n)| {
+            n.parent.is_none() && !in_workspace.contains(&(*i as u32)) && n.name == name
+        })
         .map(|(_, n)| n.package.index())
         .collect();
     let by_own_name = (0..graph.packages.len()).filter(|&i| graph.packages[i].name == name);
-    let found = own
-        .chain(hoisted)
-        .chain(by_own_name)
-        .find(|&i| matches!(graph.packages.get(i).map(|p| &p.resolution), Some(Resolution::Npm { .. })))?;
+    let found = own.chain(hoisted).chain(by_own_name).find(|&i| {
+        matches!(
+            graph.packages.get(i).map(|p| &p.resolution),
+            Some(Resolution::Npm { .. })
+        )
+    })?;
     let p = &graph.packages[found];
     let Resolution::Npm {
         version, integrity, ..
@@ -453,7 +459,9 @@ async fn materialize(
             locked,
         } => {
             if client.is_none() {
-                let project = cx.project_anywhere().map_err(|e| out.error(&e.to_string()))?;
+                let project = cx
+                    .project_anywhere()
+                    .map_err(|e| out.error(&e.to_string()))?;
                 let c = project.client().map_err(|e| out.error(&e.to_string()))?;
                 *client = Some((project, c));
             }
@@ -497,7 +505,11 @@ fn read_tar(out: &Out, bytes: &[u8], tree: &mut Tree) -> Fail<()> {
 
 /// Reads every regular file of a tarball. npm tarballs root everything under one folder
 /// (usually `package/`), which the parser strips.
-fn read_tar_stream(mut input: impl Read, tree: &mut Tree, limit: u64) -> std::result::Result<(), String> {
+fn read_tar_stream(
+    mut input: impl Read,
+    tree: &mut Tree,
+    limit: u64,
+) -> std::result::Result<(), String> {
     let mut parser = TarParser::new();
     let mut current: Option<Vec<u8>> = None;
     let mut total = 0u64;
@@ -505,7 +517,9 @@ fn read_tar_stream(mut input: impl Read, tree: &mut Tree, limit: u64) -> std::re
     let files = &mut tree.files;
     let modes = &mut tree.modes;
     loop {
-        let n = input.read(&mut buf).map_err(|e| format!("invalid tarball: {e}"))?;
+        let n = input
+            .read(&mut buf)
+            .map_err(|e| format!("invalid tarball: {e}"))?;
         if n == 0 {
             break;
         }
@@ -602,7 +616,9 @@ fn read_dir_tree(cx: &Ctx, out: &Out, root: &Path, as_published: bool) -> Fail<T
                 .then(|| manifests_for(cx, out, root, text))
                 .flatten()
             {
-                Some(manifests) => with_published_versions(text, &json, &manifests, root).into_bytes(),
+                Some(manifests) => {
+                    with_published_versions(text, &json, &manifests, root).into_bytes()
+                }
                 None => pkg,
             };
             tree.files.insert(b"package.json".to_vec(), manifest);
@@ -740,7 +756,11 @@ fn find_key(text: &str, from: usize, key: &str) -> Option<usize> {
     None
 }
 
-fn registry_error(client: &fnpm_registry::RegistryClient, name: &str, e: fnpm_registry::Error) -> String {
+fn registry_error(
+    client: &fnpm_registry::RegistryClient,
+    name: &str,
+    e: fnpm_registry::Error,
+) -> String {
     use fnpm_registry::Error as E;
     match e {
         E::NotFound(_) => format!(
@@ -768,7 +788,11 @@ async fn fetch_registry_tree(
         .view(name)
         .await
         .map_err(|e| out.error(&lossy(&defang(registry_error(client, name, e).as_bytes()))))?;
-    let version = if version.is_empty() { "latest" } else { version };
+    let version = if version.is_empty() {
+        "latest"
+    } else {
+        version
+    };
     let Some(found) = find_by_spec(&doc, version) else {
         let mut text = out
             .error(&format!(
@@ -791,25 +815,39 @@ async fn fetch_registry_tree(
         releases.sort_by(|a, b| b.cmp_precedence(a));
         let recent: Vec<String> = releases.iter().take(5).map(ToString::to_string).collect();
         if !recent.is_empty() {
-            let _ = write!(text, "\n{} {}", out.paint_err("2", "recent versions:"), recent.join(", "));
+            let _ = write!(
+                text,
+                "\n{} {}",
+                out.paint_err("2", "recent versions:"),
+                recent.join(", ")
+            );
         }
         let tags: Vec<String> = doc
             .get("dist-tags")
             .and_then(Value::as_object)
             .map(|t| {
                 t.iter()
-                    .filter_map(|(k, v)| Some(format!("{}: {}", lossy(&defang(k.as_bytes())), v.as_str()?)))
+                    .filter_map(|(k, v)| {
+                        Some(format!("{}: {}", lossy(&defang(k.as_bytes())), v.as_str()?))
+                    })
                     .collect()
             })
             .unwrap_or_default();
         if !tags.is_empty() {
-            let _ = write!(text, "\n{} {}", out.paint_err("2", "tags:"), tags.join(", "));
+            let _ = write!(
+                text,
+                "\n{} {}",
+                out.paint_err("2", "tags:"),
+                tags.join(", ")
+            );
         }
         return Err(Fatal(text));
     };
     let label = format!("{name}@{found}");
     let entry = &doc["versions"][&found];
-    let registry_entry = serde_json::to_string(entry).ok().and_then(|t| pj::parse(&t).ok());
+    let registry_entry = serde_json::to_string(entry)
+        .ok()
+        .and_then(|t| pj::parse(&t).ok());
     let dist = &entry["dist"];
     let tarball = dist["tarball"]
         .as_str()
@@ -862,7 +900,11 @@ fn find_by_spec(doc: &Value, spec: &str) -> Option<String> {
     }
     versions
         .keys()
-        .filter_map(|v| fnpm_semver::Version::parse(v).ok().map(|parsed| (parsed, v)))
+        .filter_map(|v| {
+            fnpm_semver::Version::parse(v)
+                .ok()
+                .map(|parsed| (parsed, v))
+        })
         .filter(|(v, _)| range.satisfies(v))
         .max_by(|(a, _), (b, _)| a.cmp_precedence(b))
         .map(|(_, s)| s.clone())
@@ -1002,8 +1044,20 @@ fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
 fn notable_builtin(spec: &str) -> bool {
     matches!(
         spec.strip_prefix("node:").unwrap_or(spec),
-        "child_process" | "fs" | "fs/promises" | "net" | "http" | "https" | "http2" | "dgram"
-            | "dns" | "tls" | "vm" | "worker_threads" | "os" | "inspector"
+        "child_process"
+            | "fs"
+            | "fs/promises"
+            | "net"
+            | "http"
+            | "https"
+            | "http2"
+            | "dgram"
+            | "dns"
+            | "tls"
+            | "vm"
+            | "worker_threads"
+            | "os"
+            | "inspector"
     )
 }
 
@@ -1095,11 +1149,17 @@ fn collapse_whitespace(bytes: &[u8]) -> Vec<u8> {
 /// bun also asks its parser whether a file of any other type is JavaScript; fnpm takes UTF-8
 /// whose NUL bytes all sit in comments or string literals as such.
 fn is_binary(path: &[u8], bytes: &[u8]) -> bool {
-    if !bytes[..bytes.len().min(8192)].contains(&0) || bytes.starts_with(b"#!") || path.ends_with(b".sh") {
+    if !bytes[..bytes.len().min(8192)].contains(&0)
+        || bytes.starts_with(b"#!")
+        || path.ends_with(b".sh")
+    {
         return false;
     }
     let base = basename(path);
-    let ext = base.iter().rposition(|&b| b == b'.').map(|dot| &base[dot + 1..]);
+    let ext = base
+        .iter()
+        .rposition(|&b| b == b'.')
+        .map(|dot| &base[dot + 1..]);
     match ext {
         Some(b"wasm" | b"node") => true,
         Some(
@@ -1159,7 +1219,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 /// `15 → 74 bytes, sha256 1a2b3c4d5e6f → 0f9e8d7c6b5a`.
 fn binary_summary(c: &FileChange<'_>) -> String {
-    let hash = |side: Option<&[u8]>| side.map_or_else(|| "none".to_owned(), |b| sha256_hex(b)[..12].to_owned());
+    let hash = |side: Option<&[u8]>| {
+        side.map_or_else(|| "none".to_owned(), |b| sha256_hex(b)[..12].to_owned())
+    };
     format!(
         "{} → {} bytes, sha256 {} → {}",
         c.old.map_or(0, <[u8]>::len),
@@ -1211,7 +1273,10 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
     for path in paths {
         let old = left.files.get(path).map(Vec::as_slice);
         let new = right.files.get(path).map(Vec::as_slice);
-        let mode_change = match (left.modes.get(path).copied(), right.modes.get(path).copied()) {
+        let mode_change = match (
+            left.modes.get(path).copied(),
+            right.modes.get(path).copied(),
+        ) {
             (Some(o), Some(n)) if (o ^ n) & 0o111 != 0 => Some((o, n)),
             (None, Some(n)) if old.is_none() && n & 0o111 != 0 => Some((0, n)),
             _ => None,
@@ -1231,7 +1296,10 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
             changes.push(change);
             continue;
         }
-        change.binary = [old, new].iter().flatten().any(|side| is_binary(path, side));
+        change.binary = [old, new]
+            .iter()
+            .flatten()
+            .any(|side| is_binary(path, side));
         // Because of the colon, this prefix can only start JSON, never a JavaScript program.
         change.sourcemap =
             path.ends_with(b".map") && new.or(old).is_some_and(|b| b.starts_with(b"{\"version\":"));
@@ -1291,8 +1359,8 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
             }
         }
         let js_family = kind == Some(Kind::Js);
-        let reprint_equal = !js_family
-            && matches!((&norm_old, &norm_new), (Some(a), Some(b)) if a.text == b.text);
+        let reprint_equal =
+            !js_family && matches!((&norm_old, &norm_new), (Some(a), Some(b)) if a.text == b.text);
         change.formatting_only = reprint_equal;
         match (old, new, &norm_old, &norm_new) {
             (Some(o), Some(n), _, _) if js_family => {
@@ -1328,7 +1396,11 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
             let n = count_lines(body);
             // An empty file has no lines, and a hunk header without lines corrupts the patch.
             if n > 0 {
-                let range = if new.is_some() { (0, 0, 1, n) } else { (1, n, 0, 0) };
+                let range = if new.is_some() {
+                    (0, 0, 1, n)
+                } else {
+                    (1, n, 0, 0)
+                };
                 style.hunk_header(&mut change.hunks, range, true);
             }
             for (i, line) in Lines(body).enumerate() {
@@ -1353,7 +1425,10 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
     if changes.is_empty() {
         writeln_bytes(
             &mut o,
-            &tags(&format!("<d>No differences ({} files)<r>", left.files.len()), style.pretty),
+            &tags(
+                &format!("<d>No differences ({} files)<r>", left.files.len()),
+                style.pretty,
+            ),
         );
         return o;
     }
@@ -1438,7 +1513,11 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
         // A file whose contents the patch omits gets neither a `diff --git` header nor a mode
         // line, because GNU patch would apply the mode line to the previous file.
         let in_patch = !c.binary && !c.sourcemap;
-        let header: &[u8] = if in_patch { b"diff --git " } else { b"diff --fnpm " };
+        let header: &[u8] = if in_patch {
+            b"diff --git "
+        } else {
+            b"diff --fnpm "
+        };
         let (mut a, mut b) = (patch_name(b"a/", c.path), patch_name(b"b/", c.path));
         if style.escape {
             (a, b) = (defang(&a).into_owned(), defang(&b).into_owned());
@@ -1450,17 +1529,26 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
             (None, Some(_), _) if !in_patch => o.extend_from_slice(b"new file\n"),
             (Some(_), None, _) if !in_patch => o.extend_from_slice(b"deleted file\n"),
             (None, Some(_), mode) => {
-                writeln_bytes(&mut o, &format!("new file mode 100{:o}", mode.map_or(0o644, |(_, n)| n)));
+                writeln_bytes(
+                    &mut o,
+                    &format!("new file mode 100{:o}", mode.map_or(0o644, |(_, n)| n)),
+                );
             }
             (Some(_), None, _) => {
                 let mode = left.modes.get(c.path).copied().unwrap_or(0);
                 writeln_bytes(
                     &mut o,
-                    &format!("deleted file mode 100{}", if mode & 0o111 != 0 { 755 } else { 644 }),
+                    &format!(
+                        "deleted file mode 100{}",
+                        if mode & 0o111 != 0 { 755 } else { 644 }
+                    ),
                 );
             }
             (_, _, Some((old_mode, new_mode))) if in_patch => {
-                writeln_bytes(&mut o, &format!("old mode 100{old_mode:o}\nnew mode 100{new_mode:o}"));
+                writeln_bytes(
+                    &mut o,
+                    &format!("old mode 100{old_mode:o}\nnew mode 100{new_mode:o}"),
+                );
             }
             _ => {}
         }
@@ -1479,7 +1567,10 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
             continue;
         }
         if c.binary {
-            writeln_bytes(&mut o, &format!("Binary files differ ({})", binary_summary(c)));
+            writeln_bytes(
+                &mut o,
+                &format!("Binary files differ ({})", binary_summary(c)),
+            );
             continue;
         }
         // An added or removed empty file is written the way git writes it: an `index` line with
@@ -1487,13 +1578,24 @@ fn print_diff(left: &Tree, right: &Tree, flags: Flags, style: Style) -> Vec<u8> 
         if c.hunks.is_empty() {
             writeln_bytes(
                 &mut o,
-                if c.new.is_some() { "index 0000000..e69de29" } else { "index e69de29..0000000" },
+                if c.new.is_some() {
+                    "index 0000000..e69de29"
+                } else {
+                    "index e69de29..0000000"
+                },
             );
             continue;
         }
         let old_name: &[u8] = if c.old.is_some() { &a } else { b"/dev/null" };
         let new_name: &[u8] = if c.new.is_some() { &b } else { b"/dev/null" };
-        for part in [b"--- ".as_slice(), old_name, b"\n+++ ", new_name, b"\n", &c.hunks] {
+        for part in [
+            b"--- ".as_slice(),
+            old_name,
+            b"\n+++ ",
+            new_name,
+            b"\n",
+            &c.hunks,
+        ] {
             o.extend_from_slice(part);
         }
     }
@@ -1609,7 +1711,13 @@ fn print_header(o: &mut Vec<u8>, left: &Tree, right: &Tree, style: Style) {
 
 /// After the hunks: the end of the output is what stays on screen, so the totals and the changes
 /// worth a second look go there.
-fn print_summary(o: &mut Vec<u8>, left: &Tree, right: &Tree, changes: &[FileChange<'_>], style: Style) {
+fn print_summary(
+    o: &mut Vec<u8>,
+    left: &Tree,
+    right: &Tree,
+    changes: &[FileChange<'_>],
+    style: Style,
+) {
     let (mut files_added, mut files_removed, mut files_changed, mut lines_added, mut lines_removed) =
         (0usize, 0usize, 0usize, 0usize, 0usize);
     for c in changes {
@@ -1662,14 +1770,23 @@ fn print_summary(o: &mut Vec<u8>, left: &Tree, right: &Tree, changes: &[FileChan
             ),
         );
     }
-    let mark = if style.pretty { "  \x1b[33m▲\x1b[0m " } else { "  ! " };
+    let mark = if style.pretty {
+        "  \x1b[33m▲\x1b[0m "
+    } else {
+        "  ! "
+    };
     for n in collect_notes(left, right, changes, style.pretty) {
         writeln_bytes(o, &format!("{mark}{n}"));
     }
 }
 
 /// The changes worth a second look, as colour-tagged strings (package text already escaped).
-fn collect_notes(left: &Tree, right: &Tree, changes: &[FileChange<'_>], colors: bool) -> Vec<String> {
+fn collect_notes(
+    left: &Tree,
+    right: &Tree,
+    changes: &[FileChange<'_>],
+    colors: bool,
+) -> Vec<String> {
     let mut notes = Vec::new();
     package_json_notes(left, right, &mut notes, colors);
     import_notes(changes, &mut notes, colors);
@@ -1765,7 +1882,11 @@ fn import_notes(changes: &[FileChange<'_>], notes: &mut Vec<String>, colors: boo
             .map(|p| note(colors, "<b>{}<r>", &[(*p).to_owned()]))
             .collect();
         let more = if packages.len() > 6 {
-            note(colors, " <d>… and {} more<r>", &[(packages.len() - 6).to_string()])
+            note(
+                colors,
+                " <d>… and {} more<r>",
+                &[(packages.len() - 6).to_string()],
+            )
         } else {
             String::new()
         };
@@ -1866,7 +1987,9 @@ fn install_view(json: &Json, field: &str) -> Vec<(String, String)> {
     match field {
         "bin" => {
             // `"bin": "./cli.js"` is short for `{ "<name without its scope>": "cli.js" }`.
-            if let (Some(path), Some(name)) = (value.as_str(), json.get("name").and_then(Json::as_str)) {
+            if let (Some(path), Some(name)) =
+                (value.as_str(), json.get("name").and_then(Json::as_str))
+            {
                 pairs.push((name.to_owned(), path.to_owned()));
             }
             for (name, path) in &mut pairs {
@@ -1880,7 +2003,11 @@ fn install_view(json: &Json, field: &str) -> Vec<(String, String)> {
                 pairs.push((only.to_owned(), String::new()));
             }
             if let Json::Array(items, _) = value {
-                pairs.extend(items.iter().filter_map(|i| Some((i.as_str()?.to_owned(), String::new()))));
+                pairs.extend(
+                    items
+                        .iter()
+                        .filter_map(|i| Some((i.as_str()?.to_owned(), String::new()))),
+                );
             }
         }
         // A package listed in both fields is optional, and some registry entries repeat the
@@ -1904,7 +2031,12 @@ fn top_level_props(text: &[u8]) -> Vec<(String, std::ops::Range<usize>)> {
     let mut close = |open: &mut Option<(String, usize)>, end: usize| {
         if let Some((key, start)) = open.take() {
             let value = &text[start..end];
-            let trimmed = value.len() - value.iter().rev().take_while(|b| b.is_ascii_whitespace()).count();
+            let trimmed = value.len()
+                - value
+                    .iter()
+                    .rev()
+                    .take_while(|b| b.is_ascii_whitespace())
+                    .count();
             props.push((key, start..start + trimmed));
         }
     };
@@ -1932,7 +2064,10 @@ fn top_level_props(text: &[u8]) -> Vec<(String, std::ops::Range<usize>)> {
                         && let Ok(key) = serde_json::from_slice::<String>(&text[start..end])
                     {
                         let after = end + colon + 1;
-                        let ws = text[after..].iter().take_while(|b| b.is_ascii_whitespace()).count();
+                        let ws = text[after..]
+                            .iter()
+                            .take_while(|b| b.is_ascii_whitespace())
+                            .count();
                         open = Some((key, after + ws));
                         i = after + ws;
                         continue;
@@ -1952,7 +2087,8 @@ fn parse_first_wins(bytes: &[u8]) -> Option<Json> {
     let mut json = pj::parse(text).ok()?;
     let props = top_level_props(bytes);
     for (i, (key, range)) in props.iter().enumerate() {
-        if props[..i].iter().any(|(k, _)| k == key) || !props[i + 1..].iter().any(|(k, _)| k == key) {
+        if props[..i].iter().any(|(k, _)| k == key) || !props[i + 1..].iter().any(|(k, _)| k == key)
+        {
             continue;
         }
         if let (Ok(first), Some(slot)) = (pj::parse(&text[range.clone()]), json.get_mut(key)) {
@@ -1976,7 +2112,10 @@ fn package_json_notes(left: &Tree, right: &Tree, notes: &mut Vec<String>, colors
                     continue;
                 }
                 overridden.push(field);
-                let text = |json: &Json| json.get(field).map_or_else(|| "nothing".to_owned(), expr_text);
+                let text = |json: &Json| {
+                    json.get(field)
+                        .map_or_else(|| "nothing".to_owned(), expr_text)
+                };
                 let (theirs, ours) = (text(entry), text(&file));
                 let at = first_difference(theirs.as_bytes(), ours.as_bytes());
                 notes.push(note(
@@ -2223,14 +2362,21 @@ fn clip(text: &str, at: usize) -> String {
 
 /// `--json`: one document with both labels, per-file status/counts/patch text, the notes as
 /// plain strings, and totals.
-fn print_json(o: &mut Vec<u8>, left: &Tree, right: &Tree, changes: &[FileChange<'_>], flags: Flags) {
+fn print_json(
+    o: &mut Vec<u8>,
+    left: &Tree,
+    right: &Tree,
+    changes: &[FileChange<'_>],
+    flags: Flags,
+) {
     let js = |s: &[u8]| serde_json::to_string(&String::from_utf8_lossy(s)).unwrap_or_default();
     let mut out = format!(
         "{{\n  \"from\": {},\n  \"to\": {},\n  \"files\": [",
         js(left.label.as_bytes()),
         js(right.label.as_bytes())
     );
-    let (mut lines_added, mut lines_removed, mut added, mut deleted) = (0usize, 0usize, 0usize, 0usize);
+    let (mut lines_added, mut lines_removed, mut added, mut deleted) =
+        (0usize, 0usize, 0usize, 0usize);
     for (i, c) in changes.iter().enumerate() {
         let status = match (c.old, c.new) {
             (None, Some(_)) => {
@@ -2400,19 +2546,35 @@ impl Style {
         }
     }
 
-    fn hunk_header(self, out: &mut Vec<u8>, (old_start, old_len, new_start, new_len): (usize, usize, usize, usize), first: bool) {
+    fn hunk_header(
+        self,
+        out: &mut Vec<u8>,
+        (old_start, old_len, new_start, new_len): (usize, usize, usize, usize),
+        first: bool,
+    ) {
         if self.pretty {
             if !first {
                 out.extend_from_slice("\x1b[2m    ⋮\x1b[0m\n".as_bytes());
             }
         } else {
-            let _ = writeln!(Bytes(out), "@@ -{old_start},{old_len} +{new_start},{new_len} @@");
+            let _ = writeln!(
+                Bytes(out),
+                "@@ -{old_start},{old_len} +{new_start},{new_len} @@"
+            );
         }
     }
 
     /// `emph` is the byte range that differs from this line's -/+ partner; it gets a stronger
     /// tint and, on lines wider than the terminal, the shared prefix before it is elided.
-    fn line(self, out: &mut Vec<u8>, op: Op, old_no: usize, new_no: usize, text: &[u8], emph: Option<(usize, usize)>) {
+    fn line(
+        self,
+        out: &mut Vec<u8>,
+        op: Op,
+        old_no: usize,
+        new_no: usize,
+        text: &[u8],
+        emph: Option<(usize, usize)>,
+    ) {
         let sign = match op {
             Op::Equal => b' ',
             Op::Delete => b'-',
@@ -2439,8 +2601,18 @@ impl Style {
         let text: &[u8] = &defang(text);
         let (num, accent, bg, strong) = match op {
             Op::Equal => (new_no, "\x1b[2m", "", ""),
-            Op::Delete => (old_no, "\x1b[31m", self.palette.del, self.palette.del_strong),
-            Op::Insert => (new_no, "\x1b[32m", self.palette.ins, self.palette.ins_strong),
+            Op::Delete => (
+                old_no,
+                "\x1b[31m",
+                self.palette.del,
+                self.palette.del_strong,
+            ),
+            Op::Insert => (
+                new_no,
+                "\x1b[32m",
+                self.palette.ins,
+                self.palette.ins_strong,
+            ),
         };
         let gw = 5;
         let _ = write!(
@@ -2456,7 +2628,9 @@ impl Style {
                 if text.len() > budget && lo > 32 {
                     let mut cut = lo - 24;
                     // Land the cut between tokens rather than mid-identifier when one is near.
-                    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b & 0x80 != 0;
+                    let ident = |b: u8| {
+                        b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b & 0x80 != 0
+                    };
                     for _ in 0..16 {
                         if cut == 0 || !ident(text[cut - 1]) || !ident(text[cut]) {
                             break;
@@ -2488,7 +2662,11 @@ impl Style {
             _ => out.extend_from_slice(text),
         }
         // Erase-to-EOL carries the tint to the edge before resetting.
-        out.extend_from_slice(if bg.is_empty() { b"\x1b[0m\n".as_slice() } else { b"\x1b[K\x1b[0m\n".as_slice() });
+        out.extend_from_slice(if bg.is_empty() {
+            b"\x1b[0m\n".as_slice()
+        } else {
+            b"\x1b[K\x1b[0m\n".as_slice()
+        });
     }
 
     /// `path ─────────────── +3 -1`, sized to the terminal.
@@ -2515,7 +2693,9 @@ impl Style {
             ),
             (_, _, true) => format!("\x1b[33mbinary\x1b[0m \x1b[2m{}\x1b[0m", binary_summary(c)),
             (None, Some(_), _) => format!("{note}\x1b[32mnew\x1b[0m \x1b[32m+{}\x1b[0m", c.added),
-            (Some(_), None, _) => format!("{note}\x1b[31mdeleted\x1b[0m \x1b[31m-{}\x1b[0m", c.removed),
+            (Some(_), None, _) => {
+                format!("{note}\x1b[31mdeleted\x1b[0m \x1b[31m-{}\x1b[0m", c.removed)
+            }
             _ => {
                 let mut s = String::from(note);
                 if c.added > 0 {
@@ -2562,7 +2742,11 @@ impl Style {
             .max(2);
         out.extend_from_slice(b"\n\x1b[1m");
         out.extend_from_slice(&shown);
-        let _ = writeln!(Bytes(out), "\x1b[0m \x1b[2m{}\x1b[0m {badge}", "─".repeat(rule));
+        let _ = writeln!(
+            Bytes(out),
+            "\x1b[0m \x1b[2m{}\x1b[0m {badge}",
+            "─".repeat(rule)
+        );
     }
 }
 
@@ -2677,7 +2861,11 @@ fn myers(a: &[&[u8]], b: &[&[u8]]) -> Vec<Op> {
         let v = &trace[d as usize];
         let at = |k: isize| v[(k + d + 1) as usize];
         let k = x - y;
-        let prev_k = if k == -d || (k != d && at(k - 1) < at(k + 1)) { k + 1 } else { k - 1 };
+        let prev_k = if k == -d || (k != d && at(k - 1) < at(k + 1)) {
+            k + 1
+        } else {
+            k - 1
+        };
         let prev_x = at(prev_k);
         let prev_y = prev_x - prev_k;
         while x > prev_x && y > prev_y {
@@ -2806,7 +2994,13 @@ fn view_bytes(bytes: &[u8]) -> Cow<'_, [u8]> {
     }
 }
 
-fn unified_hunks(old: &[u8], new: &[u8], context: usize, style: Style, change: &mut FileChange<'_>) {
+fn unified_hunks(
+    old: &[u8],
+    new: &[u8],
+    context: usize,
+    style: Style,
+    change: &mut FileChange<'_>,
+) {
     // The terminal view compares CRLF files as if they were LF.
     let (old, new) = if style.pretty {
         (view_bytes(old), view_bytes(new))
@@ -2887,11 +3081,22 @@ fn render_ops(
             .iter()
             .find(|op| op.kind != Op::Delete)
             .map_or(window[0].new_no, |op| op.new_no);
-        style.hunk_header(&mut change.hunks, (old_start, old_len, new_start, new_len), first);
+        style.hunk_header(
+            &mut change.hunks,
+            (old_start, old_len, new_start, new_len),
+            first,
+        );
         first = false;
         for (k, op) in window.iter().enumerate() {
             let emph = pair_emphasis(window, k);
-            style.line(&mut change.hunks, op.kind, op.old_no, op.new_no, op.text, emph);
+            style.line(
+                &mut change.hunks,
+                op.kind,
+                op.old_no,
+                op.new_no,
+                op.text,
+                emph,
+            );
             let idx = start + k;
             if !style.pretty
                 && ((Some(idx) == last_old && old_unterminated)
@@ -2959,7 +3164,10 @@ mod tests {
         assert!(!is_npm_name("../../evil"));
         assert!(!is_npm_name("evil\x1b[2J"));
         assert_eq!(patch_name(b"a/", b"a\n.js"), b"\"a/a\\012.js\"");
-        assert_eq!(split_filter("diffme@1.0.0:index.js"), Some(("diffme@1.0.0", "index.js")));
+        assert_eq!(
+            split_filter("diffme@1.0.0:index.js"),
+            Some(("diffme@1.0.0", "index.js"))
+        );
         assert_eq!(split_filter("./x:y"), None);
         assert_eq!(split_name_and_version("@s/n@1"), ("@s/n", Some("1")));
         assert_eq!(split_name_and_version("n"), ("n", None));
@@ -2968,7 +3176,10 @@ mod tests {
     #[test]
     fn package_bytes_are_drawn_not_executed() {
         assert_eq!(lossy(&defang(b"a\x1b[2Kb\r")), "a␛[2Kb^M");
-        assert_eq!(lossy(&defang("x\u{202e}y\u{9b}".as_bytes())), "x‹U+202E›y‹U+009B›");
+        assert_eq!(
+            lossy(&defang("x\u{202e}y\u{9b}".as_bytes())),
+            "x‹U+202E›y‹U+009B›"
+        );
         assert!(has_bidi_controls("\u{2066}".as_bytes()));
         assert!(!is_binary(b"a.js", b"/* \0 */"));
         assert!(is_binary(b"a.bin", b"\0\x01one"));
@@ -2991,7 +3202,10 @@ mod tests {
         assert_eq!(props[2].1, 28..31);
         let first = parse_first_wins(br#"{"main":"./a.js","main":"./b.js"}"#).unwrap();
         assert_eq!(first.get("main").and_then(Json::as_str), Some("./a.js"));
-        assert_eq!(expr_text(&pj::parse(r#"{"tool":"./cli.js"}"#).unwrap()), r#"{ "tool": "./cli.js" }"#);
+        assert_eq!(
+            expr_text(&pj::parse(r#"{"tool":"./cli.js"}"#).unwrap()),
+            r#"{ "tool": "./cli.js" }"#
+        );
         assert_eq!(tags("<b>x<r> <(y)", false), "x <(y)");
     }
 }

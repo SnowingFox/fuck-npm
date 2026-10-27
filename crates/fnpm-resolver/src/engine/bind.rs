@@ -116,6 +116,35 @@ pub(crate) fn path_escapes(target: &str) -> bool {
 /// A resolved commit must be a full SHA-1 or SHA-256 object name: it ends up in the lockfile, in
 /// download URLs and in checkout paths, so a remote answering with anything else (`../x`, a
 /// branch name, an empty line) is an error rather than something to interpolate.
+/// The registry name an edge asks for (`npm:<name>@...` aliases name another package).
+fn asked_name(edge: &DepEdge) -> String {
+    edge.literal
+        .strip_prefix("npm:")
+        .map(|rest| {
+            fnpm_types::name::split_name_and_maybe_version(rest)
+                .0
+                .to_owned()
+        })
+        .unwrap_or_else(|| edge.name.clone())
+}
+
+/// The error of a dependency whose git, GitHub or tarball source failed. A repository git
+/// cannot read is reported like bun's clone failure, which names the dependency.
+fn remote_error(edge: &DepEdge, e: &fnpm_registry::Error) -> Error {
+    match e {
+        fnpm_registry::Error::Git(message)
+            if message.starts_with("git ls-remote failed")
+                || message.starts_with("git clone failed") =>
+        {
+            Error::GitFailed {
+                name: edge.name.clone(),
+                source: clone_registry_error(e),
+            }
+        }
+        _ => Error::Registry(clone_registry_error(e)),
+    }
+}
+
 pub(crate) fn checked_commit(sha: String, origin: &str) -> fnpm_registry::Result<String> {
     if matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
         Ok(sha)
@@ -265,6 +294,28 @@ impl Engine<'_> {
             }
             return Err(err);
         }
+        let asked = asked_name(edge);
+        let requested = self.requested_rows.contains_key(&(row.pkg, row.edge))
+            || (self.update.active
+                && self.st[row.pkg.index()].kind == Kind::Project
+                && (self.update.names.contains(&edge.name) || self.update.names.contains(&asked)));
+        // Only a download that failed; a range nothing satisfies leaves the entry as it is.
+        let download = !matches!(
+            err,
+            Error::NoMatchingVersion { .. }
+                | Error::DistTagNotFound { .. }
+                | Error::TooRecent { .. }
+        );
+        if requested
+            && download
+            && !edge.behavior.is_peer()
+            && !self.failed_requests.contains(&edge.name)
+        {
+            self.failed_requests.push(edge.name.clone());
+            if asked != edge.name {
+                self.failed_requests.push(asked.clone());
+            }
+        }
         if edge.behavior.is_peer() {
             let literal = &edge.literal;
             let name = &edge.name;
@@ -289,10 +340,31 @@ impl Engine<'_> {
                 | Error::DistTagNotFound { .. }
                 | Error::TooRecent { .. }
         ) {
-            self.warnings.push(format!(
-                "{err}\n  error occurred while resolving optional dependency \"{}\"",
-                edge.name
-            ));
+            // A download that got no answer reads like bun's; a requested entry gets the one line.
+            let message = match &err {
+                Error::Registry(e) => match (e.network_error_name(), e) {
+                    // The manifest URL names the registry package (an override or a catalog
+                    // entry may point the edge at another one).
+                    (Some(kind), fnpm_registry::Error::Network { url, .. }) => {
+                        let manifest = url
+                            .rsplit('/')
+                            .next()
+                            .map(|n| n.replace("%2f", "/").replace("%2F", "/"))
+                            .unwrap_or_else(|| asked.clone());
+                        format!("{kind} downloading package manifest {manifest}")
+                    }
+                    _ => err.to_string(),
+                },
+                _ => err.to_string(),
+            };
+            if requested {
+                self.warnings.push(message);
+            } else {
+                self.warnings.push(format!(
+                    "{message}\n  error occurred while resolving optional dependency \"{}\"",
+                    edge.name
+                ));
+            }
         }
         Ok(Step::Done)
     }
@@ -393,10 +465,14 @@ impl Engine<'_> {
         if !self.update.active {
             return false;
         }
-        if self.update.names.is_empty() {
-            return self.st[row.pkg.index()].kind == Kind::Project;
+        // A bundled dependency ships inside its owner's tarball: it is never re-resolved.
+        if edge.behavior.is_bundled() || self.st[row.pkg.index()].in_bundle {
+            return false;
         }
-        self.update.names.contains(&edge.name) || self.update.names.contains(&asked.name)
+        // A bare update re-resolves every edge within its range, transitive ones too (bun).
+        self.update.names.is_empty()
+            || self.update.names.contains(&edge.name)
+            || self.update.names.contains(&asked.name)
     }
 
     /// `fnpm update --latest`: a direct npm dependency that keeps its declared spec moves to the
@@ -900,6 +976,62 @@ impl Engine<'_> {
             .map(|(_, v)| v)
     }
 
+    /// The manifest URL of `name` as messages show it (`/` of a scope encoded as `%2f`).
+    fn manifest_url(&self, name: &str) -> String {
+        let registry = self.cfg.registry_for(name).url.trim_end_matches('/');
+        fnpm_registry::redact_url(&format!("{registry}/{}", name.replace('/', "%2f")))
+    }
+
+    /// The package that `edge` of `row`'s owner reached in the previous graph.
+    fn locked_target(&self, row: Row, edge: &DepEdge) -> Option<PackageId> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        prev.get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && e.behavior.is_peer() == edge.behavior.is_peer())?
+            .target
+    }
+
+    /// The version of the package that `edge` of `row`'s owner reached in the previous graph,
+    /// with the ranges of every previous edge into that package; `None` when there is none or
+    /// one of them is not a plain range.
+    fn ranges_sharing_locked(
+        &self,
+        row: Row,
+        edge: &DepEdge,
+    ) -> Option<(Version, Vec<(String, Range)>)> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        let target = prev
+            .get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && !e.behavior.is_peer())?
+            .target?;
+        if !matches!(
+            prev.packages[target.index()].resolution,
+            Resolution::Npm { .. }
+        ) {
+            return None;
+        }
+        let locked = self.prev_versions[target.index()].clone()?;
+        // The root's and the workspaces' own edges are re-resolved by the update; they do not hold.
+        let mut ranges = Vec::new();
+        for p in prev.packages.iter().filter(|p| {
+            !matches!(
+                p.resolution,
+                Resolution::Root | Resolution::Workspace { .. }
+            )
+        }) {
+            for e in p.dependencies.iter().filter(|e| e.target == Some(target)) {
+                let range = Range::parse(&e.literal).ok()?;
+                ranges.push((e.literal.clone(), range));
+            }
+        }
+        Some((locked, ranges))
+    }
+
     /// `patchedDependencies` versions of `name` that `range` allows, highest first.
     fn patched_versions(&self, name: &str) -> Vec<Version> {
         let mut out: Vec<Version> = self
@@ -1008,6 +1140,30 @@ impl Engine<'_> {
                     && let Some(id) = self.member_id_by_name(&name)
                 {
                     self.set_target(row, id);
+                    return Ok(Step::Done);
+                }
+                // `fnpm update`: a transitive dependency whose manifest cannot be read keeps the
+                // package of the lockfile, with a warning (bun).
+                if should_update
+                    && self.st[row.pkg.index()].kind != Kind::Project
+                    && let Some(prev_id) = self.locked_target(row, edge)
+                    && let Some(target) = self.import_prev(prev_id)
+                {
+                    let p = &self.graph.packages[target.index()];
+                    let reason = match &*e {
+                        fnpm_registry::Error::NotFound(_) => {
+                            format!("GET {} - 404", self.manifest_url(&name))
+                        }
+                        e => e.to_string(),
+                    };
+                    let warning = format!(
+                        "{}@{} was not checked for updates: {reason}",
+                        p.name, p.version
+                    );
+                    if !self.not_checked.contains(&warning) {
+                        self.not_checked.push(warning);
+                    }
+                    self.set_target(row, target);
                     return Ok(Step::Done);
                 }
                 if matches!(*e, fnpm_registry::Error::NotFound(_)) {
@@ -1128,20 +1284,23 @@ impl Engine<'_> {
                 },
             });
         };
-        if latest {
-            // `--latest` never moves below the version in the lockfile, nor below the tag.
-            if let Some(locked) = self.locked_version(&name, range.as_ref())
-                && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
-                && let Some(kept) = manifest.find(&locked)
-            {
-                chosen = kept;
-            }
-            if let Some(t) = &tag
-                && let Some(tagged) = manifest.dist_tag(t)
-                && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
-            {
-                chosen = tagged;
-            }
+        // An update never moves a range below the version in the lockfile (one published above
+        // `latest` included); `--latest` not below the tag either. A dist-tag is followed, and
+        // an update leaves a locked version that got deprecated.
+        if (latest || (should_update && range.is_some()))
+            && let Some(locked) = self.locked_version(&name, range.as_ref())
+            && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
+            && let Some(kept) = manifest.find(&locked)
+            && (latest || kept.deprecated.is_none())
+        {
+            chosen = kept;
+        }
+        if latest
+            && let Some(t) = &tag
+            && let Some(tagged) = manifest.dist_tag(t)
+            && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
+        {
+            chosen = tagged;
         }
         // A patched version stays as long as the range allows it.
         let mut patched = false;
@@ -1162,6 +1321,31 @@ impl Engine<'_> {
                     patched = true;
                     break;
                 }
+            }
+        }
+        // A transitive edge moves its locked package only to a version that every edge sharing
+        // that package accepts, so the update does not fork it (bun holds the edge otherwise).
+        if should_update
+            && !patched
+            && !latest
+            && !is_peer
+            && !asked.replaced
+            && self.st[row.pkg.index()].kind != Kind::Project
+            && let Some(ranges) = self.ranges_sharing_locked(row, edge)
+        {
+            let gate = gate_data.as_ref().map(|(ms, excludes)| AgeGate {
+                min_age_ms: *ms,
+                now_ms: self.now_ms,
+                excludes,
+            });
+            let shared = peers::version_every_peer_accepts(&manifest, &ranges.1, gate.as_ref())
+                .and_then(|p| match p {
+                    Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
+                    Picked::Err(_) => None,
+                })
+                .filter(|v| v.version.cmp(&ranges.0) != std::cmp::Ordering::Less);
+            if let Some(v) = shared.or_else(|| manifest.find(&ranges.0)) {
+                chosen = v;
             }
         }
         let reusable = !should_update && !patched && !latest;
@@ -1433,14 +1617,41 @@ impl Engine<'_> {
             let pj = self
                 .fetcher
                 .read_package_json(&abs)
-                .map_err(Error::Registry)?
-                .ok_or_else(|| Error::MissingPackageJson {
-                    name: edge.name.clone(),
-                    message: format!(
-                        "package.json not found for \"file:{path}\" dependency \"{}\"",
-                        edge.name
-                    ),
-                })?;
+                .map_err(Error::Registry)?;
+            // A folder the lockfile has but that is gone keeps its locked package: the install
+            // reports it as failed and goes on with the rest (bun).
+            if pj.is_none()
+                && let Some(prev) = self.prev
+                && let Some(&prev_id) = self
+                    .prev_by_key
+                    .get(&Package::new(edge.name.clone(), "", resolution.clone()).key())
+            {
+                if let Some(&existing) = self.imported.get(&prev_id) {
+                    self.set_target(row, existing);
+                    return Ok(Step::Done);
+                }
+                let mut package = prev.packages[prev_id.index()].clone();
+                for e in &mut package.dependencies {
+                    e.target = None;
+                }
+                let mut state = PState::new(Kind::Folder, Version::parse(&package.version).ok());
+                state.dir = Some(abs);
+                state.local_declarer = true;
+                state.optional_only = owner.optional_only || edge.behavior.is_optional();
+                state.prev = Some(prev_id);
+                let id = self.add_package(package, state);
+                self.imported.insert(prev_id, id);
+                self.set_target(row, id);
+                self.push_rows(id, false);
+                return Ok(Step::Done);
+            }
+            let pj = pj.ok_or_else(|| Error::MissingPackageJson {
+                name: edge.name.clone(),
+                message: format!(
+                    "package.json not found for \"file:{path}\" dependency \"{}\"",
+                    edge.name
+                ),
+            })?;
             let fallback = local::unnamed_package_name(&resolution);
             let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
@@ -1737,7 +1948,7 @@ impl Engine<'_> {
                 return Ok(Step::Done);
             }
             Some(RState::Failed(e)) if self.remote_turned.contains(&key) => {
-                return Err(Error::Registry(clone_registry_error(e)));
+                return Err(remote_error(edge, e));
             }
             // In flight, or downloaded ahead of its turn ([`Engine::fetch_remote_ahead`]).
             Some(_) => {
@@ -1926,7 +2137,7 @@ impl Engine<'_> {
                         self.set_target(w, target);
                         continue;
                     }
-                    self.fail(w, &edge, Error::Registry(clone_registry_error(&e)))?;
+                    self.fail(w, &edge, remote_error(&edge, &e))?;
                 }
                 Ok(())
             }

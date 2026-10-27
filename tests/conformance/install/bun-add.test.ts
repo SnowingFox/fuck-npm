@@ -16,6 +16,7 @@ import {
   fnpmEnv as env,
   hostedGitRepository,
   isWindows,
+  nodeExe,
   readdirSorted,
   tempDir,
   tmpdirSync,
@@ -3749,7 +3750,7 @@ it("fnpm add --trust keeps the new package when another --trust package is alrea
       JSON.stringify({
         name,
         version: "1.0.0",
-        scripts: { postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall.txt', '')"` },
+        scripts: { postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall.txt', '')"` },
       }),
     );
   }

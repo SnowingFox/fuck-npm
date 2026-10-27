@@ -28,7 +28,11 @@ pub enum BinError {
 }
 
 /// bun `MAX_PATH_BYTES`.
-const MAX_PATH_BYTES: usize = if cfg!(target_vendor = "apple") { 1024 } else { 4096 };
+const MAX_PATH_BYTES: usize = if cfg!(target_vendor = "apple") {
+    1024
+} else {
+    4096
+};
 
 /// `which` resolves a name with a slash against the cwd, not against `node_modules/.bin`.
 fn is_safe_bin_name(name: &str) -> bool {

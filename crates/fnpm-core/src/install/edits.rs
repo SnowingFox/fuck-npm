@@ -20,6 +20,13 @@ pub(crate) enum Edit {
         name: String,
         spec: String,
     },
+    /// `add` without a group flag: replace the spec in every group but peerDependencies that
+    /// declares the name (bun keeps each entry where it is), or add it to `group` when none does.
+    SetDeclared {
+        group: DependencyGroup,
+        name: String,
+        spec: String,
+    },
     /// Replace the spec of an existing dependency in whichever group declares it.
     Update { name: String, spec: String },
     /// Remove a dependency from every group.
@@ -68,6 +75,7 @@ impl Edits {
             let text = std::fs::read_to_string(&file).map_err(Error::io(&file))?;
             let out = apply_text(&text, edits)?;
             if out != text {
+                let out = reprint(&text, out);
                 crate::project::write_atomic(&file, out.as_bytes())?;
                 changed.push(file);
             }
@@ -104,6 +112,21 @@ pub(crate) fn edited_for_members(ws: &Workspace, edits: &Edits) -> Option<Worksp
     Some(edited)
 }
 
+/// bun prints a package.json it changed again as a whole (`MapEntry::save`): one property
+/// per line in the indentation guessed from `original`, `\r\n` turned into `\n`, and a final
+/// newline when `original` ended with one. Text the printer's parser rejects stays as edited.
+fn reprint(original: &str, edited: String) -> String {
+    use crate::commands::pack::json;
+    match json::parse(&edited) {
+        Ok(value) => json::print(
+            &value,
+            json::guess_indentation(original.as_bytes()),
+            original.ends_with('\n'),
+        ),
+        Err(_) => edited,
+    }
+}
+
 fn group_of(value: &Value, name: &str) -> Option<DependencyGroup> {
     DependencyGroup::ALL
         .into_iter()
@@ -116,6 +139,20 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
     for edit in edits {
         match edit {
             Edit::Set { group, name, spec } => editor.set_dependency(*group, name, spec),
+            Edit::SetDeclared { group, name, spec } => {
+                let current: Value = parse(&editor.text)?;
+                let declared: Vec<DependencyGroup> = DependencyGroup::ALL
+                    .into_iter()
+                    .filter(|g| *g != DependencyGroup::Peer)
+                    .filter(|g| current.get(g.field()).and_then(|d| d.get(name)).is_some())
+                    .collect();
+                if declared.is_empty() {
+                    editor.set_dependency(*group, name, spec);
+                }
+                for g in declared {
+                    set_entry(&mut editor, &current, g.field(), name, spec);
+                }
+            }
             Edit::Update { name, spec } => {
                 let current: Value = parse(&editor.text)?;
                 // Prefer the group that is not peerDependencies (bun keeps the peer range).

@@ -277,7 +277,15 @@ pub(crate) async fn execute(
                 report.ran += done_job.ran;
                 let i = done_job.index;
                 match done_job.result {
-                    Ok(()) => complete(i, &mut ready, &mut done, &mut finished),
+                    Ok(()) => {
+                        if let Some(log) = &opts.completed_log {
+                            use std::io::Write as _;
+                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log) {
+                                let _ = writeln!(f, "{}", done_job.dir.display());
+                            }
+                        }
+                        complete(i, &mut ready, &mut done, &mut finished)
+                    }
                     Err(failure) => {
                         let tolerated = done_job.optional && !failure.failure.is_signal();
                         if tolerated {

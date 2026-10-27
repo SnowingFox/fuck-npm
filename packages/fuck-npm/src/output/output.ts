@@ -22,11 +22,12 @@ export type Output = {
   json(payload: unknown): void;
 };
 
-/** FORCE_COLOR / NO_COLOR, as picocolors reads them, but from the injected env. */
+/** FORCE_COLOR / NO_COLOR in bun's order (FORCE_COLOR wins), from the injected env. */
 export function colorEnabled(runtime: CliRuntime, isTTY: boolean): boolean {
   const { env } = runtime;
-  if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
+  // bun's order: FORCE_COLOR wins over NO_COLOR.
   if (env.FORCE_COLOR !== undefined) return env.FORCE_COLOR !== "0" && env.FORCE_COLOR !== "false";
+  if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
   if (env.TERM === "dumb") return false;
   return isTTY;
 }

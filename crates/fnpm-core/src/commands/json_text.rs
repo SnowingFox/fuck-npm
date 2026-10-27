@@ -423,8 +423,11 @@ impl Parser<'_> {
                                 // that `write_string` turns back into the escape.
                                 None => {
                                     let mut buf = [0u8; 4];
-                                    out.extend_from_slice(SURROGATE_MARK.encode_utf8(&mut buf).as_bytes());
-                                    char::from_u32(SURROGATE_BASE + (code - 0xD800)).unwrap_or('\u{fffd}')
+                                    out.extend_from_slice(
+                                        SURROGATE_MARK.encode_utf8(&mut buf).as_bytes(),
+                                    );
+                                    char::from_u32(SURROGATE_BASE + (code - 0xD800))
+                                        .unwrap_or('\u{fffd}')
                                 }
                             }
                         }

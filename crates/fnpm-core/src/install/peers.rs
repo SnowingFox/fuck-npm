@@ -148,10 +148,9 @@ pub(crate) fn incorrect_peers(view: &LockGraph, layout: &Layout) -> Vec<String> 
         if e.behavior.is_optional_peer() {
             continue;
         }
-        let (Some((range, literal)), Some(version)) = (
-            effective_range(view, dependent, e),
-            version_of(view, copy),
-        ) else {
+        let (Some((range, literal)), Some(version)) =
+            (effective_range(view, dependent, e), version_of(view, copy))
+        else {
             continue;
         };
         if range.satisfies(&version) {

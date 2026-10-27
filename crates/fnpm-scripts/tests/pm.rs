@@ -201,7 +201,7 @@ fn trust_by_alias_notes_the_real_name() {
     );
     assert!(msg.contains(" - my-alias"));
     assert!(msg.contains(
-        "note: \"my-alias\" is an alias of \"real-name\", run 'fnpm pm trust real-name' to trust it"
+        "note: \"my-alias\" is an alias of \"real-name\", run 'fnpm pm trust \"real-name\"' to trust it"
     ));
     let err = plan_trust(&list, &["g".into()], false)
         .unwrap_err()

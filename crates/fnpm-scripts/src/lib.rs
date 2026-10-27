@@ -121,6 +121,9 @@ pub struct RunOptions {
     /// `--verbose` (like `FNPM_VERBOSE`): script output is shown, and optional failures warn.
     pub verbose: bool,
     pub project_dir: PathBuf,
+    /// Each job whose scripts all exited 0 appends its directory (one line) to this file, so
+    /// the next install can run what an interrupted or failed run did not finish.
+    pub completed_log: Option<PathBuf>,
 }
 
 impl RunOptions {
@@ -133,6 +136,7 @@ impl RunOptions {
             silent: false,
             verbose: false,
             project_dir: project_dir.into(),
+            completed_log: None,
         }
     }
 }

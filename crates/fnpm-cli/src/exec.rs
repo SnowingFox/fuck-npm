@@ -266,7 +266,8 @@ impl Display for XDisplay {
         self.stderr.write(&format!(
             "{} {}\n",
             self.pc.bold(&format!("fnpm {title}")),
-            self.pc.dim(&format!("v{}", crate::spec::version_with_sha()))
+            self.pc
+                .dim(&format!("v{}", crate::spec::version_with_sha()))
         ));
         let live = ProgressSink::start(self.pc, self.columns, Arc::clone(&self.stderr));
         *self
@@ -356,7 +357,10 @@ mod tests {
         }));
         let text = capture.text();
         assert!(
-            text.starts_with(&format!("fnpm x create-vite v{}\n", crate::spec::version_with_sha())),
+            text.starts_with(&format!(
+                "fnpm x create-vite v{}\n",
+                crate::spec::version_with_sha()
+            )),
             "{text}"
         );
         assert!(text.contains("Resolving 1/3"), "{text}");

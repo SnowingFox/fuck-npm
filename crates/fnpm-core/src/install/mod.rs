@@ -268,7 +268,18 @@ fn prepare_with_patch(
     cli.update = opts.command == InstallCommand::Update;
     let is_add = opts.command == InstallCommand::Add
         || (opts.command == InstallCommand::Install && !opts.packages.is_empty());
-    let project = Project::load_with_root(&opts.pm.cwd, cli, env, is_add, opts.dlx.is_some())?;
+    // `add --filter` edits existing workspaces: without a project there is nothing to select,
+    // and bun creates no package.json for it.
+    let create = is_add && opts.filter.is_empty();
+    let project = match Project::load_with_root(&opts.pm.cwd, cli, env, create, opts.dlx.is_some())
+    {
+        Err(Error::Workspace(fnpm_workspace::Error::NoProject(_))) if is_add => {
+            return Err(Error::usage(
+                "fnpm could not find a package.json file to install from\nnote: Run \"fnpm init\" to initialize a project",
+            ));
+        }
+        other => other?,
+    };
     phases.mark("config");
 
     // 1. Fast path.
@@ -292,6 +303,7 @@ fn prepare_with_patch(
         && opts.patch.is_none()
         && opts.manifest_updates.is_empty()
         && opts.interactive_choices.is_none()
+        && !scripts_pending_path(&project.root_dir).exists()
         && let Check::Noop { packages, installs } =
             fast_path::check(&project.root_dir, &project.meta_dir(), hash)
     {
@@ -572,6 +584,18 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
 
     // What the command asks for.
     let mut planned = plan::plan(&opts, &config, &ws, &project.cwd, &*events)?;
+    let lockfile_name = lock.path.as_deref().and_then(Path::file_name).map_or_else(
+        || fnpm_lockfile::FNPM_LOCK.to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    plan::update_from_lockfile(&mut planned, lock.graph.as_ref(), &lockfile_name, &ws)?;
+    if let Some((checked, by)) = planned.none_selected.take() {
+        return Ok(InstallSummary {
+            none_selected: Some(fnpm_types::event::NoneSelected { checked, by }),
+            elapsed_ms: start.elapsed().as_millis() as u64,
+            ..InstallSummary::default()
+        });
+    }
 
     if opts.dlx.is_some_and(|dlx| dlx.refresh) {
         let mut names: Vec<_> = lock
@@ -660,10 +684,6 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     } else {
         HashSet::new()
     });
-    let lockfile_name = lock.path.as_deref().and_then(Path::file_name).map_or_else(
-        || fnpm_lockfile::FNPM_LOCK.to_owned(),
-        |n| n.to_string_lossy().into_owned(),
-    );
     let mut out = resolve(
         &resolver,
         &ws,
@@ -768,6 +788,24 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
+    // A requested optional dependency that did not resolve was warned about; the command
+    // still fails, before anything is written.
+    let named = |name: &String| {
+        planned.requests.iter().any(|r| &r.name == name)
+            || (opts.command == InstallCommand::Update
+                && !opts.packages.is_empty()
+                && (planned.updates.iter().any(|u| &u.name == name)
+                    || matches!(&planned.mode, Mode::Update { names, .. } if names.contains(name))))
+    };
+    if out.failed_requests.iter().any(named) {
+        return Err(Error::Reported);
+    }
+    // `update --frozen-lockfile` may resolve, but not change the lockfile.
+    if config.frozen_lockfile && opts.command == InstallCommand::Update && out.changed {
+        return Err(Error::Resolve(
+            fnpm_resolver::Error::frozen(Vec::new()).with_lockfile(&lockfile_name),
+        ));
+    }
     phases.mark("resolve");
     let ResolveOutput {
         mut graph,
@@ -775,6 +813,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         behind,
         requests: resolved_requests,
         unsaved,
+        kept,
         ..
     } = out;
     let config = if unsaved {
@@ -859,6 +898,16 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // bun lists `↑` rows only for `update`; an install shows what it wrote as `+` rows.
     if opts.command != InstallCommand::Update {
         updated.clear();
+    } else if let Some(previous) = lock.graph.as_ref() {
+        // The direct dependencies' rows come first, then the transitive ones (bun), by name.
+        for row in summary::moved(previous, &graph) {
+            // A package that just became a direct dependency is reported as added.
+            if !updated.iter().any(|u| u.name == row.name)
+                && !added.iter().any(|a| a.name == row.name)
+            {
+                updated.push(row);
+            }
+        }
     }
     for pkg in &mut updated {
         pkg.available_version =
@@ -870,6 +919,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         updated,
         removed,
         requested,
+        kept: if opts.command == InstallCommand::Update {
+            kept
+        } else {
+            Vec::new()
+        },
         ..InstallSummary::default()
     };
     let lockfile_dirty = pending_patch.is_some()
@@ -927,6 +981,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 lockfile_dirty,
                 None,
                 &*events,
+                &mut false,
             )?;
             // Like bun, `--lockfile-only` rewrites an up-to-date lockfile too, so the file is in
             // the writer's form afterwards; it was saved only when that changed its bytes
@@ -948,6 +1003,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         }
         if let Some(rollback) = &mut patch_rollback {
             rollback.finish();
+        }
+        // `update --dry-run` reports the plan against what it checked.
+        if config.dry_run && opts.command == InstallCommand::Update {
+            summary.checked = Some(CheckedCount {
+                installs: 0,
+                packages: graph.len() as u32,
+            });
         }
         summary.elapsed_ms = start.elapsed().as_millis() as u64;
         client.flush_cache_writes().await;
@@ -996,7 +1058,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             project.env.clone(),
         );
         let json = opts.pm.json;
-        tokio::task::spawn_blocking(move || {
+        let scanned = tokio::task::spawn_blocking(move || {
             crate::security::scan_for_install(&crate::security::Scan {
                 config: &config,
                 root: &root,
@@ -1007,7 +1069,12 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             })
         })
         .await
-        .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))??;
+        .map_err(|e| Error::usage(format!("security scanner task failed: {e}")))?;
+        if let Err(e) = scanned {
+            // bun reports what it downloaded before the scanner's verdict ends the install.
+            announce_resolved(&client, &*events, announced, resolving);
+            return Err(e);
+        }
     }
 
     // A name fnpm.lock carries (the resolver reused it) is checked like a resolved one.
@@ -1043,9 +1110,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 .collect()
         })
     });
+    // `--trust` records the requested packages that have lifecycle scripts (bun).
     let trust_names: Vec<String> = if opts.pm.trust {
         resolved_requests
             .iter()
+            .filter(|(_, id)| graph.get(*id).is_some_and(|p| p.meta.needs_scripts()))
             .map(|(r, _)| r.name.clone())
             .collect()
     } else {
@@ -1079,6 +1148,70 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             || !opts.packages.is_empty()
             || lock.graph.is_none()
             || lock.migrated);
+    // A requested optional dependency whose download fails would be left out by the linker:
+    // bun warns with the failure and fails the command before anything is written.
+    if matches!(opts.command, InstallCommand::Add | InstallCommand::Update)
+        && (!opts.packages.is_empty() || !planned.requests.is_empty())
+    {
+        let mut requested: Vec<PackageId> = resolved_requests.iter().map(|(_, id)| *id).collect();
+        if opts.command == InstallCommand::Update {
+            for u in &planned.updates {
+                if let Some(t) = target_of(&graph, &u.workspace, &u.name) {
+                    requested.push(t);
+                }
+            }
+            // A name the update reached by its registry name (an `npm:` alias's target).
+            if let Mode::Update { names, .. } = &planned.mode {
+                let importers =
+                    std::iter::once(PackageId::ROOT).chain(graph.workspaces.values().copied());
+                for owner in importers {
+                    for e in &graph.packages[owner.index()].dependencies {
+                        if let Some(t) = e.target
+                            && names.contains(&graph.packages[t.index()].name)
+                        {
+                            requested.push(t);
+                        }
+                    }
+                }
+            }
+        }
+        requested.sort();
+        requested.dedup();
+        let mut failed_download = false;
+        for id in requested {
+            let p = &graph.packages[id.index()];
+            if !optional_only(&graph, id) || p.resolution.is_local_tree() {
+                continue;
+            }
+            if let Err(f) = fetcher.ensure_package(p).wait().await {
+                events.emit(Event::warn(f.message, Some("OPTIONAL_DEPENDENCY_FAILED")));
+                failed_download = true;
+            }
+        }
+        if failed_download {
+            return Err(Error::Reported);
+        }
+    }
+    // `remove` changes node_modules only once fnpm.lock can be saved: bun creates the
+    // lockfile's temporary file first and stops, leaving node_modules as it was, when it can't.
+    if opts.command == InstallCommand::Remove && config.lockfile.save && !config.dry_run {
+        let tmp = root.join(format!(".fnpm.lock-{}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&tmp);
+            }
+            Err(e) => {
+                return Err(Error::usage(format!(
+                    "{}: failed to create temporary file to save lockfile",
+                    crate::commands::pack::out::errno_name(&e)
+                )));
+            }
+        }
+    }
     let linked = link(
         &project,
         &ws,
@@ -1169,9 +1302,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // Every download is done (the link waited for them).
     announce_resolved(&client, &*events, announced, resolving);
 
-    // Global installs link the direct dependencies' bins into the global bin directory.
+    // Global installs link the direct dependencies' bins into the global bin directory, and
+    // only there: bun's global folder has no `node_modules/.bin`.
     if config.global {
-        link_global_bins(&config, &root, &graph)?;
+        let requested: Vec<PackageId> = resolved_requests.iter().map(|(_, id)| *id).collect();
+        link_global_bins(&config, &root, &graph, &requested)?;
+        let local_bins = root.join("node_modules").join(".bin");
+        if local_bins.exists() {
+            fnpm_linker::fsutil::remove_any(&local_bins).map_err(Error::io(&local_bins))?;
+        }
     }
 
     // 8. Save (before scripts, so a failing script leaves a consistent lockfile).
@@ -1208,7 +1347,9 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         lockfile_dirty || integrity_filled,
         prepared,
         &*events,
+        &mut summary.package_json_synced,
     )?;
+    summary.package_json_synced &= opts.command == InstallCommand::Update;
     if let Some(rollback) = &mut patch_rollback {
         rollback.finish();
     }
@@ -1318,12 +1459,20 @@ fn warn_global_bin_not_in_path(
         .unwrap_or("");
     let instructions = match shell {
         "bash" | "zsh" => format!("export PATH=\"{quoted}:$PATH\""),
-        "fish" => format!("fish_add_path {}", serde_json::to_string(&*folder_raw(bin_dir)).unwrap_or_default()),
-        "pwsh" | "powershell" | "pwsh.exe" | "powershell.exe" => format!("$env:PATH += \";{quoted}\""),
+        "fish" => format!(
+            "fish_add_path {}",
+            serde_json::to_string(&*folder_raw(bin_dir)).unwrap_or_default()
+        ),
+        "pwsh" | "powershell" | "pwsh.exe" | "powershell.exe" => {
+            format!("$env:PATH += \";{quoted}\"")
+        }
         _ => quoted,
     };
     events.emit(Event::warn(
-        format!("To run {}, add the global bin folder to $PATH:\n\n{instructions}\n", serde_json::to_string(bin).unwrap_or_default()),
+        format!(
+            "To run {}, add the global bin folder to $PATH:\n\n{instructions}\n",
+            serde_json::to_string(bin).unwrap_or_default()
+        ),
         None,
     ));
 }
@@ -1576,6 +1725,16 @@ fn package_json_edits(
                 },
             );
             set_edge_literal(graph, &req.workspace, &req.name, None, &literal);
+        } else if opts.group.is_none() {
+            edits.push(
+                &req.workspace,
+                Edit::SetDeclared {
+                    group: req.group,
+                    name: req.name.clone(),
+                    spec: literal.clone(),
+                },
+            );
+            set_edge_literal(graph, &req.workspace, &req.name, None, &literal);
         } else {
             edits.push(
                 &req.workspace,
@@ -1640,6 +1799,16 @@ fn package_json_edits(
             {
                 edits.push("", edit);
             }
+            continue;
+        }
+        // A peer range that already accepts the new version stays as written (bun).
+        if plan::declared_as_peer_only(ws, &u.workspace, &u.name)
+            && let (Ok(range), Ok(v)) = (
+                fnpm_semver::Range::parse(&u.original),
+                fnpm_semver::Version::parse(&version),
+            )
+            && range.satisfies(&v)
+        {
             continue;
         }
         if let Some(new) = updated_literal(
@@ -1908,6 +2077,8 @@ async fn link(
         _ => Vec::new(),
     };
     let mut failed = 0u32;
+    // Edges detached from a required package that could not be placed (see below).
+    let mut unplaced: Vec<(usize, usize, PackageId)> = Vec::new();
     let mut offline_missing = false;
     loop {
         let policy = Arc::new(TrustPolicy::from_graph(graph, trust_names.iter().cloned()));
@@ -2164,6 +2335,9 @@ async fn link(
         match result {
             Ok(_) if offline_missing => return Err(Error::Reported),
             Ok(report) => {
+                for (pi, ei, id) in unplaced {
+                    graph.packages[pi].dependencies[ei].target = Some(id);
+                }
                 return Ok(Linked {
                     report,
                     linker: kind,
@@ -2185,6 +2359,29 @@ async fn link(
                             for e in &mut p.dependencies {
                                 if e.target == Some(id) {
                                     e.target = None;
+                                }
+                            }
+                        }
+                        failed += 1;
+                    }
+                    // bun reports a folder dependency it cannot read and installs the rest;
+                    // the summary counts it as failed and the command exits 1.
+                    Some(id)
+                        if matches!(
+                            graph.packages[id.index()].resolution,
+                            Resolution::Folder { .. }
+                        ) && failed < 256 =>
+                    {
+                        events.emit(Event::Error {
+                            message: format!("{package}: {message}"),
+                            code: Some("INSTALL_FAILED".into()),
+                        });
+                        // Linked without it; the lockfile keeps it.
+                        for (pi, p) in graph.packages.iter_mut().enumerate() {
+                            for (ei, e) in p.dependencies.iter_mut().enumerate() {
+                                if e.target == Some(id) {
+                                    e.target = None;
+                                    unplaced.push((pi, ei, id));
                                 }
                             }
                         }
@@ -2216,23 +2413,40 @@ async fn link(
 }
 
 /// `-g`: the bins of the global package.json's direct dependencies go to the global bin dir.
-fn link_global_bins(config: &Config, root: &Path, graph: &LockGraph) -> Result<()> {
+/// The packages this command asked for take their names (bun: the one added last keeps a name
+/// two packages share); every other package only fills names that have no working entry, so
+/// a name another package lost comes back to it.
+fn link_global_bins(
+    config: &Config,
+    root: &Path,
+    graph: &LockGraph,
+    requested: &[PackageId],
+) -> Result<()> {
     use fnpm_linker::bins::{BinLinker, BinOptions};
     let nm = root.join("node_modules");
     std::fs::create_dir_all(&config.global_bin_dir).map_err(Error::io(&config.global_bin_dir))?;
     let mut bins = BinLinker::global(&config.global_bin_dir, &nm);
-    for edge in &graph.root().dependencies {
-        let Some(p) = edge.target.and_then(|t| graph.get(t)) else {
-            continue;
-        };
-        if p.bin.is_none() {
-            continue;
+    let mut edges: Vec<_> = graph
+        .root()
+        .dependencies
+        .iter()
+        .filter_map(|e| Some((e, e.target?)))
+        .filter(|(_, t)| graph.get(*t).is_some_and(|p| !p.bin.is_none()))
+        .collect();
+    edges.sort_by_key(|(_, t)| !requested.contains(t));
+    for (edge, t) in edges {
+        let p = &graph.packages[t.index()];
+        if !requested.contains(&t) {
+            for (name, _) in p.bin.entries(&p.name) {
+                if config.global_bin_dir.join(name).exists() {
+                    bins.claim(name);
+                }
+            }
         }
-        let dir = nm.join(&edge.name);
         bins.link(
             &edge.name,
             &p.bin,
-            &dir,
+            &nm.join(&edge.name),
             BinOptions {
                 refresh: true,
                 ..BinOptions::default()
@@ -2254,9 +2468,10 @@ fn save(
     dirty: bool,
     prepared: Option<fnpm_lockfile::PreparedSave>,
     events: &dyn EventSink,
+    wrote_package_json: &mut bool,
 ) -> Result<bool> {
     if config.save_package_json && !edits.is_empty() {
-        edits.apply(root, ws)?;
+        *wrote_package_json = !edits.apply(root, ws)?.is_empty();
     }
     // `--save-text-lockfile` turns bun.lockb into fnpm.lock even when nothing else is saved
     // (bun `converts_binary_lockfile_to_text`).
@@ -2437,12 +2652,16 @@ async fn run_scripts(
     let config = &project.config;
     let root = project.root_dir.clone();
     let dirs: HashMap<PackageId, PathBuf> = linked.report.dirs.iter().cloned().collect();
+    let pending = scripts_pending(&root);
     let locate = |id: PackageId| -> Option<PathBuf> {
         let p = graph.get(id)?;
         match &p.resolution {
             Resolution::Root => Some(root.clone()),
             Resolution::Workspace { path } => Some(root.join(path)),
-            _ => dirs.get(&id).cloned(),
+            _ => dirs
+                .get(&id)
+                .cloned()
+                .or_else(|| pending.get(&p.key()).filter(|d| d.is_dir()).cloned()),
         }
     };
     let policy = TrustPolicy::from_graph(graph, trust_names.iter().cloned());
@@ -2469,6 +2688,22 @@ async fn run_scripts(
     if plan.jobs.is_empty() {
         return Ok((blocked, false));
     }
+    // The jobs of this run are recorded before they start and crossed off as they finish:
+    // after a failure, the next install runs what did not finish (bun), even for packages it
+    // does not write again.
+    let pending_file = scripts_pending_path(&root);
+    let mut record = String::new();
+    for job in &plan.jobs {
+        if let Some(p) = graph.get(job.package) {
+            record.push_str(&format!("{}\t{}\n", p.key(), job.dir.display()));
+        }
+    }
+    let done_file = pending_file.with_extension("done");
+    let _ = std::fs::remove_file(&done_file);
+    if let Some(parent) = pending_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&pending_file, record);
     let opts = fnpm_scripts::RunOptions {
         concurrency: config.concurrent_scripts,
         shell: None,
@@ -2476,6 +2711,7 @@ async fn run_scripts(
         silent: config.log_level == fnpm_config::LogLevel::Silent,
         verbose: config.log_level == fnpm_config::LogLevel::Verbose,
         project_dir: root.clone(),
+        completed_log: Some(done_file.clone()),
     };
     let cleanup = |failed: &Path| -> std::io::Result<&'static str> {
         let Some(id) = linked
@@ -2569,9 +2805,31 @@ async fn run_scripts(
         .iter()
         .map(|job| (job.package, job.dir.clone()))
         .collect();
-    let report =
+    let result =
         fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
-            .await?;
+            .await;
+    if result.is_ok() {
+        let _ = std::fs::remove_file(&pending_file);
+    } else {
+        // Keep only what did not finish.
+        let finished: HashSet<String> = std::fs::read_to_string(&done_file)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        let left: String = std::fs::read_to_string(&pending_file)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| {
+                l.split_once('\t')
+                    .is_none_or(|(_, dir)| !finished.contains(dir))
+            })
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let _ = std::fs::write(&pending_file, left);
+    }
+    let _ = std::fs::remove_file(&done_file);
+    let report = result?;
     // A script may have written the package's bins after they were linked.
     for (id, dir) in ran {
         if let Some(p) = graph.get(id) {
@@ -2579,6 +2837,22 @@ async fn run_scripts(
         }
     }
     Ok((blocked, !report.failed_optional.is_empty()))
+}
+
+/// `node_modules/.fnpm-scripts-pending`: `<package key>\t<dir>` lines of the lifecycle jobs a
+/// failed run did not finish.
+fn scripts_pending_path(root: &Path) -> PathBuf {
+    root.join("node_modules").join(".fnpm-scripts-pending")
+}
+
+/// The unfinished jobs of a previous run, by package key.
+fn scripts_pending(root: &Path) -> HashMap<String, PathBuf> {
+    std::fs::read_to_string(scripts_pending_path(root))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(k, d)| (k.to_owned(), PathBuf::from(d)))
+        .collect()
 }
 
 /// Remove isolated aliases and their bins while the failed package still exists, so realpath

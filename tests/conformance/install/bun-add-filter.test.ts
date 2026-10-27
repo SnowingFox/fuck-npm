@@ -1698,7 +1698,7 @@ test.concurrent.each(["add", "install"])(
 
     const { stderr, exitCode } = await run([cmd, "no-deps", "--filter", "web"], packageDir);
     expect(stderr).toBe(
-      'error: Bun could not find a package.json file to install from\nnote: Run "bun init" to initialize a project\n',
+      'error: fnpm could not find a package.json file to install from\nnote: Run "fnpm init" to initialize a project\n',
     );
     expect(exitCode).toBe(1);
 

@@ -39,6 +39,56 @@ fn plural(count: u32, word: &str) -> String {
     format!("{count} {word}{}", if count == 1 { "" } else { "s" })
 }
 
+/// `fnpm update --dry-run`: the rows of what would move and bun's
+/// `N packages would be updated` count, or `Checked N packages, nothing to update`.
+pub fn format_update_plan(
+    summary: &InstallSummary,
+    pc: Colors,
+    color: bool,
+    elapsed_ms: f64,
+) -> Vec<String> {
+    if summary.none_selected.is_some() {
+        return format_install_summary_at(summary, InstallCommand::Update, pc, color, elapsed_ms);
+    }
+    let mut lines = vec![String::new()];
+    let time = time_of(elapsed_ms, pc);
+    let (arrow_up, arrow) = if color { ("↑", "→") } else { ("^", "->") };
+    for pkg in &summary.updated {
+        let to = if color {
+            pc.bold(&pc.cyan(&pkg.to))
+        } else {
+            pc.bold(&pkg.to)
+        };
+        lines.push(format!(
+            "{} {} {} {to}{}",
+            pc.cyan(arrow_up),
+            pc.bold(&pkg.name),
+            pc.dim(&format!("{} {arrow}", pkg.from)),
+            available_of(&pkg.available_version, pc)
+        ));
+    }
+    lines.extend(summary.kept.iter().cloned());
+    if !summary.kept.is_empty() && summary.updated.is_empty() {
+        lines.push(String::new());
+    }
+    let n = summary.updated.len() as u32;
+    if n > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "{} package{} would be updated {time}",
+            pc.green(&n.to_string()),
+            if n == 1 { "" } else { "s" }
+        ));
+    } else {
+        let packages = summary.checked.map_or(0, |c| c.packages);
+        lines.push(format!(
+            "Checked {}, nothing to update {time}",
+            plural(packages, "package")
+        ));
+    }
+    lines
+}
+
 /// The summary lines (each printed with a trailing newline). `color` selects the Unicode
 /// arrows; `pc` is the stdout palette.
 /// The command the blocked-scripts line names.
@@ -77,6 +127,20 @@ pub fn format_install_summary_at(
     let mut lines = vec![String::new()];
     let time = time_of(elapsed_ms, pc);
     let available = |version: &Option<String>| available_of(version, pc);
+    if let Some(none) = &summary.none_selected {
+        lines.push(format!(
+            "Checked {} {}, none {} {} {time}",
+            none.checked,
+            if none.checked == 1 {
+                "dependency"
+            } else {
+                "dependencies"
+            },
+            none.by,
+            pc.dim("(no changes)")
+        ));
+        return lines;
+    }
 
     // `--lockfile-only`: bun prints its one line and no package rows.
     if let Some(only) = summary.lockfile_only {
@@ -141,6 +205,10 @@ pub fn format_install_summary_at(
             pc.dim(&format!("{} {arrow}", pkg.from)),
             available(&pkg.available_version)
         ));
+        rows += 1;
+    }
+    for line in &summary.kept {
+        lines.push(line.clone());
         rows += 1;
     }
     if rows > 0 {
@@ -238,7 +306,11 @@ pub fn format_install_summary_at(
                 pc.green("Done"),
                 checked.installs,
                 noun(checked.installs),
-                pc.dim("(no changes)"),
+                pc.dim(if summary.package_json_synced {
+                    "(up to date, package.json synced)"
+                } else {
+                    "(no changes)"
+                }),
             ));
         } else {
             lines.push(format!(
@@ -246,7 +318,11 @@ pub fn format_install_summary_at(
                 pc.green(&plural(checked.installs, "install")),
                 checked.packages,
                 noun(checked.packages),
-                pc.dim("(no changes)"),
+                pc.dim(if summary.package_json_synced {
+                    "(up to date, package.json synced)"
+                } else {
+                    "(no changes)"
+                }),
             ));
         }
         blocked(&mut lines);

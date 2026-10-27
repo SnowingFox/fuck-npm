@@ -33,6 +33,34 @@ const availableOf = (version: string | undefined, pc: Colors): string =>
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
+/**
+ * `fnpm update --dry-run`: the rows of what would move and bun's `N packages would be updated`,
+ * or `Checked N packages, nothing to update`.
+ */
+export function formatUpdatePlan(summary: InstallSummary, pc: Colors, opts: { color: boolean } = { color: true }): string[] {
+  if (summary.noneSelected) return formatInstallSummary(summary, "update", pc, opts);
+  const lines: string[] = [""];
+  const time = timeOf(summary.elapsedMs, pc);
+  const arrowUp = opts.color ? "↑" : "^";
+  const arrow = opts.color ? "→" : "->";
+  for (const pkg of summary.updated) {
+    const to = opts.color ? pc.bold(pc.cyan(pkg.to)) : pc.bold(pkg.to);
+    lines.push(
+      `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
+    );
+  }
+  const kept = summary.kept ?? [];
+  lines.push(...kept);
+  if (kept.length > 0 && summary.updated.length === 0) lines.push("");
+  const n = summary.updated.length;
+  if (n > 0) {
+    lines.push("", `${pc.green(String(n))} package${n === 1 ? "" : "s"} would be updated ${time}`);
+  } else {
+    lines.push(`Checked ${plural(summary.checked?.packages ?? 0, "package")}, nothing to update ${time}`);
+  }
+  return lines;
+}
+
 export function formatInstallSummary(
   summary: InstallSummary,
   command: InstallCommand,
@@ -40,8 +68,14 @@ export function formatInstallSummary(
   opts: { color: boolean; global?: boolean } = { color: true },
 ): string[] {
   // bun's tree printer opens with a newline; the header above ends with one.
+  const note = summary.packageJsonSynced ? "(up to date, package.json synced)" : "(no changes)";
   const lines: string[] = [""];
   const time = timeOf(summary.elapsedMs, pc);
+  if (summary.noneSelected) {
+    const { checked, by } = summary.noneSelected;
+    lines.push(`Checked ${checked} ${checked === 1 ? "dependency" : "dependencies"}, none ${by} ${pc.dim("(no changes)")} ${time}`);
+    return lines;
+  }
 
   // `--lockfile-only`: bun prints its one line and no package rows.
   if (summary.lockfileOnly) {
@@ -74,6 +108,10 @@ export function formatInstallSummary(
     lines.push(
       `${pc.cyan(arrowUp)} ${pc.bold(pkg.name)} ${pc.dim(`${pkg.from} ${arrow}`)} ${to}${availableOf(pkg.availableVersion, pc)}`,
     );
+    rows += 1;
+  }
+  for (const line of summary.kept ?? []) {
+    lines.push(line);
     rows += 1;
   }
   if (rows > 0) {
@@ -136,8 +174,8 @@ export function formatInstallSummary(
     // bun shortens the line when every package has exactly one place.
     lines.push(
       installs === packages
-        ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`
-        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim("(no changes)")} ${time}`,
+        ? `${pc.green("Done")}! Checked ${installs} ${installs === 1 ? "package" : "packages"} ${pc.dim(note)} ${time}`
+        : `Checked ${pc.green(`${installs} ${installs === 1 ? "install" : "installs"}`)} across ${packages} ${packages === 1 ? "package" : "packages"} ${pc.dim(note)} ${time}`,
     );
     blocked();
   } else {

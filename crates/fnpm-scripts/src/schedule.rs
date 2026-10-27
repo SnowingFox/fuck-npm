@@ -380,7 +380,7 @@ fn optional_only(graph: &LockGraph, members: Option<&[PackageId]>) -> Vec<bool> 
         for edge in &pkg.dependencies {
             if let Some(t) = edge.target.filter(|t| t.index() < graph.len()) {
                 any_edge[t.index()] = true;
-                if !edge.behavior.is_optional() {
+                if !edge.behavior.is_optional() && !edge.behavior.is_optional_peer() {
                     required[t.index()] = true;
                 }
             }

@@ -96,7 +96,10 @@ fn advisories_of(
                 .map(|v| v.to_string().trim_matches('"').to_owned())
                 .unwrap_or_default();
             let url = a.get("url").and_then(Value::as_str).unwrap_or_default();
-            let severity = a.get("severity").and_then(Value::as_str).unwrap_or("moderate");
+            let severity = a
+                .get("severity")
+                .and_then(Value::as_str)
+                .unwrap_or("moderate");
             if severity_rank(severity) < level_rank {
                 filtered.below_level += 1;
                 continue;
@@ -313,7 +316,9 @@ fn label(graph: &LockGraph, id: PackageId) -> String {
 
 /// The version range of a specifier (an `npm:` alias unwrapped), as text, when it is one.
 fn range_text_of(literal: &str) -> Option<&str> {
-    let range = crate::spec::split_npm_alias(literal).map_or(literal, |(_, r)| r).trim();
+    let range = crate::spec::split_npm_alias(literal)
+        .map_or(literal, |(_, r)| r)
+        .trim();
     (fnpm_types::spec::infer_tag(range) == fnpm_types::SpecTag::Npm
         && !range.contains(':')
         && !range.contains('/'))
@@ -391,7 +396,13 @@ fn for_each_override_value(
     for (key, value) in rules.iter_mut() {
         if !(nested && value.is_object()) {
             if let Ok(Some(sel)) = OverrideSelector::parse(key)
-                && selects(site_parent, target_range, name, sel.parent.as_ref(), &sel.target)
+                && selects(
+                    site_parent,
+                    target_range,
+                    name,
+                    sel.parent.as_ref(),
+                    &sel.target,
+                )
             {
                 f(value);
             }
@@ -415,7 +426,13 @@ fn for_each_override_value(
                     _ => continue,
                 }
             };
-            if selects(site_parent, target_range, name, rule_parent.as_ref(), &target) {
+            if selects(
+                site_parent,
+                target_range,
+                name,
+                rule_parent.as_ref(),
+                &target,
+            ) {
                 f(child);
             }
         }
@@ -744,9 +761,8 @@ async fn plan(cx: &Ctx, input: PlanInput<'_>) -> Plan {
             continue;
         }
         let caret = Range::parse(&format!("^{}", inst.from)).ok();
-        let range_accepts = |e: &Edge, v: &Version| {
-            !e.bundled && e.range.as_ref().is_some_and(|r| r.satisfies(v))
-        };
+        let range_accepts =
+            |e: &Edge, v: &Version| !e.bundled && e.range.as_ref().is_some_and(|r| r.satisfies(v));
         let pin_accepts = |e: &Edge, v: &Version| {
             e.pin.is_some() && (latest || caret.as_ref().is_some_and(|c| c.satisfies(v)))
         };
@@ -874,7 +890,8 @@ async fn plan(cx: &Ctx, input: PlanInput<'_>) -> Plan {
         }
         plan.manifests.insert(inst.name.clone(), manifest.clone());
         if blockers.is_empty() {
-            plan.expected_gone.push((inst.name.clone(), inst.from.clone()));
+            plan.expected_gone
+                .push((inst.name.clone(), inst.from.clone()));
             continue;
         }
         // If the root's copy is upgraded, the vulnerable version is removed even though these
@@ -892,11 +909,12 @@ async fn plan(cx: &Ctx, input: PlanInput<'_>) -> Plan {
             blockers,
         });
     }
-    plan.fixes
-        .sort_by(|a, b| (&a.name, &a.from).cmp(&(&b.name, &b.from)).then_with(|| {
+    plan.fixes.sort_by(|a, b| {
+        (&a.name, &a.from).cmp(&(&b.name, &b.from)).then_with(|| {
             let v = |s: &str| Version::parse(s).ok();
             v(&a.to).cmp(&v(&b.to))
-        }));
+        })
+    });
     plan.blocked
         .sort_by(|a, b| (&a.name, &a.from).cmp(&(&b.name, &b.from)));
     plan.unfixable
@@ -905,7 +923,10 @@ async fn plan(cx: &Ctx, input: PlanInput<'_>) -> Plan {
         .sort_by(|a, b| (&a.name, &a.from).cmp(&(&b.name, &b.from)));
     for u in &plan.unavailable {
         cx.events.emit(fnpm_types::Event::warn(
-            format!("{}@{} was not checked for updates: {}", u.name, u.from, u.detail),
+            format!(
+                "{}@{} was not checked for updates: {}",
+                u.name, u.from, u.detail
+            ),
             None,
         ));
     }
@@ -1269,7 +1290,10 @@ fn write_edits(
 ) -> Result<Vec<(PathBuf, String)>> {
     let mut by_workspace: BTreeMap<&str, Vec<&PackageJsonEdit>> = BTreeMap::new();
     for e in edits {
-        by_workspace.entry(e.workspace.as_str()).or_default().push(e);
+        by_workspace
+            .entry(e.workspace.as_str())
+            .or_default()
+            .push(e);
     }
     let mut written = Vec::new();
     for (workspace, edits) in by_workspace {
@@ -1399,7 +1423,10 @@ fn no_vulnerabilities(
     if filtered.below_level > 0
         && let Some(l) = level
     {
-        line.push_str(&format!(", {} below --audit-level={l}", filtered.below_level));
+        line.push_str(&format!(
+            ", {} below --audit-level={l}",
+            filtered.below_level
+        ));
     }
     if filtered.ignored > 0 {
         line.push_str(&format!(", {} ignored", filtered.ignored));
@@ -1502,7 +1529,12 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
     let advisories = advisories_of(&resp.advisories, &ignore, level.as_deref(), &mut filtered);
     if advisories.is_empty() && !json_out {
         if printing {
-            say(&no_vulnerabilities(&resp, &filtered, level.as_deref(), start));
+            say(&no_vulnerabilities(
+                &resp,
+                &filtered,
+                level.as_deref(),
+                start,
+            ));
         }
         return Ok(super::exit(0, Value::Null, Vec::new()));
     }
@@ -1584,7 +1616,12 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
         super::info::report_audit_failure(failure, loud);
         return Err(Error::Reported);
     }
-    let after = advisories_of(&after_resp.advisories, &ignore, level.as_deref(), &mut Filtered::default());
+    let after = advisories_of(
+        &after_resp.advisories,
+        &ignore,
+        level.as_deref(),
+        &mut Filtered::default(),
+    );
     if json_out {
         plan.unaudited = after_resp.unaudited.clone();
     }
@@ -1592,8 +1629,16 @@ pub(crate) async fn fix(cx: &Ctx) -> Result<CoreResult> {
         .blocked
         .iter()
         .map(|b| (b.name.as_str(), b.from.as_str()))
-        .chain(plan.unfixable.iter().map(|u| (u.name.as_str(), u.from.as_str())))
-        .chain(plan.unavailable.iter().map(|u| (u.name.as_str(), u.from.as_str())))
+        .chain(
+            plan.unfixable
+                .iter()
+                .map(|u| (u.name.as_str(), u.from.as_str())),
+        )
+        .chain(
+            plan.unavailable
+                .iter()
+                .map(|u| (u.name.as_str(), u.from.as_str())),
+        )
         .collect();
     // An advisory of the plan is fixed when no installed version matches it any more.
     let mut plan_remaining: Vec<bool> = plan.matched.iter().map(|m| !m).collect();
@@ -1693,7 +1738,10 @@ mod tests {
         assert_eq!(new_literal("1.0.2", "1.0.4", false), "1.0.4");
         assert_eq!(new_literal("^1.0.2", "1.1.0", false), "^1.1.0");
         assert_eq!(new_literal("~1.0.2", "1.0.4", false), "~1.0.4");
-        assert_eq!(new_literal("npm:no-deps@1.0.0", "1.0.1", false), "npm:no-deps@1.0.1");
+        assert_eq!(
+            new_literal("npm:no-deps@1.0.0", "1.0.1", false),
+            "npm:no-deps@1.0.1"
+        );
     }
 
     #[test]
@@ -1735,7 +1783,10 @@ mod tests {
         assert!(!all[0].matches(&Version::parse("1.0.4").unwrap()));
         assert_eq!(advisories(&resp, &["GHSA-aaaa-bbbb-cccc".into()]).len(), 1);
         let mut filtered = Filtered::default();
-        assert_eq!(advisories_of(&resp, &["2".into()], Some("high"), &mut filtered).len(), 0);
+        assert_eq!(
+            advisories_of(&resp, &["2".into()], Some("high"), &mut filtered).len(),
+            0
+        );
         assert_eq!((filtered.below_level, filtered.ignored), (1, 1));
     }
 
@@ -1746,9 +1797,21 @@ mod tests {
             target_range: range.to_owned(),
         };
         for (text, s, key) in [
-            (r#"{"overrides":{"no-deps":"1.0.0"}}"#, site(None, ""), "no-deps"),
-            (r#"{"overrides":{"no-deps":{".":"1.0.0"}}}"#, site(None, ""), "no-deps"),
-            (r#"{"resolutions":{"**/no-deps":"1.0.0"}}"#, site(None, ""), "no-deps"),
+            (
+                r#"{"overrides":{"no-deps":"1.0.0"}}"#,
+                site(None, ""),
+                "no-deps",
+            ),
+            (
+                r#"{"overrides":{"no-deps":{".":"1.0.0"}}}"#,
+                site(None, ""),
+                "no-deps",
+            ),
+            (
+                r#"{"resolutions":{"**/no-deps":"1.0.0"}}"#,
+                site(None, ""),
+                "no-deps",
+            ),
             (
                 r#"{"overrides":{"one-range-dep>no-deps":"1.0.0"}}"#,
                 site(Some(("one-range-dep", "")), ""),
@@ -1766,8 +1829,18 @@ mod tests {
             ),
         ] {
             let mut root: Value = serde_json::from_str(text).unwrap();
-            assert_eq!(override_literal(&root, "no-deps", &s).as_deref(), Some("1.0.0"), "{text}");
-            let Site::Override { parent, target_range } = &s else { unreachable!() };
+            assert_eq!(
+                override_literal(&root, "no-deps", &s).as_deref(),
+                Some("1.0.0"),
+                "{text}"
+            );
+            let Site::Override {
+                parent,
+                target_range,
+            } = &s
+            else {
+                unreachable!()
+            };
             assert_eq!(Site::override_key(parent, target_range, "no-deps"), key);
             let edit = PackageJsonEdit {
                 owner: PackageId::ROOT,
@@ -1779,7 +1852,11 @@ mod tests {
                 to: "1.0.1".into(),
             };
             apply_to_json(&mut root, &[&edit]);
-            assert_eq!(override_literal(&root, "no-deps", &s).as_deref(), Some("1.0.1"), "{text}");
+            assert_eq!(
+                override_literal(&root, "no-deps", &s).as_deref(),
+                Some("1.0.1"),
+                "{text}"
+            );
         }
     }
 

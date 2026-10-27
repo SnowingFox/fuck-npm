@@ -115,6 +115,15 @@ pub enum Error {
     /// The registry, git or a tarball download failed.
     #[error(transparent)]
     Registry(#[from] fnpm_registry::Error),
+    /// git could not read the repository of a git dependency; bun names the dependency after
+    /// git's own error.
+    #[error("{source}\nerror: \"git clone\" for \"{name}\" failed")]
+    GitFailed {
+        /// The dependency name.
+        name: String,
+        /// What git said.
+        source: fnpm_registry::Error,
+    },
     /// A dist-tag the manifest does not have.
     #[error("Package \"{name}\" with tag \"{tag}\" not found, but package exists")]
     DistTagNotFound {
@@ -338,6 +347,11 @@ pub struct ResolveOutput {
     /// A local dependency in an omitted group was missing and left unresolved; like bun, the
     /// lockfile is then not saved.
     pub unsaved: bool,
+    /// Requested optional dependencies (`add --optional`, `update <name>`) that could not be
+    /// resolved: only warned about, but the command fails and writes nothing (bun).
+    pub failed_requests: Vec<String>,
+    /// `kept <name>@<version> (patched, v<x> available)`: patched packages an update held.
+    pub kept: Vec<String>,
 }
 
 /// The lockfile records exactly what the package.json files declare, with every required
@@ -550,6 +564,8 @@ impl Resolver {
                 requests: out.requests,
                 warnings,
                 unsaved: out.unsaved,
+                failed_requests: out.failed_requests,
+                kept: out.kept,
             });
         }
 
@@ -628,6 +644,12 @@ impl Resolver {
             requests: out.requests,
             warnings,
             unsaved: out.unsaved,
+            failed_requests: out.failed_requests,
+            kept: {
+                let mut kept = out.kept;
+                kept.dedup();
+                kept
+            },
         })
     }
 
@@ -670,6 +692,8 @@ impl Resolver {
             requests: Vec::new(),
             warnings,
             unsaved: false,
+            failed_requests: Vec::new(),
+            kept: Vec::new(),
         })
     }
 }

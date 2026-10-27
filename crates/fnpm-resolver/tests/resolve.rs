@@ -414,7 +414,10 @@ async fn network_errors_of_required_dependencies_are_fatal() {
     let ws = workspace(json!({"optionalDependencies": {"flaky": "^1"}}), &[]);
     let out = h.install(&ws).await;
     assert!(
-        out.warnings.iter().any(|w| w.contains("connection reset")),
+        // bun names what got no answer (the harness says "connection reset").
+        out.warnings
+            .iter()
+            .any(|w| w.starts_with("ConnectionClosed downloading package manifest flaky")),
         "{:?}",
         out.warnings
     );

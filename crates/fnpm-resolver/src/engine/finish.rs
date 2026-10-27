@@ -150,7 +150,9 @@ impl Engine<'_> {
             .filter_map(|(r, t)| t.and_then(|t| map[t.index()]).map(|t| (r, t)))
             .collect();
         let mut warnings = std::mem::take(&mut self.warnings);
-        warnings.extend(std::mem::take(&mut self.kept_patched));
+        let mut not_checked = std::mem::take(&mut self.not_checked);
+        not_checked.sort();
+        warnings.extend(not_checked);
         let mut seen = std::collections::HashSet::new();
         warnings.retain(|w| seen.insert(w.clone()));
         Ok(EngineOutput {
@@ -159,6 +161,8 @@ impl Engine<'_> {
             warnings,
             manifest_order: self.manifest_order,
             unsaved: self.unsaved,
+            failed_requests: self.failed_requests,
+            kept: self.kept_patched,
         })
     }
 }

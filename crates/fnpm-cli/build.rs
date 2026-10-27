@@ -42,7 +42,14 @@ fn embed_revision() {
         Ok(r) => r.trim().to_owned(),
         Err(_) => {
             // A new commit changes HEAD (or the branch it names).
-            for path in [git(&["rev-parse", "--git-path", "HEAD"]), git(&["rev-parse", "--symbolic-full-name", "HEAD"]).and_then(|r| git(&["rev-parse", "--git-path", &r]))].into_iter().flatten() {
+            for path in [
+                git(&["rev-parse", "--git-path", "HEAD"]),
+                git(&["rev-parse", "--symbolic-full-name", "HEAD"])
+                    .and_then(|r| git(&["rev-parse", "--git-path", &r])),
+            ]
+            .into_iter()
+            .flatten()
+            {
                 println!("cargo:rerun-if-changed={path}");
             }
             git(&["rev-parse", "--short", "HEAD"]).unwrap_or_default()
