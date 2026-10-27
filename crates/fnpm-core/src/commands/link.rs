@@ -104,9 +104,15 @@ fn own_name(dir: &Path, pj: &fnpm_workspace::PackageJson) -> Result<String> {
 
 /// `fnpm link` registers the current package; `fnpm link <names>` installs registered ones.
 pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
+    // The package here is checked first: bun says that a package.json is missing before it
+    // looks at the global directory.
+    let here = if cx.req.positionals.is_empty() {
+        Some(package_here(&cx.req.cwd)?)
+    } else {
+        None
+    };
     let links = links_dir(cx)?;
-    if cx.req.positionals.is_empty() {
-        let (dir, pj) = package_here(&cx.req.cwd)?;
+    if let Some((dir, pj)) = here {
         let name = own_name(&dir, &pj)?;
         // The relative link target is computed between the real paths: with a symlinked home
         // (`/home/u -> /data/home/u`) one from the spelled paths points elsewhere.
@@ -199,9 +205,15 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
 /// `fnpm unlink` unregisters the current package; `fnpm unlink <names>` removes linked
 /// packages from the project.
 pub(crate) async fn unlink(cx: &Ctx) -> Result<CoreResult> {
+    // The package here is checked first: bun says that a package.json is missing before it
+    // looks at the global directory.
+    let here = if cx.req.positionals.is_empty() {
+        Some(package_here(&cx.req.cwd)?)
+    } else {
+        None
+    };
     let links = links_dir(cx)?;
-    if cx.req.positionals.is_empty() {
-        let (dir, pj) = package_here(&cx.req.cwd)?;
+    if let Some((dir, pj)) = here {
         let name = own_name(&dir, &pj)?;
         let link = fnpm_linker::fsutil::join_name(&links, &name);
         if std::fs::symlink_metadata(&link).is_err() {
