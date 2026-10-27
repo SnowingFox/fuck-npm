@@ -195,12 +195,12 @@ async function localRegistry(...packages: FixturePackage[]) {
  * A world of its own for one test. `cwd`, `tmp` ($TMPDIR) and `home` ($HOME) are
  * siblings, as /tmp and a home directory are: nothing in `tmp` is above what bunx
  * keeps below `home`. No variable names the install cache, so it is
- * `home/.fnpm/cache`, as for a real user.
+ * `home/.fnpm/install/cache`, as for a real user.
  */
 function sandbox(registry?: { url: string; requests: string[] }, files: DirectoryTree = {}) {
   const dir = tempDir("bunx", { cwd: {}, tmp: {}, home: {}, ...files });
   const [cwd, tmp, home] = ["cwd", "tmp", "home"].map(name => join(String(dir), name));
-  const cache = join(home, ".fnpm", "cache");
+  const cache = join(home, ".fnpm", "install", "cache");
   const env: Record<string, string | undefined> = {
     ...fnpmEnv,
     TMPDIR: tmp,
@@ -1750,7 +1750,7 @@ describe.skipIf(isWindows)("cache directory", () => {
   it.concurrent.each([
     ["tmp", "{ malformed"],
     ["home", "{ malformed"],
-    ["home", JSON.stringify({ name: "home", workspaces: [".fnpm/cache/.fnpmx-*/*"] })],
+    ["home", JSON.stringify({ name: "home", workspaces: [".fnpm/install/cache/.fnpmx-*/*"] })],
   ])("a package.json in %s is nothing to the install: %s", async (where, packageJson) => {
     using registry = await localRegistry(...toolWithDep());
     using box = sandbox(registry, { [where]: { "package.json": packageJson } });
@@ -1905,7 +1905,7 @@ describe.skipIf(isWindows)("cache directory", () => {
     using box = sandbox(undefined, {
       cwd: { "package.json": "{}" },
       home: {
-        [`.fnpm/cache/.fnpmx-${uid}`]: {
+        [`.fnpm/install/cache/.fnpmx-${uid}`]: {
           "tool@latest": tree,
           "tool@latest.lock": "",
           "tool@latest+min-age=864000": tree,

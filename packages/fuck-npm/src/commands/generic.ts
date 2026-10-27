@@ -8,6 +8,9 @@ import { colorEnabled } from "../output/output.ts";
 import type { CommandContext } from "./context.ts";
 import { startListener } from "./install.ts";
 
+/** Commands whose `lines` are the whole output, also with `--json`. */
+const RAW_OUTPUT = new Set(["pm pkg", "pm licenses", "pm diff", "info", "view", "show", "pm view", "pm info"]);
+
 /**
  * Every command without a dedicated handler: validate, then hand the request
  * to the core as `{command, positionals, passthrough, options}`. The core
@@ -85,8 +88,21 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     listener.progress?.stop();
   }
 
+  const auditReport =
+    ctx.registry.bin === "fnpm" && (head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] !== "fix";
+  if (ctx.path.join(" ") === "pm cache path" && ctx.output.mode !== "json") {
+    // bun writes the bare path, with no newline.
+    ctx.runtime.stdout.write((result.lines ?? []).join("\n"));
+    return result.exitCode;
+  }
+  if (RAW_OUTPUT.has(ctx.path.join(" ")) || auditReport) {
+    // The core prints these as bun does in every mode (`pm pkg set --json` parses values; the
+    // `pm licenses --json` document is the listing itself); `--silent` only quiets stderr.
+    for (const line of result.lines ?? []) ctx.runtime.stdout.write(`${line}\n`);
+    return result.exitCode;
+  }
   if (ctx.output.mode === "json") {
-    const rawDocument = ctx.path.join(" ") === "pm diff" || ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
+    const rawDocument = ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
     ctx.output.json(rawDocument ? result.data : { ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
     return result.exitCode;
   }

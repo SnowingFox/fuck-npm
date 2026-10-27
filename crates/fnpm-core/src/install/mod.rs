@@ -6,6 +6,7 @@
 mod backfill;
 mod edits;
 mod lock;
+mod peers;
 mod plan;
 mod summary;
 
@@ -1069,6 +1070,15 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         Some(prev) if in_place => prev.packages.iter().map(|p| p.key()).collect(),
         _ => HashSet::new(),
     };
+    // bun checks the peers against the layout on a verbose install that resolved something.
+    let warn_peers = config.log_level == fnpm_config::LogLevel::Verbose
+        && !config.omit.peer
+        && (changed
+            || opts.patch.is_some()
+            || opts.command == InstallCommand::Update
+            || !opts.packages.is_empty()
+            || lock.graph.is_none()
+            || lock.migrated);
     let linked = link(
         &project,
         &ws,
@@ -1082,6 +1092,10 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         &events,
         opts.dlx,
         telemetry.as_ref(),
+        warn_peers,
+        // `fnpm audit fix` replaces packages in a working tree: like bun, nothing is linked
+        // before every new package is in the store.
+        opts.patch.is_some(),
     )
     .await?;
     phases.mark("link");
@@ -1268,8 +1282,54 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     if phases.on {
         eprintln!("[fnpm timing] registry {:?}", client.stats());
     }
+    if opts.pm.global
+        && opts.command == InstallCommand::Add
+        && config.log_level != fnpm_config::LogLevel::Silent
+        && let Some(bin) = summary.requested.iter().find_map(|r| r.bins.first())
+    {
+        warn_global_bin_not_in_path(&config.global_bin_dir, bin, &project.env, &*events);
+    }
     summary.elapsed_ms = start.elapsed().as_millis() as u64;
     Ok(summary)
+}
+
+/// bun: after `add -g`, the command to put the global bin folder on `$PATH` when the first bin
+/// it installed is not found there, in the user's shell.
+fn warn_global_bin_not_in_path(
+    bin_dir: &std::path::Path,
+    bin: &str,
+    env: &fnpm_config::Env,
+    events: &dyn EventSink,
+) {
+    if let Some(path) = env.get("PATH")
+        && fnpm_scripts::shell::which(bin, std::ffi::OsStr::new(path), bin_dir).is_some()
+    {
+        return;
+    }
+    let folder = bin_dir.to_string_lossy();
+    let quoted = if cfg!(windows) {
+        folder.into_owned()
+    } else {
+        folder.replace('\\', "\\\\")
+    };
+    let shell = env
+        .get("SHELL")
+        .and_then(|s| s.rsplit(['/', '\\']).next())
+        .unwrap_or("");
+    let instructions = match shell {
+        "bash" | "zsh" => format!("export PATH=\"{quoted}:$PATH\""),
+        "fish" => format!("fish_add_path {}", serde_json::to_string(&*folder_raw(bin_dir)).unwrap_or_default()),
+        "pwsh" | "powershell" | "pwsh.exe" | "powershell.exe" => format!("$env:PATH += \";{quoted}\""),
+        _ => quoted,
+    };
+    events.emit(Event::warn(
+        format!("To run {}, add the global bin folder to $PATH:\n\n{instructions}\n", serde_json::to_string(bin).unwrap_or_default()),
+        None,
+    ));
+}
+
+fn folder_raw(dir: &std::path::Path) -> String {
+    dir.to_string_lossy().into_owned()
 }
 
 /// [`LockGraph::reachable`] that stops at packages built for another platform: like bun, their
@@ -1823,6 +1883,8 @@ async fn link(
     events: &Arc<dyn EventSink>,
     dlx: Option<crate::options::DlxMode>,
     telemetry: Option<&crate::events::TelemetryGuard>,
+    mut warn_peers: bool,
+    fetch_first: bool,
 ) -> Result<Linked> {
     let config = &project.config;
     let root = project.root_dir.clone();
@@ -1871,6 +1933,11 @@ async fn link(
             }
         }
         let layout = plan_layout(&linker, &view, kind, selected.clone(), &pruned);
+        if std::mem::take(&mut warn_peers) {
+            for line in peers::incorrect_peers(&view, &layout) {
+                events.emit(Event::warn(line, None));
+            }
+        }
         // The previous install's tree, for packages that keep their place (hoisted only,
         // without patches, whose files may have changed under the same key).
         let previous = match (intact, &layout) {
@@ -1998,9 +2065,9 @@ async fn link(
         } else {
             Vec::new()
         };
-        if dlx.is_some() {
-            // `fnpm x`: nothing is linked until every package is in the store, so a refresh
-            // that cannot download a package leaves the tree that runs as it was.
+        if dlx.is_some() || fetch_first {
+            // `fnpm x` and `fnpm audit fix`: nothing is linked until every package is in the
+            // store, so a refresh that cannot download a package leaves the tree as it was.
             for (i, p) in graph.packages.iter().enumerate() {
                 if !reachable[i] || !fetches(p) {
                     continue;
@@ -2015,6 +2082,8 @@ async fn link(
                     });
                 }
             }
+        }
+        if dlx.is_some() {
             let package_json = root.join("package.json");
             std::fs::write(&package_json, crate::options::DlxMode::UNFINISHED)
                 .map_err(Error::io(&package_json))?;
@@ -2495,9 +2564,20 @@ async fn run_scripts(
         }
         Ok("deleting")
     };
+    let ran: Vec<(PackageId, PathBuf)> = plan
+        .jobs
+        .iter()
+        .map(|job| (job.package, job.dir.clone()))
+        .collect();
     let report =
         fnpm_scripts::run_dag_with_cleanup(plan.jobs, plan.deps, &opts, &**events, Some(&cleanup))
             .await?;
+    // A script may have written the package's bins after they were linked.
+    for (id, dir) in ran {
+        if let Some(p) = graph.get(id) {
+            fnpm_linker::bins::make_bins_executable(&p.bin, &dir);
+        }
+    }
     Ok((blocked, !report.failed_optional.is_empty()))
 }
 
@@ -2585,8 +2665,38 @@ fn write_state(
         installs,
         workspace_patterns,
         workspace_dirs,
+        missing_bins: missing_workspace_bins(root, ws),
     };
     let _ = fast_path::write(root, meta, &state);
+}
+
+/// The bin files that workspace packages declare and do not have yet, relative to `root`.
+fn missing_workspace_bins(root: &Path, ws: &Workspace) -> Vec<String> {
+    let mut out = Vec::new();
+    for m in &ws.members {
+        let targets: Vec<&str> = match m.manifest.raw.get("bin") {
+            Some(serde_json::Value::String(t)) => vec![t.as_str()],
+            Some(serde_json::Value::Object(map)) => {
+                map.values().filter_map(serde_json::Value::as_str).collect()
+            }
+            _ => Vec::new(),
+        };
+        for target in targets {
+            let target = target.trim_start_matches("./");
+            if target.is_empty() || target.split('/').any(|c| c == "..") {
+                continue;
+            }
+            let rel = if m.path.is_empty() {
+                target.to_owned()
+            } else {
+                format!("{}/{target}", m.path)
+            };
+            if !root.join(&rel).exists() {
+                out.push(rel);
+            }
+        }
+    }
+    out
 }
 
 #[allow(dead_code)]

@@ -45,11 +45,7 @@ exports[`renderTree > matches the registered command surface 1`] = `
 │  │   ├── trust            Run and allow the scripts of untrusted dependencies
 │  │   ├── default-trusted  Print the built-in list of trusted dependencies
 │  │   ├── version          Bump the package version (patch, minor, major, ...)
-│  │   ├── pkg              Read and edit package.json
-│  │   │   ├── get          Print properties of package.json
-│  │   │   ├── set          Set properties of package.json
-│  │   │   ├── delete       Delete properties of package.json
-│  │   │   └── fix          Normalize package.json and fix common errors
+│  │   ├── pkg              Read and edit package.json (get, set, delete, fix)
 │  │   ├── whoami           Print the user name the registry knows you as
 │  │   ├── licenses         List the licenses of installed packages
 │  │   ├── view             Show registry metadata for a package

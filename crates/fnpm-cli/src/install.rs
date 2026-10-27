@@ -167,6 +167,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
 
     let command = options.command;
     let show_summary = !silent && options.pm.summary;
+    let global = options.pm.global;
     let outcome = core.install(options, sink);
     if let Some(progress) = progress {
         progress.stop();
@@ -200,13 +201,16 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                         (started.elapsed().as_secs_f64() * 1000.0).max(summary.elapsed_ms as f64)
                     });
                 let stdout_color = color_enabled(&terminal.env, terminal.stdout_is_tty);
-                let lines = format_install_summary_at(
+                let mut lines = format_install_summary_at(
                     &summary,
                     command,
                     Colors::new(stdout_color),
                     mode == Mode::Rich && stdout_color,
                     elapsed_ms,
                 );
+                if global {
+                    crate::summary::for_global_install(&mut lines);
+                }
                 let mut text = String::new();
                 for line in lines {
                     text.push_str(&line);

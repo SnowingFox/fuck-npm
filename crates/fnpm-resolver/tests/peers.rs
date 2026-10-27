@@ -53,11 +53,12 @@ async fn peers_bind_to_what_the_dependent_provides_even_out_of_range() {
     );
     let out = h.install(&ws).await;
     let ui = id_of(&out.graph, "ui18", "1.0.0");
-    // pnpm semantics: the root's react@17 serves the peer; a warning reports the mismatch.
+    // pnpm semantics: the root's react@17 serves the peer. The install reports the mismatch
+    // against the layout it links (fnpm-core `install::peers`), not the resolver.
     assert_eq!(peer(&out.graph, ui, "react").unwrap().version, "17.0.2");
     assert_eq!(versions(&out.graph, "react"), ["17.0.2"]);
     assert!(
-        out.warnings.iter().any(|w| w == "incorrect peer dependency \"react@17.0.2\": \"ui18@1.0.0\" requires \"react@^18.0.0\""),
+        !out.warnings.iter().any(|w| w.starts_with("incorrect peer dependency")),
         "{:?}",
         out.warnings
     );

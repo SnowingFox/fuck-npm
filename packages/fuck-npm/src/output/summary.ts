@@ -37,7 +37,7 @@ export function formatInstallSummary(
   summary: InstallSummary,
   command: InstallCommand,
   pc: Colors,
-  opts: { color: boolean } = { color: true },
+  opts: { color: boolean; global?: boolean } = { color: true },
 ): string[] {
   // bun's tree printer opens with a newline; the header above ends with one.
   const lines: string[] = [""];
@@ -115,7 +115,7 @@ export function formatInstallSummary(
     if (summary.blockedScripts > 0) {
       lines.push("");
       lines.push(
-        pc.dim(`Blocked ${plural(summary.blockedScripts, "postinstall")}. Run \`fnpm pm untrusted\` for details.`),
+        pc.dim(`Blocked ${plural(summary.blockedScripts, "postinstall")}. Run \`fnpm pm ${opts.global ? "-g " : ""}untrusted\` for details.`),
       );
     }
   };

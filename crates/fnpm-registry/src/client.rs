@@ -225,6 +225,10 @@ pub(crate) fn describe(e: &reqwest::Error) -> String {
         }
         source = err.source();
     }
+    // A proxy that refused the CONNECT gets bun's name for it.
+    if parts.iter().any(|p| p.contains("tunnel error")) {
+        parts.insert(0, "ProxyConnectFailed".into());
+    }
     // reqwest's own message repeats the URL; secrets in it are masked.
     redact_url(&parts.join(": "))
 }
@@ -681,6 +685,9 @@ pub(crate) fn status_name(status: u16) -> String {
 }
 
 pub(crate) fn error_name(e: &reqwest::Error) -> String {
+    if let Some(name) = crate::tls::tls_error_name(&describe(e)) {
+        return name.to_owned();
+    }
     if e.is_timeout() {
         "Timeout".to_owned()
     } else if e.is_connect() {

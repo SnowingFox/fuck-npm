@@ -1,11 +1,10 @@
-//! package.json commands: `init`, `pm pkg get | set | delete | fix` and `pm version`. Edits go
-//! through the format-preserving `PackageJsonEditor`.
+//! package.json commands: `init` and `pm version` (`pm pkg` is in `pkg.rs`). `pm version`
+//! reads and writes package.json like bun, with `json_text`.
 
 use std::path::{Path, PathBuf};
 
 use fnpm_semver::{ReleaseType, Version};
-use fnpm_workspace::PackageJsonEditor;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use super::{Ctx, ok};
 use crate::{CoreResult, Error, Result};
@@ -91,310 +90,128 @@ pub(crate) fn init(cx: &Ctx) -> Result<CoreResult> {
     ))
 }
 
-/// A property path: `a.b`, `a[0]`, `a.b[1].c`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Seg {
-    Key(String),
-    Index(usize),
+/// Prints `error: <message>` and fails without another word from the CLI.
+fn fail(message: &str) -> Error {
+    eprintln!("error: {message}");
+    Error::Reported
 }
 
-/// The largest array index `pm pkg set` fills up to (`a[100000]=x` would otherwise allocate
-/// and write every element before it).
-const MAX_INDEX: usize = 10_000;
+/// The largest major, minor or patch number node-semver accepts (`Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
-fn segments(path: &str) -> Vec<Seg> {
-    let mut out = Vec::new();
-    for part in path.split('.') {
-        let mut rest = part;
-        if let Some(i) = rest.find('[') {
-            if i > 0 {
-                out.push(Seg::Key(rest[..i].to_owned()));
-            }
-            rest = &rest[i..];
-            while let Some(stripped) = rest.strip_prefix('[') {
-                let Some(end) = stripped.find(']') else {
-                    out.push(Seg::Key(rest.to_owned()));
-                    break;
-                };
-                let inner = &stripped[..end];
-                match inner.parse::<usize>() {
-                    Ok(n) => out.push(Seg::Index(n)),
-                    Err(_) => out.push(Seg::Key(inner.trim_matches(['"', '\'']).to_owned())),
-                }
-                rest = &stripped[end + 1..];
-            }
-        } else {
-            out.push(Seg::Key(rest.to_owned()));
-        }
-    }
-    out
-}
-
-fn get<'a>(v: &'a Value, segs: &[Seg]) -> Option<&'a Value> {
-    segs.iter().try_fold(v, |cur, s| match s {
-        Seg::Key(k) => cur.get(k),
-        Seg::Index(i) => cur.get(*i),
-    })
-}
-
-fn set(v: &mut Value, segs: &[Seg], value: Value) {
-    let Some((first, rest)) = segs.split_first() else {
-        *v = value;
-        return;
-    };
-    match first {
-        Seg::Key(k) => {
-            if !v.is_object() {
-                *v = Value::Object(Map::new());
-            }
-            let child = v
-                .as_object_mut()
-                .expect("object")
-                .entry(k.clone())
-                .or_insert(Value::Null);
-            set(child, rest, value);
-        }
-        Seg::Index(i) => {
-            if !v.is_array() {
-                *v = Value::Array(Vec::new());
-            }
-            let arr = v.as_array_mut().expect("array");
-            if arr.len() <= *i {
-                arr.resize(i + 1, Value::Null);
-            }
-            set(&mut arr[*i], rest, value);
-        }
-    }
-}
-
-fn delete(v: &mut Value, segs: &[Seg]) -> bool {
-    let Some((last, parents)) = segs.split_last() else {
-        return false;
-    };
-    let mut cur = v;
-    for s in parents {
-        let next = match s {
-            Seg::Key(k) => cur.get_mut(k),
-            Seg::Index(i) => cur.get_mut(*i),
-        };
-        let Some(n) = next else { return false };
-        cur = n;
-    }
-    match (last, cur) {
-        (Seg::Key(k), Value::Object(m)) => m.shift_remove(k).is_some(),
-        (Seg::Index(i), Value::Array(a)) if *i < a.len() => {
-            a.remove(*i);
-            true
-        }
-        _ => false,
-    }
-}
-
-/// Dotted paths of plain keys go straight to the editor; anything with an index or a key
-/// containing a dot rewrites the whole top-level value.
-fn editor_path(segs: &[Seg]) -> Option<String> {
-    let keys: Option<Vec<&str>> = segs
-        .iter()
-        .map(|s| match s {
-            Seg::Key(k) if !k.contains('.') && !k.is_empty() => Some(k.as_str()),
-            _ => None,
+/// `<increment>` applied to `current`, as `semver.inc` does.
+fn increment_version(current: &str, rt: ReleaseType, preid: Option<&str>) -> Result<String> {
+    let parsed = Version::parse(current)
+        .ok()
+        .filter(|v| v.major.max(v.minor).max(v.patch) <= MAX_SAFE_INTEGER)
+        .ok_or_else(|| {
+            fail(&format!(
+                "Current version \"{}\" is not a valid semver",
+                fnpm_types::text::escape_control_chars(current)
+            ))
+        })?;
+    parsed
+        .try_inc(rt, preid)
+        .map(|v| v.to_string())
+        .map_err(|_| {
+            fail(&format!(
+                "Invalid --preid: \"{}\"",
+                preid.unwrap_or_default()
+            ))
         })
-        .collect();
-    keys.map(|k| k.join("."))
 }
 
-fn set_with_editor(editor: &mut PackageJsonEditor, current: &Value, segs: &[Seg], value: Value) {
-    if let Some(path) = editor_path(segs) {
-        editor.set_path(&path, value);
-        return;
-    }
-    let Some(Seg::Key(top)) = segs.first() else {
-        return;
+/// A version given as the argument, as `semver.clean` leaves it: an optional `v` or `=`, three
+/// numbers no larger than `Number.MAX_SAFE_INTEGER`, a prerelease of valid identifiers, and no
+/// build metadata.
+fn specific_version(arg: &str) -> Option<String> {
+    let text = arg.trim().trim_start_matches(['=', 'v']);
+    let text = text.split_once('+').map_or(text, |(v, _)| v);
+    let (core, pre) = match text.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (text, None),
     };
-    let mut top_value = current.get(top).cloned().unwrap_or(Value::Null);
-    set(&mut top_value, &segs[1..], value);
-    editor.set_path(top, top_value);
+    let numbers: Vec<u64> = core
+        .split('.')
+        .map(|n| {
+            (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| n.parse::<u64>().ok())
+                .flatten()
+                .filter(|&n| n <= MAX_SAFE_INTEGER)
+        })
+        .collect::<Option<_>>()?;
+    let [major, minor, patch] = numbers[..] else {
+        return None;
+    };
+    let mut out = format!("{major}.{minor}.{patch}");
+    if let Some(pre) = pre {
+        let ids: Vec<String> = pre
+            .split('.')
+            .map(|id| {
+                let valid =
+                    !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+                valid.then(|| match id.parse::<u64>() {
+                    Ok(n) if id.bytes().all(|b| b.is_ascii_digit()) && n < MAX_SAFE_INTEGER => {
+                        n.to_string()
+                    }
+                    _ => id.to_owned(),
+                })
+            })
+            .collect::<Option<_>>()?;
+        out.push('-');
+        out.push_str(&ids.join("."));
+    }
+    Some(out)
 }
 
-/// `fnpm pm pkg <get|set|delete|fix> ...`.
-pub(crate) fn pkg(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
-    let path = nearest_package_json(&cx.req.cwd)?;
-    let text = read_text(&path)?;
-    let value = parse(&text)?;
-    let args = &cx.req.positionals;
-    match rest {
-        ["get"] => {
-            let data = match args.as_slice() {
-                [] => value.clone(),
-                [one] => get(&value, &segments(one)).cloned().unwrap_or(Value::Null),
-                many => Value::Object(
-                    many.iter()
-                        .map(|k| {
-                            (
-                                k.clone(),
-                                get(&value, &segments(k)).cloned().unwrap_or(Value::Null),
-                            )
-                        })
-                        .collect(),
-                ),
-            };
-            let lines = if data.is_null() {
-                Vec::new()
-            } else {
-                serde_json::to_string_pretty(&data)
-                    .unwrap_or_default()
-                    .lines()
-                    .map(str::to_owned)
-                    .collect()
-            };
-            Ok(ok(data, lines))
-        }
-        ["set"] => {
-            if args.is_empty() {
-                return Err(Error::usage(
-                    "fnpm pm pkg set expects a key=value pair of args",
-                ));
-            }
-            let as_json = cx.req.json || cx.flag("json");
-            let mut editor = PackageJsonEditor::new(text.clone());
-            let mut current = value;
-            for a in args {
-                let Some((k, v)) = a.split_once('=') else {
-                    return Err(Error::usage(format!(
-                        "fnpm pm pkg set expects a key=value pair of args, got \"{a}\""
-                    )));
-                };
-                if k.is_empty() {
-                    return Err(Error::usage(format!("Invalid key: \"{a}\"")));
-                }
-                let v = if as_json {
-                    serde_json::from_str(v)
-                        .map_err(|e| Error::usage(format!("Invalid JSON value for \"{k}\": {e}")))?
-                } else {
-                    Value::String(v.to_owned())
-                };
-                let segs = segments(k);
-                if segs
-                    .iter()
-                    .any(|s| matches!(s, Seg::Index(i) if *i > MAX_INDEX))
-                {
-                    return Err(Error::usage(format!(
-                        "Invalid key: \"{k}\" (index too large)"
-                    )));
-                }
-                set_with_editor(&mut editor, &current, &segs, v.clone());
-                set(&mut current, &segs, v);
-            }
-            let out = editor.finish();
-            if out != text {
-                crate::project::write_atomic(&path, out.as_bytes())?;
-            }
-            Ok(ok(current, Vec::new()))
-        }
-        ["delete"] => {
-            if args.is_empty() {
-                return Err(Error::usage("fnpm pm pkg delete expects key args"));
-            }
-            let mut editor = PackageJsonEditor::new(text.clone());
-            let mut current = value;
-            for k in args {
-                let segs = segments(k);
-                match editor_path(&segs) {
-                    Some(p) => {
-                        editor.delete_path(&p);
-                    }
-                    None => {
-                        let Some(Seg::Key(top)) = segs.first() else {
-                            continue;
-                        };
-                        let mut top_value = current.get(top).cloned().unwrap_or(Value::Null);
-                        if delete(&mut top_value, &segs[1..]) {
-                            editor.set_path(top, top_value);
-                        }
-                    }
-                }
-                delete(&mut current, &segs);
-            }
-            let out = editor.finish();
-            if out != text {
-                crate::project::write_atomic(&path, out.as_bytes())?;
-            }
-            Ok(ok(current, Vec::new()))
-        }
-        ["fix"] => fix(&path, &text, value),
-        _ => Err(Error::UnknownCommand(
-            std::iter::once("pkg".to_owned())
-                .chain(rest.iter().map(|s| (*s).to_owned()))
-                .collect(),
-        )),
+/// `fnpm pm version` without an increment: what each one would write.
+fn version_help(cli: &str, declared: Option<&str>, preid: Option<&str>) -> Result<Vec<String>> {
+    let current = declared.unwrap_or("1.0.0");
+    let shown = fnpm_types::text::escape_control_chars(current);
+    let next = |rt, preid| increment_version(current, rt, preid);
+    let mut lines = vec![format!("fnpm pm version v{cli}")];
+    if declared.is_some() {
+        lines.push(format!("Current package version: v{shown}"));
     }
-}
-
-/// `pm pkg fix`: npm's normalisations that are safe to apply to the file.
-fn fix(path: &Path, text: &str, value: Value) -> Result<CoreResult> {
-    let mut editor = PackageJsonEditor::new(text.to_owned());
-    let mut fixed = Vec::new();
-    if let Some(name) = value.get("name").and_then(Value::as_str) {
-        let trimmed = name.trim();
-        if trimmed != name {
-            editor.set_path("name", Value::String(trimmed.to_owned()));
-            fixed.push("name: trimmed whitespace".to_owned());
-        }
-    }
-    if let Some(v) = value.get("version").and_then(Value::as_str)
-        && let Ok(parsed) = Version::parse_loose(v)
-    {
-        let clean = parsed.to_string();
-        if clean != v {
-            editor.set_path("version", Value::String(clean.clone()));
-            fixed.push(format!("version: \"{v}\" was cleaned to \"{clean}\""));
-        }
-    }
-    if let Some(bin) = value.get("bin").and_then(Value::as_object) {
-        let mut new = bin.clone();
-        let mut changed = false;
-        for (_, target) in new.iter_mut() {
-            if let Some(t) = target.as_str()
-                && let Some(stripped) = t.strip_prefix("./")
-            {
-                *target = Value::String(stripped.to_owned());
-                changed = true;
-            }
-        }
-        if changed {
-            editor.set_path("bin", Value::Object(new));
-            fixed.push("bin: removed leading ./ from targets".into());
-        }
-    }
-    for group in [
-        "dependencies",
-        "devDependencies",
-        "optionalDependencies",
-        "peerDependencies",
+    lines.push(String::new());
+    lines.push("Increment:".into());
+    for (label, rt) in [
+        ("patch     ", ReleaseType::Patch),
+        ("minor     ", ReleaseType::Minor),
+        ("major     ", ReleaseType::Major),
+        ("prerelease", ReleaseType::Prerelease),
     ] {
-        let Some(map) = value.get(group).and_then(Value::as_object) else {
-            continue;
-        };
-        let bad: Vec<&String> = map
-            .iter()
-            .filter(|(_, v)| !v.is_string())
-            .map(|(k, _)| k)
-            .collect();
-        if bad.is_empty() {
-            continue;
-        }
-        let mut keep = map.clone();
-        for k in &bad {
-            keep.shift_remove(*k);
-            fixed.push(format!("{group}: removed invalid entry \"{k}\""));
-        }
-        editor.set_path(group, Value::Object(keep));
+        lines.push(format!("  {label} {shown} → {}", next(rt, preid)?));
     }
-    let out = editor.finish();
-    if out != text {
-        crate::project::write_atomic(path, out.as_bytes())?;
+    if current.contains('-') || preid.is_some_and(|p| !p.is_empty()) {
+        for (label, rt) in [
+            ("prepatch  ", ReleaseType::Prepatch),
+            ("preminor  ", ReleaseType::Preminor),
+            ("premajor  ", ReleaseType::Premajor),
+        ] {
+            lines.push(format!("  {label} {shown} → {}", next(rt, preid)?));
+        }
     }
-    Ok(ok(json!({ "fixed": fixed }), fixed.clone()))
+    let beta = next(ReleaseType::Prerelease, Some("beta"))?;
+    let text = format!(
+        "  from-git   Use version from latest git tag
+  1.2.3      Set specific version
+
+Options:
+  --no-git-tag-version Skip git operations
+  --allow-same-version Prevents throwing error if version is the same
+  --message=<val>, -m  Custom commit message, use %s for version substitution
+  --preid=<val>        Prerelease identifier (i.e beta → {beta})
+  --force, -f          Bypass dirty git history check
+  --dry-run            Print the new version without writing, running scripts, or tagging
+
+Examples:
+  $ fnpm pm version patch
+  $ fnpm pm version 1.2.3 --no-git-tag-version
+  $ fnpm pm version prerelease --preid beta --message \"Release beta: %s\""
+    );
+    lines.extend(text.lines().map(str::to_owned));
+    Ok(lines)
 }
 
 fn release_type(s: &str) -> Option<ReleaseType> {
@@ -450,18 +267,22 @@ pub(crate) async fn version(cx: &Ctx) -> Result<CoreResult> {
     let path = nearest_package_json(&cx.req.cwd)?;
     let dir = path.parent().unwrap_or(&cx.req.cwd).to_path_buf();
     let text = read_text(&path)?;
-    let value = parse(&text)?;
+    let mut value = match super::json_text::parse_package_json(&text) {
+        Ok(v) if v.is_object() => v,
+        Ok(_) => return Err(fail("Failed to parse package.json: root must be an object")),
+        Err(e) => return Err(fail(&format!("Failed to parse package.json: {}", e.0))),
+    };
     let declared = value
         .get("version")
         .and_then(Value::as_str)
         .map(str::to_owned);
     let current_text = declared.clone().unwrap_or_else(|| "0.0.0".to_owned());
+    let preid = cx.string("preid");
     let Some(increment) = cx.req.positionals.first().cloned() else {
-        let lines = vec![
-            format!("Current package version: v{current_text}"),
-            String::new(),
-            "Increment: patch, minor, major, prepatch, preminor, premajor, prerelease, from-git or a version".into(),
-        ];
+        let cli = cx
+            .string("cliVersion")
+            .unwrap_or_else(|| crate::version().to_owned());
+        let lines = version_help(&cli, declared.as_deref(), preid.as_deref())?;
         return Ok(ok(json!({ "version": current_text }), lines));
     };
     let dry_run = cx.pm.dry_run;
@@ -478,35 +299,25 @@ pub(crate) async fn version(cx: &Ctx) -> Result<CoreResult> {
         } else if !cx.pm.force && !cx.flag("force") {
             let status = git(&dir, &["status", "--porcelain"]).await?;
             if status.is_none_or(|s| !s.is_empty()) {
-                return Err(Error::usage("Git working directory not clean."));
+                return Err(fail("Git working directory not clean."));
             }
         }
     }
-    let preid = cx.string("preid");
-    let next = if let Some(rt) = release_type(&increment) {
-        let current = Version::parse(&current_text).map_err(|_| {
-            Error::usage(format!(
-                "Current version \"{current_text}\" is not a valid semver"
-            ))
-        })?;
-        current.try_inc(rt, preid.as_deref()).map_err(|_| {
-            Error::usage(format!(
-                "Invalid --preid: \"{}\"",
-                preid.unwrap_or_default()
-            ))
-        })?
+    let next_text = if let Some(rt) = release_type(&increment) {
+        increment_version(&current_text, rt, preid.as_deref())?
     } else if increment == "from-git" {
-        version_from_git(&dir).await?
+        version_from_git(&dir).await?.to_string()
     } else {
-        Version::parse(increment.trim_start_matches('v')).map_err(|_| {
-            Error::usage(format!(
-                "Invalid version argument: \"{increment}\". Valid options: patch, minor, major, prepatch, preminor, premajor, prerelease, from-git, or a specific semver version"
-            ))
+        specific_version(&increment).ok_or_else(|| {
+            eprintln!("error: Invalid version argument: \"{increment}\"");
+            eprintln!(
+                "note: Valid options: patch, minor, major, prepatch, preminor, premajor, prerelease, from-git, or a specific semver version"
+            );
+            Error::Reported
         })?
     };
-    let next_text = next.to_string();
     if declared.as_deref() == Some(next_text.as_str()) && !cx.flag("allowSameVersion") {
-        return Err(Error::usage("Version not changed"));
+        return Err(fail("Version not changed"));
     }
     let done = ok(
         json!({ "from": current_text, "to": next_text }),
@@ -546,21 +357,22 @@ pub(crate) async fn version(cx: &Ctx) -> Result<CoreResult> {
             let code = fnpm_scripts::run::run_lifecycle_script_foreground(dir, event, script, opts)
                 .await
                 .map_err(Error::Scripts)?;
+            let _ = package;
             if code == 0 {
                 Ok(())
             } else {
-                Err(Error::Scripts(fnpm_scripts::Error::Failed {
-                    package: package.clone(),
-                    script: event.to_owned(),
-                    code,
-                }))
+                Err(fail(&format!("script \"{event}\" exited with code {code}")))
             }
         }
     };
     run("preversion").await?;
-    let mut editor = PackageJsonEditor::new(text.clone());
-    editor.set_path("version", Value::String(next_text.clone()));
-    crate::project::write_atomic(&path, editor.finish().as_bytes())?;
+    // Written back whole, like bun: a number that overflowed reads as null, which stays JSON.
+    value["version"] = Value::String(next_text.clone());
+    let mut out = super::json_text::print(&value, &super::json_text::guess_indent(&text));
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    crate::project::write_atomic(&path, out.as_bytes())?;
     run("version").await?;
     if git_tag_version {
         let tag = format!("v{next_text}");
@@ -586,28 +398,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn segments_parse() {
-        assert_eq!(
-            segments("a.b[1].c"),
-            vec![
-                Seg::Key("a".into()),
-                Seg::Key("b".into()),
-                Seg::Index(1),
-                Seg::Key("c".into())
-            ]
-        );
-        let mut v = json!({});
-        set(&mut v, &segments("scripts.build"), json!("tsc"));
-        set(&mut v, &segments("files[1]"), json!("dist"));
-        assert_eq!(
-            v,
-            json!({ "scripts": { "build": "tsc" }, "files": [null, "dist"] })
-        );
-        assert!(delete(&mut v, &segments("scripts.build")));
-        assert!(!delete(&mut v, &segments("nope.x")));
-        assert_eq!(get(&v, &segments("files[1]")), Some(&json!("dist")));
-        assert_eq!(editor_path(&segments("a.b")), Some("a.b".into()));
-        assert_eq!(editor_path(&segments("a[0]")), None);
+    fn package_names() {
         assert_eq!(package_name_for(Path::new("/x/My App")), "my-app");
     }
 }

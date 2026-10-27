@@ -91,7 +91,7 @@ export function finishInstall(
     const color = ctx.output.mode === "rich" && colorEnabled(ctx.runtime, ctx.runtime.stdoutIsTTY);
     // Like bun, the time since the process started.
     const elapsedMs = Math.max(summary.elapsedMs, ctx.runtime.now());
-    for (const line of formatInstallSummary({ ...summary, elapsedMs }, options.command, ctx.output.colors, { color })) {
+    for (const line of formatInstallSummary({ ...summary, elapsedMs }, options.command, ctx.output.colors, { color, global: options.global })) {
       ctx.output.line(line);
     }
   }

@@ -329,7 +329,7 @@ export function requestOptions(
   }
   const maxAge = read.string(values, "maxAge");
   if (maxAge !== undefined) {
-    if (!/^\d+$/.test(maxAge) || Number(maxAge) > 0xffff_ffff) throw invalid(`invalid --max-age value: ${maxAge}`);
+    if (!/^\d+$/.test(maxAge) || Number(maxAge) > 0xffff_ffff) throw invalid(`invalid --max-age value: ${maxAge}, expected a number of days`);
     out.maxAge = Number(maxAge);
   }
   const depth = read.string(values, "depth");

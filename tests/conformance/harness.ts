@@ -142,6 +142,21 @@ export function cachedManifestFiles(cache: string): string[] {
   return [...list(cache, ".npm"), ...list(join(cache, "metadata", "v1"), ".rkyv")].sort();
 }
 
+/**
+ * bun keeps the packages it downloads in its cache directory; fnpm keeps them in its store, which
+ * this harness puts in one directory per worker. A test that gives bun a cache of its own gets
+ * fnpm's store in the same place, so what one test downloads is not in another's cache.
+ */
+export function cacheDirEnv(cache: string): Record<string, string> {
+  return { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: join(cache, "store") };
+}
+
+/** The packages a cache from {@link cacheDirEnv} holds, by fnpm's store names (`name@version-<hash>`). */
+export function cachedPackageNames(cache: string): string[] {
+  const pkgs = join(cache, "store", "v2", "pkgs");
+  return fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [];
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }
@@ -429,8 +444,9 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
     .replace(/fnpm v[\d.]+(?:-[\w.]+)?(?:\+[\w]+)?(?:\s+\([^)]+\))?/g, "fnpm v<fnpm-version>")
     // bun's `Bun.version_with_sha` -> "<version> (<revision>)" in "bun <command> v1.2.3 (abcdef12)" headers.
     .replace(/\bfnpm ([a-z][a-z-]*) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?/g, "fnpm $1 <version> (<revision>)")
-    // Not inside an IP address or another dotted number (`127.0.0.1` contains `0.0.1`).
-    .replace(new RegExp(`(?<![\\d.])${version.replaceAll(".", "\\.")}(?![\\d.])`, "g"), "<fnpm-version>")
+    // Not inside an IP address or another dotted number (`127.0.0.1` contains `0.0.1`), and not a
+    // package's version (`bar@0.0.2`): bun's version never collides with the fixtures', fnpm's can.
+    .replace(new RegExp(`(?<![\\d.@])${version.replaceAll(".", "\\.")}(?![\\d.])`, "g"), "<fnpm-version>")
     .trim();
 }
 

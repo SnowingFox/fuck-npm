@@ -24,8 +24,8 @@ describe("dispatch", () => {
   test("an unknown subcommand names the full path", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["pm", "bogus"])).toBe(1);
-    expect(bed.stderr.text()).toContain("Unknown command: fnpm pm bogus");
+    expect(await bed.run(["store", "bogus"])).toBe(1);
+    expect(bed.stderr.text()).toContain("Unknown command: fnpm store bogus");
   });
 
   test("a group's default child runs when the group is bare", async () => {
@@ -38,8 +38,8 @@ describe("dispatch", () => {
   test("a missing required positional is reported before the core loads", async () => {
     const bed = testBed();
 
-    expect(await bed.run(["why"])).toBe(1);
-    expect(bed.stderr.text()).toContain("`fnpm why` needs <package>");
+    expect(await bed.run(["exec"])).toBe(1);
+    expect(bed.stderr.text()).toContain("`fnpm exec` needs <command>");
     expect(bed.coreLoads()).toBe(0);
   });
 
@@ -275,17 +275,24 @@ describe("update --interactive", () => {
 
 describe("generic commands", () => {
   test("lines go to stdout in plain mode", async () => {
-    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["/home/u/.fnpm/cache"] }) } });
+    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["a", "b"] }) } });
+
+    expect(await bed.run(["pm", "hash"])).toBe(0);
+    expect(bed.stdout.text()).toBe("a\nb\n");
+  });
+
+  test("the cache directory is printed without a newline, like bun", async () => {
+    const bed = testBed({ core: { invoke: () => ({ exitCode: 0, lines: ["/home/u/.fnpm/install/cache"] }) } });
 
     expect(await bed.run(["pm", "cache"])).toBe(0);
-    expect(bed.stdout.text()).toBe("/home/u/.fnpm/cache\n");
+    expect(bed.stdout.text()).toBe("/home/u/.fnpm/install/cache");
   });
 
   test("data becomes the --json payload and the exit code is the core's", async () => {
     const bed = testBed({ core: { invoke: () => ({ exitCode: 1, data: { vulnerabilities: 2 } }) } });
 
-    expect(await bed.run(["audit", "--json"])).toBe(1);
-    expect(bed.json()).toEqual({ ok: false, command: "audit", vulnerabilities: 2 });
+    expect(await bed.run(["outdated", "--json"])).toBe(1);
+    expect(bed.json()).toEqual({ ok: false, command: "outdated", vulnerabilities: 2 });
   });
 
   test("link and unlink never run globally and only save when asked", async () => {

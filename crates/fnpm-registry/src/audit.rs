@@ -37,6 +37,18 @@ pub struct UnauditedRegistry {
     pub reason: String,
 }
 
+/// The default registry did not answer with advisories (bun reports this and fails).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DefaultFailure {
+    /// The registry URL without credentials or trailing slash.
+    pub registry: String,
+    /// The bulk endpoint, without credentials.
+    pub url: String,
+    pub reason: SkipReason,
+    /// What it answered (`--json` relays a body that is JSON but not advisories).
+    pub body: Bytes,
+}
+
 /// The merged result of every registry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuditResponse {
@@ -48,11 +60,13 @@ pub struct AuditResponse {
     /// Packages that a registry checked / that were skipped with their registry.
     pub checked: usize,
     pub skipped: usize,
+    /// Set when the default registry failed; the other fields are then empty.
+    pub default_failure: Option<DefaultFailure>,
 }
 
 /// Why a registry's answer does not count as an audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SkipReason {
+pub enum SkipReason {
     Status(u16),
     Send(String),
     Empty,
@@ -69,6 +83,28 @@ impl std::fmt::Display for SkipReason {
             Self::NotJson => f.write_str("non-JSON response"),
             Self::NotAdvisories => f.write_str("not a list of advisories"),
         }
+    }
+}
+
+/// bun's name for a request that got no response (`ConnectionRefused`, ...).
+fn error_name(message: &str) -> &'static str {
+    let m = message.to_ascii_lowercase();
+    if m.contains("proxyconnectfailed") {
+        "ProxyConnectFailed"
+    } else if m.contains("connection refused") {
+        "ConnectionRefused"
+    } else if m.contains("timed out") || m.contains("timeout") {
+        "Timeout"
+    } else if m.contains("dns") || m.contains("failed to lookup") {
+        "DNSError"
+    } else if let Some(name) = crate::tls::tls_error_name(message) {
+        name
+    } else if m.contains("certificate") {
+        "TLSCertificateError"
+    } else if m.contains("connection reset") {
+        "ConnectionReset"
+    } else {
+        "ConnectionClosed"
     }
 }
 
@@ -154,12 +190,13 @@ impl Inner {
         base: &Url,
         authorization: Option<&str>,
         body: &[u8],
-    ) -> std::result::Result<Bytes, SkipReason> {
+    ) -> std::result::Result<Bytes, (SkipReason, Bytes)> {
+        let no_body = |reason| (reason, Bytes::new());
         let url = Url::parse(&format!(
             "{}/-/npm/v1/security/advisories/bulk",
             base.as_str().trim_end_matches('/')
         ))
-        .map_err(|e| SkipReason::Send(e.to_string()))?;
+        .map_err(|e| no_body(SkipReason::Send(e.to_string())))?;
         let mut headers = HeaderMap::new();
         put(&mut headers, "accept", "application/json");
         put(&mut headers, "content-type", "application/json");
@@ -167,7 +204,7 @@ impl Inner {
         if let Some(auth) = authorization {
             put(&mut headers, "authorization", auth);
         }
-        let compressed = gzip(body).map_err(|e| SkipReason::Send(e.to_string()))?;
+        let compressed = gzip(body).map_err(|e| no_body(SkipReason::Send(e.to_string())))?;
         // Safe to retry: it changes nothing on the registry.
         let spec = Spec {
             method: Method::POST,
@@ -182,12 +219,14 @@ impl Inner {
         let f = self
             .fetch(&spec)
             .await
-            .map_err(|e| SkipReason::Send(e.to_string()))?;
+            .map_err(|e| no_body(SkipReason::Send(error_name(&e.to_string()).to_owned())))?;
         if f.status >= 400 {
-            return Err(SkipReason::Status(f.status));
+            return Err((SkipReason::Status(f.status), f.body));
         }
-        validate(&f.body)?;
-        Ok(f.body)
+        match validate(&f.body) {
+            Ok(_) => Ok(f.body),
+            Err(reason) => Err((reason, f.body)),
+        }
     }
 
     pub async fn audit(&self, packages: &[AuditPackage]) -> Result<AuditResponse> {
@@ -238,28 +277,23 @@ impl Inner {
                     checked += list.len();
                     bodies.push(body);
                 }
-                Err(reason) if is_default => {
+                Err((reason, body)) if is_default => {
                     let url = format!("{registry}/-/npm/v1/security/advisories/bulk");
-                    return Err(match reason {
-                        SkipReason::Status(status) => Error::Status { url, status },
-                        SkipReason::Send(message) => Error::Network { url, message },
-                        other => Error::InvalidResponse {
+                    return Ok(AuditResponse {
+                        raw: Bytes::new(),
+                        advisories: Value::Object(Default::default()),
+                        unaudited: Vec::new(),
+                        checked: 0,
+                        skipped: 0,
+                        default_failure: Some(DefaultFailure {
+                            registry,
                             url,
-                            message: match other {
-                                SkipReason::Empty => {
-                                    format!("empty audit response from {registry}")
-                                }
-                                SkipReason::NotJson => {
-                                    format!("{registry} returned a non-JSON audit response")
-                                }
-                                _ => format!(
-                                    "invalid audit response from {registry}: not a list of advisories"
-                                ),
-                            },
-                        },
+                            reason,
+                            body,
+                        }),
                     });
                 }
-                Err(reason) => {
+                Err((reason, _)) => {
                     skipped += list.len();
                     unaudited.push(UnauditedRegistry {
                         registry,
@@ -271,22 +305,14 @@ impl Inner {
         }
         let raw = merge_bodies(&bodies);
         let advisories = serde_json::from_slice(&raw).unwrap_or(Value::Object(Default::default()));
-        if !unaudited.is_empty() {
-            for u in &unaudited {
-                self.warn(format!(
-                    "{} was not audited ({}): {}",
-                    u.registry,
-                    u.reason,
-                    u.packages.join(", ")
-                ));
-            }
-        }
+        // The callers report `unaudited` (bun's `print_unaudited`).
         Ok(AuditResponse {
             raw,
             advisories,
             unaudited,
             checked,
             skipped,
+            default_failure: None,
         })
     }
 }

@@ -35,7 +35,10 @@ pub enum Error {
     /// `path` is empty when the text did not come from a file.
     #[error("{}", invalid_package_json(.path, .message))]
     InvalidPackageJson { path: PathBuf, message: String },
-    #[error("no package.json found in {0} or any parent directory")]
+    #[error(
+        "No package.json was found for directory \"{}\"\nnote: Run \"fnpm init\" to initialize a project",
+        .0.display()
+    )]
     NoProject(PathBuf),
     #[error("invalid workspace pattern {pattern:?}: {message}")]
     BadPattern { pattern: String, message: String },

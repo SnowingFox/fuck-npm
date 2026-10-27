@@ -4,7 +4,15 @@
 import { $, spawn } from "../compat/bun.ts";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "../compat/bun-test.ts";
 import { exists, mkdir, readdir, rm, writeFile } from "../compat/fs-promises.ts";
-import { fnpmExe, fnpmEnv as env, githubTarball, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
+import {
+  cacheDirEnv,
+  cachedPackageNames,
+  fnpmExe,
+  fnpmEnv as env,
+  githubTarball,
+  normalizeFnpmSnapshot,
+  tempDir,
+} from "../harness.ts";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import {
@@ -58,7 +66,8 @@ async function runBun(args: string[], extraEnv: Record<string, string> = {}) {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-    env: { ...env, ...extraEnv },
+    // fnpm's store goes where the test puts bun's cache (see cacheDirEnv).
+    env: { ...env, ...extraEnv, ...(extraEnv.FNPM_CACHE_DIR ? cacheDirEnv(extraEnv.FNPM_CACHE_DIR) : {}) },
   });
   const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
   return { stdout, stderr, exitCode };
@@ -74,7 +83,7 @@ async function fetchIntoCache(cache: string, extraArgs: string[] = [], extraEnv:
 }
 
 async function cachedPackages(cache: string) {
-  return (await readdir(cache)).filter(name => name.startsWith("bar@0.0.2")).length;
+  return cachedPackageNames(cache).filter(name => name.startsWith("bar@0.0.2")).length;
 }
 
 it("should fetch dependencies into the cache without installing", async () => {
@@ -464,7 +473,7 @@ async function projectWith(kind: Kind, bunfigTail = "") {
       await using proc = spawn({
         cmd: [fnpmExe(), ...args],
         cwd: project,
-        env: { ...env, GITHUB_API_URL: origin, FNPM_CACHE_DIR: join(root, cache) },
+        env: { ...env, GITHUB_API_URL: origin, ...cacheDirEnv(join(root, cache)) },
         stdout: "pipe",
         stderr: "pipe",
       });

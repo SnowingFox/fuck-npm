@@ -86,7 +86,8 @@ pub fn detect_layout(project_dir: &Path, graph: &LockGraph, configured: NodeLink
         (false, true) => NodeLinker::Hoisted,
         (true, true) => configured,
         (false, false) if crate::is_isolated_tree(project_dir) => NodeLinker::Isolated,
-        (false, false) => NodeLinker::Hoisted,
+        // Nothing installed tells: the linker an install would use.
+        (false, false) => configured,
     }
 }
 

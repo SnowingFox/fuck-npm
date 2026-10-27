@@ -249,7 +249,7 @@ fn create_args(args: &[String], cwd: &Path, out: &Out) -> Result<Vec<String>, i3
     let rest = index + 1;
     if name == "react" {
         eprintln!(
-            "The \"react\" template has been deprecated.\nIt is recommended to use \"react-app\" or \"vite\" instead.\n\nTo create a project using Create React App, run\n\n  fnpm create react-app\n\nTo create a React project using Vite, run\n\n  fnpm create vite\n\nThen select \"React\" from the list of frameworks.\n"
+            "The \"react\" template has been deprecated.\nIt is recommended to use \"react-app\" or \"vite\" instead.\n\nTo create a project using Create React App, run\n\n  fnpm create react-app\n\nTo create a React project using Vite, run\n\n  fnpm create vite\n\nThen select \"React\" from the list of frameworks."
         );
         return Err(1);
     }
@@ -764,6 +764,13 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 Err(1)
             }
             Err(BinError::Unreadable) => Ok(None),
+            Err(BinError::PathTooLong) => {
+                out.error(&format!(
+                    "PathTooLong: the bin of {} does not fit in a path",
+                    target.package
+                ));
+                Err(1)
+            }
             Ok(found) => Ok(found),
         }
     };
@@ -805,7 +812,7 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 no_bin(Err(BinError::NoBin))?;
                 InProject::Absent
             }
-            Err(BinError::Unreadable) => InProject::Absent,
+            Err(BinError::Unreadable | BinError::PathTooLong) => InProject::Absent,
             Ok(found) => found,
         };
         match found {

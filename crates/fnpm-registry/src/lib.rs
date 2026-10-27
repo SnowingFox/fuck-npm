@@ -32,7 +32,7 @@ use fnpm_config::{Config, Env};
 use fnpm_types::{EventSink, Integrity};
 use futures_util::stream::BoxStream;
 
-pub use audit::{AuditPackage, AuditResponse, UnauditedRegistry};
+pub use audit::{AuditPackage, AuditResponse, DefaultFailure, SkipReason, UnauditedRegistry};
 pub use auth::redact_url;
 pub use cache::ManifestCache;
 pub use endpoints::{JsonResponse, github_tarball_tag};

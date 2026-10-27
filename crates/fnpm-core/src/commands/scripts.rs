@@ -322,8 +322,28 @@ fn untrusted_list(
     fnpm_scripts::pm::find_untrusted(graph, &policy, candidates, &rf).map_err(scripts_error)
 }
 
+/// bun's `bun pm trust v<version>` header on stderr, printed once the project is found.
+fn header(cx: &Ctx, command: &str, gap: bool) {
+    if cx.req.json || cx.pm.log_level == fnpm_config::LogLevel::Silent {
+        return;
+    }
+    let out = super::pack::out::Out::new();
+    let version = cx
+        .string("cliVersion")
+        .unwrap_or_else(|| crate::version().to_owned());
+    out.eprint(&format!(
+        "{}{}\n{}",
+        out.paint_err("1", &format!("fnpm {command} ")),
+        out.paint_err("2", &format!("v{version}")),
+        if gap { "\n" } else { "" }
+    ));
+}
+
 /// `fnpm pm untrusted`.
 pub(crate) fn untrusted(cx: &Ctx) -> Result<CoreResult> {
+    cx.project()?;
+    // bun leaves a blank line under this one.
+    header(cx, "pm untrusted", true);
     let (project, _, graph) = cx.load_locked("nothing to check")?;
     let list = untrusted_list(&project, &graph)?;
     let lines = fnpm_scripts::pm::render_untrusted(&list, cx.pm.global);
@@ -345,6 +365,8 @@ pub(crate) fn untrusted(cx: &Ctx) -> Result<CoreResult> {
 pub(crate) async fn trust(cx: &Ctx) -> Result<CoreResult> {
     let names = cx.req.positionals.clone();
     let all = cx.flag("all");
+    cx.project()?;
+    header(cx, "pm trust", false);
     let (project, ws, mut graph) = cx.load_locked("nothing to trust")?;
     let config = project.config.clone();
     fnpm_scripts::pm::check_trust_command(
@@ -360,6 +382,19 @@ pub(crate) async fn trust(cx: &Ctx) -> Result<CoreResult> {
     if cx.pm.dry_run {
         let lines = fnpm_scripts::pm::render_dry_run(&list, &plan);
         return Ok(ok(json!({ "names": plan.names_to_add }), lines));
+    }
+    // bun opens package.json for writing before it runs anything.
+    if !plan.names_to_add.is_empty() {
+        let path = project.root_dir.join("package.json");
+        if let Err(e) = std::fs::OpenOptions::new().append(true).open(&path) {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                return Err(Error::usage(format!(
+                    "EACCES: Permission denied: could not open \"{}\" for writing",
+                    path.display()
+                )));
+            }
+            return Err(Error::io(&path)(e));
+        }
     }
     let started = std::time::Instant::now();
     let jobs = fnpm_scripts::pm::trust_jobs(&graph, &list, &plan);
