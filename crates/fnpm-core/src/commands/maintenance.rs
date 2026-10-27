@@ -154,19 +154,27 @@ async fn dedupe_command(cx: &Ctx) -> Result<CoreResult> {
     }
     let ws = project.workspace(&*cx.events)?;
     let mut lock = crate::install::load_lock(&project.config, &ws)?;
+    // bun reports a lockfile it cannot use instead of deduplicating nothing.
     if lock.graph.is_none() {
-        // bun reports a lockfile it cannot use instead of deduplicating nothing.
-        for w in &lock.warnings {
-            if let Some(detail) = w.strip_prefix("Ignoring lockfile: ") {
-                let unreadable = ["fnpm.lock", "bun.lock", "bun.lockb"]
-                    .iter()
-                    .any(|n| ws.root_dir.join(n).is_dir());
-                let verb = if unreadable { "read" } else { "parse" };
-                return fail(&format!("failed to {verb} lockfile: {detail}"), None);
+        let unreadable = ["fnpm.lock", "bun.lock", "bun.lockb"]
+            .iter()
+            .find(|n| ws.root_dir.join(n).is_dir());
+        if let Some(name) = unreadable {
+            return fail(&format!("failed to read lockfile: {name}"), None);
+        }
+        if let Some(failure) = &lock.parse_failure {
+            if !quiet {
+                out.eprintln(&failure.read_error(true).to_string());
             }
-            if w.starts_with("cannot migrate ") {
-                return fail(&format!("failed to migrate lockfile: {w}"), None);
-            }
+            return reported(1, json!({ "error": "failed to parse lockfile" }));
+        }
+        if !lock.failures.is_empty() {
+            let file = lock
+                .path
+                .as_deref()
+                .and_then(Path::file_name)
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            return fail(&format!("failed to migrate lockfile: {file}"), None);
         }
         return fail(
             "missing lockfile, nothing to dedupe",
@@ -187,39 +195,21 @@ async fn dedupe_command(cx: &Ctx) -> Result<CoreResult> {
         }
     }
     let mut graph = lock.graph.take().expect("checked above");
-    let fresh = fnpm_resolver::Resolver::new(project.config.clone(), client)
-        .resolve(
-            fnpm_resolver::ResolveInput {
-                workspace: &ws,
-                previous: Some(&graph),
-                mode: fnpm_resolver::Mode::Frozen,
-                requests: Vec::new(),
-                removals: Vec::new(),
-            },
-            None,
-            &fnpm_types::NoopSink,
+    // bun refuses when the dependencies changed since the last install; trustedDependencies
+    // and patchedDependencies are not dependencies (the install that follows applies them).
+    let changes = fnpm_resolver::lockfile_changes(&ws, &graph)?;
+    if changes.iter().any(|c| {
+        !matches!(
+            c.as_str(),
+            "trustedDependencies changed" | "patchedDependencies changed"
         )
-        .await;
-    match fresh {
-        Ok(_) => {}
-        // bun refuses when the dependencies changed; trustedDependencies and
-        // patchedDependencies are not dependencies (the install that follows applies them).
-        Err(fnpm_resolver::Error::FrozenLockfile { changes, .. })
-            if changes.iter().any(|c| {
-                !matches!(
-                    c.as_str(),
-                    "trustedDependencies changed" | "patchedDependencies changed"
-                )
-            }) =>
-        {
-            return fail(
-                "fnpm.lock does not match package.json, nothing to dedupe",
-                Some("run 'fnpm install' first"),
-            );
-        }
-        Err(fnpm_resolver::Error::FrozenLockfile { .. }) => {}
-        Err(e) => return Err(e.into()),
+    }) {
+        return fail(
+            "fnpm.lock does not match package.json, nothing to dedupe",
+            Some("run 'fnpm install' first"),
+        );
     }
+    drop(client);
 
     let report = fnpm_resolver::dedupe(&mut graph);
     let data = dedupe_data(&report);

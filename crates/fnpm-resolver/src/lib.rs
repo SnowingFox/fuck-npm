@@ -354,6 +354,17 @@ pub struct ResolveOutput {
     pub kept: Vec<String>,
 }
 
+/// What package.json declares that the lockfile does not record, in bun's words (`a changed
+/// from ^1 to ^2`, `trustedDependencies changed`, ...); `lockfile is missing resolutions`
+/// when a required dependency is not bound.
+pub fn lockfile_changes(workspace: &Workspace, previous: &LockGraph) -> Result<Vec<String>> {
+    let mut changes = frozen::changes(workspace, previous)?;
+    if !frozen::complete(previous) {
+        changes.push("lockfile is missing resolutions".into());
+    }
+    Ok(changes)
+}
+
 /// The lockfile records exactly what the package.json files declare, with every required
 /// dependency bound: a resolve would reproduce it without asking any registry. Stricter than
 /// `--frozen-lockfile`, which also accepts edits that keep every package where it is.
