@@ -324,9 +324,10 @@ pub(crate) fn ls(cx: &Ctx) -> Result<CoreResult> {
                 && !graph.packages[id.index()].is_disabled(&project.config.platform)
         })
         .count();
+    // bun names the project root, also when run in a member.
     let mut lines = vec![format!(
         "{} node_modules ({installed} installed)",
-        cx.req.cwd.display()
+        project.root_dir.display()
     )];
     if !names.is_empty() {
         // A flat list of the selected packages, wherever they are.

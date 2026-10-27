@@ -14,16 +14,37 @@ use crate::{Error, Result};
 
 /// `cwd` made absolute (the process cwd when empty or relative).
 pub fn absolute_cwd(cwd: &Path) -> PathBuf {
-    if cwd.as_os_str().is_empty() {
-        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    }
-    if cwd.is_absolute() {
+    let dir = if cwd.as_os_str().is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    } else if cwd.is_absolute() {
         cwd.to_path_buf()
     } else {
         std::env::current_dir()
             .map(|d| d.join(cwd))
             .unwrap_or_else(|_| cwd.to_path_buf())
+    };
+    logical(dir)
+}
+
+/// The shell's `$PWD` when it names `dir` by another path (a folder reached through a
+/// symlink): like bun, the project is looked for above the path the user is at, not above
+/// the folder the symlink points to. A `$PWD` that is another folder is ignored.
+fn logical(dir: PathBuf) -> PathBuf {
+    let Some(pwd) = std::env::var_os("PWD").map(PathBuf::from) else {
+        return dir;
+    };
+    if !pwd.is_absolute() || pwd == dir {
+        return dir;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let id = |p: &Path| std::fs::metadata(p).ok().map(|m| (m.dev(), m.ino()));
+        if id(&pwd).is_some() && id(&pwd) == id(&dir) {
+            return pwd;
+        }
+    }
+    dir
 }
 
 /// A loaded project: where it is and its configuration.

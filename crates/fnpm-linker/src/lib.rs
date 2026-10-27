@@ -696,7 +696,17 @@ pub(crate) fn node_resolve(package_dir: &Path, name: &str) -> Option<PathBuf> {
 /// Whether a workspace directory lies inside the project (bun `is_member_path_outside`): the
 /// linker never moves or deletes anything in a member outside of it.
 pub(crate) fn is_inside_project(project_dir: &Path, dir: &Path) -> bool {
-    fsutil::normalize(dir).starts_with(fsutil::normalize(project_dir))
+    if !fsutil::normalize(dir).starts_with(fsutil::normalize(project_dir)) {
+        return false;
+    }
+    // A member reached through a symlink (`link -> ../app`) is a folder of another tree.
+    match (
+        std::fs::canonicalize(project_dir),
+        std::fs::canonicalize(dir),
+    ) {
+        (Ok(project), Ok(real)) => real.starts_with(project),
+        _ => true,
+    }
 }
 
 /// Entries a package manager creates in `node_modules` (bun `is_a_linkers`): every non-dot
