@@ -853,9 +853,11 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
                 .collect()
         })
     });
+    // `--trust` records the requested packages that have lifecycle scripts (bun).
     let trust_names: Vec<String> = if opts.pm.trust {
         resolved_requests
             .iter()
+            .filter(|(_, id)| graph.get(*id).is_some_and(|p| p.meta.needs_scripts()))
             .map(|(r, _)| r.name.clone())
             .collect()
     } else {

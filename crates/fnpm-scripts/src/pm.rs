@@ -303,7 +303,7 @@ pub fn plan_trust(list: &[Untrusted], names: &[String], all: bool) -> Result<Tru
 pub fn alias_notes(aliased: &[(String, String)]) -> Vec<String> {
     aliased
         .iter()
-        .map(|(alias, name)| format!("note: \"{alias}\" is an alias of \"{name}\", run 'fnpm pm trust {name}' to trust it"))
+        .map(|(alias, name)| format!("note: \"{alias}\" is an alias of \"{name}\", run 'fnpm pm trust \"{name}\"' to trust it"))
         .collect()
 }
 
