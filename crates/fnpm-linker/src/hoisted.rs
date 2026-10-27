@@ -547,6 +547,12 @@ fn place_node<'s>(
                         source,
                     })?;
                 }
+                // A workspace's `node_modules` was not made by this run: a link planted at the
+                // package (or its scope) is removed, not written through. Below a fresh root
+                // `node_modules` nothing can be planted, so that costs nothing there.
+                if !parent_fresh || !dest.starts_with(&nm) {
+                    unplant_dest(dest)?;
+                }
                 match cx.materialize(node.package, dest) {
                     Ok(()) => {}
                     Err(Error::Missing { .. }) if plan.optional_only[node.package.index()] => {
@@ -592,6 +598,25 @@ fn place_node<'s>(
     for &c in &plan.children[idx] {
         s.spawn_fifo(move |s| place_node(s, cx, plan, out, unchanged, c, child_fresh, force));
     }
+}
+
+/// Removes a symlink at `dest` or at its scope folder (never what it points to).
+fn unplant_dest(dest: &Path) -> Result<()> {
+    let io = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| Error::Io { path, source }
+    };
+    if let Some(scope) = dest.parent().filter(|p| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('@'))
+    }) && fsutil::kind(scope) == Kind::Symlink
+    {
+        fsutil::remove_link(scope).map_err(io(scope))?;
+    }
+    if fsutil::kind(dest) == Kind::Symlink {
+        fsutil::remove_link(dest).map_err(io(dest))?;
+    }
+    Ok(())
 }
 
 /// Removes linker-made entries of `node_modules` whose name is not `expected` (scoped names

@@ -2129,7 +2129,8 @@ describe.concurrent.skipIf(isWindows)("the target of a link at node_modules", ()
 
   it("the hoisted linker doesn't reinstall everything because of a .bun there", async () => {
     using root = tempDir("nm-outside-store", {});
-    const files = { ...MINE, ".bun/bin/tool": KEEP };
+    // bun's isolated store is node_modules/.bun; fnpm's is node_modules/.fnpm.
+    const files = { ...MINE, ".fnpm/bin/tool": KEEP };
     const outside = await plant(String(root), files);
     const repo = await workspace(String(root));
     await symlink("../outside", join(repo, "node_modules"));
