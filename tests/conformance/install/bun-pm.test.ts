@@ -1638,6 +1638,8 @@ function cacheEnv(side: string, overrides: Record<string, string | undefined> = 
     XDG_CACHE_HOME: join(side, "xdg-cache"),
     BUN_INSTALL: join(side, "bun-install"),
     FNPM_CACHE_DIR: undefined,
+    // The harness names its own user .npmrc (bun's has none); these tests read the one in HOME.
+    NPM_CONFIG_USERCONFIG: undefined,
     TMPDIR: join(side, "tmp"),
     TMP: join(side, "tmp"),
     TEMP: join(side, "tmp"),
