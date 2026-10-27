@@ -931,6 +931,26 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             return Err(Error::Reported);
         }
     }
+    // `remove` changes node_modules only once fnpm.lock can be saved: bun creates the
+    // lockfile's temporary file first and stops, leaving node_modules as it was, when it can't.
+    if opts.command == InstallCommand::Remove && config.lockfile.save && !config.dry_run {
+        let tmp = root.join(format!(".fnpm.lock-{}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&tmp);
+            }
+            Err(e) => {
+                return Err(Error::usage(format!(
+                    "{}: failed to create temporary file to save lockfile",
+                    crate::commands::pack::out::errno_name(&e)
+                )));
+            }
+        }
+    }
     let linked = link(
         &project,
         &ws,
