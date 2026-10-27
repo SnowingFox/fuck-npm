@@ -574,12 +574,19 @@ impl LinkCx<'_> {
             package: self.label(id),
             message,
         })?;
-        self.mat
-            .materialize(&entry.root, &entry.index, dest)
-            .map_err(|source| Error::Materialize {
-                package: self.label(id),
-                source,
-            })?;
+        let folder = self
+            .graph
+            .get(id)
+            .is_some_and(|p| matches!(p.resolution, fnpm_types::Resolution::Folder { .. }));
+        let result = if folder {
+            self.mat.materialize_alone(&entry.root, &entry.index, dest)
+        } else {
+            self.mat.materialize(&entry.root, &entry.index, dest)
+        };
+        result.map_err(|source| Error::Materialize {
+            package: self.label(id),
+            source,
+        })?;
         if let Some(tag) = self.source.patch_tag(id) {
             let p = dest.join(verify::PATCH_TAG_FILE);
             write_new_file(&p, tag.as_bytes()).map_err(|source| Error::Io { path: p, source })?;

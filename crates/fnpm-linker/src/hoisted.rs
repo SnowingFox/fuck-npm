@@ -729,6 +729,9 @@ fn link_all_bins(cx: &LinkCx<'_>, plan: &Plan<'_>, out: &Out, fresh: bool) -> Re
                         }
                     }
                 }
+                if let Some(warning) = linker.refused_warning() {
+                    cx.events.emit(fnpm_types::Event::warn(warning, None));
+                }
                 if !fresh {
                     crate::bins::prune_dangling_bins(&bin_dir);
                 }

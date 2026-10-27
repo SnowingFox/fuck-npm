@@ -178,6 +178,10 @@ pub struct BinLinker {
     owner: Option<PathBuf>,
     #[cfg(not(windows))]
     created_dir: bool,
+    /// The errno with which the directory refused a new symlink (`EPERM`, `EACCES`,
+    /// `EOPNOTSUPP`): its bins are skipped from then on.
+    #[cfg(not(windows))]
+    refused: Option<&'static str>,
 }
 
 /// The outcome of linking one name.
@@ -196,7 +200,23 @@ impl BinLinker {
             owner: None,
             #[cfg(not(windows))]
             created_dir: false,
+            #[cfg(not(windows))]
+            refused: None,
         }
+    }
+
+    /// bun's warning when the bin directory refuses symlinks (FUSE filesystems such as
+    /// Android's sdcard): `EPERM: cannot create symlinks in <dir>, skipping bin links`. A copy
+    /// of a script there could not find its package, so its bins are not linked.
+    pub fn refused_warning(&self) -> Option<String> {
+        #[cfg(not(windows))]
+        if let Some(errno) = self.refused {
+            return Some(format!(
+                "{errno}: cannot create symlinks in {}, skipping bin links",
+                self.bin_dir.display()
+            ));
+        }
+        None
     }
 
     /// A linker for the global bin directory, which also holds files fnpm did not create:
@@ -451,6 +471,9 @@ impl BinLinker {
     /// Creates the link (or shims). `Ok(false)` when an identical link was already there.
     #[cfg(not(windows))]
     fn create(&mut self, abs_target: &Path, dest: &Path) -> io::Result<bool> {
+        if self.refused.is_some() {
+            return Ok(false);
+        }
         let rel = fsutil::relative(&self.bin_dir, abs_target);
         let mut result = std::os::unix::fs::symlink(&rel, dest);
         if self.owner.is_none()
@@ -487,6 +510,15 @@ impl BinLinker {
                 fsutil::remove_any(dest)?;
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound && code == libc::EEXIST => {}
+            // Nothing is in the way: the directory refuses symlinks.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                self.refused = Some(match code {
+                    libc::EPERM => "EPERM",
+                    libc::EACCES => "EACCES",
+                    _ => "EOPNOTSUPP",
+                });
+                return Ok(false);
+            }
             Err(_) => return Err(err),
         }
         std::os::unix::fs::symlink(&rel, dest).map(|()| true)
