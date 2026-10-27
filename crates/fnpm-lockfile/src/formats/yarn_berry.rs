@@ -312,7 +312,7 @@ fn read_yarnrc(ws: &Workspace, options: &MigrateOptions<'_>) -> Result<YarnRc> {
 fn extension_problem(extension: &Extension) -> Option<&'static str> {
     let selector = parse_package_segment(&extension.key).ok()?;
     if !selector.range.is_empty() && semver::Range::parse(&selector.range).is_none() {
-        return Some("the key's version range is not valid");
+        return Some("expected a semver range after the \"@\"");
     }
     for (_, range) in extension
         .dependencies
@@ -325,7 +325,9 @@ fn extension_problem(extension: &Extension) -> Option<&'static str> {
             _ => false,
         };
         if !supported {
-            return Some("an extension can only add registry, git or remote tarball dependencies");
+            return Some(
+                "expected a version, a tag, a git repository or a tarball URL for every dependency",
+            );
         }
     }
     None
