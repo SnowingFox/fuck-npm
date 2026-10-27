@@ -451,7 +451,17 @@ impl BinLinker {
     /// Creates the link (or shims). `Ok(false)` when an identical link was already there.
     #[cfg(not(windows))]
     fn create(&mut self, abs_target: &Path, dest: &Path) -> io::Result<bool> {
-        let rel = fsutil::relative(&self.bin_dir, abs_target);
+        // In a symlinked `node_modules` a relative target would resolve from where it really
+        // is, so the link gets the absolute path (bun `LinkedNodeModules::resolve`).
+        let linked = self
+            .bin_dir
+            .parent()
+            .is_some_and(fsutil::is_linked_node_modules);
+        let rel = if linked && abs_target.is_absolute() {
+            abs_target.to_path_buf()
+        } else {
+            fsutil::relative(&self.bin_dir, abs_target)
+        };
         let mut result = std::os::unix::fs::symlink(&rel, dest);
         if self.owner.is_none()
             && !self.created_dir

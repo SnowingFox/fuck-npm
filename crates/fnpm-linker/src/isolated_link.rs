@@ -286,6 +286,17 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                 Kindof::Local => {
                     let entry_dir = paths.local_entry_dir(i as u32);
                     let pkg_dir = fsutil::join_name(&entry_dir.join("node_modules"), name);
+                    if !fresh && fsutil::kind(&entry_dir) != Kind::Symlink {
+                        // The store is the linker's: a link planted in an entry (its
+                        // `node_modules`, a scope, the package itself) is removed, never
+                        // written through, and the package is installed again.
+                        fsutil::remove_planted_links(&pkg_dir, &entry_dir).map_err(|source| {
+                            Error::Io {
+                                path: pkg_dir.clone(),
+                                source,
+                            }
+                        })?;
+                    }
                     if !fresh {
                         if fsutil::kind(&entry_dir) == Kind::Symlink {
                             // An entry that left the global store is still a link into it.
@@ -546,13 +557,15 @@ fn link_entry(
         }
         Kindof::Nothing | Kindof::External(_) => return Ok(()),
         Kindof::Local => {
-            let nm = paths.local_entry_dir(i).join("node_modules");
+            let entry_dir = paths.local_entry_dir(i);
+            let nm = entry_dir.join("node_modules");
             let strat = if st.built.load(Ordering::Relaxed) && fresh {
                 Strategy::ExpectMissing
             } else {
                 Strategy::ExpectExisting
             };
-            (nm.clone(), Some(pkg.name.as_str()), false, strat, nm)
+            // From the entry itself: its `node_modules` may be a planted link too.
+            (nm, Some(pkg.name.as_str()), false, strat, entry_dir)
         }
         Kindof::Global { .. } => {
             let Some(staging) = st.real_entry_dir.lock().clone() else {
@@ -596,7 +609,12 @@ fn link_entry(
         let Some(target) = paths.store_path(states, *dep, from_global) else {
             continue;
         };
-        let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
+        // A relative target would resolve from where a symlinked `node_modules` really is.
+        let rel = if strategy == Strategy::KeepOthers {
+            target
+        } else {
+            fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target)
+        };
         fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
     }
@@ -633,8 +651,8 @@ fn link_entry(
         ))
     });
     let bin_dir = entry_nm.join(".bin");
-    if is_importer && !fresh {
-        fsutil::remove_planted_links(&bin_dir, &entry_nm).map_err(|source| Error::Io {
+    if !from_global && !fresh {
+        fsutil::remove_planted_links(&bin_dir, &real_base).map_err(|source| Error::Io {
             path: bin_dir.clone(),
             source,
         })?;
