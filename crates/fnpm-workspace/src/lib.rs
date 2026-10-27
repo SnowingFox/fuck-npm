@@ -57,6 +57,9 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    /// pnpm-workspace.yaml nests (directly or through aliases) deeper than the parser goes.
+    #[error("pnpm-workspace.yaml is nested too deeply")]
+    PnpmWorkspaceTooDeep,
     /// A literal (non-glob) `workspaces` entry whose package.json does not exist.
     #[error("Workspace not found \"{0}\"")]
     WorkspaceNotFound(String),

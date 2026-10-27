@@ -238,8 +238,15 @@ impl Failure {
             (sentence.to_owned(), upgrade)
         });
         // bun names the npm and yarn v1 parsers' failures without a reason.
-        let reason = (!message.starts_with(tag) && tag != "UnsupportedYarnLockfileVersion")
+        let mut reason = (!message.starts_with(tag) && tag != "UnsupportedYarnLockfileVersion")
             .then_some(message);
+        // A YAML error: bun prints the parser's error, then this warning.
+        if let Some(text) = reason
+            .as_deref()
+            .and_then(|r| r.strip_prefix("Failed to parse pnpm-lock.yaml: "))
+        {
+            reason = Some(format!("{text}\nwarn: Failed to parse pnpm-lock.yaml."));
+        }
         Self {
             tag,
             reason,
