@@ -2198,6 +2198,17 @@ fn write_state(
         installs,
         workspace_patterns,
         workspace_dirs,
+        folders: graph
+            .packages
+            .iter()
+            .filter_map(|p| match &p.resolution {
+                Resolution::Folder { path } => {
+                    let id = fast_path::dir_identity(&root.join(path)).ok()?;
+                    Some((path.clone(), id))
+                }
+                _ => None,
+            })
+            .collect(),
     };
     let _ = fast_path::write(root, meta, &state);
 }

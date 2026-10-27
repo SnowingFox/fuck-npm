@@ -34,7 +34,7 @@ fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
     }
 }
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 5;
+pub const STATE_VERSION: u32 = 6;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +74,10 @@ pub struct State {
     /// member, which no manifest entry would show.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_dirs: Vec<String>,
+    /// `(path relative to root, identity)` of every `file:` folder dependency: a file added
+    /// to or removed from one changes what is copied into `node_modules`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<(String, (u64, u64, i128))>,
 }
 
 /// The result of [`check`].
@@ -214,7 +218,12 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         }
         std::fs::read(&path).is_ok_and(|b| xxhash_rust::xxh3::xxh3_64(&b) == *hash)
     });
-    manifests_unchanged && members_unchanged(project_dir, state)
+    manifests_unchanged
+        && members_unchanged(project_dir, state)
+        && state
+            .folders
+            .iter()
+            .all(|(rel, id)| dir_identity(&project_dir.join(rel)).is_ok_and(|now| now == *id))
 }
 
 /// The workspace globs select the same directories, and none of them gained a package.json.
@@ -306,7 +315,24 @@ mod tests {
             installs: 4,
             workspace_patterns: Vec::new(),
             workspace_dirs: Vec::new(),
+            folders: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_changed_folder_dependency_is_not_a_noop() {
+        let p = project();
+        let cache = tempfile::tempdir().unwrap();
+        let meta = meta_dir(cache.path(), p.path());
+        std::fs::create_dir_all(p.path().join("top")).unwrap();
+        let mut state = state_for(p.path());
+        state.node_modules = dir_identity(&p.path().join("node_modules")).unwrap();
+        state.folders = vec![("top".into(), dir_identity(&p.path().join("top")).unwrap())];
+        write(p.path(), &meta, &state).unwrap();
+        assert!(matches!(check(p.path(), &meta, 7), Check::Noop { .. }));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(p.path().join("top/new.js"), "").unwrap();
+        assert!(matches!(check(p.path(), &meta, 7), Check::Changed(_)));
     }
 
     #[test]
