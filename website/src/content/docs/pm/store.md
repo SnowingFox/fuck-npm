@@ -3,7 +3,7 @@ title: Store and disk sharing
 description: Understand fnpm's v2 package store, link strategies and physical disk measurements.
 ---
 
-fnpm stores packages under `~/.fnpm/store/v2` by default. The metadata and project-state cache lives under `~/.fnpm/cache`. [Environment overrides](../configuration/#fnpm-environment-variables) let a project or benchmark isolate those directories.
+fnpm stores packages under `~/.fnpm/store/v2` by default. The metadata and project-state cache lives under `~/.fnpm/cache`. [Environment overrides](../configuration/#fnpm-environment-variables) let a project or benchmark isolate those directories. When a cache directory is configured explicitly, the store moves inside it.
 
 ## Sharing strategy
 
