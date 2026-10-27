@@ -13,7 +13,8 @@ import os from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inject } from "vitest";
-import { Archive, deepMatch, file, parseJsonc, resolveSync, semver, sleepSync, spawn, type Subprocess } from "./compat/bun.ts";
+import { bunNames } from "./compat/lockfile.ts";
+import { Archive, deepMatch, file, storeOfCache, parseJsonc, resolveSync, semver, sleepSync, spawn, type Subprocess } from "./compat/bun.ts";
 
 export type { Subprocess };
 
@@ -93,11 +94,21 @@ export async function evictCacheEntries(cache: string, evict: (entry: string) =>
   for (const entry of fs.existsSync(cache) ? fs.readdirSync(cache).sort() : []) {
     if (entry !== "store" && evict(entry)) await remove(join(cache, entry));
   }
-  const pkgs = join(cache, "store", "v2", "pkgs");
-  for (const entry of fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : []) {
-    const named = entry.replace(/^@([^+]+)\+/, "@$1/");
-    if (evict(named) || evict(entry)) await remove(join(pkgs, entry));
+  for (const store of storesOfCache(cache)) {
+    const pkgs = join(store, "v2", "pkgs");
+    for (const entry of fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : []) {
+      const named = entry.replace(/^@([^+]+)\+/, "@$1/");
+      if (evict(named) || evict(entry)) await remove(join(pkgs, entry));
+    }
   }
+}
+
+/**
+ * The stores that hold the packages of the cache `cache`: `<cache>/store`, and the one the compat spawn gives a test
+ * with a cache of its own ([`storeOfCache`]).
+ */
+function storesOfCache(cache: string): string[] {
+  return [join(cache, "store"), storeOfCache(workerRoot, cache)];
 }
 
 /**
@@ -110,12 +121,25 @@ export function cacheEntryDirs(cache: string, name: string, version: string, sto
   const bun = (fs.existsSync(cache) ? fs.readdirSync(cache).sort() : [])
     .filter(entry => entry.startsWith(`${name}@${version}@`))
     .map(entry => join(cache, entry));
-  const pkgs = join(store ?? join(cache, "store"), "v2", "pkgs");
   const stored = name.replace(/^@([^/]+)\//, "@$1+");
-  const fnpm = (fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [])
-    .filter(entry => entry.startsWith(`${stored}@${version}-`))
-    .map(entry => join(pkgs, entry, "package"));
+  const fnpm = (store ? [store] : storesOfCache(cache)).flatMap(store => {
+    const pkgs = join(store, "v2", "pkgs");
+    return (fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [])
+      .filter(entry => entry.startsWith(`${stored}@${version}-`))
+      .map(entry => join(pkgs, entry, "package"));
+  });
   return [...bun, ...fnpm];
+}
+
+/**
+ * The manifest cache entries under `cache`, as absolute paths: bun's `<cache>/<hash>.npm` files and fnpm's
+ * `<cache>/metadata/v1/<hash>.rkyv` ones. A test that checks what a cached manifest holds (its ETag, its
+ * Last-Modified) or that one was written reads fnpm's entry through this instead of bun's file name.
+ */
+export function cachedManifestFiles(cache: string): string[] {
+  const list = (dir: string, suffix: string) =>
+    fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith(suffix)).map(name => join(dir, name)) : [];
+  return [...list(cache, ".npm"), ...list(join(cache, "metadata", "v1"), ".rkyv")].sort();
 }
 
 export function fnpmExe(): string {
@@ -373,7 +397,7 @@ export function cwdScope(cwd: string) {
 }
 
 export async function readdirSorted(path: string): Promise<string[]> {
-  const results = await readdir(path);
+  const results = bunNames(await readdir(path));
   results.sort();
   return results;
 }

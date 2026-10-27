@@ -76,6 +76,7 @@ pub(crate) fn workspace_from_dir(dir: &Path) -> Workspace {
     // The real discovery, in the mode lockfile migration uses (missing members are skipped).
     let opts = fnpm_workspace::LoadOptions {
         missing: fnpm_workspace::MissingWorkspace::Skip,
+        ..Default::default()
     };
     Workspace::load_with(dir, &opts)
         .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))

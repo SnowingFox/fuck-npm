@@ -84,6 +84,18 @@ fn is_unsupported(e: &io::Error) -> bool {
         )
 }
 
+/// A clone or hard link that failed this way moves to the next backend.
+fn falls_back(backend: Backend, e: &io::Error) -> bool {
+    matches!(backend, Backend::Clonefile | Backend::Hardlink) && is_unsupported(e)
+}
+
+/// A hard link refused with `EACCES` (bun: FUSE filesystems such as Android's sdcard, or one
+/// file the filesystem protects) is copied instead, that file only: the other packages keep
+/// their hard links.
+fn copies_instead(backend: Backend, e: &io::Error) -> bool {
+    backend == Backend::Hardlink && is_errno(e, &[libc::EACCES])
+}
+
 /// Copies a store package into a fresh directory. Holds the process-wide sticky backend.
 #[derive(Debug)]
 pub struct Materializer {
@@ -192,6 +204,25 @@ impl Materializer {
         Ok(weakest)
     }
 
+    /// [`Materializer::materialize`] with a fallback of its own: what this package's files
+    /// fail with moves only this package to the next backend. bun links a `file:` folder from
+    /// the folder, which may be on another file system than every other package.
+    pub fn materialize_alone(
+        &self,
+        src: &Path,
+        index: &FileIndex,
+        dest: &Path,
+    ) -> Result<Backend, MaterializeError> {
+        let own = Materializer::new(self.current());
+        let result = own.materialize(src, index, dest);
+        for (mine, theirs) in self.used.iter().zip(&own.used) {
+            if theirs.load(Ordering::Relaxed) {
+                mine.store(true, Ordering::Relaxed);
+            }
+        }
+        result
+    }
+
     /// Places `files` of the package `src` into `dest` (whose directories exist); returns the
     /// weakest backend used.
     fn place_files<'f>(
@@ -265,10 +296,13 @@ impl Materializer {
                             self.mark(backend);
                             return Ok(backend);
                         }
-                        Err(e)
-                            if matches!(backend, Backend::Clonefile | Backend::Hardlink)
-                                && is_unsupported(&e) =>
-                        {
+                        Err(e) if copies_instead(backend, &e) => {
+                            let _ = std::fs::remove_file(to);
+                            std::fs::copy(from, to)
+                                .map_err(|e| mat_err("copyfile", from, to, e))?;
+                            return Ok(Backend::Copyfile);
+                        }
+                        Err(e) if falls_back(backend, &e) => {
                             let _ = std::fs::remove_file(to);
                             self.degrade_after(backend, &e);
                         }
@@ -283,10 +317,12 @@ impl Materializer {
                         create_dir_all(parent).map_err(|e| mat_err("mkdir", from, parent, e))?;
                     }
                 }
-                Err(e)
-                    if matches!(backend, Backend::Clonefile | Backend::Hardlink)
-                        && is_unsupported(&e) =>
-                {
+                Err(e) if copies_instead(backend, &e) => {
+                    let _ = std::fs::remove_file(to);
+                    std::fs::copy(from, to).map_err(|e| mat_err("copyfile", from, to, e))?;
+                    return Ok(Backend::Copyfile);
+                }
+                Err(e) if falls_back(backend, &e) => {
                     let _ = std::fs::remove_file(to);
                     self.degrade_after(backend, &e);
                 }

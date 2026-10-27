@@ -66,14 +66,20 @@ pub(crate) fn prepare_url(raw: &str) -> Result<(Url, Option<String>, bool)> {
             ),
         });
     }
+    // bun's URL parser refuses whitespace and control characters where the WHATWG one drops
+    // or escapes them (so `baz\n-0.0.2.tgz` would quietly ask for `baz-0.0.2.tgz`).
+    if trimmed.bytes().any(|b| b <= 0x20 || b == 0x7f) {
+        return Err(Error::Io(std::io::Error::other(
+            "InvalidURL downloading tarball",
+        )));
+    }
     let (userinfo, without) = split_userinfo(trimmed);
-    let stable = !without.bytes().any(|b| b <= 0x20 || b == 0x7f);
     let url = Url::parse(&without).map_err(|e| Error::Network {
         url: redact_url(raw),
         message: format!("invalid tarball URL: {e}"),
     })?;
     let query_free = url.path();
-    let normalized = stable && !hides_dot_segment(query_free);
+    let normalized = !hides_dot_segment(query_free);
     Ok((url, userinfo, normalized))
 }
 
@@ -131,14 +137,8 @@ impl Inner {
 
     async fn start(&self, spec: &Spec, from: u64) -> Started {
         let permit = self.limiter.acquire(spec.priority).await;
-        let mut req = self
-            .http
-            .request(spec.method.clone(), spec.url.clone())
-            .headers(spec.headers.clone());
-        if from > 0 {
-            req = req.header("range", format!("bytes={from}-"));
-        }
-        match req.send().await {
+        let range = (from > 0).then(|| ("range", format!("bytes={from}-")));
+        match self.send(spec, range).await {
             Ok(resp) => {
                 let status = resp.status().as_u16();
                 if (200..300).contains(&status) {

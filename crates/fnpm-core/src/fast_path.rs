@@ -23,11 +23,16 @@ pub fn meta_dir(cache_dir: &Path, project_dir: &Path) -> std::path::PathBuf {
     cache_dir.join("projects").join(format!("{key:016x}"))
 }
 
-/// The bytes of the project's lockfile: fnpm.lock, else the bun.lockb a project keeps.
+/// The bytes of the project's lockfile: fnpm.lock, else the bun.lockb a project keeps. A
+/// project without dependencies has none (bun deletes the empty lockfile): no bytes then.
 pub(crate) fn lockfile_bytes(project_dir: &Path) -> Option<Vec<u8>> {
-    std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK))
+    match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK))
         .or_else(|_| std::fs::read(project_dir.join(fnpm_lockfile::BUN_LOCKB)))
-        .ok()
+    {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(_) => None,
+    }
 }
 
 /// `dir_identity`, or zeros when the directory does not exist (the hoisted layout has no

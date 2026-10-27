@@ -35,6 +35,28 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
     match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+        // bun prints the commit of the `owner-repo-<commit>` tag, after its last `-`.
+        Resolution::Github {
+            owner,
+            repo,
+            resolved_commit,
+            ..
+        } => {
+            let commit = resolved_commit
+                .rsplit('-')
+                .next()
+                .unwrap_or(resolved_commit);
+            fnpm_registry::redact_url(&format!("github:{owner}/{repo}#{commit}"))
+        }
+        // An ssh login without a password (`ssh://git@host/...`) is no secret; bun prints it.
+        Resolution::Git { url, .. }
+            if url
+                .strip_prefix("ssh://")
+                .and_then(|rest| rest.split_once('@'))
+                .is_some_and(|(user, _)| !user.contains([':', '/'])) =>
+        {
+            p.resolution.to_string()
+        }
         resolution => fnpm_registry::redact_url(&resolution.to_string()),
     }
 }

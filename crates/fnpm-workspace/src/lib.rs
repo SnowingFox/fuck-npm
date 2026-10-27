@@ -33,7 +33,7 @@ pub use run::{RunPackage, RunPackages};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// `path` is empty when the text did not come from a file.
-    #[error("{}{message}", path_prefix(.path))]
+    #[error("{}", invalid_package_json(.path, .message))]
     InvalidPackageJson { path: PathBuf, message: String },
     #[error("no package.json found in {0} or any parent directory")]
     NoProject(PathBuf),
@@ -75,6 +75,18 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+}
+
+/// The message of [`Error::InvalidPackageJson`]. An empty file is bun's two lines: it reads as
+/// "no dependencies", so going on would delete the lockfile.
+fn invalid_package_json(path: &Path, message: &str) -> String {
+    if message == manifest::EMPTY_FILE && !path.as_os_str().is_empty() {
+        return format!(
+            "failed to parse '{}': {message}\nnote: restore package.json, or write {{}} to start without dependencies",
+            path.display()
+        );
+    }
+    format!("{}{message}", path_prefix(path))
 }
 
 fn path_prefix(path: &Path) -> String {

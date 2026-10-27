@@ -66,13 +66,16 @@ impl From<fnpm_registry::Error> for FetchFailure {
 
 impl From<fnpm_store::Error> for FetchFailure {
     fn from(e: fnpm_store::Error) -> Self {
-        let code = match e {
-            fnpm_store::Error::Integrity { .. } => "INTEGRITY",
-            _ => "CORE_ERROR",
-        };
-        Self {
-            message: e.to_string(),
-            code,
+        match e {
+            // bun's line, `Integrity check failed for tarball: <name>`.
+            fnpm_store::Error::Integrity { package, .. } => Self {
+                message: fnpm_store::integrity::integrity_failure_message(&package),
+                code: "INTEGRITY",
+            },
+            e => Self {
+                message: e.to_string(),
+                code: "CORE_ERROR",
+            },
         }
     }
 }
@@ -145,9 +148,11 @@ struct Inner {
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     counters: Counters,
     reused_packages: Option<Arc<AtomicU64>>,
-    /// A tarball URL without an integrity is found again by what it imported as last time.
-    /// Off with the cache disabled, where bun downloads every tarball again.
-    reuse_unpinned: bool,
+    /// A download is taken from the store when it is there already, and a tarball URL without
+    /// an integrity is found again by what it imported as last time. Off with the cache
+    /// disabled, where bun downloads every tarball and clones every repository again (unless
+    /// `--offline`): only what this install already imported is taken from the store then.
+    reuse_downloads: bool,
 }
 
 /// Starts and tracks the imports of one install. Cheap to clone.
@@ -204,16 +209,16 @@ impl Fetcher {
                 slots: Mutex::new(HashMap::new()),
                 counters: Counters::default(),
                 reused_packages: None,
-                reuse_unpinned: true,
+                reuse_downloads: true,
             }),
         }
     }
 
-    /// [`Inner::reuse_unpinned`].
-    pub(crate) fn with_unpinned_reuse(mut self, on: bool) -> Self {
+    /// [`Inner::reuse_downloads`].
+    pub(crate) fn with_download_reuse(mut self, on: bool) -> Self {
         Arc::get_mut(&mut self.inner)
             .expect("fetcher not started")
-            .reuse_unpinned = on;
+            .reuse_downloads = on;
         self
     }
 
@@ -415,7 +420,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                 version.to_owned(),
                 *integrity,
             );
-            let skip_verify = !inner.verify;
+            // `--no-verify` skips the check of downloads only: a `file:` tarball is always checked.
             blocking(move || match integrity {
                 Some(integrity) => {
                     let key = PackageKey {
@@ -424,7 +429,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                         integrity,
                     };
                     store
-                        .import_tarball_bytes(&key, &bytes, ImportOptions { skip_verify })
+                        .import_tarball_bytes(&key, &bytes, ImportOptions::default())
                         .map(|entry| Fetched { entry, key })
                         .map_err(FetchFailure::from)
                 }
@@ -449,7 +454,7 @@ async fn fetch_one(inner: &Arc<Inner>, name: &str, version: &str, res: &Resoluti
                     .store
                     .integrity_for_url(&inner.cache_dir, name, version, &pinned)
             });
-            if let Some(hit) = cached(inner, name, version, known) {
+            if let Some(hit) = reusable(inner, name, version, known) {
                 return Ok(hit);
             }
             let fetched = git(inner, name, version, url, resolved_commit).await?;
@@ -491,6 +496,19 @@ fn cached(
     Some(Fetched { entry, key })
 }
 
+/// [`cached`] for a download: with the cache disabled, only a package this install imported.
+fn reusable(
+    inner: &Inner,
+    name: &str,
+    version: &str,
+    integrity: Option<Integrity>,
+) -> Option<Fetched> {
+    let offline = inner.client.offline_mode() == fnpm_config::OfflineMode::Offline;
+    let integrity =
+        integrity.filter(|i| inner.reuse_downloads || offline || inner.store.imported_here(i))?;
+    cached(inner, name, version, Some(integrity))
+}
+
 async fn remote(
     inner: &Arc<Inner>,
     name: &str,
@@ -498,10 +516,11 @@ async fn remote(
     url: &str,
     integrity: Option<Integrity>,
 ) -> Outcome {
+    let offline = inner.client.offline_mode() == fnpm_config::OfflineMode::Offline;
+    let reuse = inner.reuse_downloads || offline;
     // A URL without an integrity is found again by what it imported as last time.
     let known = integrity.or_else(|| {
-        inner
-            .reuse_unpinned
+        reuse
             .then(|| {
                 inner
                     .store
@@ -509,10 +528,28 @@ async fn remote(
             })
             .flatten()
     });
-    if let Some(hit) = cached(inner, name, version, known) {
+    if let Some(hit) = reusable(inner, name, version, known) {
         return Ok(hit);
     }
-    if inner.client.offline_mode() == fnpm_config::OfflineMode::Offline {
+    // `--no-verify` bytes that do not match the pin are stored under their own hash, never under
+    // the pin, and only `--no-verify` installs find them again (through the URL and the pin).
+    let unverified = integrity
+        .filter(|_| !inner.verify)
+        .map(|pin| format!("{url}#{}", pin.to_sri()));
+    if reuse
+        && let Some(record) = &unverified
+        && let Some(hit) = cached(
+            inner,
+            name,
+            version,
+            inner
+                .store
+                .integrity_for_url(&inner.cache_dir, name, version, record),
+        )
+    {
+        return Ok(hit);
+    }
+    if offline {
         return Err(FetchFailure {
             code: "OFFLINE",
             message: format!("--offline: \"{name}\" is not in the cache"),
@@ -534,6 +571,21 @@ async fn remote(
         chunk.map_err(to_io)
     });
     match integrity {
+        Some(pin) if !inner.verify => {
+            let (key, entry) = inner
+                .store
+                .import_tarball_unpinned(name, version, stream)
+                .await
+                .map_err(FetchFailure::from)?;
+            if key.integrity != pin
+                && let Some(record) = &unverified
+            {
+                inner
+                    .store
+                    .remember_url(&inner.cache_dir, name, version, record, &key.integrity);
+            }
+            Ok(Fetched { entry, key })
+        }
         Some(integrity) => {
             let key = PackageKey {
                 name: name.to_owned(),
@@ -559,7 +611,7 @@ async fn remote(
                 .import_tarball_unpinned(name, version, stream)
                 .await
                 .map_err(FetchFailure::from)?;
-            if inner.reuse_unpinned {
+            if inner.reuse_downloads {
                 inner
                     .store
                     .remember_url(&inner.cache_dir, name, version, url, &key.integrity);
@@ -682,5 +734,21 @@ impl fnpm_linker::PackageSource for GraphSource<'_> {
         // A patch file that cannot be read fails in `wait`; no tag then.
         let (hash, _) = read_patch(&self.fetcher.inner.root_dir, patch).ok()?;
         Some(format!("{hash:016x}"))
+    }
+
+    fn unverified(&self, id: PackageId) -> bool {
+        if self.fetcher.inner.verify {
+            return false;
+        }
+        let Some(pkg) = self.graph.get(id) else {
+            return false;
+        };
+        let Some(pin) = pkg.resolution.integrity() else {
+            return false;
+        };
+        self.fetcher
+            .existing(pkg)
+            .and_then(|slot| slot.result.lock().clone())
+            .is_some_and(|done| done.is_ok_and(|f| f.key.integrity != *pin))
     }
 }

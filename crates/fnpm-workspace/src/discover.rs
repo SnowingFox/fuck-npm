@@ -34,6 +34,9 @@ pub enum MissingWorkspace {
 #[derive(Debug, Clone, Default)]
 pub struct LoadOptions {
     pub missing: MissingWorkspace,
+    /// An empty root package.json reads as `{}` (bun: `touch package.json && bun install`,
+    /// `bun add` into an empty file). Otherwise it is an error.
+    pub empty_root: bool,
 }
 
 /// The absolute posix spelling used for glob matching (`/C:/x` on Windows).
@@ -585,6 +588,11 @@ pub(crate) fn load(root_dir: &Path, options: &LoadOptions) -> Result<(Workspace,
     let root_dir = paths::absolute(root_dir);
     let root_pj = root_dir.join("package.json");
     let root = match PackageJson::read(&root_pj) {
+        Err(Error::InvalidPackageJson { message, .. })
+            if options.empty_root && message == crate::manifest::EMPTY_FILE =>
+        {
+            PackageJson::parse_at("{}", &root_pj)?
+        }
         Err(Error::Io { source, .. })
             if matches!(
                 source.kind(),

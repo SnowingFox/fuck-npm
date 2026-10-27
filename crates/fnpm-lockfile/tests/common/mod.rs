@@ -103,6 +103,7 @@ pub fn workspace(dir: &Path) -> Workspace {
     // The real discovery, in the mode lockfile migration uses (missing members are skipped).
     let opts = fnpm_workspace::LoadOptions {
         missing: fnpm_workspace::MissingWorkspace::Skip,
+        ..Default::default()
     };
     // A project whose workspace config does not load (the broken pnpm-workspace.yaml cases) is
     // migrated with its root package.json alone, as the migration does.

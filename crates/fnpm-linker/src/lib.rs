@@ -190,6 +190,14 @@ pub trait PackageSource: Sync {
         let _ = id;
         None
     }
+
+    /// The store entry of `id` holds `--no-verify` bytes that did not match the integrity of
+    /// its resolution. Its `.fnpm-tag` stays empty then: it does not claim a hash that was
+    /// not checked, so an install that verifies replaces it.
+    fn unverified(&self, id: PackageId) -> bool {
+        let _ = id;
+        false
+    }
 }
 
 /// `items` ordered by the [`PackageSource::size_hint`] of their package, largest first
@@ -616,11 +624,19 @@ impl LinkCx<'_> {
             package: self.label(id),
             message,
         })?;
-        mat.materialize(&entry.root, &entry.index, dest)
-            .map_err(|source| Error::Materialize {
-                package: self.label(id),
-                source,
-            })?;
+        let folder = self
+            .graph
+            .get(id)
+            .is_some_and(|p| matches!(p.resolution, fnpm_types::Resolution::Folder { .. }));
+        let result = if folder {
+            mat.materialize_alone(&entry.root, &entry.index, dest)
+        } else {
+            mat.materialize(&entry.root, &entry.index, dest)
+        };
+        result.map_err(|source| Error::Materialize {
+            package: self.label(id),
+            source,
+        })?;
         if let Some(tag) = self.source.patch_tag(id) {
             let p = dest.join(verify::PATCH_TAG_FILE);
             write_new_file(&p, tag.as_bytes()).map_err(|source| Error::Io { path: p, source })?;
@@ -628,6 +644,11 @@ impl LinkCx<'_> {
         if let Some(pkg) = self.graph.get(id)
             && let Some(tag) = verify::tag_for(&pkg.resolution)
         {
+            let tag = if self.source.unverified(id) {
+                String::new()
+            } else {
+                tag
+            };
             let p = dest.join(verify::TAG_FILE);
             write_new_file(&p, tag.as_bytes()).map_err(|source| Error::Io { path: p, source })?;
         }

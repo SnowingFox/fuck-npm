@@ -1011,7 +1011,10 @@ impl Engine<'_> {
                     return Ok(Step::Done);
                 }
                 if matches!(*e, fnpm_registry::Error::NotFound(_)) {
-                    return Err(Error::NotFound(name));
+                    return Err(match self.manifests.manifest_url(&name) {
+                        Some(url) => Error::ManifestNotFound { name, url },
+                        None => Error::NotFound(name),
+                    });
                 }
                 return Err(Error::Registry(clone_registry_error(&e)));
             }
@@ -1207,6 +1210,13 @@ impl Engine<'_> {
         let tarball =
             (!vm.dist.tarball.is_empty() && !under_npmjs).then(|| vm.dist.tarball.clone());
         let mut package = local::package_from_manifest(name, vm, tarball);
+        if self.cfg.log_level == fnpm_config::LogLevel::Verbose {
+            for (literal, field) in local::nameless_manifest_rows(vm) {
+                self.warnings.push(format!(
+                    "skipping unnamed dependency of {name}@{version} (\"{literal}\" in \"{field}\")"
+                ));
+            }
+        }
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
                 &self.extension_rules,
@@ -1431,8 +1441,7 @@ impl Engine<'_> {
                         edge.name
                     ),
                 })?;
-            // bun names a folder without a package.json name after the folder.
-            let fallback = fnpm_types::name::fallback_package_name(&rel).to_owned();
+            let fallback = local::unnamed_package_name(&resolution);
             let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);
@@ -1868,19 +1877,7 @@ impl Engine<'_> {
                 if let Some(integrity) = fetched.integrity {
                     resolution.set_integrity(integrity);
                 }
-                // bun names a tarball without a package.json name after its file.
-                let fallback = match &resolution {
-                    Resolution::RemoteTarball { url, .. } => {
-                        fnpm_types::name::fallback_package_name(url).to_owned()
-                    }
-                    Resolution::LocalTarball { path, .. } => {
-                        fnpm_types::name::fallback_package_name(path).to_owned()
-                    }
-                    _ => waiters
-                        .first()
-                        .map(|w| self.edge(*w).name.clone())
-                        .unwrap_or_default(),
-                };
+                let fallback = local::unnamed_package_name(&resolution);
                 let mut package =
                     local::package_from_json(&fetched.manifest, &fallback, resolution);
                 let id = match self.by_key.get(&package.key()) {

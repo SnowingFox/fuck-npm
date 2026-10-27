@@ -95,7 +95,8 @@ export async function setGithubRepository(
   files: Record<string, string>,
 ) {
   const tarball = await githubTarball(`${owner}-${repo}-${commit}`, files);
-  for (const ref of refs) {
+  // GitHub serves the commit too: an install from a lockfile asks for the commit it recorded.
+  for (const ref of new Set([...refs, commit])) {
     githubTarballs.set(`/repos/${owner}/${repo}/tarball/${ref}`, tarball);
   }
 }

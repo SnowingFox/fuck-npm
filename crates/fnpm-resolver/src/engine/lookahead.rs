@@ -35,6 +35,17 @@ impl Engine<'_> {
                 DependencySpec::Folder { path } => self.follow_folder_ahead(row, path),
                 _ => {}
             }
+        } else if matches!(
+            asked.spec,
+            DependencySpec::Tarball {
+                uri: fnpm_types::TarballUri::Remote(_)
+            } | DependencySpec::Git(_)
+                | DependencySpec::Github(_)
+        ) && !edge.behavior.is_peer()
+        {
+            // Any other row's download starts when it is queued, as bun's does: a row ahead of
+            // it that waits for a manifest does not hold it back.
+            self.fetch_remote_ahead(row, &edge, &asked);
         }
         if !asked.spec.tag().is_npm() || !is_npm_package_name(&asked.name) {
             return;

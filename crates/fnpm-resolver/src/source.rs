@@ -41,6 +41,12 @@ pub trait ManifestSource: Send + Sync {
     /// tarball at this URL is recorded as the default location (`tarball_url: None`), which keeps
     /// lockfiles portable across mirrors.
     fn default_tarball_url(&self, name: &str, version: &str) -> String;
+
+    /// The URL the manifest of `name` is requested from, for bun's `GET <url> - 404`.
+    fn manifest_url(&self, name: &str) -> Option<String> {
+        let _ = name;
+        None
+    }
 }
 
 /// A git / tarball package after it was downloaded (or read from disk).
@@ -125,7 +131,12 @@ impl RegistrySource {
     /// Reads the package.json out of the tarball, records its integrity and imports it into the
     /// store under its real name and integrity (non-registry keys omit the version).
     /// A failed import is not fatal: the fetch phase downloads the tarball again.
-    fn finish_tarball(&self, origin: &str, bytes: &[u8]) -> fnpm_registry::Result<FetchedPackage> {
+    fn finish_tarball(
+        &self,
+        origin: &str,
+        bytes: &[u8],
+        fallback_name: &str,
+    ) -> fnpm_registry::Result<FetchedPackage> {
         let text = crate::tarball::package_json_from_tgz(bytes).map_err(|message| {
             fnpm_registry::Error::InvalidManifest {
                 name: origin.to_owned(),
@@ -134,7 +145,14 @@ impl RegistrySource {
         })?;
         let manifest = parse_package_json(&text, origin)?;
         let integrity = Integrity::compute(HashAlgorithm::Sha512, bytes);
-        if let (Some(store), Some(name)) = (self.store(), manifest.name.clone()) {
+        // Under the name the package gets in the graph (`local::package_from_json`), which the
+        // fetch looks it up by.
+        let name = manifest
+            .name
+            .clone()
+            .filter(|n| fnpm_types::name::is_safe_lockfile_package_name(n))
+            .unwrap_or_else(|| fallback_name.to_owned());
+        if let Some(store) = self.store() {
             let key = fnpm_store::PackageKey {
                 name,
                 version: String::new(),
@@ -166,6 +184,10 @@ impl ManifestSource for RegistrySource {
 
     fn default_tarball_url(&self, name: &str, version: &str) -> String {
         self.client.default_tarball_url(name, version)
+    }
+
+    fn manifest_url(&self, name: &str) -> Option<String> {
+        self.client.manifest_url(name)
     }
 }
 
@@ -210,7 +232,8 @@ impl PackageFetcher for RegistrySource {
                         message,
                     },
                 )?;
-                let package = this.finish_tarball(&url, &bytes)?;
+                let fallback = fnpm_types::name::fallback_package_name(&repo).to_owned();
+                let package = this.finish_tarball(&url, &bytes, &fallback)?;
                 this.github
                     .lock()
                     .insert((owner, repo, tag.clone()), package);
@@ -257,9 +280,12 @@ impl PackageFetcher for RegistrySource {
                 }
                 other => return Err(io_error(format!("cannot fetch a {other} resolution"))),
             };
-            tokio::task::spawn_blocking(move || this.finish_tarball(&request.name, &bytes))
-                .await
-                .map_err(|e| io_error(e.to_string()))?
+            let fallback = crate::local::unnamed_package_name(&request.resolution);
+            tokio::task::spawn_blocking(move || {
+                this.finish_tarball(&request.name, &bytes, &fallback)
+            })
+            .await
+            .map_err(|e| io_error(e.to_string()))?
         })
     }
 
@@ -337,6 +363,10 @@ pub fn read_package_json_at(dir: &Path) -> fnpm_registry::Result<Option<PackageJ
         {
             Ok(None)
         }
+        // bun names the errno: `error: ENAMETOOLONG`.
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidFilename => Err(fnpm_registry::Error::Io(
+            std::io::Error::new(e.kind(), "ENAMETOOLONG"),
+        )),
         Err(e) => Err(fnpm_registry::Error::Io(e)),
     }
 }

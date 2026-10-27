@@ -89,12 +89,19 @@ pub(crate) async fn link(cx: &Ctx) -> Result<CoreResult> {
             ));
         };
         checked_name(&name)?;
+        // The relative link target is computed between the real paths: with a symlinked home
+        // (`/home/u -> /data/home/u`) one from the spelled paths points elsewhere.
+        let target = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
         for link in registrations(&links, &name) {
+            let mut at = link.clone();
             if let Some(parent) = link.parent() {
                 std::fs::create_dir_all(parent).map_err(Error::io(parent))?;
+                if let (Ok(real), Some(file)) = (std::fs::canonicalize(parent), link.file_name()) {
+                    at = real.join(file);
+                }
             }
-            remove_link(&link);
-            fnpm_store::fsops::symlink_dir(&dir, &link)
+            remove_link(&at);
+            fnpm_store::fsops::symlink_dir(&target, &at)
                 .map_err(|e| Error::usage(format!("{}: {e}", link.display())))?;
         }
         let link = registrations(&links, &name)[0].clone();

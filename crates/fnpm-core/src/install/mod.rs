@@ -311,7 +311,14 @@ fn prepare_with_patch(
                     let _ = crate::runtime();
                 });
         }
-        let (ws, warnings, lock) = load_workspace(config, &project.root_dir)?;
+        // bun reads an empty package.json as `{}` for `add` and for an install that has no
+        // lockfile to lose.
+        let empty_root = is_add
+            || (opts.command == InstallCommand::Install
+                && !["fnpm.lock", "bun.lock"]
+                    .iter()
+                    .any(|name| project.root_dir.join(name).exists()));
+        let (ws, warnings, lock) = load_workspace(config, &project.root_dir, empty_root)?;
         phases.mark("lockfile");
         Some((ws, warnings, lock))
     } else {
@@ -356,11 +363,17 @@ pub(crate) async fn run_with_patch(
 fn load_workspace(
     config: &Config,
     root: &Path,
+    empty_root: bool,
 ) -> Result<(Workspace, Vec<String>, lock::LockState)> {
-    let (ws, warnings) = match Workspace::load_with(root, &Default::default()) {
+    let load = fnpm_workspace::LoadOptions {
+        empty_root,
+        ..Default::default()
+    };
+    let (ws, warnings) = match Workspace::load_with(root, &load) {
         Err(fnpm_workspace::Error::WorkspaceNotFound(entry)) if config.frozen_lockfile => {
             let skip = fnpm_workspace::LoadOptions {
                 missing: fnpm_workspace::MissingWorkspace::Skip,
+                empty_root,
             };
             let (ws, warnings) = Workspace::load_with(root, &skip)?;
             let lock = lock::load(config, &ws)?;
@@ -462,7 +475,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     // 2. Workspace and 3. lockfile (read by `prepare`).
     let (mut ws, ws_warnings, mut lock) = match loaded {
         Some(l) => l,
-        None => load_workspace(&config, &root)?,
+        None => load_workspace(&config, &root, false)?,
     };
     for w in lock::workspace_warnings(&ws_warnings, &lock)
         .cloned()
@@ -616,7 +629,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
         events.clone(),
     )
     .with_reuse_counter(telemetry.as_ref().map(|guard| guard.reuse_counter()))
-    .with_unpinned_reuse(!config.cache_disabled);
+    .with_download_reuse(!config.cache_disabled);
     let omits = config.omit.dev || config.omit.optional || config.omit.peer || config.production;
     let stream =
         config.install_packages && !opts.pm.lockfile_only && !omits && planned.selected.is_none();
@@ -744,9 +757,13 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
             .await?;
         }
     }
-    // bun announces the resolve when it had to ask the network; its warnings follow.
-    let mut announced = false;
+    // bun announces the resolve when it had to ask the network; its warnings follow. A lockfile
+    // that already has every package is installed without that phase (bun skips
+    // `resolve_pending_tasks`): its downloads are not announced.
+    let resolving = out.changed || client.stats().manifest_requests > 0;
+    let mut announced = !resolving;
     announce_resolving(&client, &*events, &mut announced);
+    let announced = announced && resolving;
     for w in &out.warnings {
         events.emit(Event::warn(w.clone(), None));
     }
@@ -888,7 +905,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     if opts.pm.lockfile_only || !config.install_packages {
-        announce_resolved(&client, &*events, announced);
+        announce_resolved(&client, &*events, announced, resolving);
         // `--lockfile-only` writes the lockfile; `--dry-run` writes nothing.
         if opts.pm.lockfile_only && !config.dry_run {
             if config.save_package_json
@@ -1136,7 +1153,7 @@ async fn execute(prepared: PreparedInstall, events: Arc<dyn EventSink>) -> Resul
     }
 
     // Every download is done (the link waited for them).
-    announce_resolved(&client, &*events, announced);
+    announce_resolved(&client, &*events, announced, resolving);
 
     // Global installs link the direct dependencies' bins into the global bin directory.
     if config.global {
@@ -2186,14 +2203,15 @@ fn save(
             events.emit(Event::notice(line));
         }
     }
-    // Bun deletes the lockfile when remove leaves only the dependency-free root.
-    // Keep this inside the normal save gate so --no-save and frozen installs preserve it.
+    // Bun deletes the lockfile when only the dependency-free root is left (bun
+    // `Lockfile::is_empty`). Keep this inside the normal save gate so --no-save and frozen
+    // installs preserve it.
     let removing = edits
         .by_workspace
         .values()
         .flatten()
         .any(|edit| matches!(edit, Edit::Remove { .. }));
-    if removing && graph.len() == 1 && graph.packages[0].dependencies.is_empty() {
+    if graph.len() == 1 && graph.packages[0].dependencies.is_empty() {
         let path = root.join(fnpm_lockfile::FNPM_LOCK);
         match std::fs::remove_file(&path) {
             Ok(()) => {}
@@ -2202,9 +2220,11 @@ fn save(
         }
         let _ = std::fs::remove_file(lock::sidecar_path(config, root));
         if !config.global {
-            events.emit(Event::status(
-                "\npackage.json has no dependencies! Deleted empty lockfile",
-            ));
+            events.emit(Event::status(if removing {
+                "\npackage.json has no dependencies! Deleted empty lockfile"
+            } else {
+                "No packages! Deleted empty lockfile"
+            }));
         }
         return Ok(true);
     }
@@ -2264,9 +2284,10 @@ fn announce_resolved(
     client: &fnpm_registry::RegistryClient,
     events: &dyn EventSink,
     announced: bool,
+    resolving: bool,
 ) {
     let tasks = network_tasks(client);
-    if tasks == 0 {
+    if tasks == 0 || !resolving {
         return;
     }
     if !announced {

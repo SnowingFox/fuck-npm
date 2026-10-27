@@ -132,7 +132,9 @@ impl Error {
                 Rv::NoMatchingVersion { .. }
                 | Rv::DistTagNotFound { .. }
                 | Rv::TooRecent { .. } => "NO_MATCHING_VERSION",
-                Rv::NotFound(_) | Rv::WorkspaceNotFound { .. } => "NOT_FOUND",
+                Rv::NotFound(_) | Rv::ManifestNotFound { .. } | Rv::WorkspaceNotFound { .. } => {
+                    "NOT_FOUND"
+                }
                 Rv::Registry(e) => registry_code(e),
                 Rv::InvalidPackageJson { .. } => "INVALID_PACKAGE_JSON",
                 Rv::InvalidOption { .. } => "USAGE",
@@ -196,6 +198,7 @@ pub fn io_threads() -> usize {
 pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
+        init_rayon();
         let workers = io_threads();
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(workers)
@@ -211,6 +214,32 @@ pub fn runtime() -> &'static tokio::runtime::Runtime {
         }
         rt
     })
+}
+
+/// Builds rayon's global pool now. rayon builds it lazily on first use and panics when it
+/// cannot start its threads (EAGAIN on a machine at its thread limit); here a pool that cannot
+/// start falls back to fewer threads, down to one, instead of aborting the install.
+fn init_rayon() {
+    let mut threads = fnpm_types::available_parallelism().max(1);
+    loop {
+        match rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+        {
+            Ok(()) => return,
+            // Already built (by an embedder, or by rayon on an earlier first use).
+            Err(e) if e.to_string().contains("already been initialized") => return,
+            Err(_) if threads > 1 => threads /= 2,
+            Err(_) => {
+                // One more try after the machine had a moment; then leave it to rayon.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let _ = rayon::ThreadPoolBuilder::new()
+                    .num_threads(1)
+                    .build_global();
+                return;
+            }
+        }
+    }
 }
 
 /// `fnpm install | add | remove | update | ci`. Pipeline: fast path -> config -> workspace

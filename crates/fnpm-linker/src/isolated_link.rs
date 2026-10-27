@@ -717,6 +717,9 @@ fn link_entry(
             first_err.get_or_insert(err);
         }
     }
+    if let Some(warning) = linker.refused_warning() {
+        cx.events.emit(fnpm_types::Event::warn(warning, None));
+    }
     match first_err {
         Some(e) => Err(e),
         None => Ok(()),

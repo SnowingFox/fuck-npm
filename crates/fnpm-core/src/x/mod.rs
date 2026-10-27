@@ -525,6 +525,7 @@ fn install_error(error: &crate::Error, registry: &str) -> String {
         // The first package that failed (a report of several has it as its cause).
         crate::Error::Resolve(e) => match e.cause() {
             fnpm_resolver::Error::NotFound(name) => Some(not_found(name)),
+            fnpm_resolver::Error::ManifestNotFound { url, .. } => Some(format!("GET {url} - 404")),
             fnpm_resolver::Error::Registry(r) => from_registry(r),
             _ => None,
         },

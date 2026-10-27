@@ -127,6 +127,24 @@ pub struct GitSpec {
     pub hosted: Option<HostedGitInfo>,
 }
 
+/// A git URL as bun records it, so the lockfile names the host itself: `gitlab:group/lib` (also
+/// behind `ssh://`) is `ssh://git@gitlab.com/group/lib`, and an scp-style `[user@]host:path` is
+/// `ssh://[user@]host:path`. `None` when the URL stays as it is.
+fn hosted_shorthand_url(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("ssh://").unwrap_or(url);
+    let (before, path) = rest.split_once(':')?;
+    if path.starts_with("//") || path.is_empty() || before.is_empty() || before.contains('/') {
+        return None;
+    }
+    if let Some(provider) = crate::hosted_git::HostProvider::from_shortcut(before)
+        .filter(|p| *p != crate::hosted_git::HostProvider::Github)
+    {
+        return Some(format!("ssh://git@{}/{path}", provider.domain()));
+    }
+    // A one-letter "host" is a Windows drive.
+    (rest.len() == url.len() && before.len() > 1).then(|| format!("ssh://{url}"))
+}
+
 /// A GitHub specifier. Fetched as a tarball from the GitHub API.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GithubSpec {
@@ -283,7 +301,7 @@ impl DependencySpec {
                 };
                 let hosted = HostedGitInfo::from_url(dep).ok().flatten();
                 Ok(Self::Git(GitSpec {
-                    url: url.to_owned(),
+                    url: hosted_shorthand_url(url).unwrap_or_else(|| url.to_owned()),
                     committish: Committish::parse(committish),
                     hosted,
                 }))

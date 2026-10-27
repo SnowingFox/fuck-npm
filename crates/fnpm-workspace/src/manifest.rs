@@ -44,6 +44,9 @@ pub struct PackageJson {
     pub raw: Value,
 }
 
+/// The message of an empty package.json (bun: `file is empty`).
+pub(crate) const EMPTY_FILE: &str = "file is empty";
+
 impl PackageJson {
     /// Parses package.json text. JSONC-tolerant like bun (comments, trailing commas, BOM).
     /// An empty file is an error (bun: `file is empty`). A dependency group that is not an
@@ -67,7 +70,7 @@ impl PackageJson {
             .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
             .is_empty()
         {
-            return Err(invalid(path, "file is empty"));
+            return Err(invalid(path, EMPTY_FILE));
         }
         let raw = crate::jsonc::parse_value(text).map_err(|e| invalid(path, &e))?;
         Self::from_value(raw, path)
@@ -91,7 +94,7 @@ impl PackageJson {
             .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
             .is_empty()
         {
-            return Err(invalid(path, "file is empty"));
+            return Err(invalid(path, EMPTY_FILE));
         }
         let raw = crate::jsonc::parse_value(&text).map_err(|e| invalid(path, &e))?;
         Self::build(raw, path, false)
