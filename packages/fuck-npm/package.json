@@ -1,6 +1,6 @@
 {
   "name": "fuck-npm",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "fnpm: a fast, disk-saving package manager with a Rust core.",
   "type": "module",
   "bin": {
@@ -32,7 +32,7 @@
     "prepublishOnly": "npm run build && npm run test && npm run type-check"
   },
   "dependencies": {
-    "@fuck-npm/binding": "0.0.2"
+    "@fuck-npm/binding": "0.0.3"
   },
   "devDependencies": {
     "@clack/prompts": "1.7.0",

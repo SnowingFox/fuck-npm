@@ -1,6 +1,6 @@
 {
   "name": "@fuck-npm/binding",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Native (napi-rs) core for fnpm. Loads the prebuilt .node for this platform.",
   "main": "index.js",
   "types": "index.d.ts",
