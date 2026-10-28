@@ -285,7 +285,8 @@ describe("installs against a local registry", () => {
 
     await binding.install({ cwd, command: "add", packages: ["tiny@1.0.0"], registry: registry.url });
     const manifest = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    manifest.dependencies["tiny-dep"] = "1.0.0";
+    // A frozen install accepts edits the lockfile already satisfies (bun), so ask for another version.
+    manifest.dependencies.tiny = "1.1.0";
     writeFileSync(join(cwd, "package.json"), JSON.stringify(manifest));
     error = await rejection(binding.install({ cwd, frozenLockfile: true, registry: registry.url }));
     expect(error.code).toBe("FROZEN_LOCKFILE");
