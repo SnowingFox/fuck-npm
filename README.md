@@ -251,12 +251,14 @@ The full design, including every crate's API, is in [docs/ARCHITECTURE.md](docs/
 
 ## Compatibility
 
-Bun's ported conformance suite last ran as a whole at **3,667 passed / 2,973 failed /
-58 skipped** (55.2%, 42 of 45 selected files; an older snapshot). On current source, the
-lockfile-migration files pass 170 and fail 426 (115 / 481 before the latest fixes), with
-no new failures. Most remaining migration failures compare exact output (lockfile
-snapshots, Bun's stderr wording); frozen-lockfile and offline behavior are the next areas
-to fix. See [support and current limits](https://fuck-npm.vercel.app/status/).
+Bun's ported conformance suite (101 files) passes **8,787 tests and fails 2,273, with 157
+skipped (79.4%)** on `fa9876a` (2026-10-28); the previous whole-suite snapshot was 55.2%.
+Three files time out and are not counted: the two security-scanner matrices, which need
+terminal callbacks the Node test adapter lacks, and the streaming-extraction file.
+pm subcommands (`audit`, `why`, `pkg`, `version`, `licenses`, `fetch`, `info`), lockfile-only
+and the lockfile-version files pass completely. Most remaining failures compare exact output
+or need Bun-internal test APIs; the rest are listed per file in the status report.
+See [support and current limits](https://fuck-npm.vercel.app/status/).
 The 18-project corpus has **13 PASS / 5 KNOWN / 0 unexpected failures**.
 See [conformance status](tests/conformance/STATUS.md) and
 [corpus results](tests/e2e/results/2026-10-26-land.md). Full parity remains open.

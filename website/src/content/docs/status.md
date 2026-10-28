@@ -15,20 +15,22 @@ The [414-row parity inventory](https://github.com/SnowingFox/fuck-npm/blob/main/
 
 | Evidence | Recorded result | Meaning |
 |---|---|---|
-| Bun conformance, whole suite | 3,667 passed; 2,973 failed; 58 skipped (55.2%) | An older integrated snapshot; not re-run on the current source |
-| Bun conformance, lockfile migration files | 170 passed; 426 failed (current source) vs 115 / 481 before today's fixes | No new failures; most remaining ones compare exact output, see below |
+| Bun conformance, whole suite | 8,787 passed; 2,273 failed; 157 skipped (79.4%) | 101 files on the current source (`fa9876a`, 2026-10-28); 3 files time out and are not counted |
 | Synthetic speed gate | 9 of 22 comparisons slower than Bun | The all-scenario speed requirement is unmet |
 | Real repositories | fnpm, Bun, pnpm, Yarn and npm on pinned repositories | Per-repository charts, counts and checks in [the real-project results](../benchmarks/real-projects/) |
 
 ### Reading the conformance numbers
 
-The conformance suite is Bun's own package-manager test suite ported to fnpm. A failing test does not mean a package fails to install. In the current lockfile-migration files, the largest groups of failures are:
+The conformance suite is Bun's own package-manager test suite ported to fnpm. A failing test does not mean a package fails to install. The previous whole-suite snapshot passed 55.2%; the fixes since then cover frozen lockfiles, offline installs, `.npmrc` and config precedence, overrides, catalogs, workspaces, lifecycle scripts, the `pm` subcommands and migration.
 
-- **Snapshot differences (76)**: the generated `fnpm.lock` text differs from Bun's recorded `bun.lock` snapshot (key order, fields Bun writes and fnpm does not, or the reverse).
-- **Expected output lines (81)**: tests that expect Bun's exact stderr text in situations where fnpm prints something else or nothing.
-- **Behavior**: the rest, including frozen-lockfile and offline cases, which need fixes in fnpm itself.
+Files that now pass completely include `bun-audit`, `bun-pm-why`, `bun-pm-pkg`, `bun-pm-version`, `bun-pm-licenses`, `bun-pm-fetch`, `bun-info`, `bun-publish`, `lockfile-only`, `lockfile-version-2` and `config-version`. The remaining failures fall into these groups:
 
-The breakdown applies to the migration files that were re-run. Frozen-lockfile, offline and `.npmrc` areas report low pass rates in the older whole-suite snapshot and are the next ones to re-run and fix. Until the whole suite is re-run on current source, treat 55.2% as a historical number.
+- **Exact output**: lockfile text or stderr wording that differs from Bun's recorded snapshot.
+- **Bun internals**: tests that call Bun-only APIs (`bun:internal-for-testing`, lockfile and ini parsers, terminal callbacks). They cannot pass against another binary.
+- **Deliberate differences**: fnpm's own cache-pack format, its content store layout, and a relink that skips a deleted-link check on the no-op path for speed.
+- **Behavior still open**: git dependencies, tarball integrity edge cases, request retries, isolated-layout details and a deadlock when an install script waits on a package linked after it.
+
+The per-file counts are in [the status report](https://github.com/SnowingFox/fuck-npm/blob/main/tests/conformance/STATUS.md).
 
 The real-repository benchmarks are a different kind of evidence: each tool's installed tree must pass the repository's own build, type check or tests. They found and fixed a real hoisting problem (peer dependencies lost in yarn.lock migration, which broke webpack's option validation and affects Bun 1.4.4 too).
 
