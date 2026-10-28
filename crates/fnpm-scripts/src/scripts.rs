@@ -72,11 +72,15 @@ impl PackageScripts {
         }
     }
 
-    /// Reads `<dir>/package.json`.
+    /// Reads `<dir>/package.json`. An empty file has no scripts (the install read it as `{}`).
     pub fn read(dir: &Path) -> std::io::Result<Self> {
-        Ok(Self::from_json(&crate::json::read_package_json(
-            &dir.join("package.json"),
-        )?))
+        let path = dir.join("package.json");
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() == 0) {
+            return Ok(Self::from_json(&serde_json::Value::Object(
+                Default::default(),
+            )));
+        }
+        Ok(Self::from_json(&crate::json::read_package_json(&path)?))
     }
 
     /// Any of the six is set.

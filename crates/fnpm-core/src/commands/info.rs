@@ -1,4 +1,4 @@
-//! Registry reads: `fnpm info` / `pm view`, `whoami`, and `audit` / `fnpm-lock audit`.
+//! Registry reads: `whoami`, and `audit` / `fnpm-lock audit` (`fnpm info` is in `view.rs`).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -8,210 +8,6 @@ use serde_json::{Value, json};
 
 use super::{Ctx, exit, ok};
 use crate::{CoreResult, Error, Result};
-
-/// The version of a packument a spec picks: a dist-tag, an exact version, or the highest
-/// version satisfying a range (`latest` when no spec).
-fn pick_version(doc: &Value, spec: Option<&str>) -> Option<String> {
-    let tags = doc.get("dist-tags").and_then(Value::as_object);
-    let versions = doc.get("versions").and_then(Value::as_object)?;
-    let spec = spec.unwrap_or("latest");
-    if let Some(v) = tags.and_then(|t| t.get(spec)).and_then(Value::as_str) {
-        return Some(v.to_owned());
-    }
-    if versions.contains_key(spec) {
-        return Some(spec.to_owned());
-    }
-    let range = fnpm_semver::Range::parse(spec).ok()?;
-    versions
-        .keys()
-        .filter_map(|k| fnpm_semver::Version::parse(k).ok().map(|v| (v, k)))
-        .filter(|(v, _)| range.satisfies(v))
-        .max_by(|a, b| a.0.cmp_precedence(&b.0))
-        .map(|(_, k)| k.clone())
-}
-
-/// `a.b.c` (or `a[0]`) into a JSON value.
-fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut cur = v;
-    for part in path.split('.') {
-        let (key, index) = match part.split_once('[') {
-            Some((k, rest)) => (k, rest.trim_end_matches(']').parse::<usize>().ok()),
-            None => (part, None),
-        };
-        if !key.is_empty() {
-            cur = cur.get(key)?;
-        }
-        if let Some(i) = index {
-            cur = cur.get(i)?;
-        }
-    }
-    Some(cur)
-}
-
-fn render_value(v: &Value) -> Vec<String> {
-    match v {
-        Value::String(s) => vec![s.clone()],
-        Value::Null => Vec::new(),
-        other => serde_json::to_string_pretty(other)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_owned)
-            .collect(),
-    }
-}
-
-fn human_bytes(n: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "kB", "MB", "GB"];
-    let mut v = n as f64;
-    let mut u = 0;
-    while v >= 1000.0 && u + 1 < UNITS.len() {
-        v /= 1000.0;
-        u += 1;
-    }
-    if u == 0 {
-        format!("{n} B")
-    } else {
-        format!("{v:.1} {}", UNITS[u])
-    }
-}
-
-/// npm view's summary of one version.
-fn summary(doc: &Value, version: &str, manifest: &Value) -> Vec<String> {
-    let name = doc.get("name").and_then(Value::as_str).unwrap_or_default();
-    let license = manifest
-        .get("license")
-        .and_then(Value::as_str)
-        .unwrap_or("Proprietary");
-    let deps = manifest
-        .get("dependencies")
-        .and_then(Value::as_object)
-        .map_or(0, |d| d.len());
-    let versions = doc
-        .get("versions")
-        .and_then(Value::as_object)
-        .map_or(0, |v| v.len());
-    let mut lines = vec![format!(
-        "{name}@{version} | {license} | deps: {deps} | versions: {versions}"
-    )];
-    if let Some(d) = manifest.get("description").and_then(Value::as_str) {
-        lines.push(d.to_owned());
-    }
-    if let Some(h) = manifest.get("homepage").and_then(Value::as_str) {
-        lines.push(h.to_owned());
-    }
-    if let Some(dist) = manifest.get("dist") {
-        lines.push(String::new());
-        lines.push("dist".into());
-        for key in ["tarball", "shasum", "integrity"] {
-            if let Some(v) = dist.get(key).and_then(Value::as_str) {
-                lines.push(format!(" .{key}: {v}"));
-            }
-        }
-        if let Some(n) = dist.get("unpackedSize").and_then(Value::as_u64) {
-            lines.push(format!(" .unpackedSize: {}", human_bytes(n)));
-        }
-    }
-    if let Some(d) = manifest.get("dependencies").and_then(Value::as_object)
-        && !d.is_empty()
-    {
-        lines.push(String::new());
-        lines.push(format!("dependencies ({}):", d.len()));
-        for (k, v) in d {
-            lines.push(format!("- {k}: {}", v.as_str().unwrap_or_default()));
-        }
-    }
-    if let Some(tags) = doc.get("dist-tags").and_then(Value::as_object) {
-        lines.push(String::new());
-        lines.push("dist-tags:".into());
-        for (k, v) in tags {
-            lines.push(format!("{k}: {}", v.as_str().unwrap_or_default()));
-        }
-    }
-    if let Some(t) = doc
-        .get("time")
-        .and_then(|t| t.get(version))
-        .and_then(Value::as_str)
-    {
-        lines.push(String::new());
-        lines.push(format!("Published: {t}"));
-    }
-    lines
-}
-
-/// `fnpm info [<pkg>[@spec]] [property...]`.
-pub(crate) async fn view(cx: &Ctx) -> Result<CoreResult> {
-    let arg = cx.req.positionals.first().cloned().unwrap_or_default();
-    let reads_package_json = arg.is_empty() || arg == "." || arg.ends_with("package.json");
-    // A named package needs no project (`fnpm info react` anywhere, like bun).
-    let project = if reads_package_json {
-        cx.project()?
-    } else {
-        cx.project_anywhere()?
-    };
-    let (name, spec) = if reads_package_json {
-        let path = if arg.ends_with("package.json") {
-            cx.req.cwd.join(&arg)
-        } else {
-            project.root_dir.join("package.json")
-        };
-        let pj = fnpm_workspace::PackageJson::read(&path)?;
-        let Some(name) = pj.name else {
-            return Err(Error::usage(format!("{} has no \"name\"", path.display())));
-        };
-        (name, pj.version)
-    } else {
-        let (n, v) = fnpm_types::name::split_name_and_maybe_version(&arg);
-        (n.to_owned(), v.map(str::to_owned))
-    };
-    let client = project.client()?;
-    let doc = client.view(&name).await?;
-    let Some(version) = pick_version(&doc, spec.as_deref()) else {
-        return Err(Error::Resolve(fnpm_resolver::Error::NoMatchingVersion {
-            name: name.clone(),
-            spec: spec.unwrap_or_else(|| "latest".into()),
-        }));
-    };
-    let manifest = doc
-        .get("versions")
-        .and_then(|v| v.get(&version))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let props: Vec<&String> = cx.req.positionals.iter().skip(1).collect();
-    if props.is_empty() {
-        let lines = summary(&doc, &version, &manifest);
-        return Ok(ok(manifest, lines));
-    }
-    let mut data = serde_json::Map::new();
-    let mut lines = Vec::new();
-    for p in &props {
-        let v = lookup(&manifest, p)
-            .or_else(|| lookup(&doc, p))
-            .cloned()
-            .unwrap_or(Value::Null);
-        if props.len() > 1 {
-            let rendered = render_value(&v);
-            match rendered.as_slice() {
-                [one] => lines.push(format!("{p} = {one}")),
-                many => {
-                    lines.push(format!("{p} ="));
-                    lines.extend(many.iter().cloned());
-                }
-            }
-        } else {
-            lines.extend(render_value(&v));
-        }
-        data.insert((*p).clone(), v);
-    }
-    let data = if props.len() == 1 {
-        data.into_iter()
-            .next()
-            .map(|(_, v)| v)
-            .unwrap_or(Value::Null)
-    } else {
-        Value::Object(data)
-    };
-    Ok(ok(data, lines))
-}
 
 /// `fnpm whoami`.
 pub(crate) async fn whoami(cx: &Ctx) -> Result<CoreResult> {
@@ -232,8 +28,92 @@ fn severity_rank(s: &str) -> u8 {
         "high" => 3,
         "moderate" => 2,
         "low" => 1,
-        _ => 0,
+        // bun counts and filters an unknown severity as moderate.
+        _ => 2,
     }
+}
+
+/// bun `report_bad_response` and the failed POST line: the default registry gave no audit.
+pub(crate) fn report_audit_failure(failure: &fnpm_registry::DefaultFailure, loud: bool) {
+    use fnpm_registry::SkipReason;
+    if !loud {
+        return;
+    }
+    let registry = &failure.registry;
+    match &failure.reason {
+        SkipReason::NotAdvisories => {
+            eprintln!("error: invalid audit response from {registry}: not a list of advisories");
+        }
+        SkipReason::Empty => eprintln!("error: empty audit response from {registry}"),
+        SkipReason::NotJson => eprintln!("error: {registry} returned a non-JSON audit response"),
+        reason => eprintln!("error: POST {} - {reason}", failure.url),
+    }
+}
+
+/// bun `print_unaudited`: the registries other than the default that could not audit.
+pub(crate) fn print_unaudited(unaudited: &[fnpm_registry::UnauditedRegistry], loud: bool) {
+    if !loud {
+        return;
+    }
+    for u in unaudited {
+        eprintln!(
+            "warn: {} did not answer the audit request ({}); skipped {}",
+            fnpm_config::redact_url(&u.registry),
+            u.reason,
+            u.packages.join(", ")
+        );
+    }
+}
+
+/// The installed npm packages to audit: all of them, or with `--production` / `--omit` the
+/// ones the project (the workspace the command runs in) still installs (bun
+/// `collect_packages_for_audit`).
+pub(crate) fn audit_packages_for(
+    cx: &Ctx,
+    project: &crate::project::Project,
+    ws: &fnpm_workspace::Workspace,
+    graph: &fnpm_types::LockGraph,
+) -> Vec<AuditPackage> {
+    let config = &project.config;
+    let dev = !config.production && !config.omit.dev;
+    let wanted = (!(dev && !config.omit.optional && !config.omit.peer)).then(|| {
+        let view = crate::install::link_view(graph);
+        let here = ws
+            .member_for_dir(&cx.req.cwd)
+            .map(|m| m.path.clone())
+            .unwrap_or_default();
+        let root = graph
+            .workspaces
+            .get(&here)
+            .copied()
+            .unwrap_or(fnpm_types::PackageId::ROOT);
+        super::licenses::Walk {
+            graph: &view,
+            dev,
+            optional: !config.omit.optional,
+            peer: !config.omit.peer,
+            optional_peer: false,
+            platform: None,
+            follow_workspace_edges: true,
+        }
+        .packages_from(&[root])
+    });
+    let mut versions: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (i, p) in graph.packages.iter().enumerate().skip(1) {
+        if wanted.as_ref().is_some_and(|w| !w[i]) {
+            continue;
+        }
+        if let Resolution::Npm { version, .. } = &p.resolution {
+            let v = versions.entry(p.name.clone()).or_default();
+            if !v.contains(version) {
+                v.push(version.clone());
+            }
+        }
+    }
+    versions
+        .into_iter()
+        .map(|(name, versions)| AuditPackage { name, versions })
+        .collect()
 }
 
 /// `fnpm audit [--audit-level x] [--ignore id]` / `fnpm-lock audit`.
@@ -242,23 +122,64 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if cx.req.positionals.first().is_some_and(|a| a == "fix") && !lock_tool {
         return super::audit_fix::fix(cx).await;
     }
-    let (project, _, graph) = cx.load_locked("nothing to audit")?;
-    let mut versions: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for p in graph.packages.iter().skip(1) {
-        if let Resolution::Npm { version, .. } = &p.resolution {
-            let v = versions.entry(p.name.clone()).or_default();
-            if !v.contains(version) {
-                v.push(version.clone());
+    let loud = cx.pm.log_level != fnpm_config::LogLevel::Silent;
+    let fail = |message: &str, note: Option<&str>| {
+        if loud {
+            eprintln!("error: {message}");
+            if let Some(note) = note {
+                eprintln!("note: {note}");
             }
         }
+        Error::Reported
+    };
+    if !lock_tool && let Some(other) = cx.req.positionals.first() {
+        return Err(fail(
+            &format!("unknown subcommand \"{other}\" for fnpm audit"),
+            Some("did you mean 'fnpm audit fix'?"),
+        ));
     }
-    let packages: Vec<AuditPackage> = versions
-        .into_iter()
-        .map(|(name, versions)| AuditPackage { name, versions })
-        .collect();
+    if !lock_tool && cx.flag("latest") {
+        return Err(fail("--latest only applies to fnpm audit fix", None));
+    }
+    let level = cx.string("auditLevel").map(|l| l.to_ascii_lowercase());
+    if let Some(l) = &level
+        && !matches!(l.as_str(), "low" | "moderate" | "high" | "critical")
+    {
+        return Err(fail(
+            &format!("invalid `--audit-level` value: \"{l}\""),
+            Some("valid values: low, moderate, high, critical"),
+        ));
+    }
+    let mut lines = Vec::new();
+    if !lock_tool && !cx.req.json && loud && cx.pm.summary {
+        lines.push(format!(
+            "fnpm audit v{}",
+            cx.string("cliVersion")
+                .unwrap_or_else(|| crate::version().to_owned())
+        ));
+        lines.push(String::new());
+    }
+    let (project, ws, graph) = match cx.load()? {
+        (p, ws, Some(g)) => (p, ws, g),
+        _ => {
+            fail(
+                "missing lockfile, nothing to audit",
+                Some("run 'fnpm install' first"),
+            );
+            return Ok(exit(1, Value::Null, lines));
+        }
+    };
+    let packages = audit_packages_for(cx, &project, &ws, &graph);
     let client = project.client()?;
     let resp = client.audit(&packages).await?;
-    let level = cx.string("auditLevel").map(|l| l.to_ascii_lowercase());
+    print_unaudited(&resp.unaudited, loud);
+    if let Some(failure) = &resp.default_failure {
+        if cx.req.json && failure.reason == fnpm_registry::SkipReason::NotAdvisories {
+            lines.push(String::from_utf8_lossy(&failure.body).trim_end().to_owned());
+        }
+        report_audit_failure(failure, loud);
+        return Ok(exit(1, Value::Null, lines));
+    }
     let level_rank = level.as_deref().map_or(0, severity_rank);
     let ignore: Vec<String> = cx.strings("ignore");
     let (mut below_level, mut ignored) = (0usize, 0usize);
@@ -292,26 +213,16 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         }
     }
     found.sort_by(|a, b| a.0.cmp(&b.0));
-    for u in &resp.unaudited {
-        cx.events.emit(fnpm_types::Event::warn(
-            format!(
-                "{} did not answer the audit request ({}); skipped {}",
-                fnpm_config::redact_url(&u.registry),
-                u.reason,
-                u.packages.join(", ")
-            ),
-            None,
-        ));
-    }
     let esc = |s: &str| crate::security::escape_control(s, false);
-    let mut lines = Vec::new();
-    if !lock_tool {
-        lines.push(format!(
-            "fnpm audit v{}",
-            cx.string("cliVersion")
-                .unwrap_or_else(|| crate::version().to_owned())
+    if cx.req.json {
+        // bun prints the registries' answer as it came, whatever --audit-level or --ignore
+        // left of it; they only decide the exit code.
+        let raw = String::from_utf8_lossy(&resp.raw).trim_end().to_owned();
+        return Ok(exit(
+            i32::from(!found.is_empty()),
+            resp.advisories.clone(),
+            vec![raw],
         ));
-        lines.push(String::new());
     }
     if found.is_empty() {
         let checked = resp.checked;
@@ -338,16 +249,24 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     } else {
         let separator = ">";
         // name -> the names of the packages that depend on it.
+        // bun `build_dependency_tree`: the npm packages in lockfile order (by name), each
+        // listed under the package names its dependencies resolve to.
         let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for p in graph.packages.iter().skip(1) {
-            if matches!(p.resolution, Resolution::Workspace { .. }) {
-                continue;
-            }
+        let mut npm: Vec<&fnpm_types::Package> = graph
+            .packages
+            .iter()
+            .filter(|p| matches!(p.resolution, Resolution::Npm { .. }))
+            .collect();
+        npm.sort_by(|a, b| a.name.cmp(&b.name));
+        for p in npm {
             for e in &p.dependencies {
-                let list = dependents.entry(e.name.as_str()).or_default();
-                if !list.contains(&p.name.as_str()) {
-                    list.push(p.name.as_str());
-                }
+                let Some(target) = e.target.and_then(|t| graph.get(t)) else {
+                    continue;
+                };
+                dependents
+                    .entry(target.name.as_str())
+                    .or_default()
+                    .push(p.name.as_str());
             }
         }
         let root = graph.root();
@@ -373,7 +292,7 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
             let mut visited: HashSet<&str> = HashSet::new();
             for d in dependents.get(target).into_iter().flatten() {
                 queue.push_back(d);
-                parent.entry(d).or_insert(target);
+                parent.insert(d, target);
             }
             while let Some(cur) = queue.pop_front() {
                 if !visited.insert(cur) {
@@ -402,7 +321,7 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
                     for d in dependents.get(cur).into_iter().flatten() {
                         if !visited.contains(d) {
                             queue.push_back(d);
-                            parent.entry(d).or_insert(cur);
+                            parent.insert(d, cur);
                         }
                     }
                 }
@@ -491,9 +410,6 @@ pub(crate) async fn audit(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
             lines.push("  fnpm audit fix --latest  also cross major versions".into());
         }
     }
-    if cx.req.json {
-        lines.clear();
-    }
     let data = json!({
         "advisories": resp.advisories,
         "vulnerabilities": found.len(),
@@ -522,23 +438,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_picking_and_lookup() {
-        let doc = json!({
-            "name": "a",
-            "dist-tags": { "latest": "1.1.0", "next": "2.0.0-rc.1" },
-            "versions": { "1.0.0": {}, "1.1.0": { "dist": { "tarball": "t" } }, "2.0.0-rc.1": {} }
-        });
-        assert_eq!(pick_version(&doc, None).as_deref(), Some("1.1.0"));
-        assert_eq!(
-            pick_version(&doc, Some("next")).as_deref(),
-            Some("2.0.0-rc.1")
-        );
-        assert_eq!(pick_version(&doc, Some("1.0.0")).as_deref(), Some("1.0.0"));
-        assert_eq!(pick_version(&doc, Some("^1.0.0")).as_deref(), Some("1.1.0"));
-        assert_eq!(pick_version(&doc, Some("^3")), None);
-        let v = &doc["versions"]["1.1.0"];
-        assert_eq!(lookup(v, "dist.tarball"), Some(&json!("t")));
-        assert_eq!(human_bytes(1500), "1.5 kB");
+    fn severities() {
         assert_eq!(severity_rank("high"), 3);
     }
 }

@@ -34,6 +34,9 @@ pub enum MissingWorkspace {
 #[derive(Debug, Clone, Default)]
 pub struct LoadOptions {
     pub missing: MissingWorkspace,
+    /// An empty root package.json reads as `{}` (bun: `touch package.json && bun install`,
+    /// `bun add` into an empty file). Otherwise it is an error.
+    pub empty_root: bool,
 }
 
 /// The absolute posix spelling used for glob matching (`/C:/x` on Windows).
@@ -100,11 +103,17 @@ pub(crate) fn read_pnpm_workspace(
         }
         Err(source) => return Err(Error::Io { path, source }),
     };
-    let doc: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&text).map_err(|e| Error::InvalidPackageJson {
-            path: path.clone(),
-            message: e.to_string(),
-        })?;
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&text).map_err(|e| {
+        let message = e.to_string();
+        if message.starts_with("recursion limit exceeded") {
+            Error::PnpmWorkspaceTooDeep
+        } else {
+            Error::InvalidPackageJson {
+                path: path.clone(),
+                message,
+            }
+        }
+    })?;
     let mut ws = PnpmWorkspace::default();
     let get = |key: &str| doc.as_mapping().and_then(|m| m.get(key));
     if let Some(seq) = get("packages").and_then(|v| v.as_sequence()) {
@@ -183,14 +192,29 @@ fn package_json_catalogs(root: &PackageJson) -> Result<Catalogs> {
         for (name, group) in groups {
             let entries = string_entries(group);
             if name == "default" {
-                for (dep, version) in entries {
-                    if catalogs.default.contains_key(&dep) {
-                        return Err(bad_root(&format!(
+                // bun reports every name the two spellings both define.
+                let both: Vec<String> = entries
+                    .iter()
+                    .filter(|(dep, _)| catalogs.default.contains_key(dep))
+                    .map(|(dep, _)| {
+                        format!(
                             "\"{dep}\" is defined in both \"catalog\" and \"catalogs.default\"; keep one of them"
-                        )));
-                    }
-                    catalogs.default.insert(dep, version);
+                        )
+                    })
+                    .collect();
+                if !both.is_empty() {
+                    return Err(Error::InvalidPackageJson {
+                        path: PathBuf::new(),
+                        message: both.join("\nerror: "),
+                    });
                 }
+                // Kept under its spelling, so fnpm.lock writes it back the same way; lookups
+                // read both spellings of the default catalog.
+                catalogs
+                    .named
+                    .entry(name.clone())
+                    .or_default()
+                    .extend(entries);
             } else {
                 catalogs
                     .named
@@ -564,6 +588,11 @@ pub(crate) fn load(root_dir: &Path, options: &LoadOptions) -> Result<(Workspace,
     let root_dir = paths::absolute(root_dir);
     let root_pj = root_dir.join("package.json");
     let root = match PackageJson::read(&root_pj) {
+        Err(Error::InvalidPackageJson { message, .. })
+            if options.empty_root && message == crate::manifest::EMPTY_FILE =>
+        {
+            PackageJson::parse_at("{}", &root_pj)?
+        }
         Err(Error::Io { source, .. })
             if matches!(
                 source.kind(),
@@ -760,6 +789,12 @@ pub(crate) fn shared_directory_warning(dir: &Path) -> String {
 
 /// [`crate::Workspace::find_root`].
 pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
+    find_root_reporting(cwd, &mut Vec::new())
+}
+
+/// [`find_root`]; `warnings` gets bun's warning for each package.json it ignores in a shared
+/// directory.
+pub(crate) fn find_root_reporting(cwd: &Path, warnings: &mut Vec<String>) -> Result<PathBuf> {
     let cwd = paths::absolute(cwd);
     let mut child: Option<PathBuf> = None;
     let mut dir = Some(cwd.as_path());
@@ -769,6 +804,7 @@ pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
             continue;
         }
         if d != cwd && is_shared_directory(d) {
+            warnings.push(shared_directory_warning(d));
             continue;
         }
         child = Some(d.to_path_buf());
@@ -791,6 +827,9 @@ pub(crate) fn find_root(cwd: &Path) -> Result<PathBuf> {
     while let Some(p) = parent {
         parent = p.parent();
         if is_shared_directory(p) {
+            if p.join("package.json").is_file() {
+                warnings.push(shared_directory_warning(p));
+            }
             continue;
         }
         let pj = p.join("package.json");

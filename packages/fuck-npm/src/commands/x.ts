@@ -1,4 +1,4 @@
-import { getCliVersion } from "../cli/version.ts";
+import { getCliRevision, getCliVersion } from "../cli/version.ts";
 import type { CommandContext } from "./context.ts";
 
 /**
@@ -13,7 +13,7 @@ export async function runX(ctx: CommandContext): Promise<number> {
     cwd: ctx.runtime.cwd,
     positionals: [],
     passthrough: ctx.passthrough,
-    options: { cliVersion: getCliVersion() },
+    options: { cliVersion: getCliVersion(), cliRevision: getCliRevision() },
     json: false,
   });
   return result.exitCode;

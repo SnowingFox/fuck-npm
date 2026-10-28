@@ -13,16 +13,23 @@ mod diff;
 mod files;
 mod info;
 mod inspect;
+mod json_text;
+mod licenses;
 mod link;
+mod ls;
 mod maintenance;
 mod outdated;
 pub(crate) mod pack;
 pub(crate) mod patch;
+mod pkg;
+mod prune;
 mod publish;
 mod scan;
 mod scripts;
 mod table;
 mod update_interactive;
+mod view;
+mod why;
 pub(crate) use update_interactive::edits as interactive_edits;
 
 use std::path::PathBuf;
@@ -163,18 +170,60 @@ impl Ctx {
         let project = self.project()?;
         let ws = project.workspace(&*self.events)?;
         let lock = crate::install::load_lock(&project.config, &ws)?;
-        for w in &lock.warnings {
-            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
-        }
+        self.report_lock(&lock);
         Ok((project, ws, lock.graph))
     }
 
+    /// What loading the lockfile printed in bun: the failures, `migrated lockfile from <file>`
+    /// for another manager's lockfile (read only; nothing is written), the warnings.
+    fn report_lock(&self, lock: &crate::install::LockState) {
+        for e in &lock.failures {
+            self.events.emit(e.clone());
+        }
+        if lock.migrated
+            && matches!(
+                lock.format,
+                Some(
+                    fnpm_lockfile::Format::Npm
+                        | fnpm_lockfile::Format::YarnV1
+                        | fnpm_lockfile::Format::YarnBerry
+                        | fnpm_lockfile::Format::Pnpm
+                )
+            )
+            && let Some(name) = lock.path.as_deref().and_then(std::path::Path::file_name)
+        {
+            self.events.emit(fnpm_types::Event::notice(format!(
+                "migrated lockfile from {}",
+                name.to_string_lossy()
+            )));
+        }
+        for w in &lock.warnings {
+            self.events.emit(fnpm_types::Event::warn(w.clone(), None));
+        }
+    }
+
     /// [`Ctx::load`] that requires a lockfile (bun: `error: Lockfile not found`, with the
-    /// command's `nothing <x>` suffix).
+    /// command's `nothing <x>` suffix). One that does not parse stops the command, with its
+    /// source frame.
     pub fn load_locked(&self, nothing: &str) -> Result<(Project, Workspace, LockGraph)> {
-        let (p, ws, g) = self.load()?;
-        match g {
-            Some(g) => Ok((p, ws, g)),
+        self.load_locked_with(nothing, true)
+    }
+
+    /// [`Ctx::load_locked`]; `framed: false` names only the failure (bun `pm ls`).
+    pub fn load_locked_with(
+        &self,
+        nothing: &str,
+        framed: bool,
+    ) -> Result<(Project, Workspace, LockGraph)> {
+        let project = self.project()?;
+        let ws = project.workspace(&*self.events)?;
+        let lock = crate::install::load_lock(&project.config, &ws)?;
+        if let Some(failure) = &lock.parse_failure {
+            return Err(failure.read_error(framed));
+        }
+        self.report_lock(&lock);
+        match lock.graph {
+            Some(g) => Ok((project, ws, g)),
             None => Err(Error::usage(format!("missing lockfile, {nothing}"))),
         }
     }
@@ -207,9 +256,12 @@ async fn x_command(cx: &Ctx, create: bool) -> Result<CoreResult> {
         args,
         cwd: cx.req.cwd.clone(),
         create,
+        // The bare version (`--version`), without the revision headers carry.
         version: cx
             .string("cliVersion")
+            .map(|v| v.split(" (").next().unwrap_or_default().to_owned())
             .unwrap_or_else(|| crate::version().to_owned()),
+        revision: cx.string("cliRevision").unwrap_or_default(),
         display: None,
     };
     let code = tokio::task::spawn_blocking(move || crate::x::run(&req))
@@ -233,21 +285,21 @@ pub async fn dispatch(
     let cx = Ctx::new(request, events, env);
     match path.as_slice() {
         ["outdated"] => outdated::run(&cx).await,
-        ["why"] | ["pm", "why"] => inspect::why(&cx),
-        ["ls"] | ["list"] | ["pm", "ls" | "list"] => inspect::ls(&cx),
-        ["info" | "view" | "show"] | ["pm", "view" | "info"] => info::view(&cx).await,
+        ["why"] | ["pm", "why"] => why::why(&cx),
+        ["ls"] | ["list"] | ["pm", "ls" | "list"] => ls::ls(&cx),
+        ["info" | "view" | "show"] | ["pm", "view" | "info"] => view::view(&cx).await,
         ["whoami"] | ["pm", "whoami"] => info::whoami(&cx).await,
         ["audit"] | ["pm", "audit"] => info::audit(&cx, false).await,
         ["link"] => link::link(&cx).await,
         ["unlink"] => link::unlink(&cx).await,
-        ["prune"] => maintenance::prune(&cx),
+        ["prune"] => prune::prune(&cx),
         ["dedupe" | "ddp"] => maintenance::dedupe(&cx, false).await,
         ["run"] => scripts::run(&cx).await,
         ["exec"] => scripts::exec(&cx).await,
         ["init"] => files::init(&cx),
         ["migrate"] | ["pm", "migrate"] => maintenance::migrate(&cx, false).await,
         ["cache", rest @ ..] | ["pm", "cache", rest @ ..] => maintenance::cache(&cx, rest),
-        ["pkg", rest @ ..] | ["pm", "pkg", rest @ ..] => files::pkg(&cx, rest),
+        ["pkg", rest @ ..] | ["pm", "pkg", rest @ ..] => pkg::run(&cx, rest),
         ["store", rest @ ..] => maintenance::store(&cx, rest),
         ["doctor"] => maintenance::doctor(&cx).await,
         ["pm", "bin"] => inspect::bin(&cx),
@@ -258,13 +310,13 @@ pub async fn dispatch(
         ["pm", "trust"] => scripts::trust(&cx).await,
         ["pm", "default-trusted"] => scripts::default_trusted(),
         ["pm", "version"] => files::version(&cx).await,
-        ["pm", "licenses"] => inspect::licenses(&cx),
+        ["pm", "licenses"] => licenses::run(&cx),
         ["pm", "fetch"] => maintenance::fetch(&cx).await,
         ["lock", "migrate"] => maintenance::migrate(&cx, true).await,
         ["lock", "export"] => maintenance::export(&cx),
         ["lock", "verify"] => inspect::verify(&cx),
         ["lock", "diff"] => inspect::diff(&cx),
-        ["lock", "why"] => inspect::why(&cx),
+        ["lock", "why"] => why::why(&cx),
         ["lock", "print"] => inspect::print(&cx),
         ["lock", "dedupe"] => maintenance::dedupe(&cx, true).await,
         ["lock", "audit"] => info::audit(&cx, true).await,

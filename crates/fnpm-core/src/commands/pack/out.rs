@@ -12,11 +12,12 @@ pub(crate) struct Fatal(pub String);
 pub(crate) type FResult<T> = Result<T, Fatal>;
 
 fn colors_for(is_tty: bool) -> bool {
-    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
-        return false;
-    }
+    // Like bun (and Node.js), FORCE_COLOR wins over NO_COLOR.
     if let Some(force) = std::env::var_os("FORCE_COLOR") {
         return force != "0" && force != "false";
+    }
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        return false;
     }
     is_tty
 }
@@ -162,8 +163,11 @@ pub(crate) fn escape_control(text: &str) -> String {
 }
 
 /// [`escape_control`] that keeps the line breaks of a message with several lines.
+/// A message for the terminal: URL credentials masked and control characters escaped, line by
+/// line, as bun prints what a package or the user wrote.
 fn escape_message(text: &str) -> String {
-    text.split('\n')
+    fnpm_config::redact::redacted_message(text)
+        .split('\n')
         .map(escape_control)
         .collect::<Vec<_>>()
         .join("\n")

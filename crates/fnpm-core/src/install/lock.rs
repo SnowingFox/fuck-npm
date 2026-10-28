@@ -30,11 +30,143 @@ pub(crate) struct LockState {
     pub write_back: Vec<PackageJsonWriteBack>,
     /// Warnings to report.
     pub warnings: Vec<String>,
+    /// bun's report of lockfiles that did not migrate, printed before the warnings.
+    pub failures: Vec<fnpm_types::Event>,
     /// xxh3 of fnpm.lock when the graph came from it.
     pub hash: Option<u64>,
+    /// fnpm.lock has no `configVersion` (an older writer): it is saved again with one.
+    pub config_version_missing: bool,
     /// The sidecar ([`sidecar_path`]) was not fresh, so it should be written from
     /// [`LockState::graph`] after the install.
     pub sidecar_missing: bool,
+    /// fnpm.lock / bun.lock / bun.lockb did not parse and was ignored.
+    pub parse_failure: Option<ParseFailure>,
+}
+
+/// An own lockfile that does not parse, reported as bun reports it.
+#[derive(Debug, Clone)]
+pub(crate) struct ParseFailure {
+    /// The error with bun's source frame when it has a place ([`fnpm_workspace::frame`]).
+    pub framed: String,
+    /// The file name, as bun prints it (`fnpm.lock`).
+    pub name: String,
+    /// bun's error name: `ParserError` (not JSONC) or `InvalidLockfile`.
+    pub tag: &'static str,
+}
+
+impl ParseFailure {
+    fn of(path: &Path, e: &fnpm_lockfile::Error) -> Self {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let bytes = std::fs::read(path).unwrap_or_default();
+        let message = match e {
+            fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
+            other => other.to_string(),
+        };
+        // `line:column: message` for the text formats.
+        let placed = message.split_once(": ").and_then(|(at, text)| {
+            let (line, column) = at.split_once(':')?;
+            Some((
+                line.parse::<usize>().ok()?,
+                column.parse::<usize>().ok()?,
+                text,
+            ))
+        });
+        let source = std::str::from_utf8(&bytes).ok();
+        let framed = match (placed, source) {
+            (Some((line, column, text)), Some(source)) => {
+                fnpm_workspace::frame::Frame::at_line_col(source, line, column)
+                    .framed(Path::new(&name), text)
+            }
+            _ => message,
+        };
+        let text_format = !name.ends_with(".lockb");
+        let tag = if text_format && fnpm_lockfile::is_syntax_error(&bytes) {
+            "ParserError"
+        } else {
+            "InvalidLockfile"
+        };
+        Self { framed, name, tag }
+    }
+
+    /// What an install that goes on without the file prints before it resolves.
+    pub(crate) fn events(&self) -> Vec<fnpm_types::Event> {
+        use fnpm_types::Event;
+        let (frame, message) = fnpm_workspace::frame::split(&self.framed);
+        let mut out: Vec<Event> = frame.map(Event::notice).into_iter().collect();
+        out.push(Event::Error {
+            message: message.to_owned(),
+            code: None,
+        });
+        out.push(Event::notice(format!(
+            "{}: failed to parse lockfile: '{}'",
+            self.tag, self.name
+        )));
+        out.push(Event::notice(String::new()));
+        out.push(Event::warn("Ignoring lockfile", None));
+        out
+    }
+
+    /// A frozen install cannot go on without the file.
+    pub(crate) fn frozen_error(&self, source: fnpm_lockfile::Error) -> Error {
+        Error::Framed {
+            message: format!(
+                "{}\n{}: failed to parse lockfile: '{}'\n\nwarn: Ignoring lockfile\nerror: lockfile had changes, but lockfile is frozen",
+                self.framed, self.tag, self.name
+            ),
+            source: Box::new(source.into()),
+        }
+    }
+
+    /// A command that only reads the lockfile stops (bun `failed to parse lockfile`); `framed`
+    /// prints the reason with its frame first.
+    pub(crate) fn read_error(&self, framed: bool) -> Error {
+        let failed = format!("failed to parse lockfile: {}", self.tag);
+        Error::Framed {
+            message: if framed {
+                format!("{}\nerror: {failed}", self.framed)
+            } else {
+                failed.clone()
+            },
+            source: Box::new(Error::usage(failed)),
+        }
+    }
+}
+
+/// The workspace's warnings that are not the migration's to give. A pnpm migration reads
+/// pnpm-workspace.yaml again and reports its skipped entries as bun counts them (scalars are
+/// copied as written), so the workspace loader's count of them is left out.
+pub(crate) fn workspace_warnings<'a>(
+    warnings: &'a [String],
+    lock: &LockState,
+) -> impl Iterator<Item = &'a String> {
+    let skipped = |w: &str| w.starts_with("skipping non-string entries of ");
+    let rereads = (lock.migrated && lock.format == Some(Format::Pnpm))
+        || lock.warnings.iter().any(|w| skipped(w));
+    warnings.iter().filter(move |w| !(rereads && skipped(w)))
+}
+
+/// The project keeps bun.lockb (bun `save_format`): `--save-text-lockfile` writes fnpm.lock, a
+/// loaded bun.lockb stays binary, and a new or migrated lockfile is binary only with
+/// `saveTextLockfile = false`.
+pub(crate) fn saves_binary(config: &Config, lock: &LockState) -> bool {
+    match config.save_text_lockfile {
+        Some(true) => false,
+        _ if lock.graph.is_some() && !lock.migrated => lock.format == Some(Format::BunBinary),
+        Some(false) => true,
+        None => false,
+    }
+}
+
+/// The lockfile an install writes ([`saves_binary`]).
+pub(crate) fn target_name(config: &Config, lock: &LockState) -> &'static str {
+    if saves_binary(config, lock) {
+        fnpm_lockfile::BUN_LOCKB
+    } else {
+        fnpm_lockfile::FNPM_LOCK
+    }
 }
 
 /// The parsed-lockfile sidecar in the project's cache metadata directory, validated by the
@@ -70,6 +202,111 @@ fn foreign_options<'a>(config: &Config, files: &'a DiskFiles) -> foreign::Migrat
     o.link_workspace_packages = config.link_workspace_packages;
     o.frozen = config.frozen_lockfile;
     o
+}
+
+/// Why a foreign lockfile did not migrate, in bun's terms.
+pub(crate) struct Failure {
+    /// bun's error name (`InvalidNPMLockfile`, `InvalidLockfile`, ...).
+    tag: &'static str,
+    /// The reason bun logs before the name, if it logs one.
+    reason: Option<String>,
+    /// An unsupported `lockfileVersion`: the sentence and the command that upgrades the file.
+    unsupported: Option<(String, &'static str)>,
+}
+
+impl Failure {
+    pub(crate) fn of(name: &str, bytes: &[u8], e: &fnpm_lockfile::Error) -> Self {
+        let message = match e {
+            fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
+            other => other.to_string(),
+        };
+        let text = String::from_utf8_lossy(bytes);
+        let tag = match name {
+            "pnpm-lock.yaml" => "InvalidLockfile",
+            "yarn.lock" if text.contains("__metadata") => "InvalidYarnBerryLockfile",
+            "yarn.lock" if !text.contains("# yarn lockfile v1") => "UnsupportedYarnLockfileVersion",
+            "yarn.lock" => "InvalidYarnLockfile",
+            _ => "InvalidNPMLockfile",
+        };
+        let upgrade = if name == "pnpm-lock.yaml" {
+            "pnpm install --lockfile-only"
+        } else {
+            "npm install --package-lock-only --lockfile-version=3"
+        };
+        let unsupported = message.contains("unsupported lockfileVersion").then(|| {
+            let sentence = message.split(" (run `").next().unwrap_or(&message);
+            (sentence.to_owned(), upgrade)
+        });
+        // bun names the npm and yarn v1 parsers' failures without a reason.
+        let mut reason = (!message.starts_with(tag) && tag != "UnsupportedYarnLockfileVersion")
+            .then_some(message);
+        // A YAML error: bun prints the parser's error, then this warning.
+        if let Some(text) = reason
+            .as_deref()
+            .and_then(|r| r.strip_prefix("Failed to parse pnpm-lock.yaml: "))
+        {
+            reason = Some(format!("{text}\nwarn: Failed to parse pnpm-lock.yaml."));
+        }
+        Self {
+            tag,
+            reason,
+            unsupported,
+        }
+    }
+
+    /// The error a command that cannot go on without the lockfile reports (`pm migrate`, a
+    /// frozen install); `install` names the file.
+    pub(crate) fn error(&self, name: &str, install: bool) -> Error {
+        if let Some((sentence, upgrade)) = &self.unsupported {
+            return Error::usage(format!("{sentence}\nnote: {upgrade}"));
+        }
+        let failed = if install {
+            format!("{}: failed to migrate lockfile: '{name}'", self.tag)
+        } else {
+            format!("error: failed to migrate lockfile: {}", self.tag)
+        };
+        Error::usage(match &self.reason {
+            Some(reason) => format!("{reason}\n{failed}"),
+            None => failed,
+        })
+    }
+
+    /// What an install that goes on without it prints: `next` is tried, or package.json resolved.
+    fn report(&self, name: &str, next: Option<&str>, out: &mut Vec<fnpm_types::Event>) {
+        use fnpm_types::Event;
+        match (&self.unsupported, next) {
+            (Some((sentence, _)), Some(next)) => {
+                out.push(Event::warn(format!("{sentence}, trying {next}"), None));
+            }
+            (Some((sentence, upgrade)), None) => {
+                out.push(Event::warn(
+                    format!("{sentence}, resolving from package.json"),
+                    None,
+                ));
+                out.push(Event::notice(format!("note: {upgrade}")));
+            }
+            (None, Some(next)) => {
+                if let Some(reason) = &self.reason {
+                    out.push(Event::notice(format!("error: {reason}")));
+                }
+                out.push(Event::warn(
+                    format!("cannot migrate {name} ({}), trying {next}", self.tag),
+                    None,
+                ));
+            }
+            (None, None) => {
+                if let Some(reason) = &self.reason {
+                    out.push(Event::notice(format!("error: {reason}")));
+                }
+                out.push(Event::notice(format!(
+                    "{}: failed to migrate lockfile: '{name}'",
+                    self.tag
+                )));
+                out.push(Event::notice(String::new()));
+                out.push(Event::warn("Ignoring lockfile".to_owned(), None));
+            }
+        }
+    }
 }
 
 /// The foreign lockfiles, in bun's order.
@@ -112,6 +349,7 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
         match fnpm_lockfile::load_with(dir, ws, &opts) {
             Ok(Some(loaded)) => {
                 state.warnings.extend(loaded.warnings);
+                state.config_version_missing = loaded.config_version_missing;
                 if loaded.format == Format::Fnpm {
                     state.hash = Some(loaded.hash);
                     state.sidecar_missing = !fnpm_lockfile::sidecar::is_fresh_at(
@@ -122,16 +360,26 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
                     state.hash = None;
                     state.sidecar_missing = false;
                 }
-                state.migrated = loaded.format != Format::Fnpm;
+                // bun.lockb stays the project's lockfile unless `--save-text-lockfile` asks
+                // for fnpm.lock (bun `save_format`); bun.lock is migrated to fnpm.lock.
+                state.migrated = match loaded.format {
+                    Format::Fnpm => false,
+                    Format::BunBinary => config.save_text_lockfile == Some(true),
+                    _ => true,
+                };
                 state.format = Some(loaded.format);
                 state.path = Some(loaded.path);
                 state.graph = Some(loaded.graph);
                 return Ok(state);
             }
             Ok(None) => {}
-            Err(e) if config.frozen_lockfile => return Err(e.into()),
+            Err(e) if config.frozen_lockfile => {
+                return Err(ParseFailure::of(&path, &e).frozen_error(e));
+            }
             Err(e) => {
-                state.warnings.push(format!("Ignoring lockfile: {e}"));
+                let failure = ParseFailure::of(&path, &e);
+                state.failures.extend(failure.events());
+                state.parse_failure = Some(failure);
                 return Ok(state);
             }
         }
@@ -151,6 +399,7 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
             Ok((mut graph, format, write_back, warnings)) => {
                 state.warnings.extend(warnings);
                 fnpm_lockfile::migration::finish_migration(&mut graph, ws);
+                record_copied_extensions(&mut graph, &write_back);
                 state.graph = Some(graph);
                 state.format = Some(format);
                 state.path = Some(dir.join(name));
@@ -158,17 +407,10 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
                 state.write_back = write_back;
                 return Ok(state);
             }
-            Err(e) if config.frozen_lockfile && next.is_none() => return Err(e.into()),
-            Err(e) => {
-                let detail = match &e {
-                    fnpm_lockfile::Error::Parse { message, .. } => message.clone(),
-                    other => other.to_string(),
-                };
-                state.warnings.push(match next {
-                    Some(next) => format!("cannot migrate {name} ({detail}), trying {next}"),
-                    None => format!("cannot migrate {name} ({detail})"),
-                });
+            Err(e) if config.frozen_lockfile && next.is_none() => {
+                return Err(Failure::of(name, bytes, &e).error(name, true));
             }
+            Err(e) => Failure::of(name, bytes, &e).report(name, next, &mut state.failures),
         }
     }
     if found.is_empty() {
@@ -180,6 +422,23 @@ pub(crate) fn load(config: &Config, ws: &Workspace) -> Result<LockState> {
         state.write_back.extend(edit);
     }
     Ok(state)
+}
+
+/// The `packageExtensions` a migration copies into the root package.json, recorded in the graph
+/// as the next resolve records them, so fnpm.lock has them and a frozen install accepts it.
+fn record_copied_extensions(graph: &mut LockGraph, write_back: &[PackageJsonWriteBack]) {
+    if !graph.package_extensions.is_empty() {
+        return;
+    }
+    let copied = write_back
+        .iter()
+        .filter(|w| w.path.is_empty())
+        .flat_map(|w| &w.fields)
+        .find(|(key, _)| key == "packageExtensions");
+    if let Some((_, value)) = copied {
+        let root = serde_json::json!({ "packageExtensions": value });
+        graph.package_extensions = fnpm_resolver::extensions::parse_package_extensions(&root).1;
+    }
 }
 
 /// Migrates one of `names` (in order; bun.lock, bun.lockb and the foreign lockfiles) for
@@ -223,6 +482,7 @@ pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> R
                 state.warnings.extend(warnings);
                 if !matches!(format, Format::BunText | Format::BunBinary) {
                     fnpm_lockfile::migration::finish_migration(&mut graph, ws);
+                    record_copied_extensions(&mut graph, &write_back);
                 }
                 state.graph = Some(graph);
                 state.format = Some(format);
@@ -232,10 +492,21 @@ pub(crate) fn migrate_from(config: &Config, ws: &Workspace, names: &[&str]) -> R
                 return Ok(state);
             }
             Err(e) => {
-                if let Some(next) = next {
-                    state
+                let bytes = std::fs::read(&path).unwrap_or_default();
+                let failure = match &e {
+                    Error::Lockfile(e) => Some(Failure::of(name, &bytes, e)),
+                    _ => None,
+                };
+                match (failure, next) {
+                    (Some(f), Some(next)) => f.report(name, Some(next), &mut state.failures),
+                    (Some(f), None) => {
+                        last = Some(f.error(name, false));
+                        continue;
+                    }
+                    (None, Some(next)) => state
                         .warnings
-                        .push(format!("cannot migrate {name} ({e}), trying {next}"));
+                        .push(format!("cannot migrate {name} ({e}), trying {next}")),
+                    (None, None) => {}
                 }
                 last = Some(e);
             }
@@ -281,6 +552,10 @@ fn migrate_one(
             let (graph, report) =
                 fnpm_lockfile::formats::npm::migrate(bytes, ws, &opts, name, next)?;
             let mut warnings = report.warnings;
+            // bun prints these (`skipping N unused package-lock.json entries`) with --verbose.
+            if config.log_level == fnpm_config::LogLevel::Verbose {
+                warnings.extend(report.verbose);
+            }
             warnings.extend(report.notes);
             Ok((graph, Format::Npm, Vec::new(), warnings))
         }
@@ -346,9 +621,10 @@ pub(crate) fn write_back(
 /// Match the bindings a saved text lockfile will load while retaining ids and metadata used
 /// by in-flight fetches and command results. The isolated linker consumes peer bindings
 /// directly, so using the pre-write graph would make cold and warm layouts differ.
-pub(crate) fn normalize_bindings(graph: &mut LockGraph, ws: &Workspace) -> Result<()> {
+pub(crate) fn normalize_bindings(graph: &mut LockGraph, config: &Config) -> Result<()> {
     let bytes = fnpm_lockfile::serialize(Format::Fnpm, graph)?;
-    let loaded = fnpm_lockfile::parse(Format::Fnpm, &bytes, ws)?;
+    // Read as the next install reads it: with the configured registries.
+    let loaded = fnpm_lockfile::parse_text(&bytes, &parse_options(config))?;
     let ids: std::collections::HashMap<String, fnpm_types::PackageId> = graph
         .packages
         .iter()
@@ -395,7 +671,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let ws = Workspace::load(dir.path()).unwrap();
+        let config = Config::defaults(dir.path());
         let mut graph = LockGraph::new(Package::new("app", "", Resolution::Root));
         let extra = graph.push(Package::new(
             "extra",
@@ -430,7 +706,7 @@ mod tests {
                 .target
                 .is_none()
         );
-        normalize_bindings(&mut graph, &ws).unwrap();
+        normalize_bindings(&mut graph, &config).unwrap();
         assert_eq!(
             graph.packages[plugin.index()]
                 .dependency("extra")
@@ -444,7 +720,7 @@ mod tests {
         );
         assert_eq!(graph.packages[extra.index()].name, "extra");
         let before = graph.clone();
-        normalize_bindings(&mut graph, &ws).unwrap();
+        normalize_bindings(&mut graph, &config).unwrap();
         assert_eq!(graph, before);
     }
 }

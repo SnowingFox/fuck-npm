@@ -26,7 +26,40 @@ struct Flag {
     repeatable: bool,
 }
 
+/// The short git revision headers print (bun's `version_with_sha`): `FNPM_REVISION`, else
+/// `git rev-parse --short HEAD`, else empty.
+fn embed_revision() {
+    println!("cargo:rerun-if-env-changed=FNPM_REVISION");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+    };
+    let revision = match std::env::var("FNPM_REVISION") {
+        Ok(r) => r.trim().to_owned(),
+        Err(_) => {
+            // A new commit changes HEAD (or the branch it names).
+            for path in [
+                git(&["rev-parse", "--git-path", "HEAD"]),
+                git(&["rev-parse", "--symbolic-full-name", "HEAD"])
+                    .and_then(|r| git(&["rev-parse", "--git-path", &r])),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                println!("cargo:rerun-if-changed={path}");
+            }
+            git(&["rev-parse", "--short", "HEAD"]).unwrap_or_default()
+        }
+    };
+    println!("cargo:rustc-env=FNPM_REVISION={revision}");
+}
+
 fn main() {
+    embed_revision();
     link_for_startup();
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let spec_path = manifest.join("cli-spec.json");

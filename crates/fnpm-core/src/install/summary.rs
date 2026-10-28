@@ -31,12 +31,36 @@ pub(crate) fn direct(graph: &LockGraph) -> BTreeMap<(String, String), (String, S
     out
 }
 
-/// The terminal resolution: registry version, source URL, or local path without `file:`.
+/// The terminal resolution: registry version, source URL, or local path without `file:`. A
+/// URL's credentials are masked and control characters escaped, as bun prints it.
 pub(crate) fn version_of(p: &fnpm_types::Package) -> String {
-    match &p.resolution {
+    let shown = match &p.resolution {
         Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
-        resolution => fnpm_registry::redact_url(&resolution.to_string()),
-    }
+        // bun prints the commit of the `owner-repo-<commit>` tag, after its last `-`.
+        Resolution::Github {
+            owner,
+            repo,
+            resolved_commit,
+            ..
+        } => {
+            let commit = resolved_commit
+                .rsplit('-')
+                .next()
+                .unwrap_or(resolved_commit);
+            fnpm_config::redact_url(&format!("github:{owner}/{repo}#{commit}"))
+        }
+        // An ssh login without a password (`ssh://git@host/...`) is no secret; bun prints it.
+        Resolution::Git { url, .. }
+            if url
+                .strip_prefix("ssh://")
+                .and_then(|rest| rest.split_once('@'))
+                .is_some_and(|(user, _)| !user.contains([':', '/'])) =>
+        {
+            p.resolution.to_string()
+        }
+        resolution => fnpm_config::redact::redacted(&resolution.to_string()).into_owned(),
+    };
+    fnpm_types::text::escape_control_chars(&shown)
 }
 
 /// `added`, `updated` and `removed` between the previous and the new graph.
@@ -85,8 +109,41 @@ pub(crate) fn changes(
     (added, updated, removed)
 }
 
+/// `update`: the packages that moved anywhere in the graph, by name, for the names whose
+/// one version before became one other version (transitive dependencies get `^` rows too).
+pub(crate) fn moved(previous: &LockGraph, next: &LockGraph) -> Vec<UpdatedPackage> {
+    let versions = |g: &LockGraph| {
+        let mut by_name: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for p in g.packages.iter().skip(1) {
+            if let Some(v) = p.resolution.npm_version() {
+                by_name
+                    .entry(p.name.clone())
+                    .or_default()
+                    .insert(v.to_owned());
+            }
+        }
+        by_name
+    };
+    let (before, after) = (versions(previous), versions(next));
+    let mut out = Vec::new();
+    for (name, new) in &after {
+        let Some(old) = before.get(name) else {
+            continue;
+        };
+        if old.len() == 1 && new.len() == 1 && old != new {
+            out.push(UpdatedPackage {
+                name: name.clone(),
+                from: old.iter().next().cloned().unwrap_or_default(),
+                to: new.iter().next().cloned().unwrap_or_default(),
+                available_version: None,
+            });
+        }
+    }
+    out
+}
+
 /// bun's `+` rows: the direct dependencies of the workspace at `ws_path` whose package this
-/// run wrote (`written`, per package id), workspace links excluded, by name.
+/// run wrote (`written`, per package id), membership edges excluded, by name.
 pub(crate) fn installed_direct(
     graph: &LockGraph,
     ws_path: &str,
@@ -97,17 +154,38 @@ pub(crate) fn installed_direct(
         return out;
     };
     let mut edges: Vec<_> = pkg.dependencies.iter().collect();
-    edges.sort_by(|a, b| a.name.cmp(&b.name));
+    // bun prints them in its dependency order: workspace, dev, optional, prod, peer; each by
+    // name.
+    let rank = |b: fnpm_types::Behavior| {
+        if b.is_workspace() {
+            0
+        } else if b.is_dev() {
+            1
+        } else if b.is_optional() && !b.is_peer() {
+            2
+        } else if b.is_peer() {
+            4
+        } else {
+            3
+        }
+    };
+    edges.sort_by(|a, b| {
+        rank(a.behavior)
+            .cmp(&rank(b.behavior))
+            .then_with(|| a.name.cmp(&b.name))
+    });
     for edge in edges {
         let Some(id) = edge.target else { continue };
+        // bun skips the root's membership edges (`link_view`), not a declared `workspace:`
+        // dependency: that one prints as `+ bar@workspace:packages/bar` when its link is new.
+        if graph.workspaces.get(&edge.literal) == Some(&id) {
+            continue;
+        }
         if !written.get(id.index()).copied().unwrap_or(false) {
             continue;
         }
         let Some(t) = graph.get(id) else { continue };
-        if matches!(
-            t.resolution,
-            Resolution::Workspace { .. } | Resolution::Root
-        ) {
+        if matches!(t.resolution, Resolution::Root) {
             continue;
         }
         let entry = AddedPackage {
@@ -191,7 +269,7 @@ pub(crate) fn requested(
                 .bin
                 .entries(&p.name)
                 .into_iter()
-                .map(|(n, _)| n.to_owned())
+                .map(|(n, _)| fnpm_types::text::escape_control_chars(n))
                 .collect(),
             skipped: p.is_disabled(platform).then_some(true),
         };

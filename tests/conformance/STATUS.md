@@ -6,72 +6,108 @@ Pass counts of the ported bun tests (tests/conformance/install) against the nati
 Only listed files have been measured. Each row keeps its latest per-file result; a partial run preserves other rows.
 Timeouts and load failures are explicit in the note column; files without counts are excluded from the pass rate.
 
-Integration run on 2026-10-25 from `23cc2210361a8f4b5b53221aa48b76a4dff55163`. Native CLI SHA-256:
-`cd278a4690db221dca51b63a76b9ce929a651bdec9b49b10905b7191f1436aac`. Commands routed through TypeScript use the debug NAPI addon built from the same revision;
-addon SHA-256 `c63d237756ec86f8a2f140b06b68175ccc646efd67cf80f453ec8afc401ef7a8`. The TypeScript bundle is from that checkout.
-Adapter SHA-256 `b7ea7fd4bb39cc3346cc7dcb21c561784aa3211b4eb0826624401a900dcb2d5c` fixes pipes read after process exit. Completed suites were rerun with
-that fix; incomplete suite notes preserve the prior attempt. Per-suite hashes are in
-[the machine-readable result](results/2026-10-26-land.json). Execution sandboxes use their home npmrc
-so the inherited test configuration cannot override it.
-The 42 completed files were rerun against this fixed build. The registry timeout used this build;
-the two incomplete scanner-matrix attempts retain their earlier source revision.
-This is a measured subset of the 101 ported files; incomplete files do not contribute to the percentage.
-The exact broad-track comparison is 2,250/4,849 passing assertions
-versus 2,081/4,849 reviewed; execution/scanner is 488/501 versus 486/501.
-The two scanner matrices use the ported CI sampling rule (about 10% chosen randomly); their skipped cases
-are unmeasured, and their counts should not be compared across runs as a fixed test set.
-Their terminal cases wait for `Bun.spawn({ terminal })` callbacks that the Node adapter does not implement;
-matrix file timeouts therefore do not establish scanner behavior. Focused scanner files are reported separately.
-Retry notes: The first create run had one spawn exit 127; isolated smoke checks passed and the complete file was rerun before acceptance. The first frozen workspace-names run had 76 passes and 55 failures, losing one reviewed passing assertion at a frozen reinstall. A complete-file retry had 77 passes and 54 failures with every reviewed passing assertion restored; no source change was made between attempts.
-The lockfile suite also includes request-order/gate assertions that reach per-test deadlines; those failures
-are included in its counts, separately from file-level timeout rows.
-
-Total: 3667 passed, 2973 failed, 58 skipped (55.2% of the tests that ran).
+Total: 8787 passed, 2273 failed, 157 skipped (79.4% of the tests that ran).
 
 | file | passed | failed | skipped | pass rate | note |
 | --- | ---: | ---: | ---: | ---: | --- |
 | `architecture-match.test.ts` | 30 | 0 | 0 | 100.0% |  |
-| `bad-workspace.test.ts` | 15 | 32 | 0 | 31.9% |  |
-| `bun-add-catalog.test.ts` | 71 | 82 | 0 | 46.4% |  |
-| `bun-add-filter.test.ts` | 105 | 40 | 0 | 72.4% |  |
-| `bun-add.test.ts` | 126 | 94 | 0 | 57.3% |  |
-| `bun-audit.test.ts` | 133 | 127 | 0 | 51.2% |  |
+| `bad-workspace.test.ts` | 22 | 25 | 0 | 46.8% |  |
+| `bun-add-catalog.test.ts` | 134 | 19 | 0 | 87.6% |  |
+| `bun-add-filter.test.ts` | 112 | 33 | 0 | 77.2% |  |
+| `bun-add.test.ts` | 175 | 45 | 0 | 79.5% |  |
+| `bun-audit.test.ts` | 260 | 0 | 0 | 100.0% |  |
 | `bun-create.test.ts` | 138 | 3 | 1 | 97.9% |  |
-| `bun-install-cpu-os.test.ts` | 26 | 17 | 0 | 60.5% |  |
-| `bun-install-lifecycle-scripts.test.ts` | 251 | 183 | 2 | 57.8% |  |
+| `bun-dedupe.test.ts` | 79 | 3 | 0 | 96.3% |  |
+| `bun-info.test.ts` | 74 | 0 | 1 | 100.0% |  |
+| `bun-install-backends.test.ts` | 9 | 19 | 4 | 32.1% |  |
+| `bun-install-cache-publish.test.ts` | 5 | 1 | 0 | 83.3% |  |
+| `bun-install-cpu-os.test.ts` | 27 | 16 | 0 | 62.8% |  |
+| `bun-install-env-file.test.ts` | 22 | 18 | 0 | 55.0% |  |
+| `bun-install-git-deps.test.ts` | 69 | 131 | 1 | 34.5% |  |
+| `bun-install-hardlink-fallback.test.ts` | 6 | 4 | 0 | 60.0% |  |
+| `bun-install-lifecycle-scripts.test.ts` | 338 | 96 | 2 | 77.9% |  |
+| `bun-install-link-path.test.ts` | 29 | 20 | 0 | 59.2% |  |
 | `bun-install-native-binlink.test.ts` | 25 | 2 | 0 | 92.6% |  |
-| `bun-install-offline-misses.test.ts` | 5 | 30 | 0 | 14.3% |  |
-| `bun-install-offline.test.ts` | 1 | 11 | 0 | 8.3% |  |
-| `bun-install-patch.test.ts` | 14 | 39 | 0 | 26.4% |  |
-| `bun-install-registry.test.ts` | 0 | 0 | 0 | - | timed out after 600s |
-| `bun-install-security-provider.test.ts` | 96 | 2 | 0 | 98.0% |  |
-| `bun-install.test.ts` | 346 | 426 | 6 | 44.8% |  |
-| `bun-lock.test.ts` | 207 | 110 | 1 | 65.3% |  |
-| `bun-pack.test.ts` | 370 | 11 | 1 | 97.1% |  |
-| `bun-patch.test.ts` | 98 | 134 | 5 | 42.2% |  |
-| `bun-pm-diff.test.ts` | 26 | 50 | 0 | 34.2% |  |
+| `bun-install-non-ntfs-windows.test.ts` | 0 | 0 | 1 | - |  |
+| `bun-install-offline-misses.test.ts` | 28 | 7 | 0 | 80.0% |  |
+| `bun-install-offline.test.ts` | 8 | 4 | 0 | 66.7% |  |
+| `bun-install-package-extensions.test.ts` | 27 | 16 | 0 | 62.8% |  |
+| `bun-install-patch.test.ts` | 26 | 27 | 0 | 49.1% |  |
+| `bun-install-pathname-trailing-slash.test.ts` | 4 | 2 | 0 | 66.7% |  |
+| `bun-install-proxy.test.ts` | 13 | 1 | 0 | 92.9% |  |
+| `bun-install-registry.test.ts` | 334 | 156 | 13 | 68.2% |  |
+| `bun-install-retry.test.ts` | 103 | 105 | 0 | 49.5% |  |
+| `bun-install-security-provider.test.ts` | 92 | 6 | 0 | 93.9% |  |
+| `bun-install-staging.test.ts` | 25 | 26 | 0 | 49.0% |  |
+| `bun-install-stalled-tls.test.ts` | 3 | 2 | 0 | 60.0% |  |
+| `bun-install-streaming-extract.test.ts` | 0 | 0 | 0 | - | timed out after 900s |
+| `bun-install-tarball-integrity.test.ts` | 67 | 98 | 42 | 40.6% |  |
+| `bun-install-tmpdir-exdev.test.ts` | 0 | 1 | 0 | 0.0% |  |
+| `bun-install-windows-rename-retry.test.ts` | 0 | 0 | 8 | - |  |
+| `bun-install.test.ts` | 604 | 168 | 6 | 78.2% |  |
+| `bun-link.test.ts` | 39 | 20 | 2 | 66.1% |  |
+| `bun-lock.test.ts` | 295 | 22 | 1 | 93.1% |  |
+| `bun-pack.test.ts` | 373 | 8 | 1 | 97.9% |  |
+| `bun-patch.test.ts` | 151 | 81 | 5 | 65.1% |  |
+| `bun-pm-cache-pack.test.ts` | 6 | 200 | 0 | 2.9% |  |
+| `bun-pm-diff.test.ts` | 58 | 18 | 0 | 76.3% |  |
+| `bun-pm-fetch.test.ts` | 34 | 0 | 0 | 100.0% |  |
+| `bun-pm-licenses.test.ts` | 85 | 0 | 0 | 100.0% |  |
+| `bun-pm-pkg.test.ts` | 134 | 0 | 3 | 100.0% |  |
 | `bun-pm-scan.test.ts` | 20 | 0 | 0 | 100.0% |  |
+| `bun-pm-version.test.ts` | 114 | 0 | 0 | 100.0% |  |
+| `bun-pm-why.test.ts` | 116 | 0 | 0 | 100.0% |  |
+| `bun-pm.test.ts` | 136 | 18 | 0 | 88.3% |  |
+| `bun-prune.test.ts` | 158 | 19 | 0 | 89.3% |  |
 | `bun-publish.test.ts` | 279 | 0 | 1 | 100.0% |  |
-| `bun-remove.test.ts` | 24 | 13 | 0 | 64.9% |  |
-| `bun-security-scanner-matrix-with-node-modules.test.ts` | 0 | 0 | 0 | - | timed out after 600s |
-| `bun-security-scanner-matrix-without-node-modules.test.ts` | 0 | 0 | 0 | - | stopped: Node adapter lacks terminal callbacks; TTY cases cannot finish |
+| `bun-remove.test.ts` | 31 | 6 | 0 | 83.8% |  |
+| `bun-security-scanner-matrix-with-node-modules.test.ts` | 0 | 0 | 0 | - | timed out after 900s |
+| `bun-security-scanner-matrix-without-node-modules.test.ts` | 0 | 0 | 0 | - | timed out after 900s |
 | `bun-security-scanner-workspaces.test.ts` | 11 | 0 | 0 | 100.0% |  |
+| `bun-update-lockfile-sync.test.ts` | 127 | 45 | 0 | 73.8% |  |
+| `bun-update-security-edge-cases.test.ts` | 6 | 0 | 0 | 100.0% |  |
+| `bun-update-security-provider.test.ts` | 1 | 1 | 0 | 50.0% |  |
 | `bun-update-security-scan-all.test.ts` | 5 | 0 | 1 | 100.0% |  |
-| `bun-update.test.ts` | 100 | 75 | 0 | 57.1% |  |
-| `bun-workspaces-self-contained.test.ts` | 4 | 21 | 0 | 16.0% |  |
-| `bun-workspaces.test.ts` | 155 | 185 | 1 | 45.6% |  |
+| `bun-update-security-simple.test.ts` | 2 | 0 | 0 | 100.0% |  |
+| `bun-update-transitive.test.ts` | 271 | 55 | 0 | 83.1% |  |
+| `bun-update.test.ts` | 135 | 40 | 0 | 77.1% |  |
+| `bun-workspaces-self-contained.test.ts` | 23 | 2 | 0 | 92.0% |  |
+| `bun-workspaces.test.ts` | 267 | 73 | 1 | 78.5% |  |
 | `bunx-concurrent.test.ts` | 1 | 0 | 0 | 100.0% |  |
 | `bunx-directories-bin.test.ts` | 4 | 0 | 0 | 100.0% |  |
-| `bunx.test.ts` | 222 | 8 | 2 | 96.5% |  |
-| `catalogs.test.ts` | 84 | 71 | 0 | 54.2% |  |
-| `frozen-lockfile-member-pins.test.ts` | 10 | 17 | 0 | 37.0% |  |
-| `frozen-lockfile-outdated.test.ts` | 28 | 79 | 0 | 26.2% |  |
-| `frozen-lockfile-pruned.test.ts` | 11 | 173 | 0 | 6.0% |  |
-| `frozen-lockfile-workspace-names.test.ts` | 77 | 54 | 0 | 58.8% |  |
-| `isolated-install.test.ts` | 156 | 127 | 7 | 55.1% |  |
-| `isolated-relink.test.ts` | 1 | 5 | 1 | 16.7% |  |
-| `lockfile-only.test.ts` | 7 | 27 | 0 | 20.6% |  |
-| `migration/migrate.test.ts` | 35 | 73 | 1 | 32.4% |  |
-| `nested-overrides.test.ts` | 36 | 282 | 0 | 11.3% |  |
-| `npmrc.test.ts` | 226 | 357 | 5 | 38.8% |  |
-| `overrides.test.ts` | 88 | 13 | 23 | 87.1% |  |
+| `bunx.test.ts` | 227 | 3 | 2 | 98.7% |  |
+| `catalogs.test.ts` | 127 | 28 | 0 | 81.9% |  |
+| `config-precedence.test.ts` | 137 | 4 | 0 | 97.2% |  |
+| `config-version.test.ts` | 8 | 0 | 0 | 100.0% |  |
+| `dt-unknown-readdir.test.ts` | 0 | 0 | 6 | - |  |
+| `escape-control-characters.test.ts` | 41 | 25 | 0 | 62.1% |  |
+| `frozen-lockfile-member-pins.test.ts` | 24 | 3 | 0 | 88.9% |  |
+| `frozen-lockfile-outdated.test.ts` | 104 | 3 | 0 | 97.2% |  |
+| `frozen-lockfile-pruned.test.ts` | 171 | 13 | 0 | 92.9% |  |
+| `frozen-lockfile-workspace-names.test.ts` | 118 | 13 | 0 | 90.1% |  |
+| `GHSA-pfwx-36v6-832x.test.ts` | 7 | 3 | 0 | 70.0% |  |
+| `hoist.test.ts` | 129 | 46 | 0 | 73.7% |  |
+| `install-fd-leak.test.ts` | 2 | 2 | 0 | 50.0% |  |
+| `isolated-install.test.ts` | 191 | 92 | 7 | 67.5% |  |
+| `isolated-relink.test.ts` | 3 | 3 | 1 | 50.0% |  |
+| `lockfile-only.test.ts` | 34 | 0 | 0 | 100.0% |  |
+| `lockfile-version-2.test.ts` | 15 | 0 | 0 | 100.0% |  |
+| `migration/complex-workspace.test.ts` | 38 | 0 | 0 | 100.0% |  |
+| `migration/migrate.test.ts` | 86 | 22 | 1 | 79.6% |  |
+| `migration/npm-arborist.test.ts` | 54 | 3 | 0 | 94.7% |  |
+| `migration/pnpm-comprehensive.test.ts` | 1 | 4 | 0 | 20.0% |  |
+| `migration/pnpm-lock-migration.test.ts` | 5 | 15 | 0 | 25.0% |  |
+| `migration/pnpm-lock-v9.test.ts` | 150 | 18 | 0 | 89.3% |  |
+| `migration/pnpm-migration-complete.test.ts` | 0 | 1 | 0 | 0.0% |  |
+| `migration/pnpm-migration.test.ts` | 8 | 6 | 11 | 57.1% |  |
+| `migration/yarn-berry.test.ts` | 107 | 9 | 0 | 92.2% |  |
+| `migration/yarn-lock-migration.test.ts` | 60 | 9 | 0 | 87.0% |  |
+| `minimum-release-age.test.ts` | 231 | 13 | 0 | 94.7% |  |
+| `nested-overrides.test.ts` | 284 | 34 | 0 | 89.3% |  |
+| `npmrc.test.ts` | 425 | 158 | 5 | 72.9% |  |
+| `overrides.test.ts` | 99 | 2 | 23 | 98.0% |  |
+| `public-hoist-pattern.test.ts` | 12 | 2 | 0 | 85.7% |  |
+| `redacted-config-logs.test.ts` | 47 | 51 | 0 | 48.0% |  |
+| `shebang-normalize.test.ts` | 0 | 1 | 5 | 0.0% |  |
+| `symlink-path-traversal.test.ts` | 68 | 25 | 2 | 73.1% |  |
+| `test-dev-peer-dependency-priority.test.ts` | 4 | 0 | 0 | 100.0% |  |

@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`package-lock.json migration fixes arborist fixtures audit-fix-old-tap 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > audit-fix-old-tap 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -1163,7 +1163,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures audit-linked-package 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > audit-linked-package 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -1186,7 +1186,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures audit-omit 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > audit-omit 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -2697,7 +2697,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures bundle-metadep-duplication--x 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > bundle-metadep-duplication--x 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -2724,7 +2724,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures carbonium 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > carbonium 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -2992,7 +2992,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures cli-750 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > cli-750 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3017,7 +3017,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures dedupe-lockfile 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > dedupe-lockfile 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3045,7 +3045,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures dep-installed-without-bin-link 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > dep-installed-without-bin-link 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3071,7 +3071,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures dep-missing-resolved 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > dep-missing-resolved 1`] = `
 "warn: skipping 1 unused package-lock.json entry: "node_modules/tap/node_modules/completely-broken-witaf"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -3568,7 +3568,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures edit-package-json--changed 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > edit-package-json--changed 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3615,7 +3615,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures edit-package-json--ok 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > edit-package-json--ok 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3662,7 +3662,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures edit-package-json--removed 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > edit-package-json--removed 1`] = `
 "warn: skipping 1 unused package-lock.json entry: "node_modules/semver"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -3704,7 +3704,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures edit-package-json--workspaces-changed 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > edit-package-json--workspaces-changed 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -3737,7 +3737,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures engine-specification 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > engine-specification 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -3762,7 +3762,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures external-link-dep 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > external-link-dep 1`] = `
 "warn: skipping "app@file:./app" from package-lock.json: no entry for this dependency of "../cli-750"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -3794,7 +3794,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures external-link--root 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > external-link--root 1`] = `
 "warn: skipping "p" from package-lock.json: transitive folder dependency "../m/node_modules/p" is outside the project
 warn: skipping "b" from package-lock.json: transitive folder dependency "../a/node_modules/b" is outside the project
 warn: skipping 3 unused package-lock.json entries: "../a", "../i", "../m"
@@ -3830,7 +3830,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures flow-outdated 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > flow-outdated 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3862,7 +3862,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures link-dep-lifecycle-scripts 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > link-dep-lifecycle-scripts 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3884,7 +3884,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures minimist-git-dep 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > minimist-git-dep 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -3907,7 +3907,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures minimist-git-metadep 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > minimist-git-metadep 1`] = `
 "warn: skipping 1 unused package-lock.json entry: "node_modules/@isaacs/no-thing-here"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -3933,13 +3933,13 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures old-package-lock 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > old-package-lock 1`] = `
 "error: cannot migrate package-lock.json: unsupported lockfileVersion 1
 note: npm install --package-lock-only --lockfile-version=3
 fnpm pm migrate exit code: 1"
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures optional-dep-allinstall-fail 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > optional-dep-allinstall-fail 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -3962,7 +3962,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures optional-dep-install-fail 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > optional-dep-install-fail 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -3985,7 +3985,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures optional-dep-postinstall-fail 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > optional-dep-postinstall-fail 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4008,7 +4008,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures optional-dep-preinstall-fail 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > optional-dep-preinstall-fail 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -4031,7 +4031,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures optional-engine-specification 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > optional-engine-specification 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -4056,7 +4056,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures peer-dep-cycle-nested-with-sw 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > peer-dep-cycle-nested-with-sw 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4085,7 +4085,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures peer-dep-cycle-with-sw 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > peer-dep-cycle-with-sw 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4112,7 +4112,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures pnpm 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > pnpm 1`] = `
 "warn: skipping 4 unused package-lock.json entries: "node_modules/.pnpm/registry.npmjs.org/@scope/x/1.0.0", "node_modules/.pnpm/registry.npmjs.org/a/1.0.0", "node_modules/.pnpm/registry.npmjs.org/b/1.0.0", "node_modules/.pnpm/registry.npmjs.org/c/1.0.0"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -4165,7 +4165,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures prune-lockfile-omit-dev 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > prune-lockfile-omit-dev 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4188,7 +4188,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures prune-lockfile-optional-peer 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > prune-lockfile-optional-peer 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4213,7 +4213,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures prune-lockfile 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > prune-lockfile 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -4229,7 +4229,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures rebuild-foreground-scripts 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > rebuild-foreground-scripts 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4254,7 +4254,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures test-package-with-shrinkwrap 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > test-package-with-shrinkwrap 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4277,7 +4277,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-bundledeps-sw 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-bundledeps-sw 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4308,7 +4308,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-peer-dep-conflict-chain 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-peer-dep-conflict-chain 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4340,7 +4340,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-peer-deps-nested 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-peer-deps-nested 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4377,7 +4377,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-rebuild-bundle-reified 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-rebuild-bundle-reified 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4404,7 +4404,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-rebuild-bundle--a 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-rebuild-bundle--a 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4427,7 +4427,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-rebuild-bundle 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-rebuild-bundle 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4454,7 +4454,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-rebuild-bundle--parent 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-rebuild-bundle--parent 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4479,7 +4479,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures testing-rebuild-script-env-flags 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > testing-rebuild-script-env-flags 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4510,7 +4510,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures two-bundled-deps 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > two-bundled-deps 1`] = `
 "warn: skipping 415 unused package-lock.json entries: "node_modules/@babel/code-frame", "node_modules/@babel/generator", "node_modules/@babel/generator/node_modules/source-map", "node_modules/@babel/helper-function-name", "node_modules/@babel/helper-get-function-arity" and 410 more
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -4547,7 +4547,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures update-exact-version 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > update-exact-version 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4569,7 +4569,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-add-new-dep 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-add-new-dep 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 1
@@ -4591,7 +4591,7 @@ fnpm install --frozen-lockfile exit code: 1
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-conflicting-versions-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-conflicting-versions-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4636,7 +4636,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-ignore-nm-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-ignore-nm-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4660,7 +4660,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-need-update 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-need-update 1`] = `
 "warn: skipping 4 unused package-lock.json entries: "a", "b", "node_modules/once", "node_modules/wrappy"
 migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
@@ -4683,7 +4683,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-non-simplistic 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-non-simplistic 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4717,7 +4717,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-not-root 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-not-root 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4766,7 +4766,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-prefer-linking-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-prefer-linking-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4799,7 +4799,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-shared-deps-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-shared-deps-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4855,7 +4855,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-simple-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-simple-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4888,7 +4888,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-top-level-link-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-top-level-link-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4915,7 +4915,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-transitive-deps-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-transitive-deps-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4946,7 +4946,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-version-unsatisfied-virtual 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-version-unsatisfied-virtual 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0
@@ -4981,7 +4981,7 @@ fnpm install --frozen-lockfile exit code: 0
 "
 `;
 
-exports[`package-lock.json migration fixes arborist fixtures workspaces-with-overrides 1`] = `
+exports[`package-lock.json migration fixes > arborist fixtures > workspaces-with-overrides 1`] = `
 "migrated lockfile from package-lock.json
 fnpm pm migrate exit code: 0
 fnpm install --frozen-lockfile exit code: 0

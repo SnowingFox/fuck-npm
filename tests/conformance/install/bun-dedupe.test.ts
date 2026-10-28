@@ -78,7 +78,7 @@ function removedSummary(removed: number, checked?: number) {
   return new RegExp(
     `^${versionsWord(removed)} removed(, [1-9]\\d* packages? installed)? \\(checked ${
       checked === undefined ? "[1-9]\\d* packages?" : packagesWord(checked)
-    } in bun\\.lock\\)$`,
+    } in fnpm\\.lock\\)$`,
   );
 }
 
@@ -126,7 +126,7 @@ function expectNoDuplicates({ stdout, stderr, exitCode }: Result, checked?: numb
     ...kept,
     ...(kept.length ? [""] : []),
     checked === undefined
-      ? expect.stringMatching(/^🎉 No duplicates — checked [1-9]\d* packages? in bun\.lock, /)
+      ? expect.stringMatching(/^🎉 No duplicates — checked [1-9]\d* packages? in fnpm\.lock, /)
       : noDuplicates(checked),
   ]);
   expectTimed(stdout, NO_DUPLICATES);

@@ -312,7 +312,7 @@ fn read_yarnrc(ws: &Workspace, options: &MigrateOptions<'_>) -> Result<YarnRc> {
 fn extension_problem(extension: &Extension) -> Option<&'static str> {
     let selector = parse_package_segment(&extension.key).ok()?;
     if !selector.range.is_empty() && semver::Range::parse(&selector.range).is_none() {
-        return Some("the key's version range is not valid");
+        return Some("expected a semver range after the \"@\"");
     }
     for (_, range) in extension
         .dependencies
@@ -325,7 +325,9 @@ fn extension_problem(extension: &Extension) -> Option<&'static str> {
             _ => false,
         };
         if !supported {
-            return Some("an extension can only add registry, git or remote tarball dependencies");
+            return Some(
+                "expected a version, a tag, a git repository or a tarball URL for every dependency",
+            );
         }
     }
     None
@@ -757,14 +759,23 @@ struct Extended<'a> {
     builtin_optional_peers: Vec<&'a str>,
 }
 
-/// Does an extension key (`name@range`) apply to `name` at `version`? Prereleases match, like
-/// in yarn; an empty range matches every version.
+/// Does an extension key (`name@range`) apply to `name` at `version`? Prereleases match as in
+/// yarn (node-semver `includePrerelease`: `1.x` is `>=1.0.0-0 <2.0.0-0`, `^1.0.0` still starts at
+/// `1.0.0`), the same way the install matches the rule; an empty range matches every version.
 fn key_matches(key: &str, name: &str, version: &semver::Version) -> bool {
     parse_package_segment(key).is_ok_and(|selector| {
         selector.name == name
             && (selector.range.is_empty()
-                || semver::Range::parse(&selector.range)
-                    .is_some_and(|r| r.satisfies(version, true)))
+                || matches!(
+                    (
+                        fnpm_semver::Range::parse_including_prerelease(&selector.range),
+                        fnpm_semver::Version::parse(&version.to_string()),
+                    ),
+                    (Ok(r), Ok(v)) if r.satisfies_with(
+                        &v,
+                        fnpm_semver::SatisfyOptions { include_prerelease: true },
+                    )
+                ))
     })
 }
 
@@ -1265,10 +1276,11 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
                     ))
                 }
             };
-            let default = foreign::default_tarball_url(&configured, name, &v.to_string());
+            // Like bun.lock, only npmjs packages are written without their URL.
             Resolution::Npm {
                 version: v.to_string(),
-                tarball_url: tarball_url.filter(|u| *u != default),
+                tarball_url: tarball_url
+                    .filter(|u| !foreign::url_is_under_registry(u, foreign::DEFAULT_REGISTRY)),
                 integrity: None,
             }
         } else if let Some((protocol, path)) = split_folder_protocol(head) {

@@ -130,16 +130,28 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         .filter(|d| crate::is_inside_project(cx.project_dir, d))
         .collect();
     let mut is_new_fnpm = is_new_nm;
+    // Symlinked `node_modules` folders that hold another linker's tree: nothing is moved out of
+    // them (bun `LinkedNodeModules`), which is worth a warning.
+    let mut not_cleared = Vec::new();
+    let mut clear = |node_modules: &Path, keep: &[&str]| {
+        if fsutil::is_linked_node_modules(node_modules) {
+            if crate::holds_a_tree(node_modules) {
+                not_cleared.push(crate::shown_folder(cx.project_dir, node_modules));
+            }
+        } else {
+            crate::move_node_modules_aside(node_modules, keep);
+        }
+    };
     if !is_new_nm && !crate::is_isolated_tree(cx.project_dir) {
         // Another linker made this tree (or none did): move its entries aside.
-        crate::move_node_modules_aside(&nm, &[".fnpm"]);
+        clear(&nm, &[".fnpm"]);
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
         is_new_fnpm = true;
     } else if is_new_nm {
         for ws in &workspace_dirs {
-            crate::move_node_modules_aside(&ws.join("node_modules"), &[]);
+            clear(&ws.join("node_modules"), &[]);
         }
     }
     if !is_new_fnpm {
@@ -274,6 +286,17 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
                 Kindof::Local => {
                     let entry_dir = paths.local_entry_dir(i as u32);
                     let pkg_dir = fsutil::join_name(&entry_dir.join("node_modules"), name);
+                    if !fresh && fsutil::kind(&entry_dir) != Kind::Symlink {
+                        // The store is the linker's: a link planted in an entry (its
+                        // `node_modules`, a scope, the package itself) is removed, never
+                        // written through, and the package is installed again.
+                        fsutil::remove_planted_links(&pkg_dir, &entry_dir).map_err(|source| {
+                            Error::Io {
+                                path: pkg_dir.clone(),
+                                source,
+                            }
+                        })?;
+                    }
                     if !fresh {
                         if fsutil::kind(&entry_dir) == Kind::Symlink {
                             // An entry that left the global store is still a link into it.
@@ -321,15 +344,38 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
         return Err(e);
     }
 
-    // Phase B: dependency links and bins.
+    // Phase B: dependency links and bins. `external`: each link to a `link:` package, and
+    // whether this run made it.
+    let external: Mutex<Vec<(PackageId, PathBuf, bool)>> = Mutex::new(Vec::new());
+    // Store entries that were in place and got a new dependency link: bun installs them again.
+    let relinked: Mutex<Vec<u32>> = Mutex::new(Vec::new());
     (0..layout.entries.len()).into_par_iter().for_each(|i| {
-        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh) {
+        if let Err(err) = link_entry(cx, &paths, &states, i as u32, fresh, &external, &relinked) {
             fail(err);
         }
     });
     if let Some(e) = first_error.lock().take() {
         cleanup_staging(&states);
         return Err(e);
+    }
+
+    let mut relinked = relinked.into_inner();
+    relinked.sort();
+    relinked.dedup();
+    for i in relinked {
+        // Counted as installed, not also as checked.
+        states[i as usize].built.store(true, Ordering::Relaxed);
+        count_written(layout.entries[i as usize].package);
+    }
+
+    // bun runs the scripts of a `link:` package when it links it (and on `--force`), not when
+    // another dependent gains a link to it: only a package all of whose links are new is
+    // reported.
+    let external = external.into_inner();
+    for (pkg, target, _) in &external {
+        if external.iter().all(|(p, _, made)| p != pkg || *made) {
+            dirs.lock().push((*pkg, target.clone()));
+        }
     }
 
     // Hidden hoist: `.fnpm/node_modules/<alias>`.
@@ -428,9 +474,11 @@ pub(crate) fn link(cx: &LinkCx<'_>, layout: &IsolatedLayout) -> Result<LinkRepor
 
     let mut dirs = dirs.into_inner();
     dirs.sort();
+    dirs.dedup();
     let installed = installed.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
     Ok(LinkReport {
+        not_cleared,
         installed,
         installed_packages: installed_packages.load(Ordering::Relaxed),
         written: written.iter().map(|w| w.load(Ordering::Relaxed)).collect(),
@@ -507,6 +555,8 @@ fn link_entry(
     states: &[EntryState],
     i: u32,
     fresh: bool,
+    external: &Mutex<Vec<(PackageId, PathBuf, bool)>>,
+    relinked: &Mutex<Vec<u32>>,
 ) -> Result<()> {
     let layout = paths.layout;
     let e = &layout.entries[i as usize];
@@ -524,17 +574,24 @@ fn link_entry(
     ) = match &st.kind {
         Kindof::Importer(dir) => {
             let nm = dir.join("node_modules");
-            (nm.clone(), None, false, Strategy::ExpectExisting, nm)
+            let strategy = if fsutil::is_linked_node_modules(&nm) {
+                Strategy::KeepOthers
+            } else {
+                Strategy::ExpectExisting
+            };
+            (nm.clone(), None, false, strategy, nm)
         }
         Kindof::Nothing | Kindof::External(_) => return Ok(()),
         Kindof::Local => {
-            let nm = paths.local_entry_dir(i).join("node_modules");
+            let entry_dir = paths.local_entry_dir(i);
+            let nm = entry_dir.join("node_modules");
             let strat = if st.built.load(Ordering::Relaxed) && fresh {
                 Strategy::ExpectMissing
             } else {
                 Strategy::ExpectExisting
             };
-            (nm.clone(), Some(pkg.name.as_str()), false, strat, nm)
+            // From the entry itself: its `node_modules` may be a planted link too.
+            (nm, Some(pkg.name.as_str()), false, strat, entry_dir)
         }
         Kindof::Global { .. } => {
             let Some(staging) = st.real_entry_dir.lock().clone() else {
@@ -558,12 +615,21 @@ fn link_entry(
         Vec::new()
     };
     deps.extend(public);
+    // A member reached through a symlinked path (`link -> ../app`): its links are written
+    // relative to where its node_modules really is, or they would point beside it.
+    let mut real_nm: Option<PathBuf> = None;
     if matches!(st.kind, Kindof::Importer(_)) {
         fsutil::create_dir_all(&entry_nm).map_err(|source| Error::Io {
             path: entry_nm.clone(),
             source,
         })?;
+        real_nm = std::fs::canonicalize(&entry_nm)
+            .ok()
+            .filter(|real| *real != entry_nm);
     }
+    let project_real = real_nm
+        .as_ref()
+        .and_then(|_| std::fs::canonicalize(cx.project_dir).ok());
     for (alias, dep) in &deps {
         if !fnpm_types::name::is_safe_install_folder_name(alias) {
             return Err(Error::UnsafePath {
@@ -578,9 +644,34 @@ fn link_entry(
         let Some(target) = paths.store_path(states, *dep, from_global) else {
             continue;
         };
-        let rel = fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target);
-        fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
+        let rel = match (&real_nm, &project_real) {
+            (Some(real), Some(project)) => {
+                // Both sides by their real paths: the store is inside the project.
+                let target = target
+                    .strip_prefix(cx.project_dir)
+                    .map(|r| project.join(r))
+                    .unwrap_or_else(|_| target.clone());
+                let parent = dest.parent().unwrap_or(&entry_nm);
+                let parent = parent
+                    .strip_prefix(&entry_nm)
+                    .map(|r| real.join(r))
+                    .unwrap_or_else(|_| parent.to_path_buf());
+                fsutil::relative(&parent, &target)
+            }
+            _ => fsutil::relative(dest.parent().unwrap_or(&entry_nm), &target),
+        };
+        let made = fsutil::ensure_symlink(&rel, &dest, strategy, Some(&real_base))
             .map_err(|source| Error::Io { path: dest, source })?;
+        if made && matches!(st.kind, Kindof::Local) && !st.built.load(Ordering::Relaxed) {
+            relinked.lock().push(i);
+        }
+        if matches!(states[*dep as usize].kind, Kindof::External(_)) {
+            external.lock().push((
+                layout.entries[*dep as usize].package,
+                target,
+                made || cx.opts.force,
+            ));
+        }
     }
 
     // Bins of the dependencies, direct ones first (bun `link_dependency_bins`).
@@ -615,8 +706,8 @@ fn link_entry(
         ))
     });
     let bin_dir = entry_nm.join(".bin");
-    if is_importer && !fresh {
-        fsutil::remove_planted_links(&bin_dir, &entry_nm).map_err(|source| Error::Io {
+    if !from_global && !fresh {
+        fsutil::remove_planted_links(&bin_dir, &real_base).map_err(|source| Error::Io {
             path: bin_dir.clone(),
             source,
         })?;
@@ -656,6 +747,9 @@ fn link_entry(
         if let Err(err) = linker.link(own, &pkg.bin, &text_dir, opts) {
             first_err.get_or_insert(err);
         }
+    }
+    if let Some(warning) = linker.refused_warning() {
+        cx.events.emit(fnpm_types::Event::warn(warning, None));
     }
     match first_err {
         Some(e) => Err(e),

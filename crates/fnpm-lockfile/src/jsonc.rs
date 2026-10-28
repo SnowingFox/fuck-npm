@@ -36,7 +36,7 @@ pub(crate) struct Row<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SyntaxError {
     pub pos: u32,
-    pub message: &'static str,
+    pub message: std::borrow::Cow<'static, str>,
 }
 
 impl<'a> Node<'a> {
@@ -122,10 +122,10 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn err(&self, message: &'static str) -> SyntaxError {
+    fn err(&self, message: impl Into<std::borrow::Cow<'static, str>>) -> SyntaxError {
         SyntaxError {
             pos: self.i as u32,
-            message,
+            message: message.into(),
         }
     }
 
@@ -166,7 +166,7 @@ impl<'a> Parser<'a> {
             Some(b'f') => self.word(b"false", Value::Bool(false))?,
             Some(b'n') => self.word(b"null", Value::Null)?,
             Some(b'-' | b'0'..=b'9') => self.number()?,
-            Some(_) => return Err(self.err("Unexpected character")),
+            Some(_) => return Err(self.unexpected()),
             None => return Err(self.err("Unexpected end of file")),
         };
         Ok(Node { value, pos })
@@ -177,7 +177,21 @@ impl<'a> Parser<'a> {
             self.i += w.len();
             Ok(v)
         } else {
-            Err(self.err("Unexpected identifier"))
+            Err(self.unexpected())
+        }
+    }
+
+    /// bun's lexer names the token it did not expect: `Unexpected this` for an identifier.
+    fn unexpected(&self) -> SyntaxError {
+        let word: String = self.s[self.i..]
+            .iter()
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$'))
+            .map(|&b| b as char)
+            .collect();
+        if word.is_empty() || word.as_bytes()[0].is_ascii_digit() {
+            self.err("Unexpected character")
+        } else {
+            self.err(format!("Unexpected {word}"))
         }
     }
 
@@ -198,7 +212,7 @@ impl<'a> Parser<'a> {
             .map(Value::Number)
             .map_err(|_| SyntaxError {
                 pos: start as u32,
-                message: "Invalid number",
+                message: "Invalid number".into(),
             })
     }
 
@@ -416,6 +430,15 @@ mod tests {
         let n = parse(r#"{"a": 1, "a": 2}"#).unwrap();
         assert_eq!(n.as_object().unwrap().len(), 2);
         assert_eq!(n.get("a").unwrap().value, Value::Number(1.0));
+    }
+
+    #[test]
+    fn an_unexpected_word_is_named_like_bun() {
+        assert_eq!(parse("this is not").unwrap_err().message, "Unexpected this");
+        assert_eq!(parse("{\"a\": tru}").unwrap_err().message, "Unexpected tru");
+        assert_eq!(parse("@").unwrap_err().message, "Unexpected character");
+        assert!(crate::is_syntax_error(b"{ this is not json"));
+        assert!(!crate::is_syntax_error(b"{\"lockfileVersion\": 99}"));
     }
 
     #[test]

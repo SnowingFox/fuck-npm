@@ -84,6 +84,18 @@ fn is_unsupported(e: &io::Error) -> bool {
         )
 }
 
+/// A clone or hard link that failed this way moves to the next backend.
+fn falls_back(backend: Backend, e: &io::Error) -> bool {
+    matches!(backend, Backend::Clonefile | Backend::Hardlink) && is_unsupported(e)
+}
+
+/// A hard link refused with `EACCES` (bun: FUSE filesystems such as Android's sdcard, or one
+/// file the filesystem protects) is copied instead, that file only: the other packages keep
+/// their hard links.
+fn copies_instead(backend: Backend, e: &io::Error) -> bool {
+    backend == Backend::Hardlink && is_errno(e, &[libc::EACCES])
+}
+
 /// Copies a store package into a fresh directory. Holds the process-wide sticky backend.
 #[derive(Debug)]
 pub struct Materializer {
@@ -192,6 +204,25 @@ impl Materializer {
         Ok(weakest)
     }
 
+    /// [`Materializer::materialize`] with a fallback of its own: what this package's files
+    /// fail with moves only this package to the next backend. bun links a `file:` folder from
+    /// the folder, which may be on another file system than every other package.
+    pub fn materialize_alone(
+        &self,
+        src: &Path,
+        index: &FileIndex,
+        dest: &Path,
+    ) -> Result<Backend, MaterializeError> {
+        let own = Materializer::new(self.current());
+        let result = own.materialize(src, index, dest);
+        for (mine, theirs) in self.used.iter().zip(&own.used) {
+            if theirs.load(Ordering::Relaxed) {
+                mine.store(true, Ordering::Relaxed);
+            }
+        }
+        result
+    }
+
     /// Places `files` of the package `src` into `dest` (whose directories exist); returns the
     /// weakest backend used.
     fn place_files<'f>(
@@ -222,6 +253,21 @@ impl Materializer {
         Ok(weakest)
     }
 
+    /// Copies `from` to a new file `to`. An existing `to` is an error, as for the other backends:
+    /// `std::fs::copy` would truncate it, and through a hardlink into the store that empties the
+    /// store's file (two trees writing one folder, as a self-contained workspace and a sibling's
+    /// own tree do).
+    fn copy_new(from: &Path, to: &Path) -> io::Result<()> {
+        let mut src = std::fs::File::open(from)?;
+        let mut dst = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(to)?;
+        io::copy(&mut src, &mut dst)?;
+        let perms = src.metadata()?.permissions();
+        dst.set_permissions(perms)
+    }
+
     /// Places one file, degrading the sticky backend on "unsupported" errors.
     pub fn place_file(&self, from: &Path, to: &Path) -> Result<Backend, MaterializeError> {
         loop {
@@ -229,7 +275,7 @@ impl Materializer {
             let result = match backend {
                 Backend::Clonefile => reflink_copy::reflink(from, to),
                 Backend::Hardlink => std::fs::hard_link(from, to),
-                Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                Backend::Copyfile => Self::copy_new(from, to),
                 Backend::Symlink => symlink_file(from, to),
             };
             match result {
@@ -242,7 +288,7 @@ impl Materializer {
                     let retry = match backend {
                         Backend::Clonefile => reflink_copy::reflink(from, to),
                         Backend::Hardlink => std::fs::hard_link(from, to),
-                        Backend::Copyfile => std::fs::copy(from, to).map(|_| ()),
+                        Backend::Copyfile => Self::copy_new(from, to),
                         Backend::Symlink => symlink_file(from, to),
                     };
                     match retry {
@@ -250,10 +296,13 @@ impl Materializer {
                             self.mark(backend);
                             return Ok(backend);
                         }
-                        Err(e)
-                            if matches!(backend, Backend::Clonefile | Backend::Hardlink)
-                                && is_unsupported(&e) =>
-                        {
+                        Err(e) if copies_instead(backend, &e) => {
+                            let _ = std::fs::remove_file(to);
+                            std::fs::copy(from, to)
+                                .map_err(|e| mat_err("copyfile", from, to, e))?;
+                            return Ok(Backend::Copyfile);
+                        }
+                        Err(e) if falls_back(backend, &e) => {
                             let _ = std::fs::remove_file(to);
                             self.degrade_after(backend, &e);
                         }
@@ -268,10 +317,12 @@ impl Materializer {
                         create_dir_all(parent).map_err(|e| mat_err("mkdir", from, parent, e))?;
                     }
                 }
-                Err(e)
-                    if matches!(backend, Backend::Clonefile | Backend::Hardlink)
-                        && is_unsupported(&e) =>
-                {
+                Err(e) if copies_instead(backend, &e) => {
+                    let _ = std::fs::remove_file(to);
+                    std::fs::copy(from, to).map_err(|e| mat_err("copyfile", from, to, e))?;
+                    return Ok(Backend::Copyfile);
+                }
+                Err(e) if falls_back(backend, &e) => {
                     let _ = std::fs::remove_file(to);
                     self.degrade_after(backend, &e);
                 }
@@ -667,6 +718,24 @@ pub enum Strategy {
     ExpectMissing,
     /// Read the current link first; keep it when it already points at the target.
     ExpectExisting,
+    /// [`Strategy::ExpectExisting`] in a `node_modules` that is a symlink: what is in the way
+    /// and is not a link is not the linker's, so it is an `EEXIST` error instead of removed.
+    KeepOthers,
+}
+
+/// An `EEXIST` error that says so (bun prints the code): something the linker did not create
+/// is where it would write.
+pub fn in_the_way(path: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        format!("EEXIST: {} is in the way", path.display()),
+    )
+}
+
+/// Whether `node_modules` is itself a symlink (bun `LinkedNodeModules`): the linkers install
+/// through it, but never clear or prune what is behind it, which may not be theirs.
+pub fn is_linked_node_modules(node_modules: &Path) -> bool {
+    kind(node_modules) == Kind::Symlink
 }
 
 #[cfg(unix)]
@@ -730,7 +799,7 @@ fn ensure_inner(
             }
             Err(e) => Err(e),
         },
-        Strategy::ExpectExisting => match std::fs::read_link(dest) {
+        Strategy::ExpectExisting | Strategy::KeepOthers => match std::fs::read_link(dest) {
             Ok(current) => {
                 if strip_trailing_sep(&current) == target {
                     return Ok(false);
@@ -750,6 +819,9 @@ fn ensure_inner(
                 // A file or a directory.
                 if dest.join("package.json").exists() && kind(dest) == Kind::Dir {
                     return Ok(false);
+                }
+                if strategy == Strategy::KeepOthers {
+                    return Err(in_the_way(dest));
                 }
                 remove_any(dest)?;
                 create_link(target, dest).map(|()| true)

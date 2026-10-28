@@ -120,6 +120,18 @@ impl EventSink for BatchingSink {
     }
 
     fn emit(&self, event: Event) {
+        // The TS renderer prints warnings and errors as they come: mask URL credentials here.
+        let event = match event {
+            Event::Warn { message, code } => Event::Warn {
+                message: fnpm_config::redact::redacted_message(&message).into_owned(),
+                code,
+            },
+            Event::Error { message, code } => Event::Error {
+                message: fnpm_config::redact::redacted_message(&message).into_owned(),
+                code,
+            },
+            other => other,
+        };
         // Hand inherited-output boundaries to JS before the runner acknowledges a start.
         let foreground = matches!(
             &event,

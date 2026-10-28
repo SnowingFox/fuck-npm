@@ -3801,6 +3801,7 @@
           "cpu": [],
           "os": [],
           "libc": [],
+          "minimumReleaseAgeMs": 0,
           "command": "install",
           "packages": [],
           "saveProd": false,
@@ -4099,7 +4100,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"ftp://<redacted>@host/x?token=<redacted>&b=1\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"ftp://***@host/x?token=***&b=1\"\n",
         "install": null
       }
     },
@@ -4113,7 +4114,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"host?_AuthToken=<redacted>\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"host?_AuthToken=***\"\n",
         "install": null
       }
     },
@@ -5809,7 +5810,7 @@
       "expected": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"-\"\nRun 'fnpm install --help' for detailed usage.\n",
+        "stderr": "error: Registry URL must start with 'https://' or 'http://': \"-\"\n",
         "install": null
       }
     },
@@ -8332,7 +8333,7 @@
       ],
       "expected": {
         "exit": 0,
-        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m^\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 ->\u001b[22m \u001b[1m3.23.8\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
+        "stdout": "\u001b[1mfnpm install \u001b[22m\u001b[2mv0.0.2\u001b[22m\n\n\u001b[32m+\u001b[39m \u001b[1mreact\u001b[22m\u001b[2m@18.3.1\u001b[22m\n\u001b[36m↑\u001b[39m \u001b[1mzod\u001b[22m \u001b[2m3.22.0 →\u001b[22m \u001b[1m\u001b[36m3.23.8\u001b[39m\u001b[22m\n\n\u001b[32m2\u001b[39m packages installed \u001b[2m[\u001b[1m12.00ms\u001b[22m\u001b[2m]\u001b[22m\n",
         "stderr": "\u001b[33mwarn:\u001b[39m deprecated: request@2.88.2\n\u001b[31merror:\u001b[39m postinstall of esbuild failed\n",
         "install": {
           "cwd": "/work/app",

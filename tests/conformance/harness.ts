@@ -13,7 +13,8 @@ import os from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inject } from "vitest";
-import { Archive, deepMatch, file, parseJsonc, resolveSync, semver, sleepSync, spawn, type Subprocess } from "./compat/bun.ts";
+import { bunNames } from "./compat/lockfile.ts";
+import { Archive, deepMatch, file, storeOfCache, parseJsonc, resolveSync, semver, sleepSync, spawn, type Subprocess } from "./compat/bun.ts";
 
 export type { Subprocess };
 
@@ -83,6 +84,79 @@ export function dockerExe(): string | null {
  * The fnpm CLI. FNPM_EXE overrides it; the default is the built CLI of packages/fuck-npm. A `.js` path is run with
  * the current node by `spawn`, so it does not need to be executable.
  */
+/**
+ * Removes the cache entries `evict` selects: bun's `<name>@<version>...` folders and fnpm's
+ * packages (`<cache>/store/v2/pkgs/<name>@<version>-<hash>`, scoped names with `+`), so a
+ * test that evicts a package from bun's cache evicts it from fnpm's store as well.
+ */
+export async function evictCacheEntries(cache: string, evict: (entry: string) => boolean): Promise<void> {
+  const remove = (path: string) => fs.promises.rm(path, { recursive: true, force: true });
+  for (const entry of fs.existsSync(cache) ? fs.readdirSync(cache).sort() : []) {
+    if (entry !== "store" && evict(entry)) await remove(join(cache, entry));
+  }
+  for (const store of storesOfCache(cache)) {
+    const pkgs = join(store, "v2", "pkgs");
+    for (const entry of fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : []) {
+      const named = entry.replace(/^@([^+]+)\+/, "@$1/");
+      if (evict(named) || evict(entry)) await remove(join(pkgs, entry));
+    }
+  }
+}
+
+/**
+ * The stores that hold the packages of the cache `cache`: `<cache>/store`, and the one the compat spawn gives a test
+ * with a cache of its own ([`storeOfCache`]).
+ */
+function storesOfCache(cache: string): string[] {
+  return [join(cache, "store"), storeOfCache(workerRoot, cache)];
+}
+
+/**
+ * The package folders of `<name>@<version>` in a cache: bun's `<name>@<version>@...` entries and fnpm's store packages
+ * (`<store>/v2/pkgs/<name>@<version>-<hash>/package`, scoped names with `+`), so a test that reads a package out of
+ * bun's cache reads it from fnpm's store instead. The store is `<cache>/store` unless `store` (the FNPM_STORE_DIR the
+ * install ran with) says otherwise.
+ */
+export function cacheEntryDirs(cache: string, name: string, version: string, store?: string): string[] {
+  const bun = (fs.existsSync(cache) ? fs.readdirSync(cache).sort() : [])
+    .filter(entry => entry.startsWith(`${name}@${version}@`))
+    .map(entry => join(cache, entry));
+  const stored = name.replace(/^@([^/]+)\//, "@$1+");
+  const fnpm = (store ? [store] : storesOfCache(cache)).flatMap(store => {
+    const pkgs = join(store, "v2", "pkgs");
+    return (fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [])
+      .filter(entry => entry.startsWith(`${stored}@${version}-`))
+      .map(entry => join(pkgs, entry, "package"));
+  });
+  return [...bun, ...fnpm];
+}
+
+/**
+ * The manifest cache entries under `cache`, as absolute paths: bun's `<cache>/<hash>.npm` files and fnpm's
+ * `<cache>/metadata/v1/<hash>.rkyv` ones. A test that checks what a cached manifest holds (its ETag, its
+ * Last-Modified) or that one was written reads fnpm's entry through this instead of bun's file name.
+ */
+export function cachedManifestFiles(cache: string): string[] {
+  const list = (dir: string, suffix: string) =>
+    fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith(suffix)).map(name => join(dir, name)) : [];
+  return [...list(cache, ".npm"), ...list(join(cache, "metadata", "v1"), ".rkyv")].sort();
+}
+
+/**
+ * bun keeps the packages it downloads in its cache directory; fnpm keeps them in its store, which
+ * this harness puts in one directory per worker. A test that gives bun a cache of its own gets
+ * fnpm's store in the same place, so what one test downloads is not in another's cache.
+ */
+export function cacheDirEnv(cache: string): Record<string, string> {
+  return { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: join(cache, "store") };
+}
+
+/** The packages a cache from {@link cacheDirEnv} holds, by fnpm's store names (`name@version-<hash>`). */
+export function cachedPackageNames(cache: string): string[] {
+  const pkgs = join(cache, "store", "v2", "pkgs");
+  return fs.existsSync(pkgs) ? fs.readdirSync(pkgs).sort() : [];
+}
+
 export function fnpmExe(): string {
   return process.env.FNPM_EXE ?? join(repoRoot, "packages", "fuck-npm", "dist", "fnpm.js");
 }
@@ -164,6 +238,14 @@ export function installEnv(dir: string, env: Record<string, string | undefined> 
     FNPM_CACHE_DIR: join(dir, ".fnpm-cache"),
     FNPM_STORE_DIR: join(dir, ".fnpm-store"),
   };
+}
+
+/**
+ * Where the global virtual store keeps its entries for a cache set up with {@link cacheDirEnv}: bun uses
+ * `<cache>/links`, fnpm `<cache>/store/v2/links` (the store's own layout version).
+ */
+export function globalStoreLinks(cache: string): string {
+  return join(cache, "store", "v2", "links");
 }
 
 export interface RunOptions {
@@ -338,7 +420,7 @@ export function cwdScope(cwd: string) {
 }
 
 export async function readdirSorted(path: string): Promise<string[]> {
-  const results = await readdir(path);
+  const results = bunNames(await readdir(path));
   results.sort();
   return results;
 }
@@ -358,7 +440,8 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
   return snapshot
     .replaceAll("\r\n", "\n")
     // A command header (`fnpm install v0.0.1`) reads like bun's normalized one: `fnpm install <version> (<revision>)`.
-    .replace(/^(fnpm(?: [a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
+    // Flags too: `fnpm update --interactive v0.0.1`.
+    .replace(/^(fnpm(?: (?:--)?[a-z][\w-]*)+) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?$/gm, "$1 <version> (<revision>)")
     .replaceAll("\\", "/")
     .replaceAll(fs.realpathSync.native(process.cwd()).replaceAll("\\", "/"), "<cwd>")
     .replaceAll(fs.realpathSync.native(os.tmpdir()).replaceAll("\\", "/"), "<tmp>")
@@ -369,8 +452,9 @@ export function normalizeFnpmSnapshot(snapshot: string, optionalDir?: string) {
     .replace(/fnpm v[\d.]+(?:-[\w.]+)?(?:\+[\w]+)?(?:\s+\([^)]+\))?/g, "fnpm v<fnpm-version>")
     // bun's `Bun.version_with_sha` -> "<version> (<revision>)" in "bun <command> v1.2.3 (abcdef12)" headers.
     .replace(/\bfnpm ([a-z][a-z-]*) v\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+\w+)?(?: \([0-9a-f]+\))?/g, "fnpm $1 <version> (<revision>)")
-    // Not inside an IP address or another dotted number (`127.0.0.1` contains `0.0.1`).
-    .replace(new RegExp(`(?<![\\d.])${version.replaceAll(".", "\\.")}(?![\\d.])`, "g"), "<fnpm-version>")
+    // Not inside an IP address or another dotted number (`127.0.0.1` contains `0.0.1`), and not a
+    // package's version (`bar@0.0.2`): bun's version never collides with the fixtures', fnpm's can.
+    .replace(new RegExp(`(?<![\\d.@])${version.replaceAll(".", "\\.")}(?![\\d.])`, "g"), "<fnpm-version>")
     .trim();
 }
 

@@ -147,6 +147,41 @@ impl Positional {
         Self::parse(&input).expect("rebasing a local path preserves its dependency format")
     }
 
+    /// A relative local path made absolute from `cwd` (bun `add -g`: the global package.json
+    /// gets the folder the typed path names, not a path relative to the global directory). A
+    /// trailing `/` is kept.
+    pub(crate) fn absolute_from(&self, cwd: &std::path::Path) -> Self {
+        let path = match &self.spec {
+            DependencySpec::Folder { path } => path,
+            DependencySpec::Symlink { path } if fnpm_types::spec::is_link_path(path) => path,
+            DependencySpec::Tarball {
+                uri: TarballUri::Local(path),
+            } => path,
+            _ => return self.clone(),
+        };
+        if std::path::Path::new(path).is_absolute() || path.starts_with('~') {
+            return self.clone();
+        }
+        let absolute = fnpm_linker::fsutil::normalize(&cwd.join(path));
+        let mut absolute = absolute.to_string_lossy().replace('\\', "/");
+        if path.ends_with('/') && !absolute.ends_with('/') {
+            absolute.push('/');
+        }
+        let prefix = if self.literal.starts_with("file:") {
+            "file:"
+        } else if self.literal.starts_with("link:") {
+            "link:"
+        } else {
+            ""
+        };
+        let literal = format!("{prefix}{absolute}");
+        let input = match &self.name {
+            Some(name) => format!("{name}@{literal}"),
+            None => literal,
+        };
+        Self::parse(&input).expect("an absolute local path keeps its dependency format")
+    }
+
     /// Whether the user named a version, range or tag (`react@18`, not `react`).
     pub fn has_version(&self) -> bool {
         !self.literal.is_empty()

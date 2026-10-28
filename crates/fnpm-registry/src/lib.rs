@@ -32,7 +32,7 @@ use fnpm_config::{Config, Env};
 use fnpm_types::{EventSink, Integrity};
 use futures_util::stream::BoxStream;
 
-pub use audit::{AuditPackage, AuditResponse, UnauditedRegistry};
+pub use audit::{AuditPackage, AuditResponse, DefaultFailure, SkipReason, UnauditedRegistry};
 pub use auth::redact_url;
 pub use cache::ManifestCache;
 pub use endpoints::{JsonResponse, github_tarball_tag};
@@ -47,13 +47,14 @@ pub use tls::CaStore;
 /// Errors of registry operations. URLs in messages never carry credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("GET {url}: {status}")]
+    #[error("GET {url} - {status}")]
     Status { url: String, status: u16 },
     #[error("package \"{0}\" not found")]
     NotFound(String),
-    #[error("{url}: {message}")]
+    /// A request that failed or could not be made; `url` is empty when `message` names it.
+    #[error("{}{message}", if url.is_empty() { String::new() } else { format!("{url}: ") })]
     Network { url: String, message: String },
-    #[error("offline: no cached manifest for \"{0}\"")]
+    #[error("--offline: no cached manifest for \"{0}\"")]
     Offline(String),
     #[error("invalid manifest for \"{name}\": {message}")]
     InvalidManifest { name: String, message: String },
@@ -86,6 +87,26 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl Error {
+    /// bun's name for a download that got no answer (`ConnectionClosed downloading tarball
+    /// x@1.0.0`), read from a [`Error::Network`] message; `None` for other errors.
+    pub fn network_error_name(&self) -> Option<&'static str> {
+        let Error::Network { message, .. } = self else {
+            return None;
+        };
+        let text = message.to_ascii_lowercase();
+        Some(if text.contains("timed out") || text.contains("timeout") {
+            "Timeout"
+        } else if text.contains("refused") {
+            "ConnectionRefused"
+        } else if text.contains("closed") || text.contains("reset") || text.contains("incomplete") {
+            "ConnectionClosed"
+        } else {
+            "ConnectionFailed"
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ManifestRequest {
@@ -135,6 +156,13 @@ pub struct RegistryClient {
     inner: Arc<client::Inner>,
 }
 
+impl RegistryClient {
+    /// `--offline` / `--prefer-offline` / online.
+    pub fn offline_mode(&self) -> fnpm_config::OfflineMode {
+        self.inner.offline
+    }
+}
+
 impl std::fmt::Debug for RegistryClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RegistryClient")
@@ -158,6 +186,16 @@ impl RegistryClient {
         Ok(Self {
             inner: Arc::new(client::Inner::build(config, env)?),
         })
+    }
+
+    /// A `--verbose` line (bun's `[name] Extract …`); nothing without `--verbose`.
+    pub fn verbose_notice(&self, message: impl FnOnce() -> String) {
+        if !self.inner.verbose {
+            return;
+        }
+        if let Some(sink) = self.inner.events.read().as_ref() {
+            sink.emit(fnpm_types::Event::notice(message()));
+        }
     }
 
     /// Where warnings go (retry waits, throttling, unaudited registries, refused credentials).
@@ -205,6 +243,13 @@ impl RegistryClient {
     /// `<registry>/<name>/-/<unscoped>-<version>.tgz` for the package's registry.
     pub fn default_tarball_url(&self, name: &str, version: &str) -> String {
         npm::default_tarball_url(self.inner.scopes.for_package(name).href(), name, version)
+    }
+
+    /// The manifest URL of `name` (credential-free), as bun prints it in `GET <url> - 404`.
+    pub fn manifest_url(&self, name: &str) -> Option<String> {
+        npm::manifest_url(self.inner.scopes.for_package(name), name)
+            .ok()
+            .map(|url| redact_url(url.as_str()))
     }
 
     /// The registry URL (credential-free, ending with `/`) that serves `name`.

@@ -92,8 +92,10 @@ fn parse_cli(cx: &Ctx, out: &Out) -> FResult<Cli> {
             _ => None,
         }
     };
+    // The user agent names the bare version, not the revision headers carry.
     let version = cx
         .string("cliVersion")
+        .map(|v| v.split(" (").next().unwrap_or_default().to_owned())
         .unwrap_or_else(|| crate::version().to_owned());
     Ok(Cli {
         tag: cx.string("tag").filter(|t| !t.is_empty()),

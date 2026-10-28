@@ -45,13 +45,55 @@ fn env_path(base: &Path, value: &str, home: Option<&Path>) -> PathBuf {
     resolve_path(base, value, home)
 }
 
+/// `path` with `.` and `..` resolved without touching the filesystem, as bun joins paths.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push(c);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn first_env<'a>(env: &'a Env, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|k| env.get_not_empty(k))
 }
 
+/// bun's install cache when nothing names one: `$FNPM_HOME/install/cache` (bun's
+/// `$BUN_INSTALL`, which is honoured too), else `$XDG_CACHE_HOME/.fnpm/install/cache`, else
+/// `$HOME/.fnpm/install/cache`.
+fn default_cache_dir(env: &Env, home: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
+    // The same root as `-g` uses ([`install_root`]): `$FNPM_INSTALL`, `$FNPM_HOME`,
+    // `$BUN_INSTALL`, `$XDG_CACHE_HOME/.fnpm`, else `~/.fnpm`.
+    install_root(env, cwd, home)
+        .or_else(|| home.map(|h| h.join(".fnpm")))
+        .map(|dir| dir.join("install").join("cache"))
+}
+
+/// Whether `path` fits bun's path buffer (`MAX_PATH_BYTES`) and every name in it fits
+/// `NAME_MAX`.
+pub fn path_fits(path: &Path) -> bool {
+    const MAX_PATH_BYTES: usize = 4096;
+    const NAME_MAX: usize = 255;
+    path.as_os_str().len() < MAX_PATH_BYTES
+        && path.components().all(|c| c.as_os_str().len() <= NAME_MAX)
+}
+
 /// `FNPM_HOME`, else `$HOME/.fnpm`, else `<cwd>/.fnpm`.
 fn fnpm_home(env: &Env, home: Option<&Path>, cwd: &Path) -> PathBuf {
-    match env.get_not_empty(crate::env::names::HOME) {
+    // `FNPM_INSTALL` is the name that mirrors bun's `BUN_INSTALL`; `FNPM_HOME` the older one.
+    let named = env
+        .get_not_empty(crate::env::names::INSTALL)
+        .or_else(|| env.get_not_empty(crate::env::names::HOME));
+    match named {
         Some(v) => env_path(cwd, v, home),
         None => home.map_or_else(|| cwd.join(".fnpm"), |h| h.join(".fnpm")),
     }
@@ -479,6 +521,25 @@ struct Layers {
     warnings: Vec<String>,
 }
 
+/// bun's install root for `-g`: `$FNPM_INSTALL` (`$FNPM_HOME`, bun's `$BUN_INSTALL`), else
+/// `$XDG_CACHE_HOME/.fnpm`, else `~/.fnpm`. `None` when nothing names one (the default).
+fn install_root(env: &Env, cwd: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    [
+        crate::env::names::INSTALL,
+        crate::env::names::HOME,
+        "BUN_INSTALL",
+    ]
+    .iter()
+    .find_map(|key| env.get_not_empty(key))
+    .map(|v| env_path(cwd, v, home))
+    .or_else(|| {
+        env.get_not_empty("XDG_CACHE_HOME")
+            .map(|v| env_path(cwd, v, home).join(".fnpm"))
+    })
+}
+
+/// `-g` directories in bun's layout under [`install_root`]: `<root>/install/global` and
+/// `<root>/bin`. A `~/.fnpm/global` of an older fnpm stays in use until it is moved.
 fn global_dirs(
     env: &Env,
     cwd: &Path,
@@ -486,38 +547,31 @@ fn global_dirs(
     fnpm_home: &Path,
     layer: &InstallFile,
 ) -> (PathBuf, PathBuf) {
-    let fnpm_home_set = env.get_not_empty(crate::env::names::HOME).is_some();
-    let bun_install = env
-        .get_not_empty("BUN_INSTALL")
-        .map(|v| env_path(cwd, v, home));
-    let pick = |env_keys: &[&str],
-                configured: &Option<PathBuf>,
-                under_bun: &[&str],
-                under_fnpm: &str|
-     -> PathBuf {
+    let root = install_root(env, cwd, home).unwrap_or_else(|| fnpm_home.to_path_buf());
+    let pick = |env_keys: &[&str], configured: &Option<PathBuf>, default: PathBuf| -> PathBuf {
         if let Some(v) = first_env(env, env_keys) {
-            return env_path(cwd, v, home);
+            return normalize_lexically(&env_path(cwd, v, home));
         }
         if let Some(p) = configured.as_ref().filter(|p| !p.as_os_str().is_empty()) {
             return p.clone();
         }
-        if !fnpm_home_set && let Some(root) = &bun_install {
-            return under_bun.iter().fold(root.clone(), |p, s| p.join(s));
-        }
-        fnpm_home.join(under_fnpm)
+        normalize_lexically(&default)
     };
+    let mut global = root.join("install").join("global");
+    let legacy = fnpm_home.join("global");
+    if root == fnpm_home && !global.exists() && legacy.join("package.json").is_file() {
+        global = legacy;
+    }
     (
         pick(
-            &["FNPM_GLOBAL_DIR", "BUN_INSTALL_GLOBAL_DIR"],
+            &[crate::env::names::GLOBAL_DIR, "BUN_INSTALL_GLOBAL_DIR"],
             &layer.global_dir,
-            &["install", "global"],
-            "global",
+            global,
         ),
         pick(
-            &["FNPM_GLOBAL_BIN_DIR", "BUN_INSTALL_BIN"],
+            &[crate::env::names::GLOBAL_BIN_DIR, "BUN_INSTALL_BIN"],
             &layer.global_bin_dir,
-            &["bin"],
-            "bin",
+            root.join("bin"),
         ),
     )
 }
@@ -623,7 +677,8 @@ fn read_layers(opts: &LoadOptions) -> Result<Layers> {
     let mut merged = npmrc::load_npmrc_files(&npmrc_paths, env, &files_layer, h, &mut warnings);
     merged.overlay(files_layer);
     merged.overlay(env_layer(env, &cwd, h));
-    if env_ignores_scripts(env) {
+    // The process environment, not a project's `.env` (bun reads those for scripts only).
+    if env_ignores_scripts(&opts.env) {
         merged.ignore_scripts = Some(true);
     }
 
@@ -849,7 +904,7 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if m.frozen_lockfile == Some(true) {
         frozen = true;
     }
-    let mut save_text_lockfile = m.save_text_lockfile.unwrap_or(true);
+    let mut save_text_lockfile = m.save_text_lockfile;
     let mut concurrent_scripts = m
         .concurrent_scripts
         .map_or_else(default_concurrent_scripts, |n| n as usize);
@@ -962,10 +1017,9 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
             continue;
         };
         if breaks_header_line(token) {
-            return Err(Error::InvalidValue {
-                key: key.to_owned(),
-                message: format!("${key} contains a newline or NUL byte"),
-            });
+            return Err(Error::Credential(format!(
+                "${key} contains a newline or NUL byte"
+            )));
         }
         regs.scope.auth = Auth::Token {
             token: token.to_owned(),
@@ -1063,12 +1117,13 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(v) = cli.ignore_scripts {
         ignore_scripts = v;
     }
-    // `NPM_CONFIG_IGNORE_SCRIPTS` and friends can only turn scripts off, even under a flag.
-    if env_ignores_scripts(env) {
+    // `NPM_CONFIG_IGNORE_SCRIPTS` and friends can only turn scripts off, even under a flag
+    // (from the process environment; a `.env` file does not set them).
+    if env_ignores_scripts(&opts.env) {
         ignore_scripts = true;
     }
     if let Some(v) = cli.save_text_lockfile {
-        save_text_lockfile = v;
+        save_text_lockfile = Some(v);
     }
     if let Some(n) = cli.concurrent_scripts.filter(|&n| n > 0) {
         concurrent_scripts = n;
@@ -1076,9 +1131,8 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     if let Some(ms) = cli.minimum_release_age_ms {
         minimum_release_age_ms = Some(ms);
     }
-    if !cli.minimum_release_age_excludes.is_empty() {
-        let entries = cli
-            .minimum_release_age_excludes
+    if let Some(list) = &cli.minimum_release_age_excludes {
+        let entries = list
             .iter()
             .flat_map(|l| l.split(','))
             .map(str::trim)
@@ -1160,29 +1214,44 @@ fn resolve(opts: &LoadOptions, layers: Layers) -> Result<Config> {
     let minimum_release_age_ms = minimum_release_age_ms.filter(|&ms| ms > 0);
 
     // ── directories ──
-    let store_dir = match env.get_not_empty(crate::env::names::STORE_DIR) {
-        Some(v) => env_path(&cwd, v, h).join(STORE_LAYOUT),
-        None => fnpm_home.join("store").join(STORE_LAYOUT),
-    };
+    let mut cache_configured = true;
     let cache_dir = if cache_disabled {
         // bun: with the cache off, downloads go to the project's `node_modules/.cache`,
         // whatever directory is configured.
         project_dir.join("node_modules").join(".cache")
     } else if let Some(dir) = cache_dir_flag {
         dir
-    } else if let Some(v) = env.get_not_empty(crate::env::names::CACHE_DIR) {
-        env_path(&cwd, v, h)
-    } else if let Some(v) = env.get_not_empty("BUN_INSTALL_CACHE_DIR") {
-        // CI sets it once for the whole repository.
+    } else if let Some(v) = env
+        .get_not_empty(crate::env::names::CACHE_DIR)
+        .or_else(|| env.get_not_empty("BUN_INSTALL_CACHE_DIR"))
+    {
+        // CI sets it once for the whole repository: a relative path starts at its root.
         env_path(&project_dir, v, h)
     } else if let Some(v) = env.config_var("cache") {
         env_path(&project_dir, v, h)
     } else if let Some(dir) = m.cache_dir.clone().filter(|d| !d.as_os_str().is_empty()) {
         dir
-    } else if h.is_some() || env.get_not_empty(crate::env::names::HOME).is_some() {
-        fnpm_home.join("cache")
+    } else if let Some(dir) = default_cache_dir(env, h, &cwd) {
+        cache_configured = false;
+        dir
     } else {
+        cache_configured = false;
         project_dir.join("node_modules").join(".fnpm-cache")
+    };
+    // bun: a cache directory that does not fit a path buffer (or has a name the OS refuses)
+    // cannot be opened, and the install falls back to the project's `node_modules/.cache`.
+    let cache_dir = files::normalize(&cache_dir);
+    let cache_dir = if path_fits(&cache_dir) {
+        cache_dir
+    } else {
+        project_dir.join("node_modules").join(".cache")
+    };
+    // bun keeps packages in its cache directory: a cache directory set by flag, environment
+    // or config holds the store as well (CI that caches it restores the packages too).
+    let store_dir = match env.get_not_empty(crate::env::names::STORE_DIR) {
+        Some(v) => env_path(&cwd, v, h).join(STORE_LAYOUT),
+        None if cache_configured && !cache_disabled => cache_dir.join("store").join(STORE_LAYOUT),
+        None => fnpm_home.join("store").join(STORE_LAYOUT),
     };
 
     // ── network ──

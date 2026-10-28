@@ -101,7 +101,7 @@ fn parses_abbreviated_document() {
         one.bin,
         Bin::NamedFile {
             name: "pkg".into(),
-            path: "bin/pkg.js".into()
+            path: "./bin/pkg.js".into()
         }
     );
     assert_eq!(one.engines.len(), 1);
@@ -125,7 +125,7 @@ fn parses_abbreviated_document() {
     assert_eq!(
         zero.bin,
         Bin::File {
-            path: "cli.js".into()
+            path: "./cli.js".into()
         }
     );
     assert!(zero.platform.is_any());
@@ -161,7 +161,13 @@ fn lenient_fields() {
     assert_eq!(b.deprecated.as_deref(), Some("true"));
     assert!(b.has_install_script, "derived from scripts");
     assert_eq!(b.license.as_deref(), Some("ISC"));
-    assert_eq!(b.bin, Bin::Dir { path: "bin".into() });
+    // As declared: the linker normalises bin paths (bun keeps them in the lockfile).
+    assert_eq!(
+        b.bin,
+        Bin::Dir {
+            path: "./bin".into()
+        }
+    );
     let c = m.find(&v("1.0.3")).unwrap();
     assert_eq!(c.bin, Bin::None);
     assert!(!c.has_install_script);

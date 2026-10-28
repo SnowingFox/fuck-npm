@@ -118,7 +118,12 @@ pub struct RunOptions {
     /// Extra environment (`.env` files loaded by the caller, `npm_config_*`).
     pub env: Vec<(String, String)>,
     pub silent: bool,
+    /// `--verbose` (like `FNPM_VERBOSE`): script output is shown, and optional failures warn.
+    pub verbose: bool,
     pub project_dir: PathBuf,
+    /// Each job whose scripts all exited 0 appends its directory (one line) to this file, so
+    /// the next install can run what an interrupted or failed run did not finish.
+    pub completed_log: Option<PathBuf>,
 }
 
 impl RunOptions {
@@ -129,7 +134,9 @@ impl RunOptions {
             shell: None,
             env: Vec::new(),
             silent: false,
+            verbose: false,
             project_dir: project_dir.into(),
+            completed_log: None,
         }
     }
 }
@@ -188,8 +195,10 @@ pub async fn run_dag(
     run_dag_with_cleanup(jobs, deps, opts, events, None).await
 }
 
-/// Cleanup invoked after an optional lifecycle failure, before dependents run.
-pub type OptionalCleanup<'a> = dyn Fn(&std::path::Path) -> std::io::Result<()> + Sync + 'a;
+/// Cleanup invoked after an optional lifecycle failure, before dependents run. Returns the verb
+/// of the `--verbose` warning: `deleting`, or `skipping` when the folder is kept.
+pub type OptionalCleanup<'a> =
+    dyn Fn(&std::path::Path) -> std::io::Result<&'static str> + Sync + 'a;
 
 /// Like [`run_dag`], with optional-package cleanup before dependent jobs are released.
 pub async fn run_dag_with_cleanup(

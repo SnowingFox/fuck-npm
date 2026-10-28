@@ -48,6 +48,10 @@ pub struct HoistOptions {
     pub platform: Platform,
     /// Limit to these workspaces (`--filter`); `None` is all.
     pub workspaces: Option<Vec<PackageId>>,
+    /// Self-contained workspaces (`installConfig.hoistingLimits: "workspaces"`,
+    /// `workspaces.selfContained`): a hoisting barrier, nothing below one is placed above its
+    /// own `node_modules`. Only the install applies it; the saved tree does not depend on it.
+    pub self_contained: Vec<PackageId>,
 }
 
 impl HoistOptions {
@@ -57,6 +61,7 @@ impl HoistOptions {
             include: Behavior::PROD | Behavior::DEV | Behavior::OPTIONAL | Behavior::PEER,
             platform,
             workspaces: None,
+            self_contained: Vec::new(),
         }
     }
 }
@@ -84,8 +89,25 @@ pub fn hoist(graph: &LockGraph, opts: &HoistOptions) -> Tree {
 
 /// [`hoist`] that reports an endless nesting cycle instead of breaking it silently.
 pub fn try_hoist(graph: &LockGraph, opts: &HoistOptions) -> Result<Tree, HoistError> {
+    try_hoist_reserving(graph, opts, &[])
+}
+
+/// [`hoist`] with the root folders of `reserved` kept free: the names of workspaces that the
+/// lockfile has but the install leaves out (pruned from disk). bun places their registry
+/// twins where they would be with the workspace at the root.
+pub fn hoist_reserving(graph: &LockGraph, opts: &HoistOptions, reserved: &[&str]) -> Tree {
+    try_hoist_reserving(graph, opts, reserved).unwrap_or_else(|e| e.partial)
+}
+
+fn try_hoist_reserving(
+    graph: &LockGraph,
+    opts: &HoistOptions,
+    reserved: &[&str],
+) -> Result<Tree, HoistError> {
     let mut flat = Flat::new(graph);
-    let hoisted = resolve(&mut flat);
+    flat.reserve_root(reserved);
+    let barrier: Vec<u32> = opts.self_contained.iter().map(|p| p.0).collect();
+    let hoisted = resolve_with(&mut flat, &barrier);
     let tree = install_tree(&flat, &hoisted, opts);
     match hoisted.cycle {
         Some(cycle) => Err(HoistError {
@@ -213,16 +235,23 @@ struct Builder<'a, 'g> {
     regular_targets: Option<Vec<bool>>,
     placed: HashMap<(u32, u32), u32>,
     cycle: Option<String>,
+    /// [`HoistOptions::self_contained`].
+    self_contained: &'a [u32],
 }
 
 /// Hoists until no pass binds or rebinds a peer, then binds the peers whose target is not
 /// printed anywhere (bun `Lockfile::resolve`).
 pub(crate) fn resolve(flat: &mut Flat<'_>) -> Hoisted {
+    resolve_with(flat, &[])
+}
+
+/// [`resolve`] with the hoisting barriers of self-contained workspaces.
+pub(crate) fn resolve_with(flat: &mut Flat<'_>, self_contained: &[u32]) -> Hoisted {
     let mut resolutions = std::mem::take(&mut flat.resolutions);
     let mut last;
     let mut passes = 0;
     loop {
-        last = hoist_pass(flat, &mut resolutions);
+        last = hoist_pass(flat, &mut resolutions, self_contained);
         passes += 1;
         // bun loops until stable; a cap guards against oscillation on malformed input.
         if !last.late_bound_peer || passes >= 16 {
@@ -234,7 +263,7 @@ pub(crate) fn resolve(flat: &mut Flat<'_>) -> Hoisted {
     last
 }
 
-fn hoist_pass(flat: &Flat<'_>, resolutions: &mut Vec<u32>) -> Hoisted {
+fn hoist_pass(flat: &Flat<'_>, resolutions: &mut Vec<u32>, self_contained: &[u32]) -> Hoisted {
     let n = flat.graph.packages.len();
     let mut b = Builder {
         flat,
@@ -253,6 +282,7 @@ fn hoist_pass(flat: &Flat<'_>, resolutions: &mut Vec<u32>) -> Hoisted {
         regular_targets: None,
         placed: map(n * 2),
         cycle: None,
+        self_contained,
     };
     let root = BTree {
         id: INVALID_ID,
@@ -466,6 +496,16 @@ impl<'a, 'g> Builder<'a, 'g> {
         });
         self.rows.push(Vec::new());
 
+        // A self-contained workspace is a hoisting barrier: nothing below it may be placed
+        // above its own node_modules (bun `Tree::process_subtree`).
+        let hoist_root_id = if dependency_id != ROOT_DEP_ID
+            && self.dep(dependency_id).behavior.is_workspace()
+            && self.self_contained.contains(&parent_pkg)
+        {
+            next_id
+        } else {
+            hoist_root_id
+        };
         let first_walk = !self.walked[parent_pkg as usize];
         self.walked[parent_pkg as usize] = true;
 
@@ -680,6 +720,13 @@ impl<'a, 'g> Builder<'a, 'g> {
         let dependency = self.dep(input_dep_id);
         let this = self.trees[self_id as usize];
         if !as_defined && !self.probes.is_empty() && self.is_hidden_by(this.id) {
+            return HoistResult::DependencyLoop;
+        }
+        // A pruned workspace's folder at the root: taken, by something else.
+        if !as_defined
+            && this.parent == INVALID_ID
+            && self.flat.reserved_root.contains(&dependency.name_id)
+        {
             return HoistResult::DependencyLoop;
         }
         if let Some(&dep_id) = self.placed.get(&(this.id, dependency.name_id)) {

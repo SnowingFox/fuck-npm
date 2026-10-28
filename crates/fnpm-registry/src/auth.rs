@@ -454,47 +454,11 @@ pub(crate) fn basic_from_userinfo(userinfo: &str) -> String {
     format!("Basic {}", B64.encode(decoded))
 }
 
-/// A URL with secrets masked as `***`: userinfo, `_authToken=`/`_auth=`/`_password=` values and
-/// npm tokens (`npm_` + 36 alphanumerics). Used for every URL in an error or warning.
+/// A URL with secrets masked as `***`: userinfo (also of a URL without a scheme),
+/// `_authToken=`/`_auth=`/`_password=`/`token=` values, UUIDs and npm tokens. Used for every URL
+/// in an error or warning.
 pub fn redact_url(raw: &str) -> String {
-    let (userinfo, without) = split_userinfo(raw);
-    let mut s = match userinfo {
-        Some(_) => {
-            let scheme_end = without.find("://").map_or(0, |i| i + 3);
-            format!("{}***@{}", &without[..scheme_end], &without[scheme_end..])
-        }
-        None => without,
-    };
-    for marker in ["_authToken=", "_auth=", "_password=", "token="] {
-        let mut from = 0;
-        while let Some(i) = s[from..].find(marker) {
-            let start = from + i + marker.len();
-            let end = s[start..]
-                .find(['/', '&', '#', '?'])
-                .map_or(s.len(), |e| start + e);
-            if end > start && &s[start..end] != "***" {
-                s.replace_range(start..end, "***");
-            }
-            from = start + 3.min(s.len() - start);
-        }
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    let bytes = s.as_bytes();
-    while i < bytes.len() {
-        if s[i..].starts_with("npm_")
-            && bytes.len() >= i + 40
-            && bytes[i + 4..i + 40].iter().all(u8::is_ascii_alphanumeric)
-        {
-            out.push_str("***");
-            i += 40;
-            continue;
-        }
-        let ch = s[i..].chars().next().unwrap_or('\u{fffd}');
-        out.push(ch);
-        i += ch.len_utf8().max(1);
-    }
-    out
+    fnpm_config::redact_url(raw)
 }
 
 #[cfg(test)]

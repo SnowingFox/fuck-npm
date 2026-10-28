@@ -178,6 +178,10 @@ pub struct BinLinker {
     owner: Option<PathBuf>,
     #[cfg(not(windows))]
     created_dir: bool,
+    /// The errno with which the directory refused a new symlink (`EPERM`, `EACCES`,
+    /// `EOPNOTSUPP`): its bins are skipped from then on.
+    #[cfg(not(windows))]
+    refused: Option<&'static str>,
 }
 
 /// The outcome of linking one name.
@@ -196,7 +200,23 @@ impl BinLinker {
             owner: None,
             #[cfg(not(windows))]
             created_dir: false,
+            #[cfg(not(windows))]
+            refused: None,
         }
+    }
+
+    /// bun's warning when the bin directory refuses symlinks (FUSE filesystems such as
+    /// Android's sdcard): `EPERM: cannot create symlinks in <dir>, skipping bin links`. A copy
+    /// of a script there could not find its package, so its bins are not linked.
+    pub fn refused_warning(&self) -> Option<String> {
+        #[cfg(not(windows))]
+        if let Some(errno) = self.refused {
+            return Some(format!(
+                "{errno}: cannot create symlinks in {}, skipping bin links",
+                self.bin_dir.display()
+            ));
+        }
+        None
     }
 
     /// A linker for the global bin directory, which also holds files fnpm did not create:
@@ -317,7 +337,11 @@ impl BinLinker {
             if name.is_empty() || target.is_empty() || bin_target_escapes_package_dir(target) {
                 return;
             }
-            let target = target.trim_end_matches(['/', '\\']);
+            // Declared targets keep their spelling (`./cli.js`); links use the normal form.
+            let Some(target) = fnpm_types::bin::normalize_bin_target(target) else {
+                return;
+            };
+            let target = target.as_str();
             let rel_target = if redirect {
                 let real = resolve_redirect_target(real_dir, target, name);
                 real.strip_prefix(real_dir)
@@ -362,7 +386,10 @@ impl BinLinker {
                 if path.is_empty() || bin_target_escapes_package_dir(path) {
                     return false;
                 }
-                let sub = path.trim_end_matches(['/', '\\']);
+                let Some(sub) = fnpm_types::bin::normalize_bin_target(path) else {
+                    return false;
+                };
+                let sub = sub.as_str();
                 let dir = real_dir.join(sub);
                 let rd = match std::fs::read_dir(&dir) {
                     Ok(rd) => rd,
@@ -424,9 +451,7 @@ impl BinLinker {
         }
         if self.seen.contains(name) {
             // The name is taken, and `fnpm x <this package>` still runs the file itself.
-            if refresh {
-                make_executable(real_target, &target_meta);
-            }
+            make_executable(real_target, &target_meta);
             return Ok(One::Skipped);
         }
         self.seen.insert(name.to_owned());
@@ -451,7 +476,20 @@ impl BinLinker {
     /// Creates the link (or shims). `Ok(false)` when an identical link was already there.
     #[cfg(not(windows))]
     fn create(&mut self, abs_target: &Path, dest: &Path) -> io::Result<bool> {
-        let rel = fsutil::relative(&self.bin_dir, abs_target);
+        if self.refused.is_some() {
+            return Ok(false);
+        }
+        // In a symlinked `node_modules` a relative target would resolve from where it really
+        // is, so the link gets the absolute path (bun `LinkedNodeModules::resolve`).
+        let linked = self
+            .bin_dir
+            .parent()
+            .is_some_and(fsutil::is_linked_node_modules);
+        let rel = if linked && abs_target.is_absolute() {
+            abs_target.to_path_buf()
+        } else {
+            fsutil::relative(&self.bin_dir, abs_target)
+        };
         let mut result = std::os::unix::fs::symlink(&rel, dest);
         if self.owner.is_none()
             && !self.created_dir
@@ -483,10 +521,28 @@ impl BinLinker {
                 if self.owner.is_some() {
                     return Err(io::Error::from_raw_os_error(libc::EEXIST));
                 }
+                // A directory in the `.bin` of a symlinked `node_modules` is not a linker's.
+                if fsutil::kind(dest) == fsutil::Kind::Dir
+                    && self
+                        .bin_dir
+                        .parent()
+                        .is_some_and(fsutil::is_linked_node_modules)
+                {
+                    return Err(fsutil::in_the_way(dest));
+                }
                 // pnpm writes its commands as files; a directory goes too.
                 fsutil::remove_any(dest)?;
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound && code == libc::EEXIST => {}
+            // Nothing is in the way: the directory refuses symlinks.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                self.refused = Some(match code {
+                    libc::EPERM => "EPERM",
+                    libc::EACCES => "EACCES",
+                    _ => "EOPNOTSUPP",
+                });
+                return Ok(false);
+            }
             Err(_) => return Err(err),
         }
         std::os::unix::fs::symlink(&rel, dest).map(|()| true)
@@ -708,6 +764,31 @@ pub fn link_bins(
             ..BinOptions::default()
         },
     )
+}
+
+/// Makes the bin files of the package at `package_dir` executable, without linking them: an
+/// install script can write a bin after the bins were linked (bun makes it executable once the
+/// script ran). Targets outside the package are left alone.
+pub fn make_bins_executable(bin: &Bin, package_dir: &Path) {
+    let one = |target: &str| {
+        if target.is_empty() || bin_target_escapes_package_dir(target) {
+            return;
+        }
+        let file = package_dir.join(target.trim_end_matches(['/', '\\']));
+        if needs_resolved_containment_check(target) && resolved_parent_escapes(package_dir, &file) {
+            return;
+        }
+        if let Ok(meta) = std::fs::metadata(&file)
+            && meta.is_file()
+        {
+            make_executable(&file, &meta);
+        }
+    };
+    match bin {
+        Bin::None | Bin::Dir { .. } => {}
+        Bin::File { path } | Bin::NamedFile { path, .. } => one(path),
+        Bin::Map { entries } => entries.iter().for_each(|(_, path)| one(path)),
+    }
 }
 
 /// Removes the links in `bin_dir` that point into `package_dir` (`fnpm remove`, relinks).

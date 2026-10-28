@@ -14,16 +14,37 @@ use crate::{Error, Result};
 
 /// `cwd` made absolute (the process cwd when empty or relative).
 pub fn absolute_cwd(cwd: &Path) -> PathBuf {
-    if cwd.as_os_str().is_empty() {
-        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    }
-    if cwd.is_absolute() {
+    let dir = if cwd.as_os_str().is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    } else if cwd.is_absolute() {
         cwd.to_path_buf()
     } else {
         std::env::current_dir()
             .map(|d| d.join(cwd))
             .unwrap_or_else(|_| cwd.to_path_buf())
+    };
+    logical(dir)
+}
+
+/// The shell's `$PWD` when it names `dir` by another path (a folder reached through a
+/// symlink): like bun, the project is looked for above the path the user is at, not above
+/// the folder the symlink points to. A `$PWD` that is another folder is ignored.
+fn logical(dir: PathBuf) -> PathBuf {
+    let Some(pwd) = std::env::var_os("PWD").map(PathBuf::from) else {
+        return dir;
+    };
+    if !pwd.is_absolute() || pwd == dir {
+        return dir;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let id = |p: &Path| std::fs::metadata(p).ok().map(|m| (m.dev(), m.ino()));
+        if id(&pwd).is_some() && id(&pwd) == id(&dir) {
+            return pwd;
+        }
+    }
+    dir
 }
 
 /// A loaded project: where it is and its configuration.
@@ -64,6 +85,7 @@ impl Project {
     ) -> Result<Self> {
         let cwd = absolute_cwd(cwd);
         let global = cli.global;
+        let mut ignored = Vec::new();
         let root = if global {
             None
         } else if cwd_is_root {
@@ -72,8 +94,11 @@ impl Project {
             }
             Some(cwd.clone())
         } else {
-            match Workspace::find_root(&cwd) {
-                Ok(root) => Some(root),
+            match Workspace::find_root_reporting(&cwd) {
+                Ok((root, warnings)) => {
+                    ignored = warnings;
+                    Some(root)
+                }
                 Err(fnpm_workspace::Error::NoProject(_)) if create_package_json => {
                     write_new_package_json(&cwd)?;
                     Some(cwd.clone())
@@ -81,17 +106,23 @@ impl Project {
                 Err(e) => return Err(e.into()),
             }
         };
-        let config = Config::load(&LoadOptions {
+        let mut config = Config::load(&LoadOptions {
             cwd: cwd.clone(),
             cli,
             env: env.clone(),
             project_dir: root,
             node_version: None,
         })?;
+        config.warnings.splice(0..0, ignored);
         let root_dir = config.project_dir.clone();
         if global {
-            std::fs::create_dir_all(&root_dir).map_err(Error::io(&root_dir))?;
+            // bun opens (creating) the global directory; only a command that installs into it
+            // starts a project there.
+            make_global_dir(&root_dir)?;
             if !root_dir.join("package.json").exists() {
+                if !create_package_json {
+                    return Err(fnpm_workspace::Error::NoProject(root_dir).into());
+                }
                 write_new_package_json(&root_dir)?;
             }
         }
@@ -161,6 +192,17 @@ impl Project {
     pub fn store(&self) -> Result<Store> {
         Ok(Store::open(&self.config.store_dir)?)
     }
+}
+
+/// Creates a global directory (`-g`), failing like bun with `ENAMETOOLONG` when its path does
+/// not fit a path buffer.
+pub(crate) fn make_global_dir(dir: &Path) -> Result<()> {
+    if !fnpm_config::path_fits(dir) {
+        return Err(Error::usage(
+            "ENAMETOOLONG: the global directory path is longer than the system allows",
+        ));
+    }
+    std::fs::create_dir_all(dir).map_err(Error::io(dir))
 }
 
 fn write_new_package_json(dir: &Path) -> Result<()> {

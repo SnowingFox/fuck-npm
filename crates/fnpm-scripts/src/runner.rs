@@ -57,7 +57,7 @@ impl Flags {
             })
         };
         Self {
-            verbose: truthy(get(&["FNPM_VERBOSE", "BUN_INSTALL_VERBOSE"])),
+            verbose: opts.verbose || truthy(get(&["FNPM_VERBOSE", "BUN_INSTALL_VERBOSE"])),
             slow_warning: !truthy(get(&[
                 "FNPM_DISABLE_SLOW_LIFECYCLE_SCRIPT_LOGGING",
                 "BUN_DISABLE_SLOW_LIFECYCLE_SCRIPT_LOGGING",
@@ -277,23 +277,33 @@ pub(crate) async fn execute(
                 report.ran += done_job.ran;
                 let i = done_job.index;
                 match done_job.result {
-                    Ok(()) => complete(i, &mut ready, &mut done, &mut finished),
+                    Ok(()) => {
+                        if let Some(log) = &opts.completed_log {
+                            use std::io::Write as _;
+                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log) {
+                                let _ = writeln!(f, "{}", done_job.dir.display());
+                            }
+                        }
+                        complete(i, &mut ready, &mut done, &mut finished)
+                    }
                     Err(failure) => {
                         let tolerated = done_job.optional && !failure.failure.is_signal();
                         if tolerated {
-                            if let Some(cleanup) = cleanup
-                                && let Err(source) = cleanup(&done_job.dir)
-                            {
-                                set.abort_all();
-                                while set.join_next().await.is_some() {}
-                                return Err(Error::Io { path: done_job.dir, source });
-                            }
+                            let verb = match cleanup.map(|cleanup| cleanup(&done_job.dir)) {
+                                Some(Err(source)) => {
+                                    set.abort_all();
+                                    while set.join_next().await.is_some() {}
+                                    return Err(Error::Io { path: done_job.dir, source });
+                                }
+                                Some(Ok(verb)) => verb,
+                                None => "deleting",
+                            };
                             report.failed_optional.push(done_job.name.clone());
                             report.failed_optional_dirs.push(done_job.dir.clone());
                             if ctx.verbose {
                                 events.emit(Event::warn(
                                     format!(
-                                        "deleting optional dependency '{}' due to failed '{}' script",
+                                        "{verb} optional dependency '{}' due to failed '{}' script",
                                         done_job.name, failure.script
                                     ),
                                     Some("OPTIONAL_SCRIPT_FAILED"),

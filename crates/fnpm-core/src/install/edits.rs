@@ -20,6 +20,13 @@ pub(crate) enum Edit {
         name: String,
         spec: String,
     },
+    /// `add` without a group flag: replace the spec in every group but peerDependencies that
+    /// declares the name (bun keeps each entry where it is), or add it to `group` when none does.
+    SetDeclared {
+        group: DependencyGroup,
+        name: String,
+        spec: String,
+    },
     /// Replace the spec of an existing dependency in whichever group declares it.
     Update { name: String, spec: String },
     /// Remove a dependency from every group.
@@ -68,11 +75,55 @@ impl Edits {
             let text = std::fs::read_to_string(&file).map_err(Error::io(&file))?;
             let out = apply_text(&text, edits)?;
             if out != text {
+                let out = reprint(&text, out);
                 crate::project::write_atomic(&file, out.as_bytes())?;
                 changed.push(file);
             }
         }
         Ok(changed)
+    }
+}
+
+/// The project as it is once `edits` are written, when one of them sets a dependency named
+/// like a workspace member (that range may now link the member). `None` otherwise.
+pub(crate) fn edited_for_members(ws: &Workspace, edits: &Edits) -> Option<Workspace> {
+    let names_member = edits.by_workspace.values().flatten().any(|e| match e {
+        Edit::Set { name, .. } | Edit::Update { name, .. } => ws.member(name).is_some(),
+        _ => false,
+    });
+    if !names_member {
+        return None;
+    }
+    let mut edited = ws.clone();
+    for (path, list) in &edits.by_workspace {
+        let manifest = if path.is_empty() {
+            &mut edited.root
+        } else {
+            &mut edited
+                .members
+                .iter_mut()
+                .find(|m| &m.path == path)?
+                .manifest
+        };
+        let text = serde_json::to_string(&manifest.raw).ok()?;
+        let out = apply_text(&text, list).ok()?;
+        *manifest = fnpm_workspace::PackageJson::parse(&out).ok()?;
+    }
+    Some(edited)
+}
+
+/// bun prints a package.json it changed again as a whole (`MapEntry::save`): one property
+/// per line in the indentation guessed from `original`, `\r\n` turned into `\n`, and a final
+/// newline when `original` ended with one. Text the printer's parser rejects stays as edited.
+fn reprint(original: &str, edited: String) -> String {
+    use crate::commands::pack::json;
+    match json::parse(&edited) {
+        Ok(value) => json::print(
+            &value,
+            json::guess_indentation(original.as_bytes()),
+            original.ends_with('\n'),
+        ),
+        Err(_) => edited,
     }
 }
 
@@ -88,6 +139,20 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
     for edit in edits {
         match edit {
             Edit::Set { group, name, spec } => editor.set_dependency(*group, name, spec),
+            Edit::SetDeclared { group, name, spec } => {
+                let current: Value = parse(&editor.text)?;
+                let declared: Vec<DependencyGroup> = DependencyGroup::ALL
+                    .into_iter()
+                    .filter(|g| *g != DependencyGroup::Peer)
+                    .filter(|g| current.get(g.field()).and_then(|d| d.get(name)).is_some())
+                    .collect();
+                if declared.is_empty() {
+                    editor.set_dependency(*group, name, spec);
+                }
+                for g in declared {
+                    set_entry(&mut editor, &current, g.field(), name, spec);
+                }
+            }
             Edit::Update { name, spec } => {
                 let current: Value = parse(&editor.text)?;
                 // Prefer the group that is not peerDependencies (bun keeps the peer range).
@@ -109,17 +174,30 @@ pub(crate) fn apply_text(text: &str, edits: &[Edit]) -> Result<String> {
                 spec,
             } => {
                 let current: Value = parse(&editor.text)?;
-                let (container, _) = catalog_container(&current);
-                let path = if catalog.is_empty() || catalog == "default" {
-                    join(&container, "catalog")
-                } else {
-                    join(&join(&container, "catalogs"), catalog)
-                };
+                let path = catalog_path(&current, catalog, name);
                 let mut entries = lookup(&current, &path)
                     .and_then(Value::as_object)
                     .cloned()
                     .unwrap_or_default();
-                entries.insert(name.clone(), Value::String(spec.clone()));
+                if entries.contains_key(name) {
+                    entries.insert(name.clone(), Value::String(spec.clone()));
+                } else {
+                    // A new entry goes in name order, like bun writes it.
+                    let at = entries.keys().position(|k| k.as_str() > name.as_str());
+                    let mut sorted = Map::new();
+                    let mut placed = false;
+                    for (i, (k, v)) in std::mem::take(&mut entries).into_iter().enumerate() {
+                        if at == Some(i) {
+                            sorted.insert(name.clone(), Value::String(spec.clone()));
+                            placed = true;
+                        }
+                        sorted.insert(k, v);
+                    }
+                    if !placed {
+                        sorted.insert(name.clone(), Value::String(spec.clone()));
+                    }
+                    entries = sorted;
+                }
                 set_object(&mut editor, &current, &path, entries);
             }
             Edit::Trust { names } => {
@@ -178,13 +256,25 @@ pub(crate) fn catalog_supported(root: &Value) -> bool {
 
 /// The existing entry of `name` in catalog `catalog` of the root package.json.
 pub(crate) fn catalog_entry(root: &Value, catalog: &str, name: &str) -> Option<String> {
+    let path = catalog_path(root, catalog, name);
+    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+}
+
+/// Where the entry of `name` in `catalog` is (or goes): the default catalog is `catalog` or
+/// its alias `catalogs.default`, whichever defines the name (`catalog` when neither does).
+fn catalog_path(root: &Value, catalog: &str, name: &str) -> Vec<String> {
     let (container, _) = catalog_container(root);
-    let path = if catalog.is_empty() || catalog == "default" {
-        join(&container, "catalog")
+    if catalog.is_empty() || catalog == "default" {
+        let singular = join(&container, "catalog");
+        let alias = join(&join(&container, "catalogs"), "default");
+        let defines = |path: &[String]| lookup(root, path).and_then(|c| c.get(name)).is_some();
+        if !defines(&singular) && defines(&alias) {
+            return alias;
+        }
+        singular
     } else {
         join(&join(&container, "catalogs"), catalog)
-    };
-    lookup(root, &path)?.get(name)?.as_str().map(str::to_owned)
+    }
 }
 
 fn join(base: &[String], key: &str) -> Vec<String> {

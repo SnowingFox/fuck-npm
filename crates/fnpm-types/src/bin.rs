@@ -23,15 +23,14 @@ pub enum Bin {
 
 impl Bin {
     /// Builds from a `bin` object, normalising one entry to [`Bin::NamedFile`]. Entries whose
-    /// name or target is unsafe are dropped.
+    /// name or target is unsafe are dropped. Targets are kept as declared (bun.lock records
+    /// them so); the linker normalises them.
     pub fn from_map(entries: impl IntoIterator<Item = (String, String)>) -> Self {
         let mut v: Vec<(String, String)> = entries
             .into_iter()
             .filter_map(|(n, p)| {
-                Some((
-                    normalize_bin_name(&n)?.to_owned(),
-                    normalize_bin_target(&p)?,
-                ))
+                normalize_bin_target(&p)?;
+                Some((normalize_bin_name(&n)?.to_owned(), p))
             })
             .collect();
         match v.len() {
@@ -44,12 +43,18 @@ impl Bin {
         }
     }
 
+    /// `"bin": "<path>"`, kept as declared when it stays inside the package.
     pub fn from_file(path: &str) -> Self {
-        normalize_bin_target(path).map_or(Self::None, |path| Self::File { path })
+        normalize_bin_target(path).map_or(Self::None, |_| Self::File {
+            path: path.to_owned(),
+        })
     }
 
+    /// `"directories": { "bin": "<path>" }`, kept as declared when it stays inside the package.
     pub fn from_dir(path: &str) -> Self {
-        normalize_bin_target(path).map_or(Self::None, |path| Self::Dir { path })
+        normalize_bin_target(path).map_or(Self::None, |_| Self::Dir {
+            path: path.to_owned(),
+        })
     }
 
     pub fn is_none(&self) -> bool {
@@ -118,7 +123,7 @@ mod tests {
         assert_eq!(
             Bin::from_file("./cli.js"),
             Bin::File {
-                path: "cli.js".into()
+                path: "./cli.js".into()
             }
         );
         let one = Bin::from_map([("babel".to_owned(), "./bin/babel.js".to_owned())]);
@@ -126,7 +131,7 @@ mod tests {
             one,
             Bin::NamedFile {
                 name: "babel".into(),
-                path: "bin/babel.js".into()
+                path: "./bin/babel.js".into()
             }
         );
         let many = Bin::from_map([
@@ -138,7 +143,12 @@ mod tests {
             Bin::from_map([("x".to_owned(), "../../etc/passwd".to_owned())]),
             Bin::None
         );
-        assert_eq!(Bin::from_dir("./bin"), Bin::Dir { path: "bin".into() });
+        assert_eq!(
+            Bin::from_dir("./bin"),
+            Bin::Dir {
+                path: "./bin".into()
+            }
+        );
     }
 
     #[test]

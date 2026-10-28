@@ -57,20 +57,27 @@ pub(crate) fn is_fresh(m: &PackageManifest, now: u64) -> bool {
 /// `<registry>/<name>` with `/` in a scoped name encoded as `%2f` (AWS CodeArtifact needs it).
 /// The joined URL must stay on the registry: same origin and under its path.
 pub(crate) fn manifest_url(scope: &Scope, name: &str) -> Result<Url> {
+    // bun's messages name no URL in front: they quote the registry (or the URL built from it).
     let invalid = |message: String| Error::Network {
-        url: redact_url(&scope.configured),
+        url: String::new(),
         message,
     };
-    let Some(registry) = &scope.url else {
+    let encoded = name.replace('/', "%2f");
+    // `user:pass@host/` reads as the scheme `user:`; like bun's reader, a URL without `//` after
+    // its scheme is no base to join a name to.
+    let Some(registry) = scope.url.as_ref().filter(|u| !u.cannot_be_a_base()) else {
         return Err(invalid(format!(
-            "Registry URL must be http:// or https://\nReceived: {:?}",
+            "Failed to join registry {:?} and package {name:?} URLs",
             redact_url(&scope.configured)
         )));
     };
     if !matches!(registry.scheme(), "http" | "https") {
+        let joined = registry
+            .join(&encoded)
+            .map_or_else(|_| registry.to_string(), String::from);
         return Err(invalid(format!(
             "Registry URL must be http:// or https://\nReceived: {:?}",
-            redact_url(registry.as_str())
+            redact_url(&joined)
         )));
     }
     let mut base = registry.clone();
@@ -80,7 +87,6 @@ pub(crate) fn manifest_url(scope: &Scope, name: &str) -> Result<Url> {
         let p = format!("{}/", base.path());
         base.set_path(&p);
     }
-    let encoded = name.replace('/', "%2f");
     let joined = base.join(&encoded).map_err(|_| {
         invalid(format!(
             "Failed to join registry {:?} and package {name:?} URLs",

@@ -29,7 +29,7 @@ impl Failure {
     pub fn from_core(error: &fnpm_core::Error) -> Self {
         Self {
             code: error.code(),
-            message: error.to_string(),
+            message: error.shown_message(),
         }
     }
 

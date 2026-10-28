@@ -14,7 +14,7 @@ const require = __createRequire(import.meta.url);
 // the install reports success, and a file that cannot be installed has to fail
 // the package (as it does with the hardlink backend) rather than exit bun.
 import { describe, expect, test } from "../compat/bun-test.ts";
-import { fnpmEnv, fnpmExe, isLinux, isMacOS, isRoot, isWindows, readdirSorted, tempDir } from "../harness.ts";
+import { fnpmEnv, fnpmExe, isLinux, nodeExe, isMacOS, isRoot, isWindows, readdirSorted, tempDir } from "../harness.ts";
 import {
   chmodSync,
   closeSync,
@@ -379,7 +379,7 @@ describe("file: folder dependencies with the hoisted linker", () => {
   // `--no-install`: a module that fails to resolve must not be fetched from the registry.
   async function run(projectDir: string, code: string) {
     await using proc = Bun.spawn({
-      cmd: [fnpmExe(), "--no-install", "-e", code],
+      cmd: [nodeExe(), "-e", code],
       cwd: projectDir,
       stdout: "pipe",
       stderr: "pipe",

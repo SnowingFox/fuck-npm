@@ -208,7 +208,7 @@ it("should link and unlink workspace package", async () => {
 });
 
 it("should link package", async () => {
-  const link_name = basename(link_dir).slice("bun-link.".length);
+  const link_name = basename(link_dir).slice("fnpm.test.".length);
   await writeFile(
     join(link_dir, "package.json"),
     JSON.stringify({
@@ -301,7 +301,7 @@ it("should link package", async () => {
 });
 
 it("should link scoped package", async () => {
-  const link_name = `@${basename(link_dir).slice("bun-link.".length)}/foo`;
+  const link_name = `@${basename(link_dir).slice("fnpm.test.".length)}/foo`;
   await writeFile(
     join(link_dir, "package.json"),
     JSON.stringify({
@@ -394,7 +394,7 @@ it("should link scoped package", async () => {
 });
 
 it("should link dependency without crashing", async () => {
-  const link_name = basename(link_dir).slice("bun-link.".length) + "-really-long-name";
+  const link_name = basename(link_dir).slice("fnpm.test.".length) + "-really-long-name";
   await writeFile(
     join(link_dir, "package.json"),
     JSON.stringify({
@@ -518,7 +518,7 @@ it("should link dependency without crashing", async () => {
 // https://github.com/oven-sh/bun/issues/29273
 // `C:` is the current directory of drive C, it is not the root `C:\`.
 it.skipIf(!isWindows)("should link a package in the root of a drive", async () => {
-  const link_name = basename(link_dir).slice("bun-link.".length) + "-drive-root";
+  const link_name = basename(link_dir).slice("fnpm.test.".length) + "-drive-root";
   await writeFile(join(link_dir, "package.json"), JSON.stringify({ name: link_name, version: "0.0.1" }));
   await writeFile(join(package_dir, "package.json"), JSON.stringify({ name: "bar", version: "0.0.2" }));
   using drive = substDrive(link_dir);

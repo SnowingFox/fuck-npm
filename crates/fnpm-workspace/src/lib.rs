@@ -8,6 +8,7 @@
 mod discover;
 mod editor;
 pub mod filter;
+pub mod frame;
 pub mod glob;
 pub mod graph;
 mod jsonc;
@@ -32,9 +33,12 @@ pub use run::{RunPackage, RunPackages};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// `path` is empty when the text did not come from a file.
-    #[error("{}{message}", path_prefix(.path))]
+    #[error("{}", invalid_package_json(.path, .message))]
     InvalidPackageJson { path: PathBuf, message: String },
-    #[error("no package.json found in {0} or any parent directory")]
+    #[error(
+        "No package.json was found for directory \"{}\"\nnote: Run \"fnpm init\" to initialize a project",
+        .0.display()
+    )]
     NoProject(PathBuf),
     #[error("invalid workspace pattern {pattern:?}: {message}")]
     BadPattern { pattern: String, message: String },
@@ -56,6 +60,9 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    /// pnpm-workspace.yaml nests (directly or through aliases) deeper than the parser goes.
+    #[error("pnpm-workspace.yaml is nested too deeply")]
+    PnpmWorkspaceTooDeep,
     /// A literal (non-glob) `workspaces` entry whose package.json does not exist.
     #[error("Workspace not found \"{0}\"")]
     WorkspaceNotFound(String),
@@ -71,6 +78,18 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+}
+
+/// The message of [`Error::InvalidPackageJson`]. An empty file is bun's two lines: it reads as
+/// "no dependencies", so going on would delete the lockfile.
+fn invalid_package_json(path: &Path, message: &str) -> String {
+    if message == manifest::EMPTY_FILE && !path.as_os_str().is_empty() {
+        return format!(
+            "failed to parse '{}': {message}\nnote: restore package.json, or write {{}} to start without dependencies",
+            path.display()
+        );
+    }
+    format!("{}{message}", path_prefix(path))
 }
 
 fn path_prefix(path: &Path) -> String {
@@ -193,6 +212,13 @@ impl Workspace {
         discover::find_root(cwd)
     }
 
+    /// [`Workspace::find_root`], with bun's warning for each package.json it ignores.
+    pub fn find_root_reporting(cwd: &Path) -> Result<(PathBuf, Vec<String>)> {
+        let mut warnings = Vec::new();
+        let root = discover::find_root_reporting(cwd, &mut warnings)?;
+        Ok((root, warnings))
+    }
+
     /// Reads the root package.json and expands workspace globs over a parallel walk that skips
     /// `node_modules`, `.git`, `CMakeFiles` and dot-directories; `!pattern` excludes. Member
     /// package.json files are read in parallel (rayon). Missing literal members are an error
@@ -225,6 +251,57 @@ impl Workspace {
     }
 
     /// The member called `name`.
+    /// The paths of the self-contained members (bun `self_contained_workspace_ids`): listed in
+    /// the root's `workspaces.selfContained` (by path or name) or declaring
+    /// `"installConfig": { "hoistingLimits": "workspaces" }`. Also bun's warnings for an entry
+    /// that matches no member and for an unsupported `hoistingLimits` value.
+    pub fn self_contained(&self) -> (Vec<String>, Vec<String>) {
+        let mut paths: Vec<String> = Vec::new();
+        let mut warnings = Vec::new();
+        for m in &self.members {
+            match m
+                .manifest
+                .raw
+                .get("installConfig")
+                .and_then(|c| c.get("hoistingLimits"))
+            {
+                None => {}
+                Some(v) if v.as_str() == Some("workspaces") => paths.push(m.path.clone()),
+                Some(v) if v.as_str() == Some("none") => {}
+                Some(v) => warnings.push(format!(
+                    "workspace \"{}\": installConfig.hoistingLimits \"{}\" is not supported (only \"workspaces\" and \"none\" are); ignoring",
+                    m.name,
+                    v.as_str().unwrap_or("<non-string>")
+                )),
+            }
+        }
+        let listed = self
+            .root
+            .raw
+            .get("workspaces")
+            .and_then(|w| w.get("selfContained"))
+            .and_then(|v| v.as_array());
+        for item in listed.into_iter().flatten() {
+            let Some(item) = item.as_str() else { continue };
+            let key = item.trim_end_matches('/');
+            let key = key.strip_prefix("./").unwrap_or(key);
+            let found: Vec<&Member> = self
+                .members
+                .iter()
+                .filter(|m| m.path == key || m.name == key)
+                .collect();
+            if found.is_empty() {
+                warnings.push(format!(
+                    "\"workspaces.selfContained\": \"{item}\" does not match any workspace path or name"
+                ));
+            }
+            paths.extend(found.into_iter().map(|m| m.path.clone()));
+        }
+        paths.sort();
+        paths.dedup();
+        (paths, warnings)
+    }
+
     pub fn member(&self, name: &str) -> Option<&Member> {
         self.members.iter().find(|m| m.name == name)
     }

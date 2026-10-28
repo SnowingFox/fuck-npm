@@ -37,6 +37,7 @@ pub struct Untrusted {
     pub trusted_name: String,
     pub dir: PathBuf,
     pub depth: usize,
+    /// For display: a URL's credentials are masked.
     pub resolution: String,
     /// `(event, command)` that run once it is trusted.
     pub scripts: Vec<(String, String)>,
@@ -86,7 +87,11 @@ pub fn find_untrusted<'r>(
         out.push(Untrusted {
             trusted_name: trusted_name(&c.alias, &pkg.name, &pkg.resolution).to_owned(),
             can_trust: can_trust_by_name(graph, &c.alias, c.package),
-            resolution: pkg.resolution.to_string(),
+            // bun prints a folder or tarball on disk by its path alone; a URL is masked.
+            resolution: match &pkg.resolution {
+                Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.clone(),
+                other => fnpm_config::redact::redacted(&other.to_string()).into_owned(),
+            },
             package: c.package,
             alias: c.alias,
             dir: c.dir,
@@ -139,16 +144,23 @@ pub fn render_entry(u: &Untrusted, format: PrintFormat) -> Vec<String> {
     lines
 }
 
+/// bun `fmt::escape_control_chars`: C0 and C1 controls, DEL, the line separators and the bidi
+/// controls as `\n`, `\r`, `\t`, `\xNN` or `\uNNNN`.
 fn escape_control(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| {
-            if c.is_control() {
-                c.escape_default().collect::<Vec<_>>()
-            } else {
-                vec![c]
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0'..='\x1f' | '\x7f' => out.push_str(&format!("\\x{:02x}", c as u32)),
+            '\u{80}'..='\u{9f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => {
+                out.push_str(&format!("\\u{:04x}", c as u32))
             }
-        })
-        .collect()
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// `fnpm pm untrusted` output (after the `fnpm pm untrusted v<version>` header).
@@ -303,7 +315,7 @@ pub fn plan_trust(list: &[Untrusted], names: &[String], all: bool) -> Result<Tru
 pub fn alias_notes(aliased: &[(String, String)]) -> Vec<String> {
     aliased
         .iter()
-        .map(|(alias, name)| format!("note: \"{alias}\" is an alias of \"{name}\", run 'fnpm pm trust {name}' to trust it"))
+        .map(|(alias, name)| format!("note: \"{alias}\" is an alias of \"{name}\", run 'fnpm pm trust \"{name}\"' to trust it"))
         .collect()
 }
 

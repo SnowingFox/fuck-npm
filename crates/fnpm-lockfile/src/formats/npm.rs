@@ -1149,7 +1149,7 @@ impl<'a> Migrator<'a> {
                     list.push_str(", ");
                 }
                 list.push('"');
-                list.push_str(key);
+                list.push_str(&fnpm_types::text::escape_control_chars(key));
                 list.push('"');
             }
         }
@@ -1188,6 +1188,7 @@ pub(crate) fn export_hoist_options() -> crate::tree::HoistOptions {
             libc: LibcSet::ALL,
         },
         workspaces: None,
+        self_contained: Vec::new(),
     }
 }
 

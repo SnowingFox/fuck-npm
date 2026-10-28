@@ -936,7 +936,7 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
                             Some(url) => format!(
                                 "fetching pnpm registry \"{}\" packages from {}; add it to fnpm.toml or .npmrc if it needs authentication",
                                 shown(registry_name),
-                                url
+                                shown(&fnpm_config::redact::redact_url(url))
                             ),
                             None => format!(
                                 "skipping pnpm registry \"{}\" from pnpm-lock.yaml: not in namedRegistries of pnpm-workspace.yaml (resolving its packages from the configured registry)",
@@ -957,8 +957,9 @@ pub fn migrate(bytes: &[u8], ws: &Workspace, options: &MigrateOptions<'_>) -> Re
                 || foreign::default_tarball_url(&registry, name, version),
                 str::to_owned,
             );
-            let default = foreign::default_tarball_url(scope_registry, name, version);
-            *tarball_url = (url != default).then_some(url);
+            // Like bun.lock, only npmjs packages are written without their URL.
+            *tarball_url =
+                (!foreign::url_is_under_registry(&url, foreign::DEFAULT_REGISTRY)).then_some(url);
         }
         if let Some(integrity) = resolution_node.and_then(|r| r.get("integrity")) {
             let integrity = integrity.as_str().ok_or_else(|| invalid(ws))?;
@@ -2068,7 +2069,30 @@ pub fn serialize(graph: &LockGraph) -> Result<String> {
         out.push('\n');
         push_line(&mut out, 2, &format!("{}:", yaml::scalar(key)));
         let integrity = p.resolution.integrity().map(Integrity::to_sri);
+        // pnpm records a `tarball:` only off the registry's `/<name>/-/<file>.tgz` path.
+        let canonical = |url: &str, version: &str| {
+            let file = p.name.rsplit('/').next().unwrap_or(&p.name);
+            url.ends_with(&format!("/{}/-/{file}-{version}.tgz", p.name))
+        };
         let resolution = match (&p.resolution, &integrity) {
+            (
+                Resolution::Npm {
+                    tarball_url: Some(url),
+                    version,
+                    ..
+                },
+                Some(i),
+            ) if canonical(url, version) => {
+                format!("{{integrity: {}}}", yaml::flow_scalar(i))
+            }
+            (
+                Resolution::Npm {
+                    tarball_url: Some(url),
+                    version,
+                    ..
+                },
+                None,
+            ) if canonical(url, version) => "{}".to_owned(),
             (
                 Resolution::Npm {
                     tarball_url: Some(url),

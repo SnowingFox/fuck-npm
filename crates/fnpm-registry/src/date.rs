@@ -83,6 +83,57 @@ pub fn parse_iso8601_ms(input: &str) -> Option<u64> {
     u64::try_from(ms).ok()
 }
 
+/// Unix milliseconds of an RFC 2822 date as JavaScript's `toUTCString()` writes it
+/// (`Mon, 01 Jan 2024 00:00:00 GMT`; the weekday is optional, the zone is `GMT`, `UTC`, `Z` or
+/// `±hhmm`), which bun's date parser reads too. `None` for anything else.
+pub fn parse_rfc2822_ms(input: &str) -> Option<u64> {
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let text = input.trim();
+    let text = match text.split_once(',') {
+        Some((weekday, rest)) if weekday.len() == 3 => rest,
+        _ => text,
+    };
+    let mut parts = text.split_whitespace();
+    let day: u32 = parts.next()?.parse().ok()?;
+    let month = parts.next()?.to_ascii_lowercase();
+    let month = MONTHS.iter().position(|m| *m == month)? as u32 + 1;
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut clock = parts.next()?.split(':');
+    let hour: u32 = clock.next()?.parse().ok()?;
+    let minute: u32 = clock.next()?.parse().ok()?;
+    let second: u32 = clock.next().map_or(Some(0), |s| s.parse().ok())?;
+    let offset_minutes: i64 = match parts.next().unwrap_or("GMT") {
+        "GMT" | "UTC" | "UT" | "Z" => 0,
+        zone if zone.len() == 5 && (zone.starts_with('+') || zone.starts_with('-')) => {
+            let value: i64 = zone[1..].parse().ok()?;
+            let minutes = value / 100 * 60 + value % 100;
+            if zone.starts_with('-') {
+                -minutes
+            } else {
+                minutes
+            }
+        }
+        _ => return None,
+    };
+    if parts.next().is_some()
+        || !(1970..=9999).contains(&year)
+        || day == 0
+        || day > days_in_month(year, month)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    let seconds =
+        days * 86_400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second.min(59))
+            - offset_minutes * 60;
+    u64::try_from(seconds.checked_mul(1000)?).ok()
+}
+
 struct Cursor<'a> {
     s: &'a [u8],
     i: usize,
@@ -145,6 +196,21 @@ pub fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rfc2822_timestamps() {
+        assert_eq!(parse_rfc2822_ms("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        assert_eq!(
+            parse_rfc2822_ms("Mon, 01 Jan 2024 00:00:00 GMT"),
+            parse_iso8601_ms("2024-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            parse_rfc2822_ms("1 Jan 2024 01:00:00 +0100"),
+            parse_iso8601_ms("2024-01-01T00:00:00Z")
+        );
+        assert_eq!(parse_rfc2822_ms("yesterday"), None);
+        assert_eq!(parse_rfc2822_ms("Mon, 32 Jan 2024 00:00:00 GMT"), None);
+    }
 
     #[test]
     fn registry_timestamps() {

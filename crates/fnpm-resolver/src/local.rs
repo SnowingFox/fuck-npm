@@ -120,6 +120,10 @@ pub(crate) fn package_json_edges(
         for (name, literal) in pj.group(group) {
             if name.is_empty() || nameless_npm_alias(literal).is_some() {
                 if !kind.is_project() {
+                    warnings.push(format!(
+                        "skipping unnamed dependency (\"{literal}\" in \"{}\")",
+                        group.field()
+                    ));
                     continue;
                 }
                 let message = match nameless_npm_alias(literal) {
@@ -183,16 +187,38 @@ fn script_flags(scripts: &std::collections::BTreeMap<String, String>) -> ScriptF
     ScriptFlags::from_names(scripts.keys().map(String::as_str))
 }
 
-/// A package (without edges) from a `package.json`.
+/// The name fnpm.lock stores for a folder, tarball or git package whose package.json has no
+/// name, or one that a `"<name>@<resolution>"` key cannot round-trip: its folder, tarball or
+/// repository name ([`fnpm_types::name::fallback_package_name`]).
+pub(crate) fn unnamed_package_name(resolution: &Resolution) -> String {
+    let location = match resolution {
+        Resolution::Folder { path } | Resolution::LocalTarball { path, .. } => path.as_str(),
+        Resolution::RemoteTarball { url, .. } | Resolution::Git { url, .. } => url.as_str(),
+        Resolution::Github { repo, .. } => repo.as_str(),
+        _ => "",
+    };
+    fnpm_types::name::fallback_package_name(location).to_owned()
+}
+
+/// A package (without edges) from a `package.json`. A project package without a name gets
+/// `fallback_name`; a folder, tarball or git package also gets it in place of a name that
+/// fnpm.lock cannot store ([`unnamed_package_name`]).
 pub(crate) fn package_from_json(
     pj: &PackageJson,
     fallback_name: &str,
     resolution: Resolution,
 ) -> Package {
+    let storable = |n: &String| {
+        !n.is_empty()
+            && (matches!(
+                resolution,
+                Resolution::Root | Resolution::Workspace { .. } | Resolution::Symlink { .. }
+            ) || fnpm_types::name::is_safe_lockfile_package_name(n))
+    };
     let name = pj
         .name
         .clone()
-        .filter(|n| !n.is_empty())
+        .filter(storable)
         .unwrap_or_else(|| fallback_name.to_owned());
     let mut package = Package::new(name, pj.version.clone().unwrap_or_default(), resolution);
     package.bin = pj.bin.clone();
@@ -214,6 +240,25 @@ pub(crate) fn package_from_json(
     };
     package.peer_meta = pj.peer_dependencies_meta.clone();
     package
+}
+
+/// The `(literal, group)` of each dependency of `vm` without a usable name, which
+/// [`package_from_manifest`] skips, in the order it reads the groups.
+pub(crate) fn nameless_manifest_rows(vm: &VersionManifest) -> Vec<(&str, &'static str)> {
+    let groups = [
+        (&vm.dependencies, "dependencies"),
+        (&vm.optional_dependencies, "optionalDependencies"),
+        (&vm.peer_dependencies, "peerDependencies"),
+    ];
+    let mut out = Vec::new();
+    for (deps, field) in groups {
+        for (n, lit) in deps {
+            if n.is_empty() || nameless_npm_alias(lit).is_some() {
+                out.push((lit.as_str(), field));
+            }
+        }
+    }
+    out
 }
 
 /// A registry package with its edges (bun `Package::from_npm`): `dependencies`, then

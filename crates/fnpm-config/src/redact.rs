@@ -113,7 +113,55 @@ pub fn redact_url(url: &str) -> String {
         out.push(s[i]);
         i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    mask_token_markers(&String::from_utf8_lossy(&out))
+}
+
+/// Masks the value after `_authToken=`, `_auth=`, `_password=` and `token=` (any case), up to
+/// the next `/`, `&`, `?` or `#`: credentials written into a registry URL's path or query.
+fn mask_token_markers(url: &str) -> String {
+    let lower = url.to_ascii_lowercase();
+    let mut out = String::with_capacity(url.len());
+    let mut i = 0;
+    while i < url.len() {
+        let marker = ["_authtoken=", "_auth=", "_password=", "token="]
+            .into_iter()
+            .find(|m| lower[i..].starts_with(m));
+        let Some(marker) = marker else {
+            let ch = url[i..].chars().next().unwrap_or('\u{fffd}');
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        };
+        out.push_str(&url[i..i + marker.len()]);
+        i += marker.len();
+        // Up to the end of the value: a URL separator, or what ends a URL quoted in a message.
+        let end = url[i..]
+            .find([
+                '/', '&', '#', '?', '"', '\'', ' ', '\t', '\n', ',', ')', ']', '}',
+            ])
+            .map_or(url.len(), |e| i + e);
+        if end > i {
+            out.push_str("***");
+        }
+        i = end;
+    }
+    out
+}
+
+/// bun `fmt::redacted`: [`redact_url`] for a specifier or resolution that holds a URL; anything
+/// without `://` (a version, a range, a path) is printed as it is.
+pub fn redacted(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains("://") {
+        std::borrow::Cow::Owned(redact_url(text))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
+/// A warning or error as it may be shown: the credentials of every URL in it masked, as bun
+/// masks each URL it echoes. Text without a URL is unchanged.
+pub fn redacted_message(text: &str) -> std::borrow::Cow<'_, str> {
+    redacted(text)
 }
 
 /// Masks a secret for display, keeping nothing of it.
@@ -148,5 +196,24 @@ mod tests {
         assert_eq!(redact_url(&format!("https://h/{npm}")), "https://h/***");
         assert_eq!(redact_url("https://h/npm_short"), "https://h/npm_short");
         assert_eq!(redact_url("https://h/é/ü"), "https://h/é/ü");
+        assert_eq!(
+            redact_url("https://h/api/:_authToken=SECRET/pkg"),
+            "https://h/api/:_authToken=***/pkg"
+        );
+        assert_eq!(
+            redact_url("https://h/?TOKEN=x&a=1"),
+            "https://h/?TOKEN=***&a=1"
+        );
+        assert_eq!(
+            redacted_message("unrecognised dependency format: @https://u:p@h:1/o/r"),
+            "unrecognised dependency format: @https://***@h:1/o/r"
+        );
+        assert_eq!(redacted_message("ftp://a:b@c@h/x"), "ftp://***@h/x");
+        assert_eq!(
+            redact_url("\"host?_AuthToken=s3cret\""),
+            "\"host?_AuthToken=***\""
+        );
+        let uuid = "no url, 12345678-1234-1234-1234-123456789abc";
+        assert_eq!(redacted_message(uuid), uuid);
     }
 }

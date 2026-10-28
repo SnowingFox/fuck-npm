@@ -26,13 +26,15 @@ import {
   writeFileSync,
 } from "fs";
 import { lstat, readdir, readlink } from "../compat/fs-promises.ts";
-import { fnpmEnv, fnpmExe, hostedGitRepository, isLinux, isWindows, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
+import { fnpmEnv, fnpmExe, hostedGitRepository, isLinux, isWindows, nodeExe, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
 import { dirname, join, resolve } from "path";
 import { pathToFileURL } from "url";
 
 const gitEnv: NodeJS.Dict<string> = {
   ...fnpmEnv,
   GIT_CONFIG_NOSYSTEM: "1",
+  // The fixture repositories must not pick up the user's git config (tag.gpgsign opens an editor).
+  GIT_CONFIG_GLOBAL: isWindows ? "NUL" : "/dev/null",
   GIT_AUTHOR_NAME: "Test",
   GIT_AUTHOR_EMAIL: "test@example.com",
   GIT_COMMITTER_NAME: "Test",
@@ -3310,7 +3312,7 @@ async function expectFileDepsInstalled(project: string) {
   expect(await linkedJson(join(nested, `${name}-self`, "package.json"))).toEqual(fileDepsManifest);
 
   await using proc = Bun.spawn({
-    cmd: [fnpmExe(), "-e", `console.log(require(${JSON.stringify(name)}))`],
+    cmd: [nodeExe(), "-e", `console.log(require(${JSON.stringify(name)}))`],
     cwd: project,
     env: fnpmEnv,
     stdout: "pipe",

@@ -67,6 +67,8 @@ pub struct Request {
     pub create: bool,
     /// The CLI version (`--version`).
     pub version: String,
+    /// The short git revision of the build, `""` when unknown (`--revision`).
+    pub revision: String,
     /// Draws the install while it runs (a terminal). Without it, the install prints bun's
     /// status lines instead.
     pub display: Option<Arc<dyn Display>>,
@@ -249,7 +251,7 @@ fn create_args(args: &[String], cwd: &Path, out: &Out) -> Result<Vec<String>, i3
     let rest = index + 1;
     if name == "react" {
         eprintln!(
-            "The \"react\" template has been deprecated.\nIt is recommended to use \"react-app\" or \"vite\" instead.\n\nTo create a project using Create React App, run\n\n  fnpm create react-app\n\nTo create a React project using Vite, run\n\n  fnpm create vite\n\nThen select \"React\" from the list of frameworks.\n"
+            "The \"react\" template has been deprecated.\nIt is recommended to use \"react-app\" or \"vite\" instead.\n\nTo create a project using Create React App, run\n\n  fnpm create react-app\n\nTo create a React project using Vite, run\n\n  fnpm create vite\n\nThen select \"React\" from the list of frameworks."
         );
         return Err(1);
     }
@@ -495,9 +497,11 @@ fn unanswered(error: &crate::Error) -> bool {
                     message: message.clone(),
                 })
         }
-        crate::Error::Registry(e) | crate::Error::Resolve(fnpm_resolver::Error::Registry(e)) => {
-            registry(e)
-        }
+        crate::Error::Registry(e) => registry(e),
+        crate::Error::Resolve(e) => match e.cause() {
+            fnpm_resolver::Error::Registry(e) => registry(e),
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -505,29 +509,32 @@ fn unanswered(error: &crate::Error) -> bool {
 /// bun's wording for an install failure (`GET <url> - <status>`).
 fn install_error(error: &crate::Error, registry: &str) -> String {
     use fnpm_registry::Error as R;
-    match error {
-        crate::Error::Resolve(fnpm_resolver::Error::NotFound(name))
-        | crate::Error::Registry(R::NotFound(name))
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::NotFound(name))) => {
-            let base = if registry.ends_with('/') {
-                registry.to_owned()
-            } else {
-                format!("{registry}/")
-            };
-            format!("GET {base}{} - 404", name.replace('/', "%2f"))
-        }
-        crate::Error::Registry(R::Status { url, status })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Status { url, status })) => {
-            format!("GET {url} - {status}")
-        }
-        crate::Error::Registry(R::Network { url, message })
-        | crate::Error::Resolve(fnpm_resolver::Error::Registry(R::Network { url, message }))
-            if url.is_empty() =>
-        {
-            message.clone()
-        }
-        other => other.to_string(),
-    }
+    let not_found = |name: &str| {
+        let base = if registry.ends_with('/') {
+            registry.to_owned()
+        } else {
+            format!("{registry}/")
+        };
+        format!("GET {base}{} - 404", name.replace('/', "%2f"))
+    };
+    let from_registry = |e: &R| match e {
+        R::NotFound(name) => Some(not_found(name)),
+        R::Status { url, status } => Some(format!("GET {url} - {status}")),
+        R::Network { url, message } if url.is_empty() => Some(message.clone()),
+        _ => None,
+    };
+    let worded = match error {
+        // The first package that failed (a report of several has it as its cause).
+        crate::Error::Resolve(e) => match e.cause() {
+            fnpm_resolver::Error::NotFound(name) => Some(not_found(name)),
+            fnpm_resolver::Error::ManifestNotFound { url, .. } => Some(format!("GET {url} - 404")),
+            fnpm_resolver::Error::Registry(r) => from_registry(r),
+            _ => None,
+        },
+        crate::Error::Registry(r) => from_registry(r),
+        _ => None,
+    };
+    worded.unwrap_or_else(|| error.to_string())
 }
 
 /// An exclusive `flock` on `<tree>.lock`, released when dropped (and closed on exec).
@@ -701,8 +708,17 @@ pub fn plan(req: &Request) -> Outcome {
             eprint!("{USAGE}");
             return Outcome::Exit(1);
         }
-        Parsed::Version | Parsed::Revision => {
+        Parsed::Version => {
             println!("{}", req.version);
+            return Outcome::Exit(0);
+        }
+        // bun's `package_json_version_with_revision`: `1.0.0+abcdef1`.
+        Parsed::Revision => {
+            if req.revision.is_empty() {
+                println!("{}", req.version);
+            } else {
+                println!("{}+{}", req.version, req.revision);
+            }
             return Outcome::Exit(0);
         }
         Parsed::Error { message, hint } => {
@@ -759,6 +775,13 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 Err(1)
             }
             Err(BinError::Unreadable) => Ok(None),
+            Err(BinError::PathTooLong) => {
+                out.error(&format!(
+                    "PathTooLong: the bin of {} does not fit in a path",
+                    target.package
+                ));
+                Err(1)
+            }
             Ok(found) => Ok(found),
         }
     };
@@ -800,7 +823,7 @@ fn plan_with(opts: &XArgs, out: &Out, display: Option<&dyn Display>) -> Result<O
                 no_bin(Err(BinError::NoBin))?;
                 InProject::Absent
             }
-            Err(BinError::Unreadable) => InProject::Absent,
+            Err(BinError::Unreadable | BinError::PathTooLong) => InProject::Absent,
             Ok(found) => found,
         };
         match found {

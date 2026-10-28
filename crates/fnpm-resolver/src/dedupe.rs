@@ -71,6 +71,59 @@ fn npm_version(p: &fnpm_types::Package) -> Option<Version> {
     }
 }
 
+/// Whether a locked registry package is outside the range that an override rule gives its
+/// edge (a lockfile written before the rule, or by a merge). bun resolves such an entry again
+/// on a normal install, while a frozen install keeps it.
+/// `yarn`: the rules are yarn `resolutions` ([`OverrideSet::yarn`]).
+pub(crate) fn overrides_unmet(graph: &LockGraph, yarn: bool) -> bool {
+    if graph.overrides.is_empty() {
+        return false;
+    }
+    let set = if yarn {
+        OverrideSet::yarn(&graph.overrides)
+    } else {
+        OverrideSet::new(&graph.overrides)
+    };
+    graph.packages.iter().enumerate().any(|(i, p)| {
+        let owner = PackageId(i as u32);
+        let owner_version = crate::engine::package_version(p);
+        p.dependencies.iter().any(|e| {
+            let Some(target) = e.target.and_then(|t| graph.get(t)) else {
+                return false;
+            };
+            let Some(version) = npm_version(target) else {
+                return false;
+            };
+            let Ok(declared) = DependencySpec::parse(&e.name, &e.literal) else {
+                return false;
+            };
+            if matches!(declared, DependencySpec::Workspace { .. })
+                || set
+                    .lookup(
+                        Some(Owner {
+                            name: &p.name,
+                            version: owner_version.as_ref(),
+                        }),
+                        &e.name,
+                        &declared,
+                    )
+                    .is_none()
+            {
+                return false;
+            }
+            effective_npm_range(
+                graph,
+                &set,
+                owner,
+                owner_version.as_ref(),
+                &e.name,
+                &e.literal,
+            )
+            .is_some_and(|range| !range.satisfies(&version))
+        })
+    })
+}
+
 /// The effective npm range of an edge: its declared spec after overrides and catalogs.
 pub(crate) fn effective_npm_range(
     graph: &LockGraph,

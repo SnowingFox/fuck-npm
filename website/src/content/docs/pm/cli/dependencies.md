@@ -24,6 +24,8 @@ fnpm info typescript
 fnpm-lock why typescript
 ```
 
+The `fnpm pm` subcommands follow Bun's: `pm pkg`, `pm version`, `pm ls`, `pm why`, `pm view`, `pm licenses`, `pm fetch`, `pm diff`, `pm trust` / `pm untrusted`, `pm cache` and `pm audit` (with `audit fix`).
+
 `fnpm why` explains dependency paths in the project. `fnpm-lock why` reads the lockfile graph. `info` queries package information from the configured registry.
 
 ## Overrides, extensions and patches

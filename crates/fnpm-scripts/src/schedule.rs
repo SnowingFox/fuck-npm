@@ -11,7 +11,9 @@ use crate::Job;
 
 /// For each job, the indices of the jobs it waits for: the nearest jobs reachable through
 /// dependency edges (packages without scripts are looked through). Jobs in one dependency
-/// cycle do not wait for each other. Root jobs wait for every other job.
+/// cycle do not wait for each other. Root jobs wait for every other job, and workspace jobs for
+/// every job of a registry, folder or other non-project package that does not wait for them
+/// (bun runs the scripts of the members after those of the packages).
 pub fn dependencies(graph: &LockGraph, jobs: &[Job]) -> Vec<Vec<usize>> {
     let mut jobs_of: HashMap<PackageId, Vec<usize>> = HashMap::new();
     for (i, job) in jobs.iter().enumerate() {
@@ -65,6 +67,50 @@ pub fn dependencies(graph: &LockGraph, jobs: &[Job]) -> Vec<Vec<usize>> {
         deps.sort_unstable();
         deps.dedup();
         out[i] = deps;
+    }
+    let is_project = |j: usize| {
+        matches!(
+            graph.get(jobs[j].package).map(|p| &p.resolution),
+            Some(Resolution::Root | Resolution::Workspace { .. })
+        )
+    };
+    let members: Vec<usize> = (0..jobs.len())
+        .filter(|&i| {
+            matches!(
+                graph.get(jobs[i].package).map(|p| &p.resolution),
+                Some(Resolution::Workspace { .. })
+            )
+        })
+        .collect();
+    if !members.is_empty() && members.len() < jobs.len() {
+        let mut waiters: Vec<Vec<usize>> = vec![Vec::new(); jobs.len()];
+        for (j, deps) in out.iter().enumerate() {
+            for &d in deps {
+                waiters[d].push(j);
+            }
+        }
+        for &i in &members {
+            // Every job that already waits for this member, directly or not.
+            let mut waits = vec![false; jobs.len()];
+            let mut todo = vec![i];
+            while let Some(x) = todo.pop() {
+                for &w in &waiters[x] {
+                    if !waits[w] {
+                        waits[w] = true;
+                        todo.push(w);
+                    }
+                }
+            }
+            let extra: Vec<usize> = (0..jobs.len())
+                .filter(|&j| j != i && !is_project(j) && !waits[j])
+                .collect();
+            for &j in &extra {
+                waiters[j].push(i);
+            }
+            out[i].extend(extra);
+            out[i].sort_unstable();
+            out[i].dedup();
+        }
     }
     out
 }
@@ -192,6 +238,9 @@ pub struct PlanOptions<'a> {
     /// Packages that are installed (`LockGraph::reachable` after omit/platform filtering).
     /// `None`: every package.
     pub installed: Option<&'a [bool]>,
+    /// The workspaces this install links as members (a `--filter` selection). `None`: all of
+    /// them. Another member is only a dependency, which an optional edge may leave out.
+    pub members: Option<&'a [PackageId]>,
 }
 
 /// The jobs of an install and what was left out.
@@ -233,7 +282,7 @@ pub fn plan_install(
     if opts.ignore_scripts || graph.is_empty() {
         return Ok(plan);
     }
-    let optional = optional_only(graph);
+    let optional = optional_only(graph, opts.members);
     for id in graph.ids() {
         if opts
             .installed
@@ -322,15 +371,16 @@ pub fn plan_install(
     Ok(plan)
 }
 
-/// Packages reached only through optional dependency edges.
-fn optional_only(graph: &LockGraph) -> Vec<bool> {
+/// Packages reached only through optional dependency edges. A workspace counts only when it is
+/// not one of `members`.
+fn optional_only(graph: &LockGraph, members: Option<&[PackageId]>) -> Vec<bool> {
     let mut any_edge = vec![false; graph.len()];
     let mut required = vec![false; graph.len()];
     for pkg in &graph.packages {
         for edge in &pkg.dependencies {
             if let Some(t) = edge.target.filter(|t| t.index() < graph.len()) {
                 any_edge[t.index()] = true;
-                if !edge.behavior.is_optional() {
+                if !edge.behavior.is_optional() && !edge.behavior.is_optional_peer() {
                     required[t.index()] = true;
                 }
             }
@@ -340,10 +390,13 @@ fn optional_only(graph: &LockGraph) -> Vec<bool> {
         .map(|i| {
             any_edge[i]
                 && !required[i]
-                && !matches!(
-                    graph.packages[i].resolution,
-                    Resolution::Root | Resolution::Workspace { .. }
-                )
+                && match graph.packages[i].resolution {
+                    Resolution::Root => false,
+                    Resolution::Workspace { .. } => {
+                        members.is_some_and(|m| !m.contains(&PackageId(i as u32)))
+                    }
+                    _ => true,
+                }
         })
         .collect()
 }

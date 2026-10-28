@@ -106,8 +106,16 @@ export type InstallSummary = {
   failedCount: number;
   blockedScripts: number;
   elapsedMs: number;
+  /** `--lockfile-only`: whether fnpm.lock was written, and how many packages it has. */
+  lockfileOnly?: { saved: boolean; packages: number; binary?: boolean };
   /** Lockfile and node_modules were already in sync; nothing written. */
   noop: boolean;
+  /** `update` rewrote package.json with nothing else to install (`up to date, package.json synced`). */
+  packageJsonSynced?: boolean;
+  /** `update`: `kept <name>@<version> (patched, v<x> available)` rows. */
+  kept?: string[];
+  /** `update` whose selectors picked nothing: `Checked N dependencies, none <by>`. */
+  noneSelected?: { checked: number; by: string };
 };
 
 /** Progress and diagnostics streamed while the core works (batched ≤ every 50 ms). */

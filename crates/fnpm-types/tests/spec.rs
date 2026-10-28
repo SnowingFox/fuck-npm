@@ -301,7 +301,8 @@ fn parse_git() {
     let DependencySpec::Git(g) = parse("a", "git@example.com:path/repo.git#feature/x") else {
         panic!()
     };
-    assert_eq!(g.url, "git@example.com:path/repo.git");
+    // bun records an scp-style URL behind `ssh://`.
+    assert_eq!(g.url, "ssh://git@example.com:path/repo.git");
     assert_eq!(g.committish.reference.as_deref(), Some("feature/x"));
 }
 

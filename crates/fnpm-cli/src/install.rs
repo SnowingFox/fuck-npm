@@ -17,8 +17,8 @@ use crate::options::install_options;
 use crate::parse::{parse_flags, reject_unknown_flags};
 use crate::plan::Invocation;
 use crate::progress::{DiagnosticsSink, ProgressSink, wants_progress};
-use crate::spec::{BinDef, LeafDef, VERSION};
-use crate::summary::format_install_summary_at;
+use crate::spec::{BinDef, LeafDef};
+use crate::summary::{format_install_summary_at, format_update_plan};
 use crate::terminal::{Terminal, color_enabled};
 
 /// What the core did with an install.
@@ -135,7 +135,7 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
         terminal.stdout.write(&format!(
             "{}{}\n",
             pc.bold(&format!("fnpm {label} ")),
-            pc.dim(&format!("v{VERSION}"))
+            pc.dim(&format!("v{}", crate::spec::version_with_sha()))
         ));
     }
 
@@ -166,7 +166,9 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
     };
 
     let command = options.command;
+    let dry_run = options.pm.dry_run;
     let show_summary = !silent && options.pm.summary;
+    let global = options.pm.global;
     let outcome = core.install(options, sink);
     if let Some(progress) = progress {
         progress.stop();
@@ -200,13 +202,25 @@ pub fn run(invocation: &Invocation, bin: &BinDef, terminal: &Terminal, core: &dy
                         (started.elapsed().as_secs_f64() * 1000.0).max(summary.elapsed_ms as f64)
                     });
                 let stdout_color = color_enabled(&terminal.env, terminal.stdout_is_tty);
-                let lines = format_install_summary_at(
-                    &summary,
-                    command,
-                    Colors::new(stdout_color),
-                    mode == Mode::Rich && stdout_color,
-                    elapsed_ms,
-                );
+                let mut lines = if dry_run && command == InstallCommand::Update {
+                    format_update_plan(
+                        &summary,
+                        Colors::new(stdout_color),
+                        stdout_color,
+                        elapsed_ms,
+                    )
+                } else {
+                    format_install_summary_at(
+                        &summary,
+                        command,
+                        Colors::new(stdout_color),
+                        stdout_color,
+                        elapsed_ms,
+                    )
+                };
+                if global {
+                    crate::summary::for_global_install(&mut lines);
+                }
                 let mut text = String::new();
                 for line in lines {
                     text.push_str(&line);
@@ -309,7 +323,14 @@ pub fn report_error(
         // The core already printed why.
         return 1;
     }
-    let mut text = format!("error: {}\n", error.message);
+    let (frame, message) = fnpm_core::frame::split(&error.message);
+    let mut text = frame.map_or_else(String::new, |f| format!("{f}\n"));
+    text.push_str(&format!(
+        "error: {}\n",
+        fnpm_types::text::escape_control_chars_in_lines(&fnpm_config::redact::redacted_message(
+            message
+        ))
+    ));
     if error.code == "UNKNOWN_FLAG" {
         text.push_str(&format!(
             "note: Run '{} {} --help' for more information\n",

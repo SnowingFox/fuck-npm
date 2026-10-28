@@ -22,11 +22,12 @@ export type Output = {
   json(payload: unknown): void;
 };
 
-/** FORCE_COLOR / NO_COLOR, as picocolors reads them, but from the injected env. */
+/** FORCE_COLOR / NO_COLOR in bun's order (FORCE_COLOR wins), from the injected env. */
 export function colorEnabled(runtime: CliRuntime, isTTY: boolean): boolean {
   const { env } = runtime;
-  if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
+  // bun's order: FORCE_COLOR wins over NO_COLOR.
   if (env.FORCE_COLOR !== undefined) return env.FORCE_COLOR !== "0" && env.FORCE_COLOR !== "false";
+  if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
   if (env.TERM === "dumb") return false;
   return isTTY;
 }
@@ -51,4 +52,18 @@ export function createOutput(runtime: CliRuntime, mode: OutputMode): Output {
       if (mode === "json") runtime.stdout.write(`${JSON.stringify(payload)}\n`);
     },
   };
+}
+
+/**
+ * bun's `escape_control_chars` for a message that may span lines on purpose: C0 and C1
+ * controls, DEL and the bidi controls are written as escapes, a newline stays one.
+ */
+export function escapeControlInLines(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069]/g, (c) => {
+    if (c === "\r") return "\\r";
+    if (c === "\t") return "\\t";
+    const code = c.charCodeAt(0);
+    return code < 0x80 ? `\\x${code.toString(16).padStart(2, "0")}` : `\\u${code.toString(16).padStart(4, "0")}`;
+  });
 }

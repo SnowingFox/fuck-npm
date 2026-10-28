@@ -23,6 +23,18 @@ pub fn meta_dir(cache_dir: &Path, project_dir: &Path) -> std::path::PathBuf {
     cache_dir.join("projects").join(format!("{key:016x}"))
 }
 
+/// The bytes of the project's lockfile: fnpm.lock, else the bun.lockb a project keeps. A
+/// project without dependencies has none (bun deletes the empty lockfile): no bytes then.
+pub(crate) fn lockfile_bytes(project_dir: &Path) -> Option<Vec<u8>> {
+    match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK))
+        .or_else(|_| std::fs::read(project_dir.join(fnpm_lockfile::BUN_LOCKB)))
+    {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(_) => None,
+    }
+}
+
 /// `dir_identity`, or zeros when the directory does not exist (the hoisted layout has no
 /// `node_modules/.fnpm`).
 fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
@@ -32,7 +44,7 @@ fn identity_or_zero(path: &Path) -> io::Result<(u64, u64, i128)> {
     }
 }
 /// Bumped when the meaning of a field changes; a different version is never a no-op.
-pub const STATE_VERSION: u32 = 5;
+pub const STATE_VERSION: u32 = 6;
 
 /// Written last by a successful install; JSON (small, debuggable).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +84,14 @@ pub struct State {
     /// member, which no manifest entry would show.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_dirs: Vec<String>,
+    /// Bin files of workspace packages that did not exist (a build writes them): once one
+    /// does, the next install links it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_bins: Vec<String>,
+    /// `(path relative to root, identity)` of every `file:` folder dependency: a file added
+    /// to or removed from one changes what is copied into `node_modules`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<(String, (u64, u64, i128))>,
 }
 
 /// The result of [`check`].
@@ -191,8 +211,8 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         Ok(id) if id == state.virtual_store => {}
         _ => return false,
     }
-    match std::fs::read(project_dir.join(fnpm_lockfile::FNPM_LOCK)) {
-        Ok(bytes) if fnpm_lockfile::content_hash(&bytes) == state.lockfile_hash => {}
+    match lockfile_bytes(project_dir) {
+        Some(bytes) if fnpm_lockfile::content_hash(&bytes) == state.lockfile_hash => {}
         _ => return false,
     }
     // A pnpm-workspace.yaml that appeared since the install changes the workspace.
@@ -210,7 +230,16 @@ fn is_unchanged(project_dir: &Path, config_hash: u64, state: &State) -> bool {
         }
         std::fs::read(&path).is_ok_and(|b| xxhash_rust::xxh3::xxh3_64(&b) == *hash)
     });
-    manifests_unchanged && members_unchanged(project_dir, state)
+    manifests_unchanged
+        && members_unchanged(project_dir, state)
+        && !state
+            .missing_bins
+            .iter()
+            .any(|rel| project_dir.join(rel).exists())
+        && state
+            .folders
+            .iter()
+            .all(|(rel, id)| dir_identity(&project_dir.join(rel)).is_ok_and(|now| now == *id))
 }
 
 /// The workspace globs select the same directories, and none of them gained a package.json.
@@ -271,9 +300,14 @@ fn remove_legacy_metadata(project_dir: &Path) {
         let _ = std::fs::remove_file(state_dir.join("state"));
         let _ = std::fs::remove_dir(&state_dir);
     }
-    let _ = std::fs::remove_file(virtual_store.join("state"));
-    let _ = std::fs::remove_file(virtual_store.join("lock.bin"));
-    let _ = std::fs::remove_dir(virtual_store);
+    let removed = [virtual_store.join("state"), virtual_store.join("lock.bin")]
+        .map(|file| std::fs::remove_file(file).is_ok());
+    let legacy = removed.contains(&true);
+    // An empty `.fnpm` without those files is an isolated tree with no store entry (only
+    // workspaces and `link:` packages): it stays, so the next install knows the layout.
+    if legacy {
+        let _ = std::fs::remove_dir(virtual_store);
+    }
 }
 
 #[cfg(test)]
@@ -290,6 +324,7 @@ mod tests {
 
     fn state_for(dir: &Path) -> State {
         State {
+            missing_bins: Vec::new(),
             version: STATE_VERSION,
             fnpm_version: crate::version().to_owned(),
             lockfile_hash: fnpm_lockfile::content_hash(b"{}\n"),
@@ -302,7 +337,24 @@ mod tests {
             installs: 4,
             workspace_patterns: Vec::new(),
             workspace_dirs: Vec::new(),
+            folders: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_changed_folder_dependency_is_not_a_noop() {
+        let p = project();
+        let cache = tempfile::tempdir().unwrap();
+        let meta = meta_dir(cache.path(), p.path());
+        std::fs::create_dir_all(p.path().join("top")).unwrap();
+        let mut state = state_for(p.path());
+        state.node_modules = dir_identity(&p.path().join("node_modules")).unwrap();
+        state.folders = vec![("top".into(), dir_identity(&p.path().join("top")).unwrap())];
+        write(p.path(), &meta, &state).unwrap();
+        assert!(matches!(check(p.path(), &meta, 7), Check::Noop { .. }));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(p.path().join("top/new.js"), "").unwrap();
+        assert!(matches!(check(p.path(), &meta, 7), Check::Changed(_)));
     }
 
     #[test]

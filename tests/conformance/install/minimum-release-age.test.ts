@@ -3,9 +3,9 @@
 // These tests define fnpm's target behaviour and are expected to fail until fnpm implements it.
 import type { Server } from "../compat/bun.ts";
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "../compat/bun-test.ts";
-import { fnpmEnv, fnpmExe, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
+import { cachedManifestFiles, fnpmEnv, fnpmExe, normalizeFnpmSnapshot, tempDir } from "../harness.ts";
 import { rmSync } from "node:fs";
-import { readdir, rm } from "../compat/fs-promises.ts";
+import { rm } from "../compat/fs-promises.ts";
 import { join } from "node:path";
 
 // These tests drive real `fnpm install` runs against a mock registry, which is
@@ -1155,7 +1155,7 @@ describe("minimum-release-age", () => {
         const { manifestRequests, exitCode } = await runWithCache(cwd, cacheDir, ["install", ...args]);
         expect(manifestRequests).toEqual([flavor]);
         expect(exitCode).toBe(0);
-        if ((await readdir(cacheDir)).some(name => name.endsWith(".npm"))) return;
+        if (cachedManifestFiles(cacheDir).length > 0) return;
         if (attempt === 20) throw new Error("the manifest was never cached");
         await rm(`${cwd}/fnpm.lock`, { force: true });
         await rm(`${cwd}/node_modules`, { recursive: true, force: true });
@@ -3583,9 +3583,7 @@ describe("minimum-release-age", () => {
     ) {
       for (let attempt = 0; ; attempt++) {
         expectResult(await install(dir, options));
-        const cached = (await readdir(`${dir}/.bun-cache`).catch((): string[] => [])).filter(name =>
-          name.endsWith(".npm"),
-        );
+        const cached = cachedManifestFiles(`${dir}/.bun-cache`);
         if (cached.length >= manifests) return;
         if (attempt === 20) throw new Error(`only ${cached.length} of ${manifests} manifests were cached`);
         await reResolve(dir);

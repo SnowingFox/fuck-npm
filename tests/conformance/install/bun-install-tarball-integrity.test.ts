@@ -599,7 +599,9 @@ describe.concurrent.each(
       await using proc = spawn({
         cmd: [fnpmExe(), ...args],
         cwd: join(root, project),
-        env: { ...env, FNPM_CACHE_DIR: join(root, "cache"), ...extraEnv },
+        // bun keeps the packages in its cache, fnpm in its store: the store goes with the cache, so removing
+        // the cache removes the packages as it does for bun.
+        env: { ...env, FNPM_CACHE_DIR: join(root, "cache"), FNPM_STORE_DIR: join(root, "cache", "store"), ...extraEnv },
         stdout: "pipe",
         stderr: "pipe",
       });

@@ -34,53 +34,14 @@ pub(crate) fn current_layout(
             )
         });
     let kind = fnpm_linker::prune::detect_layout(&project.root_dir, graph, configured);
-    let linker = Linker::new(config.clone(), project.store()?);
+    let self_contained =
+        fnpm_workspace::Workspace::load_with(&project.root_dir, &Default::default())
+            .map(|(ws, _)| ws.self_contained().0)
+            .unwrap_or_default();
+    let linker = Linker::new(config.clone(), project.store()?).with_self_contained(self_contained);
     let view = crate::install::link_view(graph);
-    let layout = crate::install::plan_layout(&linker, &view, kind, None);
+    let layout = crate::install::plan_layout(&linker, &view, kind, None, &[]);
     Ok((linker, layout))
-}
-
-/// `fnpm prune [--check]`: removes what `node_modules` has but the lockfile does not place.
-pub(crate) fn prune(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to prune")?;
-    let (_, layout) = current_layout(&project, &graph)?;
-    let view = crate::install::link_view(&graph);
-    let plan = fnpm_linker::prune::plan(&project.root_dir, &view, &layout);
-    let names: Vec<String> = plan.removals.iter().map(|r| r.name.clone()).collect();
-    if cx.flag("check") || cx.pm.dry_run {
-        let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();
-        lines.push(if names.is_empty() {
-            "node_modules has nothing to prune".into()
-        } else {
-            format!(
-                "{} {} can be pruned",
-                names.len(),
-                plural(names.len(), "package")
-            )
-        });
-        let code = i32::from(cx.flag("check") && !names.is_empty());
-        return Ok(exit(
-            code,
-            json!({ "removed": names, "checked": plan.checked }),
-            lines,
-        ));
-    }
-    let (removed, errors) = fnpm_linker::prune::execute(&project.root_dir, &plan);
-    crate::fast_path::remove(&project.root_dir, &project.meta_dir());
-    let mut lines: Vec<String> = names.iter().map(|n| format!("- {n}")).collect();
-    for (p, e) in &errors {
-        lines.push(format!("error: {}: {e}", p.display()));
-    }
-    lines.push(format!(
-        "{removed} {} removed",
-        plural(removed as usize, "package")
-    ));
-    let code = i32::from(!errors.is_empty());
-    Ok(exit(
-        code,
-        json!({ "removed": names, "checked": plan.checked }),
-        lines,
-    ))
 }
 
 fn plural(n: usize, word: &str) -> String {
@@ -104,6 +65,9 @@ pub(crate) async fn reinstall(cx: &Ctx) -> Result<fnpm_types::InstallSummary> {
 
 /// `fnpm dedupe [--check]` / `fnpm-lock dedupe [--check] [--dry-run]`.
 pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
+    if !lock_tool {
+        return dedupe_command(cx).await;
+    }
     let (project, _, mut graph) = cx.load_locked("nothing to dedupe")?;
     let report = fnpm_resolver::dedupe(&mut graph);
     let mut lines = Vec::new();
@@ -117,12 +81,7 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         lines.push(format!("{} {} -> {to}{down}", row.name, row.from));
     }
     lines.extend(report.kept.iter().cloned());
-    let rows: Vec<Value> = report
-        .rows
-        .iter()
-        .map(|r| json!({ "name": r.name, "from": r.from, "to": r.to, "downgrade": r.downgrade }))
-        .collect();
-    let data = json!({ "removed": rows, "checked": report.checked });
+    let data = dedupe_data(&report);
     let check = cx.flag("check");
     if report.rows.is_empty() {
         lines.push("No duplicate versions to remove".into());
@@ -136,11 +95,304 @@ pub(crate) async fn dedupe(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     if check || cx.pm.dry_run {
         return Ok(exit(i32::from(check), data, lines));
     }
-    fnpm_lockfile::save_with(&project.root_dir, &graph, None)?;
-    if !lock_tool {
-        reinstall(cx).await?;
-    }
+    fnpm_lockfile::save_keeping_format(&project.root_dir, &graph, None)?;
     Ok(ok(data, lines))
+}
+
+fn dedupe_data(report: &fnpm_resolver::DedupeReport) -> Value {
+    let rows: Vec<Value> = report
+        .rows
+        .iter()
+        .map(|r| json!({ "name": r.name, "from": r.from, "to": r.to, "downgrade": r.downgrade }))
+        .collect();
+    json!({ "removed": rows, "checked": report.checked })
+}
+
+/// `fnpm dedupe`, printed like bun's (`install/dedupe.rs`): the header, then the rows after the
+/// install, or the plan under `--check` / `--dry-run`, each summary with its duration.
+async fn dedupe_command(cx: &Ctx) -> Result<CoreResult> {
+    use super::pack::out::Out;
+    let start = std::time::Instant::now();
+    let out = Out::new();
+    let json = cx.pm.json;
+    let quiet = json || cx.pm.log_level == fnpm_config::LogLevel::Silent;
+    let summary = cx.pm.summary;
+    let reported = |code: i32, data: Value| {
+        Ok(CoreResult {
+            exit_code: code,
+            data: Some(data),
+            lines: None,
+        })
+    };
+    let fail = |message: &str, note: Option<&str>| {
+        if !quiet {
+            out.eprintln(&out.error(message).0);
+            if let Some(note) = note {
+                out.eprintln(&format!(
+                    "{}{} {note}",
+                    out.paint_err("34", "note"),
+                    out.paint_err("2", ":")
+                ));
+            }
+        }
+        reported(1, json!({ "error": message }))
+    };
+    if !cx.req.positionals.is_empty() {
+        return fail(
+            "fnpm dedupe does not take arguments, it always deduplicates the whole lockfile",
+            Some("run 'fnpm dedupe --help' for more information"),
+        );
+    }
+    let project = match cx.project() {
+        Err(Error::Workspace(fnpm_workspace::Error::NoProject(_))) => {
+            return fail("missing package.json, nothing to dedupe", None);
+        }
+        other => other?,
+    };
+    if !quiet && summary {
+        super::pack::header(cx, &out, "dedupe");
+    }
+    let ws = project.workspace(&*cx.events)?;
+    let mut lock = crate::install::load_lock(&project.config, &ws)?;
+    // bun reports a lockfile it cannot use instead of deduplicating nothing.
+    if lock.graph.is_none() {
+        let unreadable = ["fnpm.lock", "bun.lock", "bun.lockb"]
+            .iter()
+            .find(|n| ws.root_dir.join(n).is_dir());
+        if let Some(name) = unreadable {
+            return fail(&format!("failed to read lockfile: {name}"), None);
+        }
+        if let Some(failure) = &lock.parse_failure {
+            if !quiet {
+                out.eprintln(&failure.read_error(true).to_string());
+            }
+            return reported(1, json!({ "error": "failed to parse lockfile" }));
+        }
+        if !lock.failures.is_empty() {
+            let file = lock
+                .path
+                .as_deref()
+                .and_then(Path::file_name)
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            return fail(&format!("failed to migrate lockfile: {file}"), None);
+        }
+        return fail(
+            "missing lockfile, nothing to dedupe",
+            Some("run 'fnpm install' first"),
+        );
+    }
+    for w in &lock.warnings {
+        cx.events.emit(Event::warn(w.clone(), None));
+    }
+    let client = project.client()?;
+    if lock.migrated {
+        crate::install::backfill_migrated(&mut lock, &client, &project.config).await;
+        if let Some(name) = lock.path.as_deref().and_then(Path::file_name) {
+            cx.events.emit(Event::notice(format!(
+                "migrated lockfile from {}",
+                name.to_string_lossy()
+            )));
+        }
+    }
+    let mut graph = lock.graph.take().expect("checked above");
+    // bun refuses when the dependencies changed since the last install; trustedDependencies
+    // and patchedDependencies are not dependencies (the install that follows applies them).
+    let changes = fnpm_resolver::lockfile_changes(&ws, &graph)?;
+    if changes.iter().any(|c| {
+        !matches!(
+            c.as_str(),
+            "trustedDependencies changed" | "patchedDependencies changed"
+        )
+    }) {
+        return fail(
+            "fnpm.lock does not match package.json, nothing to dedupe",
+            Some("run 'fnpm install' first"),
+        );
+    }
+    drop(client);
+
+    let report = fnpm_resolver::dedupe(&mut graph);
+    let data = dedupe_data(&report);
+    let time = |out: &Out| {
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        out.paint(
+            "2",
+            &if ms <= 1500.0 {
+                format!("[{ms:.2}ms]")
+            } else {
+                format!("[{:.2}s]", ms / 1000.0)
+            },
+        )
+    };
+    let packages = |n: usize| format!("{n} {}", plural(n, "package"));
+    let versions = |n: usize| plural(n, "version");
+    let kept = |out: &Out| {
+        for line in &report.kept {
+            out.println(&format!("  {} {line}", out.paint("2", "kept")));
+        }
+    };
+    let rows = |out: &Out| {
+        let (glyph, arrow) = if out.color_out {
+            ("\u{21b3}", "\u{2192}")
+        } else {
+            ("~", "->")
+        };
+        for row in &report.rows {
+            let line = if row.to.is_empty() {
+                format!(
+                    "{} {} {}",
+                    out.paint("36", glyph),
+                    out.paint("1", &row.name),
+                    out.paint("2", &format!("{} {arrow} (removed)", row.from))
+                )
+            } else {
+                let down = if row.downgrade {
+                    format!(" {}", out.paint("33", "(downgrade)"))
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{} {} {} {}{down}",
+                    out.paint("36", glyph),
+                    out.paint("1", &row.name),
+                    out.paint("2", &format!("{} {arrow}", row.from)),
+                    out.paint("1", &row.to.join(", "))
+                )
+            };
+            out.println(&line);
+        }
+        kept(out);
+    };
+    let would_remove = |out: &Out| {
+        rows(out);
+        if summary {
+            let n = report.rows.len();
+            out.println(&format!(
+                "\n{} duplicate {} can be removed {} {}",
+                out.paint("1", &n.to_string()),
+                versions(n),
+                out.paint(
+                    "2",
+                    &format!("(checked {} in fnpm.lock)", packages(report.checked))
+                ),
+                time(out)
+            ));
+        }
+    };
+
+    if report.rows.is_empty() {
+        if !quiet {
+            kept(&out);
+            if summary {
+                if !report.kept.is_empty() {
+                    out.println("");
+                }
+                out.println(&format!(
+                    "\u{1f389} {} {} {}",
+                    out.paint("32", "No duplicates"),
+                    out.paint(
+                        "2",
+                        &format!(
+                            "\u{2014} checked {} in fnpm.lock, every one already resolves to a single version",
+                            packages(report.checked)
+                        )
+                    ),
+                    time(&out)
+                ));
+            }
+        }
+        return reported(0, data);
+    }
+
+    let check = cx.flag("check");
+    if check || cx.pm.dry_run {
+        if !quiet {
+            would_remove(&out);
+            out.println(&format!("  {}", out.paint("36", "fnpm dedupe")));
+        }
+        return reported(i32::from(check), data);
+    }
+
+    let config = &project.config;
+    if config.frozen_lockfile || config.production || !config.lockfile.save {
+        if !quiet {
+            let why = if config.production {
+                "--production implies --frozen-lockfile"
+            } else if config.frozen_lockfile {
+                "--frozen-lockfile was passed"
+            } else {
+                "--no-save was passed"
+            };
+            would_remove(&out);
+            let n = report.rows.len();
+            out.eprintln(
+                &out.error(&format!(
+                    "{n} duplicate {} can be removed, but {why}",
+                    versions(n)
+                ))
+                .0,
+            );
+            out.eprintln(&format!(
+                "{}{} run 'fnpm dedupe' to remove {}, or 'fnpm dedupe --check' in CI",
+                out.paint_err("34", "note"),
+                out.paint_err("2", ":"),
+                if n == 1 { "it" } else { "them" }
+            ));
+        }
+        return reported(1, data);
+    }
+
+    // A failed install leaves the lockfile as it was, so the run can be repeated.
+    let lock_path = project.root_dir.join(fnpm_lockfile::FNPM_LOCK);
+    let before = std::fs::read(&lock_path).ok();
+    fnpm_lockfile::save_keeping_format(&project.root_dir, &graph, None)?;
+    cx.events.emit(Event::status("Saved lockfile"));
+    let installed = if cx.pm.lockfile_only {
+        0
+    } else {
+        match reinstall(cx).await {
+            Ok(s) => s.installed_count,
+            Err(e) => {
+                match &before {
+                    Some(text) => {
+                        let _ = std::fs::write(&lock_path, text);
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(&lock_path);
+                    }
+                }
+                return Err(e);
+            }
+        }
+    };
+    if !quiet {
+        rows(&out);
+        if summary {
+            let n = report.rows.len();
+            let mut line = format!(
+                "\n{} duplicate {} removed",
+                out.paint("1", &n.to_string()),
+                versions(n)
+            );
+            if installed > 0 {
+                line.push_str(&format!(
+                    ", {} {} installed",
+                    out.paint("1", &installed.to_string()),
+                    plural(installed as usize, "package")
+                ));
+            }
+            line.push_str(&format!(
+                " {} {}",
+                out.paint(
+                    "2",
+                    &format!("(checked {} in fnpm.lock)", packages(report.checked))
+                ),
+                time(&out)
+            ));
+            out.println(&line);
+        }
+    }
+    reported(0, data)
 }
 
 /// The files `--from <format>` selects, in bun's order.
@@ -169,7 +421,8 @@ fn migration_sources(from: Option<&str>) -> Result<Vec<&'static str>> {
 /// `fnpm migrate` / `pm migrate` / `fnpm-lock migrate [--from x] [--dry-run] [--force]`.
 pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     let project = cx.project()?;
-    let ws = project.workspace(&*cx.events)?;
+    let (ws, ws_warnings) =
+        fnpm_workspace::Workspace::load_with(&project.root_dir, &Default::default())?;
     let root = project.root_dir.clone();
     let target = root.join(fnpm_lockfile::FNPM_LOCK);
     if target.exists() && !cx.pm.force && !cx.pm.dry_run {
@@ -184,14 +437,17 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         let client = project.client()?;
         crate::install::backfill_migrated(&mut state, &client, &project.config).await;
     }
+    for w in crate::install::workspace_warnings(&ws_warnings, &state) {
+        cx.events.emit(Event::warn(w.clone(), None));
+    }
+    for e in &state.failures {
+        cx.events.emit(e.clone());
+    }
     for w in &state.warnings {
         cx.events.emit(Event::warn(w.clone(), None));
     }
     let Some(graph) = state.graph.as_ref() else {
-        return Err(Error::usage(format!(
-            "no lockfile to migrate from in {}",
-            root.display()
-        )));
+        return Err(Error::usage("could not find any other lockfile"));
     };
     let source = state
         .path
@@ -200,6 +456,19 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let count = graph.len().saturating_sub(1);
+    // Like bun, `pm migrate` reports the migration on stderr and keeps stdout empty (a dry run
+    // prints the file it would write); `fnpm-lock migrate` prints the lockfile and a count.
+    let notice = || {
+        cx.events
+            .emit(Event::notice(format!("migrated lockfile from {source}")))
+    };
+    if cx.pm.dry_run && !lock_tool {
+        notice();
+        return Ok(ok(
+            json!({ "from": source, "packages": count }),
+            vec![format!("dry run: would write {}", fnpm_lockfile::FNPM_LOCK)],
+        ));
+    }
     if cx.pm.dry_run {
         let text =
             String::from_utf8(fnpm_lockfile::serialize(Format::Fnpm, graph)?).unwrap_or_default();
@@ -214,7 +483,13 @@ pub(crate) async fn migrate(cx: &Ctx, lock_tool: bool) -> Result<CoreResult> {
     }
     let mut lines = crate::install::write_migration(&root, &ws, &state)?;
     fnpm_lockfile::save_with(&root, graph, None)?;
-    let _ = lock_tool;
+    if !lock_tool {
+        notice();
+        for line in lines {
+            cx.events.emit(Event::notice(line));
+        }
+        return Ok(ok(json!({ "from": source, "packages": count }), Vec::new()));
+    }
     lines.push(format!(
         "migrated lockfile from {source} ({count} {})",
         plural(count, "package")
@@ -264,43 +539,298 @@ pub(crate) fn export(cx: &Ctx) -> Result<CoreResult> {
 }
 
 /// `pm cache [path] | rm | prune [--max-age d] | pack <file> | unpack <file>`.
+/// `pm cache rm` and `pm cache prune` act on the whole cache, so a word after them is an error
+/// (otherwise `rm <package>` would clear everything).
+fn reject_extra_argument(cx: &Ctx) -> Result<()> {
+    if let Some(word) = cx.req.positionals.first() {
+        eprintln!(
+            "error: unexpected argument \"{}\"\nusage: fnpm pm cache [rm | prune | pack <file> | unpack <file>]",
+            fnpm_types::text::escape_control_chars(word)
+        );
+        return Err(Error::Reported);
+    }
+    Ok(())
+}
+
+/// The cache `pm cache rm` deletes (bun `fetch_cache_directory_path` with the process
+/// environment): a project's `.env`, bunfig.toml, fnpm.toml or `.npmrc` does not choose it.
+/// `--cache-dir` and the user's own config files (`~/.bunfig.toml`, `~/.fnpm/fnpm.toml`) do;
+/// `~/.npmrc` does not, its `cache` is npm's.
+fn cache_to_delete(cx: &Ctx) -> PathBuf {
+    let env = &cx.env;
+    let home = env.home();
+    let configured = cx.pm.cache_dir.clone().or_else(|| {
+        let fnpm_home = match env.get_not_empty("FNPM_HOME") {
+            Some(v) => PathBuf::from(v),
+            None => home.clone().unwrap_or_default().join(".fnpm"),
+        };
+        let mut dir = None;
+        for file in fnpm_config::files::global_config_candidates(
+            home.as_deref(),
+            env.xdg_config_home().as_deref(),
+            &fnpm_home,
+        ) {
+            if let Ok(Some(install)) = fnpm_config::files::load_install_table(&file)
+                && let Some(d) = install.cache_dir
+            {
+                dir = Some(d);
+            }
+        }
+        dir
+    });
+    fnpm_store::cache::fetch_cache_directory_path(
+        &|key: &str| env.get(key).map(str::to_owned),
+        configured.as_deref(),
+        &cx.req.cwd,
+    )
+    .path
+}
+
+/// What `pm cache rm` and `pm cache prune` must not delete (bun `protected_in`).
+fn cache_protected(cx: &Ctx, project: &crate::project::Project) -> Vec<(String, PathBuf)> {
+    let env = &cx.env;
+    let exe = env
+        .get_not_empty("FNPM_LAUNCHER")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok());
+    let mut protected = Vec::new();
+    for (what, path) in [
+        (
+            "the home directory",
+            env.get_not_empty("HOME").map(PathBuf::from),
+        ),
+        ("the fnpm executable", exe),
+        (
+            "$FNPM_HOME",
+            env.get_not_empty("FNPM_HOME").map(PathBuf::from),
+        ),
+        (
+            "$BUN_INSTALL",
+            env.get_not_empty("BUN_INSTALL").map(PathBuf::from),
+        ),
+        ("the project directory", Some(project.root_dir.clone())),
+        ("the current directory", Some(cx.req.cwd.clone())),
+    ] {
+        if let Some(path) = path {
+            protected.push((what.to_owned(), path));
+        }
+    }
+    protected
+}
+
+/// `refusing to <verb> "<dir>": is or contains <what>` and bun's note.
+fn refuse_cache(verb: &str, dir: &Path, what: &str) {
+    eprintln!(
+        "error: refusing to {verb} \"{}\": is or contains {what}",
+        dir.display()
+    );
+    eprintln!(
+        "note: cache directory comes from $FNPM_CACHE_DIR, --cache-dir, ~/.bunfig.toml or $BUN_INSTALL. point it at a directory used only for the fnpm install cache"
+    );
+}
+
+/// `fnpm pm cache rm [--dry-run]` (bun `PackageManagerCommand`): empties the install cache,
+/// unless it is or contains something that must not go, then the `fnpm x` trees in the temp
+/// directory.
+fn cache_rm(cx: &Ctx, project: &crate::project::Project) -> Result<CoreResult> {
+    reject_extra_argument(cx)?;
+    let dry_run = cx.pm.dry_run;
+    let dir = cache_to_delete(cx);
+    // No fallback here: the directory that could not be opened is reported.
+    if !fnpm_config::path_fits(&dir) {
+        eprintln!("ENAMETOOLONG getting cache directory");
+        return Err(Error::Reported);
+    }
+    let exists = dir.is_dir();
+    let rm_path = if exists {
+        std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone())
+    } else {
+        dir.clone()
+    };
+    let protected = cache_protected(cx, project);
+    let refused = exists
+        .then(|| fnpm_store::cache::protected_in(&rm_path, &protected))
+        .flatten();
+    let mut lines = Vec::new();
+    let mut had_err = false;
+    // What `fnpm x` installed lives in the install cache too: counted before it goes.
+    let mut deleted = match refused {
+        None => fnpm_store::dlx::count_cached_packages(&rm_path),
+        Some(_) => 0,
+    };
+    if let Some(what) = refused {
+        refuse_cache("clear", &rm_path, what);
+        had_err = true;
+    } else {
+        let has_global_store = exists && rm_path.join("links").is_dir();
+        if dry_run {
+            lines.push(format!(
+                "dry run: would delete 'fnpm install' cache at {}",
+                rm_path.display()
+            ));
+        } else if exists && let Err(e) = fnpm_store::cache::delete_children(&rm_path) {
+            eprintln!("error: Could not delete {}: {e}", rm_path.display());
+            had_err = true;
+        } else {
+            lines.push("Cleared 'fnpm install' cache".to_owned());
+        }
+        if has_global_store {
+            eprintln!(
+                "note: global store {} removed too, run 'fnpm install' in each project that uses it",
+                if dry_run { "would be" } else { "was" }
+            );
+        }
+        // fnpm extra: `-g` / `--all` also empty the package store.
+        if !dry_run && (cx.pm.global || cx.flag("all")) {
+            let store = &project.config.store_dir;
+            if store.is_dir() && fnpm_store::cache::protected_in(store, &protected).is_none() {
+                let _ = fnpm_store::cache::delete_children(store);
+            }
+        }
+    }
+    let tmp = std::env::temp_dir();
+    let root = fnpm_store::dlx::cache_root_name();
+    let prefix = format!("{}-", &root[1..]);
+    let mut names: Vec<String> = std::fs::read_dir(&tmp)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    for name in names {
+        let is_root = name == root;
+        if !is_root && !name.starts_with(&prefix) {
+            continue;
+        }
+        let packages = if is_root {
+            fnpm_store::dlx::count_cached_packages(&tmp)
+        } else {
+            1
+        };
+        let path = tmp.join(&name);
+        if dry_run {
+            lines.push(format!(
+                "dry run: would delete {}",
+                tmp.join(fnpm_types::text::escape_control_chars(&name))
+                    .display()
+            ));
+        } else if let Err(e) =
+            std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path))
+        {
+            eprintln!("error: Could not delete {name}: {e}");
+            had_err = true;
+            continue;
+        }
+        deleted += packages;
+    }
+    lines.push(format!(
+        "{} {deleted} cached 'fnpmx' packages",
+        if dry_run { "Would clear" } else { "Cleared" }
+    ));
+    Ok(exit(
+        i32::from(had_err),
+        json!({ "path": rm_path, "dryRun": dry_run, "fnpmx": deleted }),
+        lines,
+    ))
+}
+
+/// `fnpm pm cache pack <file>` / `unpack <file>` (bun `cache_pack::exec`).
+fn cache_pack(cx: &Ctx, project: &crate::project::Project, verb: &str) -> Result<CoreResult> {
+    let file = match cx.req.positionals.as_slice() {
+        [file] if !file.is_empty() => file.clone(),
+        _ => {
+            eprintln!("error: expected exactly one <file>\nusage: fnpm pm cache {verb} <file>");
+            return Err(Error::Reported);
+        }
+    };
+    let config = &project.config;
+    let quiet = cx.pm.log_level == fnpm_config::LogLevel::Silent;
+    let dry = cx.pm.dry_run || config.dry_run;
+    let started = std::time::Instant::now();
+    let elapsed = || format!("[{:.1}ms]", started.elapsed().as_secs_f64() * 1000.0);
+    let failed = |e: Error| {
+        eprintln!("error: fnpm pm cache {verb} failed: {e}");
+        Error::Reported
+    };
+    let store = project.store()?;
+    let path = cx.req.cwd.join(&file);
+    if verb == "pack" {
+        let ws = project.workspace(&*cx.events)?;
+        let lock = crate::install::load_lock(config, &ws)?;
+        let Some(graph) = &lock.graph else {
+            eprintln!("error: missing lockfile, nothing to pack");
+            eprintln!("note: run 'fnpm install' first");
+            return Err(Error::Reported);
+        };
+        let keys: Vec<fnpm_store::PackageKey> = graph
+            .packages
+            .iter()
+            .filter_map(crate::fetch::store_key)
+            .collect();
+        let summary = fnpm_store::cache_pack::pack(&store, &keys, &path, dry)
+            .map_err(|e| failed(e.into()))?;
+        let mut lines = summary.lines(&file, dry);
+        if summary.missing > 0 && lines.len() > 1 {
+            eprintln!("{}", lines.remove(1));
+        }
+        if let Some(first) = lines.first_mut() {
+            first.push(' ');
+            first.push_str(&elapsed());
+        }
+        let data = json!({
+            "packages": summary.packages,
+            "files": summary.files,
+            "bytes": summary.bytes,
+            "missing": summary.missing,
+        });
+        return Ok(ok(data, if quiet { Vec::new() } else { lines }));
+    }
+    let summary =
+        fnpm_store::cache_pack::unpack(&store, &path, dry).map_err(|e| failed(e.into()))?;
+    let mut lines = summary.lines(dry);
+    if summary.incomplete > 0 && lines.len() > 1 {
+        eprintln!("{}", lines.remove(1));
+    }
+    if let Some(first) = lines.first_mut() {
+        first.push(' ');
+        first.push_str(&elapsed());
+    }
+    let data = json!({
+        "packages": summary.packages,
+        "created": summary.created,
+        "alreadyCached": summary.already_cached,
+        "incomplete": summary.incomplete,
+    });
+    Ok(ok(data, if quiet { Vec::new() } else { lines }))
+}
+
 pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
     let project = cx.project_anywhere()?;
     let config = &project.config;
     let dry = cx.pm.dry_run;
     match rest {
         [] | ["path"] => {
-            let s = config.cache_dir.to_string_lossy().into_owned();
+            // The real path, like bun (`get_fd_path` of the opened directory).
+            let dir = std::fs::canonicalize(&config.cache_dir)
+                .unwrap_or_else(|_| config.cache_dir.clone());
+            let s = dir.to_string_lossy().into_owned();
             Ok(ok(json!({ "path": s }), vec![s]))
         }
-        ["rm" | "clean"] => {
-            let exe = std::env::current_exe().ok();
-            let home = project.env.get("HOME").map(PathBuf::from);
-            let protected = fnpm_store::cache::default_protected(
-                home.as_deref(),
-                exe.as_deref(),
-                Some(&config.home_dir),
-                Some(&project.root_dir),
-                &cx.req.cwd,
-            );
-            let mut dirs = vec![config.cache_dir.clone()];
-            if cx.pm.global || cx.flag("all") {
-                dirs.push(config.store_dir.clone());
-            }
-            let report = fnpm_store::cache::clear_cache(&fnpm_store::cache::ClearOptions {
-                dirs,
-                protected,
-                dry_run: dry,
-                temp_dir: Some(std::env::temp_dir()),
-            })?;
-            let code = i32::from(!report.errors.is_empty());
-            Ok(exit(
-                code,
-                serde_json::to_value(&report).unwrap_or(Value::Null),
-                report.lines(),
-            ))
-        }
+        ["rm"] => cache_rm(cx, &project),
         ["prune"] => {
+            reject_extra_argument(cx)?;
+            let dir = cache_to_delete(cx);
+            if dir.is_dir() {
+                let real = std::fs::canonicalize(&dir).unwrap_or(dir);
+                if let Some(what) =
+                    fnpm_store::cache::protected_in(&real, &cache_protected(cx, &project))
+                {
+                    refuse_cache("prune", &real, what);
+                    return Err(Error::Reported);
+                }
+            }
             let days = cx.number("maxAge").unwrap_or(30) as u32;
             let store = project.store()?;
             let report = store.prune_older_than(days, dry)?;
@@ -312,45 +842,7 @@ pub(crate) fn cache(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
             });
             Ok(ok(data, report.lines()))
         }
-        ["pack"] => {
-            let Some(file) = cx.req.positionals.first() else {
-                return Err(Error::usage("Missing the archive to write"));
-            };
-            let dest = cx.req.cwd.join(file);
-            let ws = project.workspace(&*cx.events)?;
-            let lock = crate::install::load_lock(config, &ws)?;
-            let store = project.store()?;
-            let keys: Vec<fnpm_store::PackageKey> = match &lock.graph {
-                Some(g) => g
-                    .packages
-                    .iter()
-                    .filter_map(crate::fetch::store_key)
-                    .collect(),
-                None => Vec::new(),
-            };
-            let summary = fnpm_store::cache_pack::pack(&store, &keys, &dest, dry)?;
-            let data = json!({
-                "packages": summary.packages,
-                "files": summary.files,
-                "bytes": summary.bytes,
-                "missing": summary.missing,
-            });
-            Ok(ok(data, summary.lines(file, dry)))
-        }
-        ["unpack"] => {
-            let Some(file) = cx.req.positionals.first() else {
-                return Err(Error::usage("Missing the archive to read"));
-            };
-            let store = project.store()?;
-            let summary = fnpm_store::cache_pack::unpack(&store, &cx.req.cwd.join(file), dry)?;
-            let data = json!({
-                "packages": summary.packages,
-                "created": summary.created,
-                "alreadyCached": summary.already_cached,
-                "incomplete": summary.incomplete,
-            });
-            Ok(ok(data, summary.lines(dry)))
-        }
+        [verb @ ("pack" | "unpack")] => cache_pack(cx, &project, verb),
         other => Err(Error::UnknownCommand(
             std::iter::once("cache".to_owned())
                 .chain(other.iter().map(|s| (*s).to_owned()))
@@ -422,40 +914,202 @@ pub(crate) fn store(cx: &Ctx, rest: &[&str]) -> Result<CoreResult> {
     }
 }
 
-/// `pm fetch`: downloads every package of the lockfile into the store without linking.
+/// Resolves like `fnpm install` (frozen with `--frozen-lockfile`), writing nothing.
+async fn resolve_for_fetch(
+    cx: &Ctx,
+    config: &fnpm_config::Config,
+    client: &fnpm_registry::RegistryClient,
+    ws: &fnpm_workspace::Workspace,
+    previous: Option<&LockGraph>,
+) -> std::result::Result<LockGraph, fnpm_resolver::Error> {
+    let mode = if config.frozen_lockfile {
+        fnpm_resolver::Mode::Frozen
+    } else {
+        fnpm_resolver::Mode::Normal
+    };
+    let config = std::sync::Arc::new(config.clone());
+    let out = fnpm_resolver::Resolver::new(config, client.clone())
+        .resolve(
+            fnpm_resolver::ResolveInput {
+                workspace: ws,
+                previous,
+                mode,
+                requests: Vec::new(),
+                removals: Vec::new(),
+            },
+            None,
+            &*cx.events,
+        )
+        .await?;
+    Ok(out.graph)
+}
+
+/// `fnpm pm fetch` (bun `pm_fetch_command.rs` and `PopulatePackageCache.rs`): resolves like
+/// `fnpm install` (with the lockfile, or without one) and downloads every package into the
+/// store, without linking, running scripts or writing fnpm.lock or package.json.
 pub(crate) async fn fetch(cx: &Ctx) -> Result<CoreResult> {
-    let (project, _, graph) = cx.load_locked("nothing to fetch")?;
+    let start = std::time::Instant::now();
+    let started = std::time::SystemTime::now();
+    let loud = cx.pm.log_level != fnpm_config::LogLevel::Silent;
+    let summary = loud && cx.pm.summary;
+    let say = |line: &str| {
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{line}");
+        let _ = out.flush();
+    };
+    if summary {
+        say(&format!(
+            "fnpm pm fetch v{}\n",
+            cx.string("cliVersion")
+                .unwrap_or_else(|| crate::version().to_owned())
+        ));
+    }
+    let project = cx.project()?;
     let config = project.config.clone();
-    let client = project.client()?;
-    let fetcher = Fetcher::new(
-        project.store()?,
-        client.clone(),
-        project.root_dir.clone(),
-        config.cache_dir.clone(),
-        config.verify_integrity,
-        cx.events.clone(),
-    );
-    let mut slots = Vec::new();
-    for p in &graph.packages {
-        if needs_content(&p.resolution) && !p.is_disabled(&config.platform) {
-            slots.push((p.key(), fetcher.ensure_package(p)));
+    let dry_run = cx.pm.dry_run || config.dry_run;
+    let ws = super::prune::workspace_on_disk(&project, &*cx.events)?;
+    let lock = crate::install::load_lock(&config, &ws)?;
+    // A pruned checkout fetches what fnpm.lock pins for its missing workspaces too.
+    let mut pinned = None;
+    if let Some(graph) = &lock.graph {
+        if let Some(message) = super::prune::missing_workspace_dependency(graph, &project.root_dir)
+        {
+            if loud {
+                eprintln!("error: {message}");
+            }
+            return Err(Error::Reported);
+        }
+        if let Some(note) = super::prune::pruned_note(graph, &project.root_dir) {
+            if loud {
+                eprintln!("{note}");
+            }
+            pinned = Some(graph.clone());
         }
     }
-    let mut errors = Vec::new();
-    for (key, slot) in &slots {
-        if let Err(e) = slot.wait().await {
-            errors.push(format!("error: {key}: {e}"));
+    let client = project.client()?;
+    let resolved = match pinned {
+        Some(graph) => Ok(graph),
+        None => resolve_for_fetch(cx, &config, &client, &ws, lock.graph.as_ref()).await,
+    };
+    let graph = match resolved {
+        Ok(graph) => graph,
+        Err(e) => {
+            if loud {
+                eprintln!("error: {e}");
+            }
+            return Err(Error::Reported);
+        }
+    };
+    let store = project.store()?;
+    let candidates: Vec<&fnpm_types::Package> = graph
+        .packages
+        .iter()
+        .skip(1)
+        .filter(|p| {
+            needs_content(&p.resolution)
+                && !matches!(p.resolution, fnpm_types::Resolution::Folder { .. })
+                && !p.is_disabled(&config.platform)
+        })
+        .collect();
+    // A store entry made before this run was already in the cache. One the resolve itself
+    // made (a git or GitHub package without a lockfile) was fetched by this run, as in bun.
+    let made_before = |key: &fnpm_store::PackageKey| {
+        std::fs::metadata(store.package_dir(key))
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t < started)
+    };
+    let (mut fetched, mut already_cached) = (0usize, 0usize);
+    let mut failed = false;
+    if dry_run {
+        // Nothing is downloaded: only what the lockfile pins can be found in the store.
+        for p in &candidates {
+            match crate::fetch::store_key(p) {
+                Some(key) if store.get(&key).ok().flatten().is_some() => already_cached += 1,
+                _ => fetched += 1,
+            }
+        }
+    } else {
+        let fetcher = Fetcher::new(
+            store.clone(),
+            client.clone(),
+            project.root_dir.clone(),
+            config.cache_dir.clone(),
+            config.verify_integrity,
+            cx.events.clone(),
+        );
+        let slots: Vec<_> = candidates
+            .iter()
+            .map(|p| (p.key(), fetcher.ensure_package(p)))
+            .collect();
+        let mut errors = Vec::new();
+        let mut offline_missing = Vec::new();
+        for ((key, slot), p) in slots.iter().zip(&candidates) {
+            match slot.wait().await {
+                Ok(f) if made_before(&f.key) => already_cached += 1,
+                Ok(_) => fetched += 1,
+                Err(e) if e.code == "OFFLINE" => offline_missing.push(p.name.clone()),
+                Err(e) => {
+                    // bun names the request that failed: `GET <url> - 404`.
+                    let message = match e
+                        .message
+                        .strip_prefix("package \"")
+                        .and_then(|m| m.strip_suffix("\" not found"))
+                    {
+                        Some(url) if url.contains("://") => format!("GET {url} - 404"),
+                        _ => format!("{key}: {e}"),
+                    };
+                    errors.push(message);
+                }
+            }
+        }
+        if loud && (fetched > 0 || !errors.is_empty()) {
+            eprintln!("Fetching packages");
+        }
+        if !offline_missing.is_empty() {
+            if loud {
+                for name in &offline_missing {
+                    eprintln!("error: --offline: \"{name}\" is not in the cache");
+                }
+            }
+            return Err(Error::Reported);
+        }
+        for message in &errors {
+            failed = true;
+            if loud {
+                eprintln!("error: {message}");
+            }
         }
     }
     client.flush_cache_writes().await;
-    let mut lines = errors.clone();
-    lines.push(format!(
-        "{} {} in the store",
-        slots.len() - errors.len(),
-        plural(slots.len() - errors.len(), "package")
-    ));
-    let data = json!({ "packages": slots.len(), "errors": errors });
-    Ok(exit(i32::from(!errors.is_empty()), data, lines))
+    if failed {
+        return Err(Error::Reported);
+    }
+    if config.security_scanner.is_some() && cx.pm.log_level == fnpm_config::LogLevel::Verbose {
+        eprintln!("note: packages are not scanned until fnpm install runs the security scanner");
+    }
+    let data = json!({ "fetched": fetched, "alreadyCached": already_cached });
+    if !summary {
+        return Ok(ok(data, Vec::new()));
+    }
+    let elapsed = format!("[{:.2}ms]", start.elapsed().as_secs_f64() * 1000.0);
+    let s = |n: usize| if n == 1 { "" } else { "s" };
+    if fetched > 0 {
+        say(&format!(
+            "{} {fetched} package{} into cache {elapsed}",
+            if dry_run { "Would fetch" } else { "Fetched" },
+            s(fetched)
+        ));
+    } else if already_cached > 0 {
+        say(&format!(
+            "Done! {already_cached} package{} already in cache {elapsed}",
+            s(already_cached)
+        ));
+    } else {
+        say(&format!("Done! No packages to fetch {elapsed}"));
+    }
+    say(&format!("Cache: {}", config.cache_dir.display()));
+    Ok(ok(data, Vec::new()))
 }
 
 #[cfg(unix)]

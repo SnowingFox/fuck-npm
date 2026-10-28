@@ -4,12 +4,12 @@
 import { spawn } from "../compat/bun.ts";
 import { afterAll, beforeAll, describe, expect, it } from "../compat/bun-test.ts";
 import { realpath, rm, writeFile } from "../compat/fs-promises.ts";
-import { fnpmExe, fnpmEnv as env, readdirSorted, tempDir } from "../harness.ts";
+import { evictCacheEntries, fnpmExe, fnpmEnv as env, readdirSorted, tempDir } from "../harness.ts";
 import { join } from "path";
 import { pathToFileURL } from "url";
 
 // The CI runner exports FNPM_CACHE_DIR, which would override the cache of each project.
-const { FNPM_CACHE_DIR: _ciCacheDir, ...installEnv } = env;
+const { FNPM_CACHE_DIR: _ciCacheDir, FNPM_STORE_DIR: _ciStoreDir, ...installEnv } = env;
 
 const gitEnv = {
   ...installEnv,
@@ -191,9 +191,7 @@ describe.concurrent("--offline with an optional dependency that is not in the ca
     expect(online.code).toBe(0);
     const lockfile = await Bun.file(join(cwd, "fnpm.lock")).text();
 
-    for (const entry of await readdirSorted(cache)) {
-      if (project.evict?.(entry)) await rm(join(cache, entry), { recursive: true, force: true });
-    }
+    if (project.evict) await evictCacheEntries(cache, project.evict);
     if (!project.keepNodeModules) await rm(join(cwd, "node_modules"), { recursive: true, force: true });
     for (const folder of project.removeFolders ?? []) {
       await rm(await realpath(join(cwd, "node_modules", folder)), { recursive: true });

@@ -34,48 +34,6 @@ impl Engine<'_> {
         }
     }
 
-    /// bun `warn_incorrect_peers`: a required peer bound outside its effective range.
-    fn warn_incorrect_peers(&mut self) {
-        let set = crate::overrides::OverrideSet::new(&self.graph.overrides);
-        let mut warnings = Vec::new();
-        for (i, p) in self.graph.packages.iter().enumerate() {
-            for e in &p.dependencies {
-                if !e.behavior.is_peer() || e.behavior.is_optional_peer() {
-                    continue;
-                }
-                let Some(t) = e.target else { continue };
-                let Some(version) = self.st[t.index()].version.as_ref() else {
-                    continue;
-                };
-                let owner = PackageId(i as u32);
-                let Some(range) = crate::dedupe::effective_npm_range(
-                    &self.graph,
-                    &set,
-                    owner,
-                    self.st[i].version.as_ref(),
-                    &e.name,
-                    &e.literal,
-                ) else {
-                    continue;
-                };
-                if range.satisfies(version) {
-                    continue;
-                }
-                let copy = &self.graph.packages[t.index()];
-                let dependent = if owner == PackageId::ROOT {
-                    "root".to_owned()
-                } else {
-                    p.resolution.to_string()
-                };
-                warnings.push(format!(
-                    "incorrect peer dependency \"{}@{}\": \"{}@{}\" requires \"{}@{}\"",
-                    copy.name, copy.resolution, p.name, dependent, e.name, e.literal
-                ));
-            }
-        }
-        self.warnings.extend(warnings);
-    }
-
     /// With `auto_install_peers` off, a required peer nobody provides is reported.
     fn warn_missing_peers(&mut self) {
         if self.cfg.auto_install_peers {
@@ -157,7 +115,6 @@ impl Engine<'_> {
             .collect();
         self.warn_deprecated();
         let _ = crate::dedupe::collapse_appended(&mut self.graph, &loaded);
-        self.warn_incorrect_peers();
         self.warn_missing_peers();
         let map = crate::dedupe::prune_unreachable(&mut self.graph);
         // Bundled: everything only reachable through a bundled edge of a published package.
@@ -193,7 +150,9 @@ impl Engine<'_> {
             .filter_map(|(r, t)| t.and_then(|t| map[t.index()]).map(|t| (r, t)))
             .collect();
         let mut warnings = std::mem::take(&mut self.warnings);
-        warnings.extend(std::mem::take(&mut self.kept_patched));
+        let mut not_checked = std::mem::take(&mut self.not_checked);
+        not_checked.sort();
+        warnings.extend(not_checked);
         let mut seen = std::collections::HashSet::new();
         warnings.retain(|w| seen.insert(w.clone()));
         Ok(EngineOutput {
@@ -201,6 +160,9 @@ impl Engine<'_> {
             requests,
             warnings,
             manifest_order: self.manifest_order,
+            unsaved: self.unsaved,
+            failed_requests: self.failed_requests,
+            kept: self.kept_patched,
         })
     }
 }

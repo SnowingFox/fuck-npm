@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 pub use auth::{RegistryKey, RegistrySource};
 pub use env::Env;
 pub use files::{ConfigFile, FileKind, InstallFile, RunFile};
+pub use load::path_fits;
 pub use npmrc::Npmrc;
 pub use redact::redact_url;
 
@@ -55,6 +56,12 @@ pub enum Error {
         /// What is wrong.
         message: String,
     },
+    /// A config file value bun reports by itself, followed by where it is (`\n    at <file>:<line>:<col>`).
+    #[error("{0}")]
+    Located(String),
+    /// A credential that cannot be sent: a CR, LF or NUL would break the header line.
+    #[error("{0}")]
+    Credential(String),
     /// A config file named with `--config` that cannot be read.
     #[error("{path}: {source}")]
     Io {
@@ -408,7 +415,7 @@ pub struct Config {
     pub home_dir: PathBuf,
     /// `~/.fnpm/store/v2` (`FNPM_STORE_DIR` overrides the parent: `$FNPM_STORE_DIR/v2`).
     pub store_dir: PathBuf,
-    /// `~/.fnpm/cache` (`FNPM_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, `install.cache.dir`).
+    /// `~/.fnpm/install/cache` (`FNPM_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, `install.cache.dir`).
     pub cache_dir: PathBuf,
     /// `-g` installs: `~/.fnpm/global` (`FNPM_GLOBAL_DIR`, `BUN_INSTALL_GLOBAL_DIR`).
     pub global_dir: PathBuf,
@@ -451,8 +458,10 @@ pub struct Config {
     pub ignore_scripts: bool,
     /// Check tarball integrity.
     pub verify_integrity: bool,
-    /// Write the text lockfile (`fnpm.lock`).
-    pub save_text_lockfile: bool,
+    /// `--save-text-lockfile` / `install.saveTextLockfile`: `Some(true)` writes the text
+    /// lockfile (`fnpm.lock`), `Some(false)` makes a new project keep bun.lockb, `None` keeps
+    /// the format the project has (fnpm.lock for a new one).
+    pub save_text_lockfile: Option<bool>,
     /// Lockfile reading and writing.
     pub lockfile: LockfileConfig,
     /// Dependency groups not to install.
@@ -572,8 +581,9 @@ pub struct CliOverrides {
     pub ca_store: Option<String>,
     /// `--minimum-release-age`, in milliseconds.
     pub minimum_release_age_ms: Option<u64>,
-    /// `--minimum-release-age-excludes` (comma-separated, repeatable).
-    pub minimum_release_age_excludes: Vec<String>,
+    /// `--minimum-release-age-excludes` (comma-separated, repeatable). `Some(empty)` (an empty
+    /// value) clears the configured list.
+    pub minimum_release_age_excludes: Option<Vec<String>>,
     /// `--cpu`.
     pub cpu: Vec<String>,
     /// `--os`.

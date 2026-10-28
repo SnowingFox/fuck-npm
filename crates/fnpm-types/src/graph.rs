@@ -190,12 +190,31 @@ pub struct Catalogs {
 impl Catalogs {
     /// The specifier `catalog:<catalog>` stands for, for dependency `name`.
     pub fn get(&self, catalog: &str, name: &str) -> Option<&str> {
-        let map = if catalog.is_empty() || catalog == "default" {
-            &self.default
+        let in_group = |group: &str| self.named.get(group).and_then(|m| m.get(name));
+        let found = if catalog.is_empty() || catalog == "default" {
+            // The default catalog, spelled `catalog` or `catalogs.default`.
+            self.default.get(name).or_else(|| in_group("default"))
         } else {
-            self.named.get(catalog)?
+            in_group(catalog)
         };
-        map.get(name).map(String::as_str)
+        found.map(String::as_str)
+    }
+
+    /// The map that holds (or gets) the entry of `name` in `catalog`: for the default catalog,
+    /// `catalogs.default` when that spelling defines the name, `catalog` otherwise.
+    pub fn entries_for(&mut self, catalog: &str, name: &str) -> &mut BTreeMap<String, String> {
+        if catalog.is_empty() || catalog == "default" {
+            if !self.default.contains_key(name)
+                && self
+                    .named
+                    .get("default")
+                    .is_some_and(|m| m.contains_key(name))
+            {
+                return self.named.entry("default".into()).or_default();
+            }
+            return &mut self.default;
+        }
+        self.named.entry(catalog.to_owned()).or_default()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -249,7 +268,8 @@ pub enum GraphError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockGraph {
-    /// fnpm.lock format version.
+    /// fnpm.lock format version: the one the file was read with, or for a new graph (a fresh
+    /// resolve, a migration) the newest, which the writer lowers the way bun does.
     pub lockfile_version: u32,
     pub config_version: ConfigVersion,
     /// A linker recorded by the lockfile (`fnpm install --linker` with `--save-linker`) or by
@@ -278,7 +298,7 @@ pub struct LockGraph {
 }
 
 impl LockGraph {
-    pub const LOCKFILE_VERSION: u32 = 1;
+    pub const LOCKFILE_VERSION: u32 = 3;
 
     /// A graph containing only `root` (whose resolution is forced to [`Resolution::Root`]).
     pub fn new(mut root: Package) -> Self {

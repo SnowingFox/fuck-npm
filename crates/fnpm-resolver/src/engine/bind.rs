@@ -116,6 +116,35 @@ pub(crate) fn path_escapes(target: &str) -> bool {
 /// A resolved commit must be a full SHA-1 or SHA-256 object name: it ends up in the lockfile, in
 /// download URLs and in checkout paths, so a remote answering with anything else (`../x`, a
 /// branch name, an empty line) is an error rather than something to interpolate.
+/// The registry name an edge asks for (`npm:<name>@...` aliases name another package).
+fn asked_name(edge: &DepEdge) -> String {
+    edge.literal
+        .strip_prefix("npm:")
+        .map(|rest| {
+            fnpm_types::name::split_name_and_maybe_version(rest)
+                .0
+                .to_owned()
+        })
+        .unwrap_or_else(|| edge.name.clone())
+}
+
+/// The error of a dependency whose git, GitHub or tarball source failed. A repository git
+/// cannot read is reported like bun's clone failure, which names the dependency.
+fn remote_error(edge: &DepEdge, e: &fnpm_registry::Error) -> Error {
+    match e {
+        fnpm_registry::Error::Git(message)
+            if message.starts_with("git ls-remote failed")
+                || message.starts_with("git clone failed") =>
+        {
+            Error::GitFailed {
+                name: edge.name.clone(),
+                source: clone_registry_error(e),
+            }
+        }
+        _ => Error::Registry(clone_registry_error(e)),
+    }
+}
+
 pub(crate) fn checked_commit(sha: String, origin: &str) -> fnpm_registry::Result<String> {
     if matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
         Ok(sha)
@@ -158,6 +187,7 @@ impl Engine<'_> {
         let mut literal = edge.literal.clone();
         let mut replaced = false;
         let mut from_rule = false;
+        let mut from_catalog = false;
         if let DependencySpec::Catalog { .. } = &declared
             && owner_kind != Kind::Project
         {
@@ -173,10 +203,9 @@ impl Engine<'_> {
             replaced = true;
         }
         let mut rule_name = edge.name.clone();
-        if !replaced
-            && !matches!(declared, DependencySpec::Workspace { .. })
-            && !self.overrides.is_empty()
-        {
+        // bun never overrides the root's edges to its members; a declared `workspace:`
+        // dependency is overridden like any other.
+        if !replaced && !edge.behavior.is_workspace() && !self.overrides.is_empty() {
             let owner = self.owner(row.pkg);
             if let Some(rule) = self.overrides.lookup(Some(owner), &edge.name, &declared) {
                 let (target_name, value) = (rule.selector.target.name.clone(), rule.value.clone());
@@ -208,6 +237,7 @@ impl Engine<'_> {
                         })?;
                     literal = entry;
                     replaced = true;
+                    from_catalog = !from_rule;
                 }
                 None => {
                     return Err(Error::CatalogEntryMissing {
@@ -227,17 +257,64 @@ impl Engine<'_> {
             literal,
             replaced,
             from_rule,
+            from_catalog,
         }))
     }
 
     /// An error on `row`: tolerated (with a warning when it matters) for optional dependencies,
     /// peers and anything only reachable through optional dependencies; fatal otherwise.
     pub(crate) fn fail(&mut self, row: Row, edge: &DepEdge, err: Error) -> Result<Step> {
-        let tolerated = edge.behavior.is_optional()
-            || edge.behavior.is_peer()
-            || self.st[row.pkg.index()].optional_only;
+        // bun `requires_local_target`: a project's local dependency in a group this install
+        // omits stays unresolved when its target is missing, and then no lockfile is saved.
+        if matches!(
+            err,
+            Error::MissingPackageJson { .. } | Error::WorkspaceNotFound { .. }
+        ) && self.st[row.pkg.index()].kind == Kind::Project
+            && !self.enabled(edge.behavior)
+        {
+            if !edge.behavior.is_optional() && !edge.behavior.is_peer() {
+                self.unsaved = true;
+            }
+            return Ok(Step::Done);
+        }
+        // bun logs a `link:` it cannot find as an error even for a peer, which fails the install.
+        let missing_link = edge.behavior.is_peer()
+            && !edge.behavior.is_optional()
+            && matches!(err, Error::MissingPackageJson { .. })
+            && fnpm_types::spec::trim_literal(&edge.literal).starts_with("link:");
+        let tolerated = !missing_link
+            && (edge.behavior.is_optional()
+                || edge.behavior.is_peer()
+                || self.st[row.pkg.index()].optional_only);
         if !tolerated {
+            // bun logs the row and goes on, then reports every row that failed.
+            if row_error(&err) {
+                self.failed.push((row, err));
+                return Ok(Step::Done);
+            }
             return Err(err);
+        }
+        let asked = asked_name(edge);
+        let requested = self.requested_rows.contains_key(&(row.pkg, row.edge))
+            || (self.update.active
+                && self.st[row.pkg.index()].kind == Kind::Project
+                && (self.update.names.contains(&edge.name) || self.update.names.contains(&asked)));
+        // Only a download that failed; a range nothing satisfies leaves the entry as it is.
+        let download = !matches!(
+            err,
+            Error::NoMatchingVersion { .. }
+                | Error::DistTagNotFound { .. }
+                | Error::TooRecent { .. }
+        );
+        if requested
+            && download
+            && !edge.behavior.is_peer()
+            && !self.failed_requests.contains(&edge.name)
+        {
+            self.failed_requests.push(edge.name.clone());
+            if asked != edge.name {
+                self.failed_requests.push(asked.clone());
+            }
         }
         if edge.behavior.is_peer() {
             let literal = &edge.literal;
@@ -257,18 +334,51 @@ impl Engine<'_> {
                 other => format!("{other} (peer dependency \"{name}\")"),
             };
             self.warnings.push(message);
+        } else if let Error::Refused { message, .. } = &err {
+            // bun warns why and leaves the optional dependency out.
+            self.warnings.push(message.clone());
         } else if !matches!(
             err,
             Error::NoMatchingVersion { .. }
                 | Error::DistTagNotFound { .. }
                 | Error::TooRecent { .. }
         ) {
-            self.warnings.push(format!(
-                "{err}\n  error occurred while resolving optional dependency \"{}\"",
-                edge.name
-            ));
+            // A download that got no answer reads like bun's; a requested entry gets the one line.
+            let message = match &err {
+                Error::Registry(e) => match (e.network_error_name(), e) {
+                    // The manifest URL names the registry package (an override or a catalog
+                    // entry may point the edge at another one).
+                    (Some(kind), fnpm_registry::Error::Network { url, .. }) => {
+                        let manifest = url
+                            .rsplit('/')
+                            .next()
+                            .map(|n| n.replace("%2f", "/").replace("%2F", "/"))
+                            .unwrap_or_else(|| asked.clone());
+                        format!("{kind} downloading package manifest {manifest}")
+                    }
+                    _ => err.to_string(),
+                },
+                _ => err.to_string(),
+            };
+            if requested {
+                self.warnings.push(message);
+            } else {
+                self.warnings.push(format!(
+                    "{message}\n  error occurred while resolving optional dependency \"{}\"",
+                    edge.name
+                ));
+            }
         }
         Ok(Step::Done)
+    }
+
+    /// Whether a project's edge is in a group this install keeps (bun `Behavior::is_enabled`).
+    fn enabled(&self, b: fnpm_types::Behavior) -> bool {
+        let omit = &self.cfg.omit;
+        b.is_prod()
+            || (b.is_dev() && !omit.dev)
+            || (b.is_optional() && !omit.optional)
+            || (b.is_peer() && !omit.peer)
     }
 
     pub(crate) fn bind(&mut self, row: Row) -> Result<Step> {
@@ -286,7 +396,14 @@ impl Engine<'_> {
             Err(e) => return self.fail(row, &edge, e),
         };
         let alias_ok = alias_is_safe_install_target(&edge.name);
-        if !alias_ok || (asked.spec.tag().is_npm() && !is_npm_package_name(&asked.name)) {
+        // A range that links a workspace never asks the registry (bun turns it into a
+        // `workspace:` dependency when it parses package.json), so any workspace name passes.
+        let registry_name_ok = || {
+            !asked.spec.tag().is_npm()
+                || is_npm_package_name(&asked.name)
+                || self.linked_workspace(&asked).is_some()
+        };
+        if !alias_ok || !registry_name_ok() {
             let bad = if alias_ok { &asked.name } else { &edge.name };
             let err = Error::InvalidName {
                 name: fnpm_types::text::escape_control_chars(&edge.name),
@@ -303,6 +420,10 @@ impl Engine<'_> {
             if edge.behavior.is_optional_peer() {
                 return Ok(Step::Done);
             }
+        }
+        if let Some(target) = self.root_tag_workspace(row, &asked) {
+            self.set_target(row, target);
+            return Ok(Step::Done);
         }
         if !edge.behavior.is_peer()
             && let Some(target) = self.reuse_previous(row, &edge, &asked)
@@ -347,18 +468,23 @@ impl Engine<'_> {
         if !self.update.active {
             return false;
         }
-        if self.update.names.is_empty() {
-            return self.st[row.pkg.index()].kind == Kind::Project;
+        // A bundled dependency ships inside its owner's tarball: it is never re-resolved.
+        if edge.behavior.is_bundled() || self.st[row.pkg.index()].in_bundle {
+            return false;
         }
-        self.update.names.contains(&edge.name) || self.update.names.contains(&asked.name)
+        // A bare update re-resolves every edge within its range, transitive ones too (bun).
+        self.update.names.is_empty()
+            || self.update.names.contains(&edge.name)
+            || self.update.names.contains(&asked.name)
     }
 
     /// `fnpm update --latest`: a direct npm dependency that keeps its declared spec moves to the
     /// `latest` tag.
     pub(crate) fn picks_latest(&self, row: Row, edge: &DepEdge, asked: &Asked) -> bool {
+        // bun's `update --latest` moves a catalog entry too, and then writes the catalog.
         self.update.active
             && self.update.latest
-            && !asked.replaced
+            && (!asked.replaced || asked.from_catalog)
             && asked.spec.tag().is_npm()
             && self.st[row.pkg.index()].kind == Kind::Project
             && (self.update.names.is_empty()
@@ -422,6 +548,11 @@ impl Engine<'_> {
                 .prev_effective_literal(prev_owner, prev_edge)
                 .as_deref()
                 == Some(asked.literal.as_str());
+        // A changed dependency loses its lockfile resolution, and then a workspace its range
+        // links wins (bun `settle_without_manifest`).
+        if !unchanged && self.linked_workspace(asked).is_some() {
+            return None;
+        }
         if !self.prev_satisfies(target, asked, unchanged) {
             return None;
         }
@@ -437,10 +568,11 @@ impl Engine<'_> {
         edge: &DepEdge,
         asked: &Asked,
     ) -> Option<PackageId> {
-        if self.update.active
-            || self.st[row.pkg.index()].kind == Kind::Project
-            || self.changed_peer_providers.contains(&asked.name)
-        {
+        // A project's optional peer keeps the package the lockfile bound it to (bun keeps it
+        // even when only that peer holds it, as in a pruned checkout); its other peers resolve
+        // again.
+        let project = self.st[row.pkg.index()].kind == Kind::Project;
+        if self.update.active || (project && !edge.behavior.is_optional_peer()) {
             return None;
         }
         let prev = self.prev?;
@@ -456,9 +588,33 @@ impl Engine<'_> {
         if package.name != asked.name || !matches!(package.resolution, Resolution::Npm { .. }) {
             return None;
         }
+        // bun never resolves a peer that no version satisfied again: once what held its
+        // version is gone, it moves to another version of the name in the tree, or keeps the
+        // one it had when none is left.
+        let unmet = match &asked.spec {
+            DependencySpec::Npm { range, .. } => matches!(
+                (Range::parse(range), self.prev_versions[target.index()].as_ref()),
+                (Ok(r), Some(v)) if !r.satisfies(v)
+            ),
+            _ => false,
+        };
+        let held =
+            !self.prev_non_peer_targets.contains(&target) || self.imported.contains_key(&target);
+        if unmet && !held {
+            let other = self
+                .candidates(&asked.name)
+                .into_iter()
+                .filter_map(|(c, v)| match c {
+                    Cand::New(id) => Some((id, v)),
+                    Cand::Prev(_) => None,
+                })
+                .max_by(|a, b| a.1.cmp(&b.1))
+                .map(|(id, _)| id);
+            return other.or_else(|| self.import_prev(target));
+        }
         // A target formerly provided by a non-peer dependency is reusable only when that
         // dependency is still in the current graph. Peer-only locked copies have no such holder.
-        if self.prev_non_peer_targets.contains(&target) && !self.imported.contains_key(&target) {
+        if self.changed_peer_providers.contains(&asked.name) || !held {
             return None;
         }
         self.import_prev(target)
@@ -649,9 +805,140 @@ impl Engine<'_> {
         Range::parse(range).ok()?.satisfies(version).then_some(id)
     }
 
+    /// bun: the workspace wins over the root's dependency on a dist-tag of its own name
+    /// (`"foo": "latest"`), because only the registry knows which version a tag names.
+    pub(crate) fn root_tag_workspace(&self, row: Row, asked: &Asked) -> Option<PackageId> {
+        if row.pkg != PackageId::ROOT || asked.replaced {
+            return None;
+        }
+        let DependencySpec::DistTag {
+            is_alias: false, ..
+        } = &asked.spec
+        else {
+            return None;
+        };
+        self.member_id_by_name(&asked.name)
+    }
+
     fn member_id_by_name(&self, name: &str) -> Option<PackageId> {
         let member = self.ws.member(name)?;
         self.graph.workspaces.get(&member.path).copied()
+    }
+}
+
+/// An error of one dependency, which bun reports and then resolves the others.
+fn row_error(err: &Error) -> bool {
+    !matches!(
+        err,
+        Error::FrozenLockfile { .. }
+            | Error::InvalidPackageJson { .. }
+            | Error::PatchFile { .. }
+            | Error::InvalidOption { .. }
+            | Error::Unresolved { .. }
+    )
+}
+
+impl Engine<'_> {
+    /// bun `verify_resolutions`: the error of each failed row as it happened, then a line for
+    /// each row (`<name>@<spec> failed to resolve`, or the catalog advice), then the notes.
+    pub(crate) fn unresolved(&mut self) -> Error {
+        let failed = std::mem::take(&mut self.failed);
+        let mut lines: Vec<String> = Vec::new();
+        for (_, err) in &failed {
+            match err {
+                // bun logs nothing for a missing entry; the advice below says it.
+                Error::CatalogEntryMissing { .. } => {}
+                Error::InvalidName { bad, .. } => {
+                    lines.push(format!("invalid dependency name \"{bad}\""))
+                }
+                // One failed manifest is one error, however many rows asked for it.
+                other => {
+                    let line = other.to_string();
+                    if !lines.contains(&line) {
+                        lines.push(line);
+                    }
+                }
+            }
+        }
+        let mut order: Vec<usize> = (0..failed.len()).collect();
+        order.sort_by_key(|&i| (failed[i].0.pkg.index(), failed[i].0.edge));
+        let root_has_workspaces = self.ws.root.raw.get("workspaces").is_some();
+        let mut note = false;
+        for &i in &order {
+            let (row, err) = &failed[i];
+            let edge = &self.graph.packages[row.pkg.index()].dependencies[row.edge as usize];
+            let (raw_name, literal) = (edge.name.as_str(), edge.literal.as_str());
+            let name = fnpm_types::text::escape_control_chars(raw_name);
+            let literal = fnpm_types::text::escape_control_chars(literal);
+            let (name, literal) = (name.as_str(), literal.as_str());
+            if let Error::CatalogEntryMissing { catalog, .. } = err
+                && root_has_workspaces
+            {
+                let can_add =
+                    raw_name != self.graph.root().name && self.ws.member(raw_name).is_none();
+                let is_default = catalog.is_empty() || catalog == "default";
+                // A catalog declared empty exists too.
+                let raw = &self.ws.root.raw;
+                let declared = |v: Option<&serde_json::Value>| {
+                    v.and_then(|v| v.get("catalogs"))
+                        .and_then(|c| c.get(catalog.as_str()))
+                        .is_some()
+                };
+                let exists = self.graph.catalogs.named.contains_key(catalog)
+                    || declared(Some(raw))
+                    || declared(raw.get("workspaces"));
+                if !is_default && !exists {
+                    lines.push(format!(
+                        "{name}@{literal}: there is no catalog named \"{catalog}\" in the root package.json"
+                    ));
+                } else if is_default {
+                    lines.push(format!("{name}@{literal} not in catalog"));
+                    if can_add {
+                        lines.push(format!("  fnpm add --catalog {name}"));
+                    }
+                } else {
+                    lines.push(format!("{name}@{literal} not in catalog \"{catalog}\""));
+                    if can_add {
+                        lines.push(format!("  fnpm add --catalog={catalog} {name}"));
+                    }
+                }
+                continue;
+            }
+            note |= matches!(err, Error::CatalogEntryMissing { .. });
+            // A package the command asked for is failed as a request: bun prints its error only.
+            if self.requested_rows.contains_key(&(row.pkg, row.edge)) {
+                continue;
+            }
+            if name.is_empty() || name == literal {
+                lines.push(format!("{literal} failed to resolve"));
+            } else {
+                lines.push(format!("{name}@{literal} failed to resolve"));
+            }
+        }
+        // Each line is an error of its own, except an advice (`  fnpm add ...`).
+        let mut out: Vec<String> = Vec::with_capacity(lines.len() + 1);
+        for (i, line) in lines.into_iter().enumerate() {
+            if i == 0 || line.starts_with("  ") {
+                out.push(line);
+            } else {
+                out.push(format!("error: {line}"));
+            }
+        }
+        if note {
+            out.push(format!(
+                "note: catalogs require a \"workspaces\" field in the root package.json. \"{}\" was used as root and has none",
+                self.ws.root_dir.join("package.json").display()
+            ));
+        }
+        let first = failed
+            .into_iter()
+            .next()
+            .map(|(_, e)| e)
+            .unwrap_or(Error::NotFound(String::new()));
+        Error::Unresolved {
+            first: Box::new(first),
+            lines: out,
+        }
     }
 }
 
@@ -700,6 +987,62 @@ impl Engine<'_> {
                     && range.is_none_or(|r| r.satisfies(v))
             })
             .map(|(_, v)| v)
+    }
+
+    /// The manifest URL of `name` as messages show it (`/` of a scope encoded as `%2f`).
+    fn manifest_url(&self, name: &str) -> String {
+        let registry = self.cfg.registry_for(name).url.trim_end_matches('/');
+        fnpm_registry::redact_url(&format!("{registry}/{}", name.replace('/', "%2f")))
+    }
+
+    /// The package that `edge` of `row`'s owner reached in the previous graph.
+    fn locked_target(&self, row: Row, edge: &DepEdge) -> Option<PackageId> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        prev.get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && e.behavior.is_peer() == edge.behavior.is_peer())?
+            .target
+    }
+
+    /// The version of the package that `edge` of `row`'s owner reached in the previous graph,
+    /// with the ranges of every previous edge into that package; `None` when there is none or
+    /// one of them is not a plain range.
+    fn ranges_sharing_locked(
+        &self,
+        row: Row,
+        edge: &DepEdge,
+    ) -> Option<(Version, Vec<(String, Range)>)> {
+        let prev = self.prev?;
+        let owner = self.st[row.pkg.index()].prev?;
+        let target = prev
+            .get(owner)?
+            .dependencies
+            .iter()
+            .find(|e| e.name == edge.name && !e.behavior.is_peer())?
+            .target?;
+        if !matches!(
+            prev.packages[target.index()].resolution,
+            Resolution::Npm { .. }
+        ) {
+            return None;
+        }
+        let locked = self.prev_versions[target.index()].clone()?;
+        // The root's and the workspaces' own edges are re-resolved by the update; they do not hold.
+        let mut ranges = Vec::new();
+        for p in prev.packages.iter().filter(|p| {
+            !matches!(
+                p.resolution,
+                Resolution::Root | Resolution::Workspace { .. }
+            )
+        }) {
+            for e in p.dependencies.iter().filter(|e| e.target == Some(target)) {
+                let range = Range::parse(&e.literal).ok()?;
+                ranges.push((e.literal.clone(), range));
+            }
+        }
+        Some((locked, ranges))
     }
 
     /// `patchedDependencies` versions of `name` that `range` allows, highest first.
@@ -752,6 +1095,18 @@ impl Engine<'_> {
             self.set_target(row, target);
             return Ok(Step::Done);
         }
+        // `fnpm add <name>` asks for no version and no tag, so it links a workspace as `*`
+        // would (bun `is_bare_add_request`).
+        if tag.is_some()
+            && edge.literal.is_empty()
+            && !asked.replaced
+            && self.cfg.link_workspace_packages
+            && self.requested_rows.contains_key(&(row.pkg, row.edge))
+            && let Some(id) = self.member_id_by_name(&name)
+        {
+            self.set_target(row, id);
+            return Ok(Step::Done);
+        }
         if row.install_peer && is_peer {
             if self.is_peer_provided_locally(row, &edge.name) {
                 return Ok(Step::Done);
@@ -800,8 +1155,35 @@ impl Engine<'_> {
                     self.set_target(row, id);
                     return Ok(Step::Done);
                 }
+                // `fnpm update`: a transitive dependency whose manifest cannot be read keeps the
+                // package of the lockfile, with a warning (bun).
+                if should_update
+                    && self.st[row.pkg.index()].kind != Kind::Project
+                    && let Some(prev_id) = self.locked_target(row, edge)
+                    && let Some(target) = self.import_prev(prev_id)
+                {
+                    let p = &self.graph.packages[target.index()];
+                    let reason = match &*e {
+                        fnpm_registry::Error::NotFound(_) => {
+                            format!("GET {} - 404", self.manifest_url(&name))
+                        }
+                        e => e.to_string(),
+                    };
+                    let warning = format!(
+                        "{}@{} was not checked for updates: {reason}",
+                        p.name, p.version
+                    );
+                    if !self.not_checked.contains(&warning) {
+                        self.not_checked.push(warning);
+                    }
+                    self.set_target(row, target);
+                    return Ok(Step::Done);
+                }
                 if matches!(*e, fnpm_registry::Error::NotFound(_)) {
-                    return Err(Error::NotFound(name));
+                    return Err(match self.manifests.manifest_url(&name) {
+                        Some(url) => Error::ManifestNotFound { name, url },
+                        None => Error::NotFound(name),
+                    });
                 }
                 return Err(Error::Registry(clone_registry_error(&e)));
             }
@@ -846,6 +1228,28 @@ impl Engine<'_> {
             };
             pick::find_for_dependency(&manifest, wanted, gate.as_ref())
         };
+        // bun's `--verbose` note of a pick the gate moved to an older version.
+        if let Picked::FoundWithFilter {
+            result,
+            newest_filtered: Some(newest),
+        } = picked
+            && self.cfg.log_level == fnpm_config::LogLevel::Verbose
+            && let Some((ms, _)) = &self.gate
+        {
+            let wanted = match (&range, &tag) {
+                (Some(r), _) => match r.to_string().as_str() {
+                    "" | "*" => ">=0.0.0".to_owned(),
+                    text => text.to_owned(),
+                },
+                (None, Some(t)) => fnpm_types::text::escape_control_chars(t),
+                _ => String::new(),
+            };
+            self.manifests.verbose_line(format!(
+                "[minimum-release-age] {name}@{wanted} selected {} instead of {newest} due to {}-second filter",
+                result.version,
+                ms / 1000
+            ));
+        }
         let mut chosen = match picked {
             Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
             Picked::Err(err) => {
@@ -915,20 +1319,23 @@ impl Engine<'_> {
                 },
             });
         };
-        if latest {
-            // `--latest` never moves below the version in the lockfile, nor below the tag.
-            if let Some(locked) = self.locked_version(&name, range.as_ref())
-                && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
-                && let Some(kept) = manifest.find(&locked)
-            {
-                chosen = kept;
-            }
-            if let Some(t) = &tag
-                && let Some(tagged) = manifest.dist_tag(t)
-                && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
-            {
-                chosen = tagged;
-            }
+        // An update never moves a range below the version in the lockfile (one published above
+        // `latest` included); `--latest` not below the tag either. A dist-tag is followed, and
+        // an update leaves a locked version that got deprecated.
+        if (latest || (should_update && range.is_some()))
+            && let Some(locked) = self.locked_version(&name, range.as_ref())
+            && chosen.version.cmp(&locked) == std::cmp::Ordering::Less
+            && let Some(kept) = manifest.find(&locked)
+            && (latest || kept.deprecated.is_none())
+        {
+            chosen = kept;
+        }
+        if latest
+            && let Some(t) = &tag
+            && let Some(tagged) = manifest.dist_tag(t)
+            && tagged.version.cmp(&chosen.version) == std::cmp::Ordering::Greater
+        {
+            chosen = tagged;
         }
         // A patched version stays as long as the range allows it.
         let mut patched = false;
@@ -949,6 +1356,31 @@ impl Engine<'_> {
                     patched = true;
                     break;
                 }
+            }
+        }
+        // A transitive edge moves its locked package only to a version that every edge sharing
+        // that package accepts, so the update does not fork it (bun holds the edge otherwise).
+        if should_update
+            && !patched
+            && !latest
+            && !is_peer
+            && !asked.replaced
+            && self.st[row.pkg.index()].kind != Kind::Project
+            && let Some(ranges) = self.ranges_sharing_locked(row, edge)
+        {
+            let gate = gate_data.as_ref().map(|(ms, excludes)| AgeGate {
+                min_age_ms: *ms,
+                now_ms: self.now_ms,
+                excludes,
+            });
+            let shared = peers::version_every_peer_accepts(&manifest, &ranges.1, gate.as_ref())
+                .and_then(|p| match p {
+                    Picked::Found(v) | Picked::FoundWithFilter { result: v, .. } => Some(v),
+                    Picked::Err(_) => None,
+                })
+                .filter(|v| v.version.cmp(&ranges.0) != std::cmp::Ordering::Less);
+            if let Some(v) = shared.or_else(|| manifest.find(&ranges.0)) {
+                chosen = v;
             }
         }
         let reusable = !should_update && !patched && !latest;
@@ -989,10 +1421,21 @@ impl Engine<'_> {
         vm: &fnpm_registry::VersionManifest,
     ) -> PackageId {
         let version = vm.version.to_string();
-        let default_url = self.manifests.default_tarball_url(name, &version);
-        let tarball = (!vm.dist.tarball.is_empty() && vm.dist.tarball != default_url)
-            .then(|| vm.dist.tarball.clone());
+        // Like bun.lock, fnpm.lock records the tarball URL of every registry but npmjs (whose
+        // packages it writes as `""`), so a lockfile from a private registry names it.
+        let npmjs = fnpm_config::DEFAULT_REGISTRY;
+        let under_npmjs = vm.dist.tarball.strip_prefix(npmjs).is_some()
+            || vm.dist.tarball == npmjs.trim_end_matches('/');
+        let tarball =
+            (!vm.dist.tarball.is_empty() && !under_npmjs).then(|| vm.dist.tarball.clone());
         let mut package = local::package_from_manifest(name, vm, tarball);
+        if self.cfg.log_level == fnpm_config::LogLevel::Verbose {
+            for (literal, field) in local::nameless_manifest_rows(vm) {
+                self.warnings.push(format!(
+                    "skipping unnamed dependency of {name}@{version} (\"{literal}\" in \"{field}\")"
+                ));
+            }
+        }
         if !self.extension_rules.is_empty() {
             crate::extensions::apply(
                 &self.extension_rules,
@@ -1059,17 +1502,21 @@ impl Engine<'_> {
                     .dir
                     .clone()
                     .unwrap_or_else(|| self.root_dir().to_path_buf());
-                let rel = relative_to(self.root_dir(), &normalize_join(&dir, p));
+                let abs = normalize_join(&dir, p);
+                let rel = relative_to(self.root_dir(), &abs);
                 if rel == "." {
                     self.set_target(row, PackageId::ROOT);
                     return Ok(Step::Done);
                 }
-                let id = self
-                    .graph
-                    .workspaces
-                    .get(&rel)
-                    .copied()
-                    .ok_or_else(not_found)?;
+                let id = match self.graph.workspaces.get(&rel).copied() {
+                    Some(id) => id,
+                    // A project's `workspace:<path>` makes that folder a member, listed in
+                    // "workspaces" or not (bun resolves the path as a project folder).
+                    None if owner.kind == Kind::Project => {
+                        self.path_member(&abs, &rel)?.ok_or_else(not_found)?
+                    }
+                    None => return Err(not_found()),
+                };
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
@@ -1127,6 +1574,45 @@ impl Engine<'_> {
         Ok(Step::Done)
     }
 
+    /// The member for the folder at `abs` (`rel` from the root) that a `workspace:<path>`
+    /// names: its package.json is read, and its dependencies are resolved like a listed
+    /// member's. `None` without a package.json.
+    fn path_member(&mut self, abs: &std::path::Path, rel: &str) -> Result<Option<PackageId>> {
+        let Some(pj) = self
+            .fetcher
+            .read_package_json(abs)
+            .map_err(Error::Registry)?
+        else {
+            return Ok(None);
+        };
+        let name = pj.name.clone().unwrap_or_default();
+        let version = pj.version.clone().unwrap_or_default();
+        let resolution = Resolution::Workspace {
+            path: rel.to_owned(),
+        };
+        let mut package = local::package_from_json(&pj, &name, resolution);
+        package.name = name.clone();
+        package.version = version.clone();
+        let (edges, warnings) = local::package_json_edges(&pj, LocalKind::Workspace)?;
+        self.warnings.extend(warnings);
+        package.dependencies = edges;
+        let prev_id = self.prev.and_then(|p| p.workspaces.get(rel).copied());
+        let id = self.graph.add_workspace(package);
+        self.by_key
+            .insert(self.graph.packages[id.index()].key(), id);
+        self.by_name.entry(name).or_default().push(id);
+        self.st.push(PState::project(
+            Version::parse(&version).ok(),
+            prev_id,
+            abs.to_path_buf(),
+        ));
+        if let Some(parents) = &mut self.parents {
+            parents.push(Vec::new());
+        }
+        self.push_rows(id, false);
+        Ok(Some(id))
+    }
+
     /// Whether `row` may refer to a path in the project (bun `is_trusted_folder_dependency`).
     fn trusted_path(&self, row: Row, edge: &DepEdge) -> bool {
         let owner = &self.st[row.pkg.index()];
@@ -1166,15 +1652,43 @@ impl Engine<'_> {
             let pj = self
                 .fetcher
                 .read_package_json(&abs)
-                .map_err(Error::Registry)?
-                .ok_or_else(|| Error::MissingPackageJson {
-                    name: edge.name.clone(),
-                    message: format!(
-                        "package.json not found for \"file:{path}\" dependency \"{}\"",
-                        edge.name
-                    ),
-                })?;
-            let mut package = local::package_from_json(&pj, &edge.name, resolution);
+                .map_err(Error::Registry)?;
+            // A folder the lockfile has but that is gone keeps its locked package: the install
+            // reports it as failed and goes on with the rest (bun).
+            if pj.is_none()
+                && let Some(prev) = self.prev
+                && let Some(&prev_id) = self
+                    .prev_by_key
+                    .get(&Package::new(edge.name.clone(), "", resolution.clone()).key())
+            {
+                if let Some(&existing) = self.imported.get(&prev_id) {
+                    self.set_target(row, existing);
+                    return Ok(Step::Done);
+                }
+                let mut package = prev.packages[prev_id.index()].clone();
+                for e in &mut package.dependencies {
+                    e.target = None;
+                }
+                let mut state = PState::new(Kind::Folder, Version::parse(&package.version).ok());
+                state.dir = Some(abs);
+                state.local_declarer = true;
+                state.optional_only = owner.optional_only || edge.behavior.is_optional();
+                state.prev = Some(prev_id);
+                let id = self.add_package(package, state);
+                self.imported.insert(prev_id, id);
+                self.set_target(row, id);
+                self.push_rows(id, false);
+                return Ok(Step::Done);
+            }
+            let pj = pj.ok_or_else(|| Error::MissingPackageJson {
+                name: edge.name.clone(),
+                message: format!(
+                    "package.json not found for \"file:{path}\" dependency \"{}\"",
+                    edge.name
+                ),
+            })?;
+            let fallback = local::unnamed_package_name(&resolution);
+            let mut package = local::package_from_json(&pj, &fallback, resolution);
             if let Some(&existing) = self.by_key.get(&package.key()) {
                 self.set_target(row, existing);
                 return Ok(Step::Done);
@@ -1249,9 +1763,9 @@ impl Engine<'_> {
         let (abs, stored) = if is_link_path(path) {
             if !self.trusted_path(row, edge) && !asked.from_rule {
                 let declarer = &self.graph.packages[row.pkg.index()];
-                return Err(Error::InvalidSpec {
-                    name: edge.name.clone(),
-                    spec: edge.literal.clone(),
+                return Err(Error::Refused {
+                    name: fnpm_types::text::escape_control_chars(&edge.name),
+                    spec: fnpm_types::text::escape_control_chars(&edge.literal),
                     message: format!(
                         "refusing to resolve \"{}@{}\" declared by {}@{}: {LINK_PATH_RULE}",
                         edge.name, edge.literal, declarer.name, declarer.resolution
@@ -1356,9 +1870,9 @@ impl Engine<'_> {
                     || root_declares_same
                     || matches!(declarer.resolution, Resolution::LocalTarball { .. });
                 if !may_name {
-                    return Err(Error::InvalidSpec {
-                        name: edge.name.clone(),
-                        spec: edge.literal.clone(),
+                    return Err(Error::Refused {
+                        name: fnpm_types::text::escape_control_chars(&edge.name),
+                        spec: fnpm_types::text::escape_control_chars(&edge.literal),
                         message: format!(
                             "refusing to resolve \"{}@{}\" declared by {}@{}: local tarballs are only allowed in this project's package.json files",
                             edge.name, edge.literal, declarer.name, declarer.resolution
@@ -1468,22 +1982,48 @@ impl Engine<'_> {
                 self.set_target(row, id);
                 return Ok(Step::Done);
             }
-            Some(RState::Failed(e)) => return Err(Error::Registry(clone_registry_error(e))),
+            Some(RState::Failed(e)) if self.remote_turned.contains(&key) => {
+                return Err(remote_error(edge, e));
+            }
+            // In flight, or downloaded ahead of its turn ([`Engine::fetch_remote_ahead`]).
             Some(_) => {
+                if self.remote_turned.insert(key.clone()) {
+                    self.remote_turns.push_back(key.clone());
+                }
                 self.remote_waiters.entry(key).or_default().push(row);
                 return Ok(Step::Done);
             }
             None => {}
         }
-        self.remote.insert(key.clone(), RState::Pending);
+        self.remote_turned.insert(key.clone());
         self.remote_turns.push_back(key.clone());
         self.remote_waiters
             .entry(key.clone())
             .or_default()
             .push(row);
+        self.start_remote(key, kind, edge.name.clone());
+        Ok(Step::Done)
+    }
+
+    /// Starts downloading the git / tarball package a project row declares before the row's
+    /// turn: what it depends on is only known from it. Its turn still comes in queue order.
+    pub(crate) fn fetch_remote_ahead(&mut self, row: Row, edge: &DepEdge, asked: &Asked) {
+        let Ok(kind) = self.remote_kind(row, edge, asked) else {
+            return;
+        };
+        let key = Self::remote_key(&kind);
+        if self.remote.contains_key(&key)
+            || (!self.should_update(row, edge, asked) && self.locked_remote(&kind).is_some())
+        {
+            return;
+        }
+        self.start_remote(key, kind, edge.name.clone());
+    }
+
+    fn start_remote(&mut self, key: String, kind: RemoteKind, name: String) {
+        self.remote.insert(key.clone(), RState::Pending);
         let fetcher = self.fetcher.clone();
         let tx = self.done_tx.clone();
-        let name = edge.name.clone();
         self.in_flight += 1;
         tokio::spawn(async move {
             let result = async {
@@ -1532,20 +2072,18 @@ impl Engine<'_> {
                                 committish.reference.as_deref().unwrap_or(""),
                             )
                             .await?;
-                        let prefix = format!("{owner}-{repo}-");
-                        let archive_tag = fnpm_registry::git::is_safe_resolved_tag(&sha)
-                            && sha
-                                .get(..prefix.len())
-                                .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
-                            && sha.get(prefix.len()..).is_some_and(|c| {
-                                (7..=40).contains(&c.len())
-                                    && c.bytes().all(|b| b.is_ascii_hexdigit())
+                        // The tag is the archive's root directory (bun `is_safe_resolved_tag`):
+                        // it names a folder and goes into fnpm.lock, so anything else is refused.
+                        if !fnpm_registry::git::is_safe_resolved_tag(&sha) {
+                            return Err(fnpm_registry::Error::Network {
+                                url: String::new(),
+                                message: format!(
+                                    "Refusing to install \"{}\": tarball root directory \"{}\" is not a valid folder name",
+                                    fnpm_types::text::escape_control_chars(&name),
+                                    fnpm_types::text::escape_control_chars(&sha)
+                                ),
                             });
-                        let sha = if archive_tag {
-                            sha
-                        } else {
-                            checked_commit(sha, &format!("github:{owner}/{repo}"))?
-                        };
+                        }
                         (
                             Resolution::Github {
                                 owner,
@@ -1572,7 +2110,6 @@ impl Engine<'_> {
             .await;
             let _ = tx.send(Completion::Remote(key, result));
         });
-        Ok(Step::Done)
     }
 
     /// The turn of a git / tarball package: create it and bind every dependency waiting for it.
@@ -1584,10 +2121,7 @@ impl Engine<'_> {
                 if let Some(integrity) = fetched.integrity {
                     resolution.set_integrity(integrity);
                 }
-                let fallback = waiters
-                    .first()
-                    .map(|w| self.edge(*w).name.clone())
-                    .unwrap_or_default();
+                let fallback = local::unnamed_package_name(&resolution);
                 let mut package =
                     local::package_from_json(&fetched.manifest, &fallback, resolution);
                 let id = match self.by_key.get(&package.key()) {
@@ -1636,7 +2170,7 @@ impl Engine<'_> {
                         self.set_target(w, target);
                         continue;
                     }
-                    self.fail(w, &edge, Error::Registry(clone_registry_error(&e)))?;
+                    self.fail(w, &edge, remote_error(&edge, &e))?;
                 }
                 Ok(())
             }

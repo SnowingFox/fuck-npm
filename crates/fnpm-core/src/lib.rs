@@ -22,6 +22,8 @@ use std::sync::{Arc, OnceLock};
 use fnpm_config::Env;
 use fnpm_types::{EventSink, InstallSummary};
 
+/// bun's source frames for errors in package.json (printed above `error:`).
+pub use fnpm_workspace::frame;
 pub use install::{PreparedInstall, config_hash};
 pub use options::{CoreRequest, CoreResult, InstallOptions, PmOptions};
 
@@ -71,7 +73,7 @@ pub enum Error {
     #[error("unknown command {0:?}")]
     UnknownCommand(Vec<String>),
     /// A package could not be downloaded or put into the store.
-    #[error("{package}: {message}")]
+    #[error("{}", fetch_message(package, message))]
     Fetch {
         /// `name@version`.
         package: String,
@@ -84,6 +86,17 @@ pub enum Error {
     /// `node_modules` (bun's tree builder refuses it before anything is installed).
     #[error("invalid dependency name \"{0}\"")]
     UnsafeName(String),
+    /// An error at a place in a source file, with bun's source frame in front of the message
+    /// ([`fnpm_workspace::frame`]; the CLIs print the frame above `error:`). The code is the
+    /// underlying error's.
+    #[error("{message}")]
+    Framed {
+        /// [`fnpm_workspace::frame::Frame::framed`].
+        message: String,
+        /// The error without the frame.
+        #[source]
+        source: Box<Error>,
+    },
     /// The command failed and already said why on stderr/stdout (a fatal security advisory, a
     /// security scanner error). The CLIs print nothing more and exit 1.
     #[error("")]
@@ -96,10 +109,23 @@ pub enum Error {
     },
 }
 
+/// bun's words for a failed download: a failed request (`GET <url> - 404`) and an integrity
+/// mismatch name what failed themselves; a URL that cannot be fetched names the package after it.
+fn fetch_message(package: &str, message: &str) -> String {
+    if message.starts_with("GET ") || message.starts_with("Integrity check failed") {
+        return message.to_owned();
+    }
+    if message.starts_with("Expected tarball URL") {
+        let name = fnpm_types::name::split_name_and_maybe_version(package).0;
+        return format!("{message} while fetching package \"{name}\"");
+    }
+    format!("{package}: {message}")
+}
+
 pub(crate) fn registry_code(e: &fnpm_registry::Error) -> &'static str {
     use fnpm_registry::Error as R;
     match e {
-        R::NotFound(_) => "NOT_FOUND",
+        R::NotFound(_) | R::Status { status: 404, .. } => "NOT_FOUND",
         R::Integrity { .. } => "INTEGRITY",
         R::Network { .. } | R::Status { .. } | R::Offline(_) | R::Registry { .. } => "NETWORK",
         _ => "CORE_ERROR",
@@ -112,15 +138,24 @@ impl Error {
     /// (fallback).
     pub fn code(&self) -> &'static str {
         use fnpm_resolver::Error as Rv;
+        // A report of several failed rows has the code of the first one.
+        if let Self::Resolve(e) = self {
+            return match e.cause() {
+                Rv::FrozenLockfile { .. } => "FROZEN_LOCKFILE",
+                Rv::NoMatchingVersion { .. }
+                | Rv::DistTagNotFound { .. }
+                | Rv::TooRecent { .. } => "NO_MATCHING_VERSION",
+                Rv::NotFound(_) | Rv::ManifestNotFound { .. } | Rv::WorkspaceNotFound { .. } => {
+                    "NOT_FOUND"
+                }
+                Rv::Registry(e) => registry_code(e),
+                Rv::InvalidPackageJson { .. } => "INVALID_PACKAGE_JSON",
+                Rv::InvalidOption { .. } => "USAGE",
+                _ => "CORE_ERROR",
+            };
+        }
         match self {
-            Self::Resolve(Rv::FrozenLockfile { .. }) => "FROZEN_LOCKFILE",
-            Self::Resolve(
-                Rv::NoMatchingVersion { .. } | Rv::DistTagNotFound { .. } | Rv::TooRecent { .. },
-            ) => "NO_MATCHING_VERSION",
-            Self::Resolve(Rv::NotFound(_) | Rv::WorkspaceNotFound { .. }) => "NOT_FOUND",
-            Self::Resolve(Rv::Registry(e)) | Self::Registry(e) => registry_code(e),
-            Self::Resolve(Rv::InvalidPackageJson { .. }) => "INVALID_PACKAGE_JSON",
-            Self::Resolve(Rv::InvalidOption { .. }) => "USAGE",
+            Self::Registry(e) => registry_code(e),
             Self::Store(fnpm_store::Error::Integrity { .. }) => "INTEGRITY",
             Self::Scripts(
                 fnpm_scripts::Error::Failed { .. } | fnpm_scripts::Error::Signaled { .. },
@@ -132,9 +167,16 @@ impl Error {
             Self::Usage { .. } | Self::UnknownCommand(_) => "USAGE",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
             Self::Reported => "REPORTED",
+            Self::Framed { source, .. } => source.code(),
             Self::Fetch { code, .. } => code,
             _ => "CORE_ERROR",
         }
+    }
+
+    /// The message as the CLIs print it: every URL with its credentials masked, as bun masks
+    /// each URL it echoes.
+    pub fn shown_message(&self) -> String {
+        fnpm_config::redact::redacted_message(&self.to_string()).into_owned()
     }
 
     /// A [`Error::Usage`].
@@ -175,6 +217,7 @@ pub fn io_threads() -> usize {
 pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
+        init_rayon();
         let workers = io_threads();
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(workers)
@@ -190,6 +233,32 @@ pub fn runtime() -> &'static tokio::runtime::Runtime {
         }
         rt
     })
+}
+
+/// Builds rayon's global pool now. rayon builds it lazily on first use and panics when it
+/// cannot start its threads (EAGAIN on a machine at its thread limit); here a pool that cannot
+/// start falls back to fewer threads, down to one, instead of aborting the install.
+fn init_rayon() {
+    let mut threads = fnpm_types::available_parallelism().max(1);
+    loop {
+        match rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+        {
+            Ok(()) => return,
+            // Already built (by an embedder, or by rayon on an earlier first use).
+            Err(e) if e.to_string().contains("already been initialized") => return,
+            Err(_) if threads > 1 => threads /= 2,
+            Err(_) => {
+                // One more try after the machine had a moment; then leave it to rayon.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let _ = rayon::ThreadPoolBuilder::new()
+                    .num_threads(1)
+                    .build_global();
+                return;
+            }
+        }
+    }
 }
 
 /// `fnpm install | add | remove | update | ci`. Pipeline: fast path -> config -> workspace

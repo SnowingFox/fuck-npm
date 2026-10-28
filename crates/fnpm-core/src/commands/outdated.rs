@@ -261,8 +261,40 @@ pub(crate) async fn run(cx: &Ctx) -> Result<crate::CoreResult> {
             Ok(m) => {
                 manifests.insert(name, m);
             }
-            Err(e) => failures.push(format!("error: {name}: {e}")),
+            Err(e) => {
+                // bun: the registry's answer, or what kept the download from getting one. A
+                // manifest only optional dependencies need is a warning; the rest fail the
+                // command (a registry that is down must not read as "up to date").
+                let message = match &e {
+                    fnpm_registry::Error::NotFound(_) => format!(
+                        "GET {}/{} - 404",
+                        config.registry_for(&name).url.trim_end_matches('/'),
+                        name.replace('/', "%2f")
+                    ),
+                    e => match e.network_error_name() {
+                        Some(kind) => format!("{kind} downloading package manifest {name}"),
+                        None => e.to_string(),
+                    },
+                };
+                let optional = rows
+                    .iter()
+                    .filter(|r| r.package == name)
+                    .all(|r| r.group == DependencyGroup::Optional);
+                if optional {
+                    cx.events.emit(fnpm_types::Event::warn(message, None));
+                } else {
+                    cx.events.emit(fnpm_types::Event::Error {
+                        message: message.clone(),
+                        code: Some("MANIFEST_FAILED".into()),
+                    });
+                    failures.push(message);
+                }
+            }
         }
+    }
+    if !failures.is_empty() {
+        let data = json!({ "packages": [], "errors": failures });
+        return Ok(super::exit(1, data, Vec::new()));
     }
 
     let opts = PickOptions {
@@ -294,13 +326,12 @@ pub(crate) async fn run(cx: &Ctx) -> Result<crate::CoreResult> {
         };
         let latest = m.pick_latest(opts, Some(&excludes));
         let update = find_update(m, &r.literal, opts, &excludes);
+        // bun `is_outdated`: an update in range, or a newer release at all. A newer release that
+        // the age gate holds back still lists the package, its columns marked with `*`.
         let is_outdated = update
             .version()
             .is_some_and(|u| u.version.cmp_precedence(&r.current).is_ne())
-            || actual_latest.version.cmp_precedence(&r.current).is_gt()
-                && latest
-                    .version()
-                    .is_some_and(|l| l.version.cmp_precedence(&r.current).is_gt());
+            || actual_latest.version.cmp_precedence(&r.current).is_gt();
         if !is_outdated {
             continue;
         }
@@ -408,12 +439,7 @@ pub(crate) async fn run(cx: &Ctx) -> Result<crate::CoreResult> {
             );
         }
     }
-    let code = i32::from(!failures.is_empty());
-    lines.extend(failures.iter().cloned());
     let data = json!({ "packages": entries, "errors": failures });
-    if code != 0 {
-        return Ok(super::exit(code, data, lines));
-    }
     Ok(ok(data, lines))
 }
 

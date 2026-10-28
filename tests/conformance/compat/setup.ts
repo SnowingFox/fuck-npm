@@ -9,8 +9,11 @@ import { expect } from "vitest";
 import { toBeValidBin, toBeWorkspaceLink, toHaveBins, toMatchNodeModulesAt } from "../harness.ts";
 import { Bun } from "./bun.ts";
 import * as bunTest from "./bun-test.ts";
+import { installDirectStreams } from "./direct-stream.ts";
 
 (globalThis as { Bun?: unknown }).Bun = Bun;
+
+installDirectStreams();
 
 // `tempDir` returns a `String` object (it has to carry `Symbol.dispose`). bun's path and fs functions take it as a
 // path; node's check `typeof value === "string"`. Unwrap `String` objects in the arguments of node:path, node:fs and

@@ -68,7 +68,7 @@ const emptyText = (checked: number) => `No packages to list (checked ${checked} 
 
 function expectEmptyText(stdout: string, checked: number) {
   expect(normalizeFnpmSnapshot(stdout)).toBe(`${HEADER}\n\n${emptyText(checked)}`);
-  expect(stdout).toMatch(/\nNo packages to list \(checked \d+ packages in bun\.lock\) \[\d+\.\d+m?s\]\n$/);
+  expect(stdout).toMatch(/\nNo packages to list \(checked \d+ packages in fnpm\.lock\) \[\d+\.\d+m?s\]\n$/);
 }
 
 const MISSING_NOTE = "note: run 'fnpm install' first";

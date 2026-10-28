@@ -4,7 +4,7 @@
 import { spawn } from "../compat/bun.ts";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "../compat/bun-test.ts";
 import { readFile, rm, writeFile } from "../compat/fs-promises.ts";
-import { fnpmExe, compileFixture, fnpmEnv as env, isLinux, isMusl, readdirSorted, tempDir } from "../harness.ts";
+import { evictCacheEntries, fnpmExe, compileFixture, fnpmEnv as env, isLinux, isMusl, readdirSorted, tempDir } from "../harness.ts";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import {
@@ -49,7 +49,7 @@ afterEach(async () => {
 
 // the CI runner exports FNPM_CACHE_DIR, which would override the per-project
 // bunfig cache dirs these tests populate and inspect
-const { FNPM_CACHE_DIR: _ciCacheDir, ...installEnv } = env;
+const { FNPM_CACHE_DIR: _ciCacheDir, FNPM_STORE_DIR: _ciStoreDir, ...installEnv } = env;
 
 async function install(cwd: string, args: string[], extraEnv: Record<string, string> = {}) {
   await using proc = spawn({
@@ -172,9 +172,7 @@ describe.each(["hoisted", "isolated"] as const)("--offline (%s linker)", linker 
     expect(urls.length).toBe(before);
 
     // manifest cached but that version's tarball evicted → clean error, no request
-    for (const entry of await readdirSorted(cache_dir)) {
-      if (entry.startsWith("baz@0.0.3")) await rm(join(cache_dir, entry), { recursive: true, force: true });
-    }
+    await evictCacheEntries(cache_dir, entry => entry.startsWith("baz@0.0.3"));
     const dir4 = await newProject({ baz: "0.0.3" }, cache_dir, linker);
     r = await install(dir4, ["--offline"]);
     expect(r.err).toContain("--offline");

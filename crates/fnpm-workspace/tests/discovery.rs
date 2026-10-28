@@ -242,6 +242,7 @@ fn missing_literal_workspace() {
     assert_eq!(err.to_string(), "Workspace not found \"i-dont-exist\"");
     let opts = LoadOptions {
         missing: MissingWorkspace::Skip,
+        ..Default::default()
     };
     assert!(
         Workspace::load_with(dir.path(), &opts)
@@ -359,9 +360,13 @@ fn invalid_and_empty_member_manifests() {
         ("packages/a/package.json", ""),
     ]);
     let err = Workspace::load(dir.path()).unwrap_err().to_string();
-    assert!(err.ends_with("file is empty"), "{err}");
+    assert!(
+        err.contains("file is empty\nnote: restore package.json"),
+        "{err}"
+    );
     let opts = LoadOptions {
         missing: MissingWorkspace::SkipEmptyToo,
+        ..Default::default()
     };
     assert!(
         Workspace::load_with(dir.path(), &opts)

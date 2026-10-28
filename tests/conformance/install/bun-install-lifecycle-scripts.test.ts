@@ -32,6 +32,7 @@ import {
   githubTarball,
   isLinux,
   isWindows,
+  nodeExe,
   normalizeFnpmSnapshot,
   readdirSorted,
   runFnpmInstall,
@@ -172,7 +173,7 @@ test.concurrent("ignore-scripts is read from npmrc", async () => {
           "uses-what-bin": "1.0.0",
         },
         scripts: {
-          postinstall: `${fnpmExe()} -e 'await Bun.write("postinstall.txt", "postinstall!!")'`,
+          postinstall: `${nodeExe()} -e 'require("fs").writeFileSync("postinstall.txt", "postinstall!!")'`,
         },
         trustedDependencies: ["uses-what-bin"],
       }),
@@ -584,7 +585,7 @@ test.concurrent("node-gyp shim directory added to lifecycle script PATH gets a r
         "no-deps": "1.0.0",
       },
       scripts: {
-        postinstall: `${fnpmExe()} -e 'await Bun.write("path.txt", String(process.env.PATH))'`,
+        postinstall: `${nodeExe()} -e 'require("fs").writeFileSync("path.txt", String(process.env.PATH))'`,
       },
     }),
   );
@@ -1021,7 +1022,7 @@ test.concurrent("binary lockfile trusted dependency entries require an exact nam
       name: colliderName,
       version: "1.0.0",
       scripts: {
-        postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+        postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
       },
     }),
   );
@@ -1147,7 +1148,7 @@ test.concurrent(
         name: "my-native-addon",
         version: "1.0.0",
         scripts: {
-          postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+          postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
         },
       }),
     );
@@ -1524,7 +1525,7 @@ describe("the trusted set", () => {
         "packages/a/package.json": {
           name: "@scope/a",
           version: "1.0.0",
-          scripts: { postinstall: `${fnpmExe()} -e "require('fs').appendFileSync('postinstall.log', 'ran,')"` },
+          scripts: { postinstall: `${nodeExe()} -e "require('fs').appendFileSync('postinstall.log', 'ran,')"` },
         },
       });
       const memberLog = () => textOf(ctx.packageDir, "packages", "a", "postinstall.log");
@@ -2090,7 +2091,7 @@ describe("the trusted set", () => {
   describe("npm_config_ignore_scripts", () => {
     const manifest = {
       name: "foo",
-      scripts: { postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('root.txt', 'ran')"` },
+      scripts: { postinstall: `${nodeExe()} -e "require('fs').writeFileSync('root.txt', 'ran')"` },
       dependencies: { "lifecycle-postinstall": "1.0.0" },
       trustedDependencies: ["lifecycle-postinstall"],
     };
@@ -2222,7 +2223,7 @@ describe("the trusted set", () => {
   test.concurrent.skipIf(!isWindows)(
     "the project's node_modules/.bin comes last for a dependency's script, no matter how the working directory is spelled",
     async () => {
-      const printPath = `${fnpmExe()} -e 'await Bun.write("path.txt", String(process.env.PATH))'`;
+      const printPath = `${nodeExe()} -e 'require("fs").writeFileSync("path.txt", String(process.env.PATH))'`;
       using ctx = await project("hoisted", {
         "package.json": {
           name: "foo",
@@ -4382,7 +4383,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           name: "fooooooooo",
           version: "1.0.0",
           scripts: {
-            preinstall: `${fnpmExe()} -e "throw new Error('Oops!')"`,
+            preinstall: `${nodeExe()} -e "throw new Error('Oops!')"`,
           },
         }),
       );
@@ -4752,9 +4753,9 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
             "node-gyp": "file:./node-gyp-pkg",
           },
           scripts: {
-            postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall.txt', 'ran')"`,
-            prepare: `${fnpmExe()} -e "require('fs').writeFileSync('prepare.txt', 'ran')"`,
-            postprepare: `${fnpmExe()} -e "require('fs').writeFileSync('postprepare.txt', 'ran')"`,
+            postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall.txt', 'ran')"`,
+            prepare: `${nodeExe()} -e "require('fs').writeFileSync('prepare.txt', 'ran')"`,
+            postprepare: `${nodeExe()} -e "require('fs').writeFileSync('postprepare.txt', 'ran')"`,
           },
         }),
       );
@@ -5698,7 +5699,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           name: "esbuild",
           version: "1.0.0",
           scripts: {
-            postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+            postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
           },
         }),
       );
@@ -5767,7 +5768,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
           name: colliderName,
           version: "1.0.0",
           scripts: {
-            postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+            postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
           },
         }),
       );
@@ -6004,7 +6005,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
             name: colliderName,
             version: "1.0.0",
             scripts: {
-              postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+              postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
             },
           }),
         );
@@ -6067,7 +6068,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
                 name: "what-bin",
                 version: "9.9.9",
                 scripts: {
-                  postinstall: `${fnpmExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
+                  postinstall: `${nodeExe()} -e "require('fs').writeFileSync('postinstall-ran.txt', 'ran')"`,
                 },
               }),
             ),
@@ -6969,7 +6970,7 @@ for (const forceWaiterThread of isLinux ? [false, true] : [false]) {
             name: "foo",
             version: "1.0.0",
             scripts: {
-              preinstall: `${fnpmExe()} -e 'Bun.sleepSync(1000)'`,
+              preinstall: `${nodeExe()} -e 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000)'`,
             },
           }),
         );

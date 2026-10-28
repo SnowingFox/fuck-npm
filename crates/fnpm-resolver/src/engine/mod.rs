@@ -114,6 +114,8 @@ pub(crate) struct Asked {
     pub replaced: bool,
     /// The replacement came from a root-level override rule.
     pub from_rule: bool,
+    /// A project's `catalog:` reference was replaced by its catalog entry.
+    pub from_catalog: bool,
 }
 
 /// Update scope of `fnpm update`.
@@ -154,6 +156,8 @@ pub(crate) struct Engine<'a> {
     pub remote_turns: VecDeque<String>,
     pub remote: HashMap<String, RState>,
     pub remote_waiters: HashMap<String, Vec<Row>>,
+    /// Remote packages whose turn is queued (a download started ahead has none yet).
+    pub remote_turned: HashSet<String>,
     pub manifest_state: HashMap<String, MState>,
     pub done_tx: mpsc::UnboundedSender<Completion>,
     pub done_rx: mpsc::UnboundedReceiver<Completion>,
@@ -175,10 +179,19 @@ pub(crate) struct Engine<'a> {
     pub requests: Vec<Request>,
     pub request_targets: Vec<Option<PackageId>>,
     pub kept_patched: Vec<String>,
+    /// `fnpm update`: `<name>@<version> was not checked for updates: ...`, reported sorted.
+    pub not_checked: Vec<String>,
+    /// See [`crate::ResolveOutput::failed_requests`].
+    pub failed_requests: Vec<String>,
     /// `(package, deprecated warning)` of the registry packages resolved from a manifest by
     /// this run; [`Engine::finish`] reports what the project asks for.
     pub deprecated: Vec<(PackageId, String)>,
     pub warnings: Vec<String>,
+    /// An omitted local dependency was left unresolved: the lockfile must not be saved.
+    pub unsaved: bool,
+    /// Rows that failed to resolve, `(row, error)` in the order they failed (bun logs each and
+    /// fails the install after the resolve).
+    pub failed: Vec<(Row, Error)>,
     pub peer_askers: Option<peers::Askers>,
     /// Reverse edges (`target -> [(owner, edge is a peer)]`), built when the peer pass starts and
     /// kept up to date by [`Engine::set_target`] / [`Engine::add_package`] from then on.
@@ -207,6 +220,9 @@ pub(crate) struct EngineOutput {
     pub requests: Vec<(Request, PackageId)>,
     pub warnings: Vec<String>,
     pub manifest_order: Vec<String>,
+    pub unsaved: bool,
+    pub failed_requests: Vec<String>,
+    pub kept: Vec<String>,
 }
 
 /// SHA-256 (hex) of a `patchedDependencies` file, part of the patched package's store key. A
@@ -216,11 +232,20 @@ pub(crate) fn patch_hash(root_dir: &Path, key: &str, path: &str) -> Result<Strin
         Ok(bytes) => {
             Ok(fnpm_types::Integrity::compute(fnpm_types::HashAlgorithm::Sha256, &bytes).to_hex())
         }
-        Err(e) => Err(Error::PatchFile {
-            key: key.to_owned(),
-            path: path.to_owned(),
-            message: format!("Couldn't find patch file: {e}"),
-        }),
+        Err(e) => {
+            let message = if e.kind() == std::io::ErrorKind::NotFound {
+                format!(
+                    "patch file not found: '{path}'\n\nTo recreate it from the patched package in node_modules, run:\n\n  fnpm patch --commit {key}\n\nTo install without the patch, remove \"{key}\" from \"patchedDependencies\" in package.json"
+                )
+            } else {
+                format!("patchedDependencies \"{key}\": {path}: Couldn't read patch file: {e}")
+            };
+            Err(Error::PatchFile {
+                key: key.to_owned(),
+                path: path.to_owned(),
+                message,
+            })
+        }
     }
 }
 
@@ -311,6 +336,7 @@ impl<'a> Engine<'a> {
             remote_turns: VecDeque::new(),
             remote: HashMap::new(),
             remote_waiters: HashMap::new(),
+            remote_turned: HashSet::new(),
             manifest_state: HashMap::new(),
             done_tx,
             done_rx,
@@ -329,8 +355,12 @@ impl<'a> Engine<'a> {
             requests,
             request_targets: Vec::new(),
             kept_patched: Vec::new(),
+            not_checked: Vec::new(),
+            failed_requests: Vec::new(),
             deprecated: Vec::new(),
             warnings: Vec::new(),
+            unsaved: false,
+            failed: Vec::new(),
             peer_askers: None,
             parents: None,
             progress: 0,
@@ -402,6 +432,7 @@ impl<'a> Engine<'a> {
         }
         self.graph.trusted_dependencies = crate::frozen::trusted(self.ws)?;
         if let Some(prev) = self.prev {
+            self.graph.lockfile_version = prev.lockfile_version;
             self.graph.node_linker = prev.node_linker;
             self.graph.config_version = prev.config_version;
         }
@@ -467,6 +498,7 @@ impl<'a> Engine<'a> {
             patched_dependencies: std::mem::take(&mut self.graph.patched_dependencies),
             trusted_dependencies: self.graph.trusted_dependencies.take(),
             package_extensions: std::mem::take(&mut self.graph.package_extensions),
+            lockfile_version: self.graph.lockfile_version,
             node_linker: self.graph.node_linker,
             config_version: self.graph.config_version,
             ..LockGraph::new(root)
@@ -829,7 +861,12 @@ impl<'a> Engine<'a> {
             }
             Completion::Remote(key, result) => {
                 let state = match result {
-                    Ok(r) => RState::Ready(r),
+                    Ok(r) => {
+                        // Its turn may wait for an earlier tarball: what it depends on is
+                        // requested now, like bun, so that one's download is not in its way.
+                        self.follow_remote_ahead(&r.1.manifest);
+                        RState::Ready(r)
+                    }
                     Err(e) => RState::Failed(Arc::new(e)),
                 };
                 self.remote.insert(key, state);
@@ -839,6 +876,9 @@ impl<'a> Engine<'a> {
 
     pub(crate) async fn run(mut self) -> Result<EngineOutput> {
         self.drive().await?;
+        if !self.failed.is_empty() {
+            return Err(self.unresolved());
+        }
         // Peer warnings, collapsing and pruning are CPU work over the whole graph: keep them off
         // the async workers when the runtime allows it.
         let multi_thread = tokio::runtime::Handle::try_current()

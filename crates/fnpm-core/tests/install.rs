@@ -101,11 +101,12 @@ async fn warm_store_install_downloads_nothing() {
 async fn frozen_lockfile_and_ci() {
     let reg = Registry::start(&basic()).await;
     let p = Project::new(&reg, json!({ "dependencies": { "a": "^1.0.0" } }));
-    // No lockfile: frozen fails.
+    // No lockfile: like bun, a frozen install resolves and saves none.
     let mut o = p.opts(InstallCommand::Install, &[]);
     o.pm.frozen_lockfile = true;
-    let err = p.run(o.clone()).await.unwrap_err();
-    assert_eq!(err.code(), "FROZEN_LOCKFILE", "{err}");
+    p.run(o.clone()).await.unwrap();
+    assert!(!p.path("fnpm.lock").exists());
+    std::fs::remove_dir_all(p.path("node_modules")).unwrap();
 
     p.install().await;
     std::fs::remove_dir_all(p.path("node_modules")).unwrap();
@@ -1600,19 +1601,20 @@ async fn frozen_reinstall_accepts_unused_trust_and_patch_entries_omitted_by_the_
     assert_eq!(p.read("fnpm.lock"), lock_before);
     assert_eq!(reg.manifest_requests(), 0);
 
+    // Like bun, trust and patches are not part of the frozen comparison: the install applies
+    // what package.json says and leaves fnpm.lock to the next plain install.
     let mut manifest: serde_json::Value = serde_json::from_str(&p.read("package.json")).unwrap();
     manifest["trustedDependencies"] = json!(["not-installed"]);
     p.write("package.json", &manifest.to_string());
     let mut opts = p.opts(InstallCommand::Install, &[]);
     opts.pm.frozen_lockfile = true;
-    assert_eq!(
-        p.run(opts.clone()).await.unwrap_err().code(),
-        "FROZEN_LOCKFILE"
-    );
+    p.run(opts.clone()).await.unwrap();
+    assert_eq!(p.read("fnpm.lock"), lock_before);
     manifest["trustedDependencies"] = json!(["a", "not-installed"]);
     manifest["patchedDependencies"]["a@1.0.0"] = json!("unused.patch");
     p.write("package.json", &manifest.to_string());
-    assert_eq!(p.run(opts).await.unwrap_err().code(), "FROZEN_LOCKFILE");
+    p.run(opts).await.unwrap();
+    assert_eq!(p.read("fnpm.lock"), lock_before);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

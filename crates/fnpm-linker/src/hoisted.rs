@@ -40,6 +40,8 @@ struct Plan<'t> {
     /// Packages whose every incoming edge is optional: a failed download skips them.
     optional_only: Vec<bool>,
     skipped: Vec<bool>,
+    /// Inside a self-contained workspace's `node_modules`: placed as real copies.
+    physical: Vec<bool>,
     /// Expected children of each node_modules, including unselected workspaces when filtered.
     expected: HashMap<PathBuf, Vec<String>>,
 }
@@ -124,7 +126,11 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
     let nm = cx.project_dir.join("node_modules");
     let n = tree.nodes.len();
     let mut ws_base: HashMap<u32, PathBuf> = HashMap::new();
+    let mut physical_tops: HashSet<u32> = HashSet::new();
     for (ws, ids) in &tree.workspace_roots {
+        if cx.self_contained.contains(ws) {
+            physical_tops.extend(ids.iter().copied());
+        }
         let Some(p) = cx.graph.get(*ws) else { continue };
         let Some(dir) = local_target(cx.project_dir, &p.resolution) else {
             continue;
@@ -138,6 +144,7 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
     let mut children = vec![Vec::new(); n];
     let mut tops = Vec::new();
     let mut skipped = vec![false; n];
+    let mut physical = vec![false; n];
     let mut expected: HashMap<PathBuf, Vec<String>> = HashMap::new();
     for (i, node) in tree.nodes.iter().enumerate() {
         let label = || {
@@ -178,6 +185,10 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
             package: node.path.clone(),
             message: format!("package id {} is not in the graph", node.package.0),
         })?;
+        physical[i] = physical_tops.contains(&(i as u32))
+            || node
+                .parent
+                .is_some_and(|p| physical.get(p as usize).copied().unwrap_or(false));
         let parent_skipped = node.parent.is_some_and(|p| skipped[p as usize]);
         skipped[i] = parent_skipped
             || (!pkg.resolution.is_local_tree() && !pkg.platform.matches(&cx.platform));
@@ -194,6 +205,7 @@ fn build_plan<'t>(cx: &LinkCx<'_>, tree: &'t Tree) -> Result<Plan<'t>> {
         tops,
         optional_only: optional_only(cx.graph),
         skipped,
+        physical,
         expected,
     })
 }
@@ -282,7 +294,12 @@ impl Out {
 pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let nm = cx.project_dir.join("node_modules");
     let mut fresh = cx.opts.fresh || !nm.exists();
-    if !fresh && crate::is_isolated_tree(cx.project_dir) {
+    let mut not_cleared = Vec::new();
+    // Nothing behind a symlinked `node_modules` is cleared, so each install finds the isolated
+    // tree again: warn instead of treating every install as a switch of linker (bun).
+    if !fresh && fsutil::is_linked_node_modules(&nm) && crate::is_isolated_tree(cx.project_dir) {
+        not_cleared.push(crate::shown_folder(cx.project_dir, &nm));
+    } else if !fresh && crate::is_isolated_tree(cx.project_dir) {
         // Switching from the isolated layout: move the whole tree aside.
         crate::move_node_modules_aside(&nm, &[]);
         for (ws, _) in &tree.workspace_roots {
@@ -387,14 +404,35 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
                 {
                     continue;
                 }
-                removed += remove_stale(
-                    &nm,
-                    plan.expected
-                        .get(&nm)
-                        .into_iter()
-                        .flatten()
-                        .map(String::as_str),
-                );
+                let mut keep: Vec<String> = plan.expected.get(&nm).cloned().unwrap_or_default();
+                // A self-contained workspace's node_modules may hold what bun did not put there
+                // (a packager's output): only what the previous install placed is removed.
+                if cx.self_contained.contains(ws)
+                    && let Some(prev) = &cx.opts.previous
+                {
+                    let path = cx.graph.packages[ws.index()].resolution.to_string();
+                    let placed: HashSet<&str> = prev
+                        .graph
+                        .workspaces
+                        .iter()
+                        .find(|(_, id)| {
+                            prev.graph.packages[id.index()].resolution.to_string() == path
+                        })
+                        .and_then(|(_, id)| prev.tree.workspace_roots.iter().find(|(w, _)| w == id))
+                        .map(|(_, ids)| {
+                            ids.iter()
+                                .filter_map(|&i| prev.tree.nodes.get(i as usize))
+                                .map(|n| n.name.as_str())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    keep.extend(
+                        top_level_names(&nm)
+                            .into_iter()
+                            .filter(|name| !placed.contains(name.as_str())),
+                    );
+                }
+                removed += remove_stale(&nm, keep.iter().map(String::as_str));
                 crate::bins::prune_dangling_bins(&nm.join(".bin"));
             }
         }
@@ -406,6 +444,7 @@ pub(crate) fn link(cx: &LinkCx<'_>, tree: &Tree) -> Result<LinkReport> {
     let mut dirs = out.dirs.into_inner();
     dirs.sort();
     Ok(LinkReport {
+        not_cleared,
         installed: out.installed.load(Ordering::Relaxed),
         installed_packages: out.installed_packages.load(Ordering::Relaxed),
         verified: out.verified.load(Ordering::Relaxed),
@@ -484,6 +523,13 @@ fn place_node<'s>(
                 if !out.written[node.package.index()].swap(true, Ordering::Relaxed) {
                     out.installed_packages.fetch_add(1, Ordering::Relaxed);
                 }
+                // bun runs the scripts of a `link:` package when it makes the link to it.
+                if matches!(
+                    cx.graph.packages[node.package.index()].resolution,
+                    Resolution::Symlink { .. }
+                ) {
+                    out.dirs.lock().push((node.package, target.clone()));
+                }
                 Ok(Some(true))
             }
             Place::Copy => {
@@ -541,7 +587,18 @@ fn place_node<'s>(
                         source,
                     })?;
                 }
-                match cx.materialize(node.package, dest) {
+                // A workspace's `node_modules` was not made by this run: a link planted at the
+                // package (or its scope) is removed, not written through. Below a fresh root
+                // `node_modules` nothing can be planted, so that costs nothing there.
+                if !parent_fresh || !dest.starts_with(&nm) {
+                    unplant_dest(dest)?;
+                }
+                let placed = if plan.physical[idx] {
+                    cx.materialize_physical(node.package, dest)
+                } else {
+                    cx.materialize(node.package, dest)
+                };
+                match placed {
                     Ok(()) => {}
                     Err(Error::Missing { .. }) if plan.optional_only[node.package.index()] => {
                         out.skipped.fetch_add(1, Ordering::Relaxed);
@@ -583,9 +640,62 @@ fn place_node<'s>(
             Ordering::Relaxed,
         );
     }
+    // Below a link (a workspace under another name, `link:`) is the target's own folder: its
+    // packages are placed there from the workspace's own tree, never through the link, or the
+    // planted-link check of a child would take the link for one and replace it.
+    if matches!(plan.places[idx], Place::Link(_)) {
+        let mut below = plan.children[idx].clone();
+        while let Some(c) = below.pop() {
+            cx.tick();
+            below.extend_from_slice(&plan.children[c as usize]);
+        }
+        return;
+    }
     for &c in &plan.children[idx] {
         s.spawn_fifo(move |s| place_node(s, cx, plan, out, unchanged, c, child_fresh, force));
     }
+}
+
+/// The package folders of `node_modules` (`name`, `@scope/name`), dot entries excluded.
+fn top_level_names(node_modules: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(node_modules)
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        if name.starts_with('@') {
+            for ie in std::fs::read_dir(e.path()).into_iter().flatten().flatten() {
+                out.push(format!("{name}/{}", ie.file_name().to_string_lossy()));
+            }
+        } else {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// Removes a symlink at `dest` or at its scope folder (never what it points to).
+fn unplant_dest(dest: &Path) -> Result<()> {
+    let io = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| Error::Io { path, source }
+    };
+    if let Some(scope) = dest.parent().filter(|p| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('@'))
+    }) && fsutil::kind(scope) == Kind::Symlink
+    {
+        fsutil::remove_link(scope).map_err(io(scope))?;
+    }
+    if fsutil::kind(dest) == Kind::Symlink {
+        fsutil::remove_link(dest).map_err(io(dest))?;
+    }
+    Ok(())
 }
 
 /// Removes linker-made entries of `node_modules` whose name is not `expected` (scoped names
@@ -594,6 +704,10 @@ pub(crate) fn remove_stale<'a>(
     node_modules: &Path,
     expected: impl Iterator<Item = &'a str>,
 ) -> u32 {
+    // What is behind a symlinked `node_modules` may not be a linker's (bun `LinkedNodeModules`).
+    if fsutil::is_linked_node_modules(node_modules) {
+        return 0;
+    }
     let Ok(rd) = std::fs::read_dir(node_modules) else {
         return 0;
     };
@@ -728,6 +842,9 @@ fn link_all_bins(cx: &LinkCx<'_>, plan: &Plan<'_>, out: &Out, fresh: bool) -> Re
                             *g = Some(e);
                         }
                     }
+                }
+                if let Some(warning) = linker.refused_warning() {
+                    cx.events.emit(fnpm_types::Event::warn(warning, None));
                 }
                 if !fresh {
                     crate::bins::prune_dangling_bins(&bin_dir);

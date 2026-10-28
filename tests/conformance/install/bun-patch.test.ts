@@ -68,7 +68,9 @@ function projectEnv(dir: string, cache = join(dir, ".bun-cache")): Env {
 }
 
 async function runBun(cwd: string, env: Env, ...args: string[]) {
-  await using proc = Bun.spawn({ cmd: [fnpmExe(), ...args], cwd, env, stdout: "pipe", stderr: "pipe" });
+  // `bun -e <code>` ran the code with bun's runtime; fnpm is no runtime, node runs it.
+  const exe = args[0] === "-e" ? nodeExe() : fnpmExe();
+  await using proc = Bun.spawn({ cmd: [exe, ...args], cwd, env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
   return { stdout, stderr, exitCode };
 }

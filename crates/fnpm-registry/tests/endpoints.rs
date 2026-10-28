@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use fnpm_config::{Auth, Env};
 use fnpm_registry::{
-    AuditPackage, Error, OtpPrompt, PublishOptions, PublishPackage, RegistryClient,
+    AuditPackage, Error, OtpPrompt, PublishOptions, PublishPackage, RegistryClient, SkipReason,
 };
 use futures_util::future::BoxFuture;
 use parking_lot::Mutex;
@@ -113,19 +113,24 @@ async fn audit_skips_a_failing_scoped_registry_but_not_the_default() {
     assert_eq!(r.unaudited[0].registry, broken.url().trim_end_matches('/'));
     assert_eq!((r.checked, r.skipped), (0, 1));
     assert_eq!(r.advisories, j!({}));
-    assert_eq!(warnings.0.lock().len(), 1);
+    // The commands report the skipped registries themselves.
+    assert_eq!(warnings.0.lock().len(), 0);
 
     let bad_default = Server::start(|_, _| json(200, j!([]))).await;
     let c = client(config(&bad_default.url(), tmp.path()));
-    let e = c.audit(&[]).await.unwrap_err();
-    assert!(e.to_string().contains("not a list of advisories"), "{e}");
+    let failure = c.audit(&[]).await.unwrap().default_failure.unwrap();
+    assert_eq!(failure.reason, SkipReason::NotAdvisories);
+    assert_eq!(&failure.body[..], b"[]");
     let down = Server::start(|_, _| status(500)).await;
     let mut cfg = config(&down.url(), tmp.path());
     cfg.network.retries = 1;
-    assert!(matches!(
-        client(cfg).audit(&[]).await,
-        Err(Error::Status { status: 500, .. })
-    ));
+    let failure = client(cfg)
+        .audit(&[])
+        .await
+        .unwrap()
+        .default_failure
+        .unwrap();
+    assert_eq!(failure.reason, SkipReason::Status(500));
     // Safe to retry: the POST was sent twice.
     assert_eq!(down.requests().len(), 2);
 }

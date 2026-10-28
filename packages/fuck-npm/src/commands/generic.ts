@@ -1,12 +1,15 @@
 import { createColors } from "picocolors";
 import { read } from "../cli/parse-flags.ts";
-import { getCliVersion } from "../cli/version.ts";
+import { getCliVersionWithSha } from "../cli/version.ts";
 import { SilentError } from "../errors.ts";
 import { logLevelOf, requestOptions } from "../core/options.ts";
 import type { CoreRequest } from "../core/types.ts";
 import { colorEnabled } from "../output/output.ts";
 import type { CommandContext } from "./context.ts";
 import { startListener } from "./install.ts";
+
+/** Commands whose `lines` are the whole output, also with `--json`. */
+const RAW_OUTPUT = new Set(["pm pkg", "pm licenses", "pm diff", "info", "view", "show", "pm view", "pm info"]);
 
 /**
  * Every command without a dedicated handler: validate, then hand the request
@@ -34,7 +37,7 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     // `outdated` only reads; bun forces dry-run.
     options.dryRun = true;
   }
-  options.cliVersion = getCliVersion();
+  options.cliVersion = getCliVersionWithSha();
   if (head === "publish") {
     options.nodeVersion = process.versions.node;
     // bun: `fnpm --filter='*' publish` runs the workspaces' `publish` scripts, it does not publish them.
@@ -56,12 +59,14 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
 
   const header = head === "outdated" ? "fnpm outdated" : ctx.path.join(" ") === "pm scan" ? "fnpm pm scan" : undefined;
   if (header !== undefined && ctx.output.mode !== "json" && logLevel !== "silent") {
-    const pc = createColors(colorEnabled(ctx.runtime, ctx.runtime.stderrIsTTY));
-    ctx.runtime.stderr.write(`${pc.bold(header)} ${pc.dim(`v${getCliVersion()}`)}\n`);
+    // bun prints `bun outdated vX` on stdout (`prettyln`), above the table.
+    const stdout = head === "outdated";
+    const pc = createColors(colorEnabled(ctx.runtime, stdout ? ctx.runtime.stdoutIsTTY : ctx.runtime.stderrIsTTY));
+    (stdout ? ctx.runtime.stdout : ctx.runtime.stderr).write(`${pc.bold(header)} ${pc.dim(`v${getCliVersionWithSha()}`)}\n`);
   }
 
   // Commands that print their own header (`fnpm audit fix vX`) print the CLI's version.
-  (options as Record<string, unknown>).cliVersion = getCliVersion();
+  (options as Record<string, unknown>).cliVersion = getCliVersionWithSha();
   const request: CoreRequest = {
     command: ctx.registry.bin === "fnpm-lock" ? ["lock", ...ctx.path] : ctx.path,
     cwd: String(options.cwd),
@@ -83,12 +88,29 @@ export async function runGeneric(ctx: CommandContext): Promise<number> {
     listener.progress?.stop();
   }
 
+  const auditReport =
+    ctx.registry.bin === "fnpm" && (head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] !== "fix";
+  if (ctx.path.join(" ") === "pm cache path" && ctx.output.mode !== "json") {
+    // bun writes the bare path, with no newline.
+    ctx.runtime.stdout.write((result.lines ?? []).join("\n"));
+    return result.exitCode;
+  }
+  if (RAW_OUTPUT.has(ctx.path.join(" ")) || auditReport) {
+    // The core prints these as bun does in every mode (`pm pkg set --json` parses values; the
+    // `pm licenses --json` document is the listing itself); `--silent` only quiets stderr.
+    for (const line of result.lines ?? []) ctx.runtime.stdout.write(`${line}\n`);
+    return result.exitCode;
+  }
   if (ctx.output.mode === "json") {
-    const rawDocument = ctx.path.join(" ") === "pm diff" || ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
+    const rawDocument = ((head === "audit" || ctx.path.join(" ") === "pm audit") && ctx.positionals[0] === "fix");
     ctx.output.json(rawDocument ? result.data : { ok: result.exitCode === 0, command: ctx.path.join(" "), ...result.data });
     return result.exitCode;
   }
-  if (logLevel !== "silent" || head === "run" || head === "exec" || head === "x") {
+  // `bun pm cache` prints the cache directory with no newline, for `$(bun pm cache)`.
+  const cachePath = /^(pm )?cache( path)?$/.test(ctx.path.join(" ")) && result.exitCode === 0;
+  if (cachePath && logLevel !== "silent") {
+    ctx.runtime.stdout.write((result.lines ?? []).join("\n"));
+  } else if (logLevel !== "silent" || head === "run" || head === "exec" || head === "x") {
     for (const line of result.lines ?? []) {
       ctx.output.line(line);
     }

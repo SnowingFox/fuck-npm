@@ -23,7 +23,16 @@ pub enum BinError {
     NoBin,
     /// The package.json could not be read or parsed.
     Unreadable,
+    /// The path of the bin the package.json names does not fit in a path (bun `PathTooLong`).
+    PathTooLong,
 }
+
+/// bun `MAX_PATH_BYTES`.
+const MAX_PATH_BYTES: usize = if cfg!(target_vendor = "apple") {
+    1024
+} else {
+    4096
+};
 
 /// `which` resolves a name with a slash against the cwd, not against `node_modules/.bin`.
 fn is_safe_bin_name(name: &str) -> bool {
@@ -159,7 +168,7 @@ pub fn find_in_project(
         let bin = match bin_of(&package_json, bin_name) {
             Ok(bin) => bin,
             Err(BinError::NoBin) => return Err(BinError::NoBin),
-            Err(BinError::Unreadable) => continue,
+            Err(BinError::Unreadable | BinError::PathTooLong) => continue,
         };
         if only_that_bin && bin.name != bin_name {
             return Err(BinError::NoBin);
@@ -299,6 +308,9 @@ pub fn find_in_cache(
         .join("node_modules")
         .join(".bin")
         .join(format!("{bin_name}{}", std::env::consts::EXE_SUFFIX));
+    if candidate.as_os_str().len() >= MAX_PATH_BYTES {
+        return Err(BinError::PathTooLong);
+    }
     if is_executable(&candidate) {
         return Ok(Some(candidate));
     }

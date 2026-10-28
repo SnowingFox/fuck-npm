@@ -45,6 +45,17 @@ impl Core for FakeCore {
     }
 }
 
+/// The fixtures come from the unbundled TS CLI, which has no build revision: the native
+/// header's `(<revision>)` is taken out before comparing.
+fn without_revision(text: &str) -> String {
+    let revision = fnpm_cli::spec::REVISION;
+    if revision.is_empty() {
+        text.to_owned()
+    } else {
+        text.replace(&format!(" ({revision})"), "")
+    }
+}
+
 /// Collects failures so one run reports every mismatching case.
 #[derive(Default)]
 struct Failures(Vec<String>);
@@ -140,7 +151,7 @@ fn cli_cases_match_the_ts_cli() {
         failures.check(
             name,
             "stdout",
-            &stdout.text(),
+            &without_revision(&stdout.text()),
             &expected["stdout"].as_str().unwrap().to_owned(),
         );
         failures.check(
@@ -300,7 +311,7 @@ fn fuzzed_invocations_match_the_ts_cli() {
         failures.check(
             &name,
             "stdout",
-            &stdout.text(),
+            &without_revision(&stdout.text()),
             &case["stdout"].as_str().unwrap().to_owned(),
         );
         failures.check(

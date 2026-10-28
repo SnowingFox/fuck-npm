@@ -216,6 +216,38 @@ pub struct InstallSummary {
     pub blocked_scripts: u32,
     pub elapsed_ms: u64,
     pub noop: bool,
+    /// `--lockfile-only`: whether fnpm.lock was written, and how many packages it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lockfile_only: Option<LockfileOnly>,
+    /// `update` rewrote package.json with nothing else to install: bun's `Checked ...
+    /// (up to date, package.json synced)`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub package_json_synced: bool,
+    /// `update`: `kept <name>@<version> (patched, v<x> available)` rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<String>,
+    /// `update` whose selectors picked nothing: `Checked N dependencies, none <this>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none_selected: Option<NoneSelected>,
+}
+
+/// See [`InstallSummary::none_selected`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoneSelected {
+    pub checked: u32,
+    pub by: String,
+}
+
+/// `InstallSummary.lockfileOnly` in `types.ts`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockfileOnly {
+    pub saved: bool,
+    pub packages: u32,
+    /// The lockfile is bun.lockb, not fnpm.lock.
+    #[serde(default)]
+    pub binary: bool,
 }
 
 /// Where events go. Implementations must be cheap: they are called from tokio tasks and rayon

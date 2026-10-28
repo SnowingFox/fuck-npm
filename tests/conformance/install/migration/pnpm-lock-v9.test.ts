@@ -424,7 +424,7 @@ snapshots:
       const { stderr, exitCode } = await migrate(packageDir);
 
       expect(stderr).toContain(
-        'warn: fetching pnpm registry "npmjs" packages from https://registry.npmjs.org/; add it to bunfig.toml or .npmrc if it needs authentication',
+        'warn: fetching pnpm registry "npmjs" packages from https://registry.npmjs.org/; add it to fnpm.toml or .npmrc if it needs authentication',
       );
       expect(stderr).not.toContain("not in namedRegistries");
       expect(stderr).toContain("migrated lockfile from pnpm-lock.yaml");
@@ -496,7 +496,7 @@ snapshots:
       });
       const named = await migrate(namedDir);
       expect(named.stderr).toContain(
-        `warn: fetching pnpm registry "work" packages from http://127.0.0.1:${verdaccio.port}/; add it to bunfig.toml or .npmrc if it needs authentication`,
+        `warn: fetching pnpm registry "work" packages from http://127.0.0.1:${verdaccio.port}/; add it to fnpm.toml or .npmrc if it needs authentication`,
       );
       expect(named.stderr).not.toContain("hunter2secret");
       expect(await bunLockOf(namedDir)).toContain(
@@ -639,7 +639,7 @@ snapshots:
       const { stderr, exitCode } = await migrate(packageDir);
 
       expect(stderr).toContain(
-        `warn: fetching pnpm registry "work" packages from ${named}; add it to bunfig.toml or .npmrc if it needs authentication`,
+        `warn: fetching pnpm registry "work" packages from ${named}; add it to fnpm.toml or .npmrc if it needs authentication`,
       );
       expect(stderr.split('pnpm registry "work"').length - 1).toBe(1);
       expect(stderr).not.toContain("not in namedRegistries");
@@ -681,7 +681,7 @@ snapshots:
       const { stderr, exitCode } = await migrate(packageDir);
 
       expect(stderr).toContain(
-        'warn: fetching pnpm registry "work" packages from http://127.0.0.1:1/***/; add it to bunfig.toml or .npmrc if it needs authentication',
+        'warn: fetching pnpm registry "work" packages from http://127.0.0.1:1/***/; add it to fnpm.toml or .npmrc if it needs authentication',
       );
       expect(stderr).not.toContain(password);
       expect(stderr).not.toContain(token);
@@ -792,7 +792,7 @@ snapshots:
       const { stderr, exitCode } = await migrate(packageDir);
 
       expect(stderr).toContain(
-        'warn: fetching pnpm registry "gh" packages from https://npm.pkg.github.com/; add it to bunfig.toml or .npmrc if it needs authentication',
+        'warn: fetching pnpm registry "gh" packages from https://npm.pkg.github.com/; add it to fnpm.toml or .npmrc if it needs authentication',
       );
       expect(stderr).not.toContain("not in namedRegistries");
       expect(stderr).toContain("migrated lockfile from pnpm-lock.yaml");
@@ -4070,7 +4070,7 @@ catalog:
 
       const install = await run(String(tooDeep), "install");
 
-      expect(install.stderr).toContain(`warn: Bun currently only supports one level of nested "overrides"`);
+      expect(install.stderr).toContain(`warn: fnpm currently only supports one level of nested "overrides"`);
       expect(install.stderr).toMatch(/package\.json:\d+:\d+/);
       expect(install.stderr.split("warn:").length - 1).toBe(1);
       expect(install.exitCode).toBe(0);

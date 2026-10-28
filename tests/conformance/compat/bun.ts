@@ -3,22 +3,24 @@
  * ported tests run under vitest with their bodies unchanged. Only what the tests touch is here; it is not a
  * general Bun polyfill.
  */
-import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
+import { execFileSync, spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
 import { createHash, type BinaryToTextEncoding } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
-import { dirname, join, matchesGlob, relative, sep } from "node:path";
+import { basename, dirname, join, matchesGlob, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import tls from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { rememberCacheStore } from "./stores.ts";
 import { inspect, isDeepStrictEqual, stripVTControlCharacters } from "node:util";
 import zlib from "node:zlib";
 import semverLib from "semver";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { bindSync, NodeServer } from "../../registry/src/server.ts";
 import * as bunTest from "./bun-test.ts";
+import { lockfilePath } from "./lockfile.ts";
 import { readTar } from "../../registry/src/tgz.ts";
 
 type Bytes = Uint8Array<ArrayBuffer>;
@@ -107,9 +109,14 @@ export class BunFile extends Blob {
     this.#type = options.type;
   }
 
+  /** The file the readers open: `name`, or fnpm.lock for a `bun.lockb` fnpm does not write (see ./lockfile.ts). */
+  get #path(): string {
+    return lockfilePath(this.name);
+  }
+
   override get size(): number {
     try {
-      return fs.statSync(this.name).size;
+      return fs.statSync(this.#path).size;
     } catch {
       return 0;
     }
@@ -126,7 +133,7 @@ export class BunFile extends Blob {
 
   get lastModified(): number {
     try {
-      return fs.statSync(this.name).mtimeMs;
+      return fs.statSync(this.#path).mtimeMs;
     } catch {
       return 0;
     }
@@ -134,14 +141,14 @@ export class BunFile extends Blob {
 
   async exists(): Promise<boolean> {
     try {
-      return (await fsp.stat(this.name)).isFile();
+      return (await fsp.stat(this.#path)).isFile();
     } catch {
       return false;
     }
   }
 
   override async text(): Promise<string> {
-    return fsp.readFile(this.name, "utf8");
+    return fsp.readFile(this.#path, "utf8");
   }
 
   async json(): Promise<any> {
@@ -149,7 +156,7 @@ export class BunFile extends Blob {
   }
 
   override async bytes(): Promise<Bytes> {
-    const buffer = await fsp.readFile(this.name);
+    const buffer = await fsp.readFile(this.#path);
     return new Uint8Array(buffer.buffer as ArrayBuffer, buffer.byteOffset, buffer.byteLength) as Bytes;
   }
 
@@ -159,11 +166,11 @@ export class BunFile extends Blob {
   }
 
   override stream(): ReadableStream<Bytes> {
-    return withReaders(Readable.toWeb(fs.createReadStream(this.name)) as unknown as ReadableStream<Bytes>);
+    return withReaders(Readable.toWeb(fs.createReadStream(this.#path)) as unknown as ReadableStream<Bytes>);
   }
 
   override slice(start?: number, end?: number, contentType?: string): Blob {
-    const bytes = fs.readFileSync(this.name);
+    const bytes = fs.readFileSync(this.#path);
     return new Blob([new Uint8Array(bytes.subarray(start, end))], { type: contentType });
   }
 
@@ -172,7 +179,7 @@ export class BunFile extends Blob {
   }
 
   async delete(): Promise<void> {
-    await fsp.rm(this.name, { force: true });
+    await fsp.rm(this.#path, { force: true });
   }
 
   unlink(): Promise<void> {
@@ -180,7 +187,7 @@ export class BunFile extends Blob {
   }
 
   stat(): Promise<fs.Stats> {
-    return fsp.stat(this.name);
+    return fsp.stat(this.#path);
   }
 
   writer() {
@@ -277,9 +284,31 @@ function resolveCommand(cmd: string[]): string[] {
   return cmd;
 }
 
+/** The worker's own store, `<fnpm-conformance-...>/store`. */
+function isWorkerStore(store: string): boolean {
+  return basename(store) === "store" && basename(dirname(store)).startsWith("fnpm-conformance-");
+}
+
+/**
+ * The store that goes with the cache `cache` of a test, in the worker directory `workerRoot` (not in the test's own
+ * directories, which then hold only what the install made there, as bun's would).
+ */
+export function storeOfCache(workerRoot: string, cache: string): string {
+  return join(workerRoot, "stores", createHash("sha256").update(cache).digest("hex").slice(0, 16));
+}
+
 function cleanEnv(env: Env | undefined): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env ?? process.env)) if (value !== undefined) out[key] = String(value);
+  // bun keeps the packages in its cache directory; fnpm keeps them in its store. The harness gives every worker a
+  // `<root>/cache` and a `<root>/store`. A test that points FNPM_CACHE_DIR somewhere else (a cache of its own) gets
+  // a store of its own as well (see `storeOfCache`), or it would find the packages of other tests and skip downloads
+  // it expects. A store the test chose itself is left alone.
+  const { FNPM_CACHE_DIR: cache, FNPM_STORE_DIR: store } = out;
+  if (cache && store && isWorkerStore(store) && join(dirname(store), "cache") !== cache) {
+    out.FNPM_STORE_DIR = storeOfCache(dirname(store), cache);
+    rememberCacheStore(cache, out.FNPM_STORE_DIR);
+  }
   return out;
 }
 
@@ -696,7 +725,9 @@ export class Server {
   readonly development = false;
 
   constructor(options: ServeOptions) {
-    const tlsOptions = Array.isArray(options.tls) ? options.tls[0] : options.tls;
+    // bun also takes `cert` and `key` next to `fetch` (`Bun.serve({ ...tls, fetch })`).
+    const topLevel = typeof options.cert === "string" ? { cert: options.cert, key: options.key as string } : undefined;
+    const tlsOptions = Array.isArray(options.tls) ? options.tls[0] : (options.tls ?? topLevel);
     const bindHost = options.hostname === undefined || options.hostname === "0.0.0.0" ? "127.0.0.1" : options.hostname;
     this.hostname = options.hostname === undefined || options.hostname === "0.0.0.0" ? "localhost" : options.hostname;
     this.protocol = tlsOptions?.cert ? "https" : "http";
@@ -969,9 +1000,10 @@ export class Archive {
     return createTar(input as Record<string, string | ArrayBufferView | Blob>);
   }
 
-  async bytes(): Promise<Bytes> {
+  /** `compress` overrides the constructor's option, as in `archive.bytes("gzip")`. */
+  async bytes(compress: "gzip" | undefined = this.#options.compress): Promise<Bytes> {
     let data = await this.#raw();
-    if (this.#options.compress === "gzip") data = zlib.gzipSync(data, { level: this.#options.level ?? 6 });
+    if (compress === "gzip") data = zlib.gzipSync(data, { level: this.#options.level ?? 6 });
     return new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength) as Bytes;
   }
 
@@ -1257,9 +1289,21 @@ function fnpmVersion(): string {
   }
 }
 
+/** The short git revision fnpm's build embeds (FNPM_REVISION, else `git rev-parse --short HEAD`), like `Bun.revision`. */
+function fnpmRevision(): string {
+  if (process.env.FNPM_REVISION !== undefined) return process.env.FNPM_REVISION.trim();
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
 export const version = fnpmVersion();
-export const revision = "";
-export const version_with_sha = version;
+export const revision = fnpmRevision();
+// "v<version> (<revision>)", as fnpm's headers print it.
+export const version_with_sha = revision ? `v${version} (${revision})` : `v${version}`;
 export const env = process.env;
 export const argv = process.argv;
 export const main = process.argv[1] ?? "";

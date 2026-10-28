@@ -1,4 +1,16 @@
+import { execFileSync } from "node:child_process";
 import { defineConfig } from "tsup";
+
+/** The short git revision headers print, like bun's `version_with_sha`: `FNPM_REVISION`, else `git rev-parse --short HEAD`, else none. */
+function revision(): string {
+  const fromEnv = process.env.FNPM_REVISION;
+  if (fromEnv !== undefined) return fromEnv.trim();
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
 
 /**
  * CLI bins from one build. `splitting` lets them share chunks (registry
@@ -32,4 +44,5 @@ export default defineConfig({
   splitting: true,
   noExternal: ["cac", "picocolors", "@clack/prompts"],
   external: ["@fuck-npm/binding"],
+  define: { __FNPM_REVISION__: JSON.stringify(revision()) },
 });

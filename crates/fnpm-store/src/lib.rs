@@ -65,8 +65,9 @@ use staging::Staging;
 /// Errors of the store.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The tarball bytes do not match the expected integrity.
-    #[error("integrity check failed for {package}: expected {expected}, got {actual}")]
+    /// The tarball bytes do not match the expected integrity. Printed as bun prints it; the two
+    /// hashes stay available to callers.
+    #[error("{}", crate::integrity::integrity_failure_message(package))]
     Integrity {
         /// Package name.
         package: String,
@@ -185,6 +186,17 @@ pub struct PackageEntry {
     pub index: Arc<FileIndex>,
 }
 
+/// How a tarball import went, for bun's `--verbose` lines (`[name] Extract …`, `[name] Streamed …`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ImportReport {
+    /// Extracted while it downloaded (the body reached the streaming threshold).
+    pub streamed: bool,
+    /// The compressed bytes received.
+    pub bytes: u64,
+    /// The directories and files the package holds.
+    pub entries: usize,
+}
+
 /// Options of a tarball import.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImportOptions {
@@ -255,6 +267,11 @@ struct Inner {
     tuning: Tuning,
 }
 
+/// The integrities of the packages this process imported (or found published while
+/// importing), whichever [`Store`] value did it: the resolver and the fetcher open their own.
+static IMPORTED: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashSet<Integrity>>> =
+    std::sync::LazyLock::new(Default::default);
+
 fn spawn_cpu<T, F>(f: F) -> tokio::sync::oneshot::Receiver<Result<T>>
 where
     T: Send + 'static,
@@ -315,6 +332,12 @@ impl Store {
         })
     }
 
+    /// Whether this process imported the package with `integrity` (an install with the cache
+    /// disabled takes only those from the store, and downloads the others again).
+    pub fn imported_here(&self, integrity: &Integrity) -> bool {
+        IMPORTED.lock().contains(integrity)
+    }
+
     /// The store root (`…/store/v2`).
     pub fn root(&self) -> &Path {
         &self.root
@@ -338,6 +361,55 @@ impl Store {
     /// The tuning in effect.
     pub fn tuning(&self) -> &Tuning {
         &self.inner.tuning
+    }
+
+    /// `<cache>/urls/<hash>`: the record of an unpinned download (see [`Store::remember_url`]).
+    /// It lives in the cache directory, not the store: like bun's name@version cache, a fresh
+    /// cache downloads the tarball again even when the shared store has the package.
+    fn url_record(cache_dir: &Path, name: &str, version: &str, url: &str) -> PathBuf {
+        let hash = xxhash_rust::xxh3::xxh3_128(format!("{name}\0{version}\0{url}").as_bytes());
+        cache_dir.join("urls").join(format!("{hash:032x}"))
+    }
+
+    /// The integrity a tarball URL without one in the lockfile or manifest had when it was
+    /// last imported with this cache, recorded by [`Store::remember_url`]. Lets a later install
+    /// (an offline one too) reuse the package instead of downloading it again, as bun's
+    /// name@version cache does.
+    pub fn integrity_for_url(
+        &self,
+        cache_dir: &Path,
+        name: &str,
+        version: &str,
+        url: &str,
+    ) -> Option<Integrity> {
+        let text = std::fs::read_to_string(Self::url_record(cache_dir, name, version, url)).ok()?;
+        Integrity::parse(text.trim()).ok()
+    }
+
+    /// Records what an unpinned tarball URL imported as. Best effort: a failed write only
+    /// means the next install downloads it again.
+    pub fn remember_url(
+        &self,
+        cache_dir: &Path,
+        name: &str,
+        version: &str,
+        url: &str,
+        integrity: &Integrity,
+    ) {
+        let record = Self::url_record(cache_dir, name, version, url);
+        let Some(dir) = record.parent() else { return };
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        let tmp = dir.join(format!(".tmp-{}-{nanos}", std::process::id()));
+        if std::fs::write(&tmp, integrity.to_string()).is_ok()
+            && std::fs::rename(&tmp, &record).is_err()
+        {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 
     /// `pkgs/<dir>` of `key`.
@@ -449,6 +521,9 @@ impl Store {
             },
         )
         .map_err(io_err(dest))?;
+        if let Some(integrity) = meta.integrity {
+            IMPORTED.lock().insert(integrity);
+        }
         match published {
             Published::Ours => {
                 staging.mark_published();
@@ -496,7 +571,7 @@ impl Store {
         &self,
         target: Target,
         mut body: S,
-    ) -> Result<(PackageKey, PackageEntry)>
+    ) -> Result<(PackageKey, PackageEntry, ImportReport)>
     where
         S: Stream<Item = io::Result<Bytes>> + Send + Unpin,
     {
@@ -521,14 +596,22 @@ impl Store {
                 Some(Err(e)) => return Err(body_err(e)),
                 None => {
                     let store = self.clone();
+                    let bytes = head.len() as u64;
                     let mut rx = spawn_cpu(move || store.import_buffered(target, &head));
-                    return recv(&mut rx, &label).await;
+                    let (key, entry) = recv(&mut rx, &label).await?;
+                    let report = ImportReport {
+                        streamed: false,
+                        bytes,
+                        entries: entry.index.dirs.len() + entry.index.files.len(),
+                    };
+                    return Ok((key, entry, report));
                 }
             }
         }
 
         // Large bodies are extracted while they download: one drain at a time on the rayon
         // pool, the next batch accumulating meanwhile.
+        let mut received = head.len() as u64;
         let name = target.name().to_owned();
         let store = self.clone();
         let hasher = target.hasher();
@@ -571,14 +654,20 @@ impl Store {
                                 }
                             });
                         }
-                        Step::Chunk(Some(Ok(c))) => pending.extend_from_slice(&c),
+                        Step::Chunk(Some(Ok(c))) => {
+                            received += c.len() as u64;
+                            pending.extend_from_slice(&c);
+                        }
                         Step::Chunk(Some(Err(e))) => return Err(body_err(e)),
                         Step::Chunk(None) => ended = true,
                     }
                 }
             } else if !ended && pending.len() < threshold {
                 match body.next().await {
-                    Some(Ok(c)) => pending.extend_from_slice(&c),
+                    Some(Ok(c)) => {
+                        received += c.len() as u64;
+                        pending.extend_from_slice(&c);
+                    }
                     Some(Err(e)) => return Err(body_err(e)),
                     None => ended = true,
                 }
@@ -611,7 +700,13 @@ impl Store {
                 .map_err(|e| extract::with_package(e, target.name()))?;
             store.finish_import(staging, target, computed, built)
         });
-        recv(&mut rx, &label).await
+        let (key, entry) = recv(&mut rx, &label).await?;
+        let report = ImportReport {
+            streamed: true,
+            bytes: received,
+            entries: entry.index.dirs.len() + entry.index.files.len(),
+        };
+        Ok((key, entry, report))
     }
 
     /// Streams `gzip -> tar -> staging` in one pass while hashing the compressed bytes with the
@@ -630,11 +725,25 @@ impl Store {
     where
         S: Stream<Item = io::Result<Bytes>> + Send + Unpin,
     {
+        Ok(self.import_tarball_with_report(key, body, opts).await?.0)
+    }
+
+    /// [`Store::import_tarball`] that also says how the import went.
+    pub async fn import_tarball_with_report<S>(
+        &self,
+        key: &PackageKey,
+        body: S,
+        opts: ImportOptions,
+    ) -> Result<(PackageEntry, ImportReport)>
+    where
+        S: Stream<Item = io::Result<Bytes>> + Send + Unpin,
+    {
         let target = Target::Pinned {
             key: key.clone(),
             verify: !opts.skip_verify,
         };
-        Ok(self.import_stream(target, body).await?.1)
+        let (_, entry, report) = self.import_stream(target, body).await?;
+        Ok((entry, report))
     }
 
     /// [`Store::import_tarball`] for a tarball whose integrity is not known yet (a URL or
@@ -646,6 +755,22 @@ impl Store {
         version: &str,
         body: S,
     ) -> Result<(PackageKey, PackageEntry)>
+    where
+        S: Stream<Item = io::Result<Bytes>> + Send + Unpin,
+    {
+        let (key, entry, _) = self
+            .import_tarball_unpinned_with_report(name, version, body)
+            .await?;
+        Ok((key, entry))
+    }
+
+    /// [`Store::import_tarball_unpinned`] that also says how the import went.
+    pub async fn import_tarball_unpinned_with_report<S>(
+        &self,
+        name: &str,
+        version: &str,
+        body: S,
+    ) -> Result<(PackageKey, PackageEntry, ImportReport)>
     where
         S: Stream<Item = io::Result<Bytes>> + Send + Unpin,
     {

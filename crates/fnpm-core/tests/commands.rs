@@ -65,8 +65,8 @@ async fn why_ls_hash_and_licenses() {
     assert_eq!(lines[0], "b@1.0.0");
     assert_eq!(lines[1], "  └─ a@1.0.0 (requires ^1.0.0)");
     assert_eq!(lines[2], "     └─ app (requires ^1.0.0)");
-    let r = p.invoke(&["why"], &["nope"], json!({})).await.unwrap();
-    assert_eq!(r.exit_code, 1);
+    let err = p.invoke(&["why"], &["nope"], json!({})).await.unwrap_err();
+    assert_eq!(err.code(), "REPORTED");
 
     let r = p.invoke(&["ls"], &[], json!({})).await.unwrap();
     let lines = r.lines.unwrap();
@@ -79,7 +79,8 @@ async fn why_ls_hash_and_licenses() {
         .invoke(&["ls"], &[], json!({ "all": true }))
         .await
         .unwrap();
-    assert_eq!(r.lines.unwrap()[2], "    └── b@1.0.0");
+    // The hoisted tree, as `node_modules` has it.
+    assert_eq!(r.lines.unwrap()[1..], ["├── a@1.0.0", "└── b@1.0.0"]);
 
     let h1 = p
         .invoke(&["pm", "hash"], &[], json!({}))
@@ -104,7 +105,7 @@ async fn why_ls_hash_and_licenses() {
     assert!(s.iter().any(|l| l.contains("b@1.0.0")), "{s:?}");
 
     let r = p.invoke(&["pm", "licenses"], &[], json!({})).await.unwrap();
-    assert!(r.lines.unwrap().iter().any(|l| l.contains("UNKNOWN")));
+    assert!(r.lines.unwrap().iter().any(|l| l.starts_with("Unknown (")));
 
     let r = p.invoke(&["pm", "bin"], &[], json!({})).await.unwrap();
     assert!(r.lines.unwrap()[0].ends_with("node_modules/.bin"));
@@ -133,12 +134,13 @@ async fn info_reads_the_packument() {
         .invoke(&["info"], &["a", "dist-tags.latest"], json!({}))
         .await
         .unwrap();
-    assert_eq!(r.data.unwrap(), json!("1.2.0"));
+    assert_eq!(r.data.unwrap(), json!({ "dist-tags.latest": "1.2.0" }));
+    // Said on stderr, like bun.
     let err = p
         .invoke(&["info"], &["missing-pkg"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "NOT_FOUND");
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -179,7 +181,8 @@ async fn pkg_get_set_delete_keep_formatting() {
         .invoke(&["pm", "pkg", "set"], &["novalue"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    // Said on stderr, like bun.
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -213,7 +216,7 @@ async fn version_bump_and_init() {
         .invoke(&["pm", "version"], &["1.3.1-beta.0"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    assert_eq!(err.code(), "REPORTED");
 
     let r = p
         .invoke(&["init"], &["sub/My Pkg"], json!({}))
@@ -239,14 +242,9 @@ async fn migrate_export_verify_diff_print() {
         .unwrap();
     assert!(exists(&p.path("package-lock.json")));
     std::fs::remove_file(p.path("fnpm.lock")).unwrap();
+    // Like `bun pm migrate`, it reports on stderr (an event) and prints nothing.
     let r = p.invoke(&["migrate"], &[], json!({})).await.unwrap();
-    assert!(
-        r.lines
-            .unwrap()
-            .last()
-            .unwrap()
-            .contains("from package-lock.json")
-    );
+    assert!(r.lines.unwrap_or_default().is_empty());
     assert!(p.read("fnpm.lock").contains("\"a@1.0.0\""));
     let err = p
         .invoke(&["lock", "migrate"], &[], json!({}))
@@ -645,7 +643,7 @@ async fn version_like_bun_dry_run_scripts_and_git() {
         .invoke(&["pm", "version"], &["patch"], json!({}))
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("not clean"), "{err}");
+    assert_eq!(err.code(), "REPORTED");
     assert_eq!(p.json("package.json")["version"], "1.1.0");
     std::fs::remove_file(p.path("dirty.js")).unwrap();
 
@@ -746,7 +744,7 @@ async fn link_rejects_names_that_leave_the_registry() {
         .invoke(&["pm", "pkg", "set"], &["files[99999999]=x"], json!({}))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "USAGE");
+    assert_eq!(err.code(), "REPORTED");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1273,45 +1271,28 @@ async fn patch_commit_failed_save_preserves_patch_manifest_and_lock() {
         "module.exports = 'second edit';\n"
     );
 }
+// `pm diff` prints its patch itself; the conformance tests (bun-pm-diff) check the text.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn diff_registry_versions_filters_and_installed_side() {
     let reg = Registry::start(&[Pkg::new("tool", "1.0.0"), Pkg::new("tool", "2.0.0")]).await;
     let p = Project::new(&reg, json!({"name":"app","dependencies":{"tool":"1.0.0"}}));
     p.install().await;
-    let result = p
-        .invoke(&["pm", "diff"], &["tool"], json!({}))
-        .await
-        .unwrap();
-    let data = result.data.unwrap();
-    assert_eq!(data["from"], "tool@1.0.0");
-    assert_eq!(data["to"], "tool@2.0.0");
-    assert_eq!(data["totals"]["files"], 2);
-    assert!(
-        result
-            .lines
-            .unwrap()
-            .join("\n")
-            .contains("+module.exports = \"tool@2.0.0\";")
-    );
-    let result = p
-        .invoke(
-            &["pm", "diff"],
-            &["tool@1.0.0:index.js", "2.0.0"],
-            json!({"nameOnly":true}),
-        )
-        .await
-        .unwrap();
-    let files = result.data.unwrap()["files"].as_array().unwrap().clone();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0]["path"], "index.js");
-    assert!(files[0].get("patch").is_none());
-    assert!(
-        p.invoke(&["pm", "diff"], &["tool@1.0.0:nope", "2.0.0"], json!({}))
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("no file in either side matches nope")
-    );
+    let code = |args: &'static [&'static str]| {
+        let p = &p;
+        async move {
+            p.invoke(&["pm", "diff"], args, json!({"nameOnly": true}))
+                .await
+                .unwrap()
+                .exit_code
+        }
+    };
+    assert_eq!(code(&["tool"]).await, 0);
+    assert_eq!(code(&["tool@1.0.0:index.js", "2.0.0"]).await, 0);
+    // No file matches the filter, and a version that does not exist.
+    assert_eq!(code(&["tool@1.0.0:nope", "2.0.0"]).await, 1);
+    assert_eq!(code(&["tool@9.0.0", "2.0.0"]).await, 1);
+    // A name that is not in the lockfile needs two versions.
+    assert_eq!(code(&["other"]).await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1321,43 +1302,22 @@ async fn diff_local_trees_never_runs_scripts_and_reports_binary_hashes() {
     p.write("a/package.json", r#"{"name":"p","version":"1.0.0"}"#);
     p.write(
         "b/package.json",
-        r#"{"name":"p","version":"2.0.0","scripts":{"postinstall":"exit 99"}}"#,
+        r#"{"name":"p","version":"2.0.0","scripts":{"postinstall":"node -e \"require('fs').writeFileSync('ran','')\""}}"#,
     );
     p.write("a/index.js", "module.exports = 1;\n");
-    p.write(
-        "b/index.js",
-        "const cp = require('child_process');\nmodule.exports = 2;\n",
-    );
+    p.write("b/index.js", "module.exports = 2;\n");
     std::fs::write(p.path("b/data.bin"), [0, 255, 128]).unwrap();
     let result = p
         .invoke(&["pm", "diff"], &["./a", "./b"], json!({}))
         .await
         .unwrap();
-    let data = result.data.unwrap();
     assert_eq!(result.exit_code, 0);
-    assert_eq!(data["from"], "./a");
-    let binary = data["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["path"] == "data.bin")
+    assert!(!p.path("b/ran").exists() && !p.path("ran").exists());
+    let missing = p
+        .invoke(&["pm", "diff"], &["./a", "./nope"], json!({}))
+        .await
         .unwrap();
-    assert_eq!(binary["binary"], true);
-    assert_eq!(binary["sha256After"].as_str().unwrap().len(), 64);
-    assert!(
-        data["notes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|n| n == "postinstall script added: exit 99")
-    );
-    assert!(
-        data["notes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|n| n == "now imports child_process (index.js)")
-    );
+    assert_eq!(missing.exit_code, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1385,10 +1345,8 @@ async fn audit_fix_rejects_manifest_changes_before_auditing_or_writing() {
             .invoke(&["audit"], &["fix"], json!({ "dryRun": dry_run }))
             .await
             .unwrap_err();
-        assert!(
-            error.to_string().contains("does not match package.json"),
-            "{error}"
-        );
+        // `error: fnpm.lock does not match package.json` went to stderr, like bun.
+        assert_eq!(error.code(), "REPORTED", "{error}");
         assert_eq!(
             reg.seen().len(),
             requests,
